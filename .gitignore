@@ -1,0 +1,29 @@
+# Android / Gradle
+.gradle/
+build/
+**/build/
+local.properties
+*.iml
+
+# Android Studio / IntelliJ
+.idea/
+
+# Native / generated
+.cxx/
+.externalNativeBuild/
+
+# Local secrets and credentials
+.env
+.env.*
+secrets.properties
+*.jks
+*.keystore
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Logs
+*.log
