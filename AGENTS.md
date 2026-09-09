@@ -59,6 +59,8 @@ Implementation Workers and Reviewers MUST treat these files as read-only project
 
 Implementation branches and PRs SHOULD contain only implementation changes. Article updates are made separately by the role that owns the article.
 
+`CONTRIBUTORS.md` is a separate, jointly maintained registry. The Planner and Manager have standing authorization to record already-approved contributor assignments and lifecycle changes under Section 15.1. This does not expand their authority over the four articles above.
+
 ---
 
 # 4. Roles
@@ -86,6 +88,7 @@ The Planner:
 
 - works with `code2hack` on product direction and architecture;
 - owns `SPEC.md`, `AGENTS.md`, and `MILESTONES.md`;
+- creates canonical GitHub tickets and defines their scope, dependencies, and acceptance criteria;
 - resolves ambiguous or cross-cutting requirements with the Owner;
 - defines milestones, acceptance criteria, and major architectural decisions;
 - handles product/architecture escalations from the Manager.
@@ -104,14 +107,14 @@ The Manager:
 
 - maintains an accurate view of repository and project state;
 - owns `DEV.md`;
-- decomposes approved work into bounded missions;
+- decomposes approved tickets into bounded execution missions;
 - tracks dependencies and blockers;
 - dispatches Workers and Reviewers;
 - coordinates concurrent work and shared resources;
 - receives Worker reports;
 - arranges independent review;
 - verifies required acceptance evidence;
-- creates/coordinates PRs and merges accepted work;
+- opens and manages implementation PRs, merges accepted work, and closes accepted tickets;
 - escalates product or architecture decisions to the Planner/Owner;
 - reports meaningful project state to `code2hack`.
 
@@ -189,7 +192,7 @@ Major product, architecture, security, or acceptance uncertainty is escalated th
 
 # 5. Mission contract
 
-Before dispatching a Worker, the Manager MUST define:
+Before dispatching a Worker, the Manager MUST derive the mission from a Planner-created ticket and provide:
 
 - mission objective;
 - scope boundaries;
@@ -197,7 +200,7 @@ Before dispatching a Worker, the Manager MUST define:
 - dependencies;
 - affected implementation area;
 - required target devices/platforms;
-- acceptance criteria;
+- acceptance criteria inherited from the approved ticket;
 - required verification/evidence;
 - branch/worktree assignment;
 - resource or retry limits where relevant;
@@ -446,12 +449,43 @@ After `CHANGES_REQUESTED`, the Worker updates the implementation, repeats simpli
 
 The Manager merges only when:
 
-- Reviewer result is `PASS`;
+- Reviewer result is `PASS` for the exact current PR head;
 - required builds/tests pass;
 - required device/integration evidence exists;
 - Owner gates affecting acceptance are resolved.
 
-The Manager records the final result and closes/archives the mission.
+A later push changes the review candidate: the Reviewer MUST record a renewed result against the new head before merge. The Manager verifies the final remote head, merge result, and acceptance evidence rather than relying on an earlier report.
+
+The Manager records the final result, closes the accepted issue, and archives the mission.
+
+## 13.1 GitHub ownership
+
+| GitHub responsibility | Owner |
+| --- | --- |
+| Create canonical tickets; define or revise scope, acceptance, and planned dependencies | Planner |
+| Manage execution labels/state, assignments, and dependency readiness | Manager |
+| Commit and push implementation and correction commits to the assigned branch | Worker |
+| Open and maintain implementation PRs; link tickets; dispatch reviews; merge and close accepted tickets | Manager |
+| Review the exact candidate and record findings/verdict without editing its implementation | Reviewer |
+
+New work discovered by a Worker, Reviewer, or Manager is proposed through the Manager to the Planner, who creates or revises the canonical ticket. The Manager sequences approved work and supplies execution plans within that ticket's boundaries.
+
+Ordinary implementation changes reach `main` through the Manager-managed PR workflow. Owner-approved protected-article edits are separate direct-to-`main` documentation commits by their Section 3 editor. Contributor registry updates follow Section 15.1.
+
+## 13.2 Durable comments
+
+Agents MUST leave concise, attributed records at these transitions:
+
+| Role | Issue record | PR record |
+| --- | --- | --- |
+| Planner | Ticket creation in the issue body; comments for product, architecture, scope, acceptance, or dependency decisions, including the authority/reference | Decision clarification only when needed |
+| Manager | Dispatch with Worker name/branch; material reassignment, blocker/gate or execution decision; final acceptance with PR, merged commit, and evidence links | Linked ticket, candidate and acceptance scope in the PR body; review dispatch and material merge/acceptance decisions |
+| Worker | Material blockers, human gates and their outcomes, discoveries needing decisions, and `COMPLETED` evidence from Section 11 | Corrections with new commit, findings addressed, verification rerun, and remaining uncertainty |
+| Reviewer | Product/specification/acceptance ambiguity; findings and verdict for review missions without a PR | `PASS`, `CHANGES_REQUESTED`, or `BLOCKED`, exact reviewed SHA, concrete findings, and supporting or missing evidence |
+
+Routine implementation reviews belong on the PR, as a review or attributed comment. Link the record from the issue instead of duplicating it. Record meaningful transitions rather than routine status chatter or raw logs.
+
+A durable GitHub comment is not proof of delivery to another agent. When a report requires action, the sender MUST also notify the intended agent through the established communication path; the Manager does not poll GitHub as its normal synchronization mechanism.
 
 ---
 
@@ -508,6 +542,45 @@ The underlying transport may be tmux, Pi, pi-bridge, ChatGPT, messaging, or anot
 
 Changing transport does not require changing project governance.
 
+## 15.1 Contributor registry
+
+Root `CONTRIBUTORS.md` records every participating agent session, regardless of role, model, runtime, or host. It contains one canonical fenced `json` block holding a JSON array, with these eight fields per contributor:
+
+```text
+role, scope, host, runtime, id, model, name, status
+```
+
+The Planner and Manager jointly maintain the remote-`main` registry. They MUST register an agent's actual metadata before its first project mission or attributable repository action. Workers and Reviewers supply metadata and changes to either maintainer. Registration may accompany a new Planner's first authorized governance commit.
+
+Use the full Owner-supplied or browser-observed conversation URL for a ChatGPT `id`; use the actual native session ID for other runtimes. Runtime labels are lowercase, such as `chatgpt`, `pi`, and `codex`. Model metadata comes from the Owner or runtime; use `null` when unknown. Store locators and descriptive metadata, not credentials or authentication tokens.
+
+The tuple `(host, runtime, id)` identifies a concrete session. Maintain one record per tuple. Keep `name` stable and unique within its role so public attribution remains resolvable; `name` is a display label, not a routing address.
+
+`status` is `active`, `paused`, or `retired`. Active means assigned, not continuously running. Register actual participants only; update material assignment/model/lifecycle changes and retain retired records. Mission progress remains on issues and in runtime state rather than generating registry commits for every turn.
+
+A model change in the same session updates `model`; a replacement session gets a new record. A project-wide Manager handoff MUST leave one active Manager, pause or retire the outgoing assignment, and communicate the new reporting identity to affected agents. Changing role or model in the same session does not create independent review context.
+
+Routine registry maintenance within approved assignments has standing authorization for both maintainers. Refresh remote `main`, preserve concurrent updates, validate the JSON and identity uniqueness, and publish a separate documentation commit. Registration records authority granted under project policy; it does not itself grant authority or authenticated access.
+
+## 15.2 Public attribution and agent routing
+
+For GitHub issue/PR bodies, comments, and reviews, agents MUST start with their registered `role` and `name`:
+
+```text
+<Role>: <name>
+```
+
+Commit messages MUST carry the same attribution line or prefix. Where the commit tool supports setting the Git author display name, use `<Role>: <name>` with the authorized Git email. Where author metadata is fixed by the connector, retain its authenticated author and put the role/name in the commit message. Preserve existing authorship on commits made by others. Keep model labels, hosts, and long session IDs out of public attribution prefixes; the registry supplies that metadata.
+
+Agent-to-agent communication MUST identify the sender with the exact `(host, runtime, id)` tuple and address the intended recipient by its registry tuple. These fields may be in the message envelope or an explicit header:
+
+```text
+From: host=<host>; runtime=<runtime>; id=<id>
+To: host=<host>; runtime=<runtime>; id=<id>
+```
+
+Role/name may accompany those fields for readability. Resolve the recipient's current assignment and status from the registry before dispatch or handoff. A label alone is insufficient for routing, and a claimed identity does not replace transport authentication.
+
 ---
 
 # 16. Runtime boundary
@@ -519,6 +592,11 @@ Runtime-specific configuration belongs elsewhere.
 Examples:
 
 ```text
+CONTRIBUTORS.md
+    actual participating sessions
+    role/scope, display name, host/runtime/id
+    current model metadata and registration lifecycle
+
 DEV.md
     verified hosts
     workspaces
