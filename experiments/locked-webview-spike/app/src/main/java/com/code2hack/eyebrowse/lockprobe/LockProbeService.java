@@ -86,7 +86,7 @@ public final class LockProbeService extends Service {
                     "href:location.href" +
                     "});})()";
             webView.evaluateJavascript(js, value ->
-                    appendTelemetry("page", "\"state\":" + jsonString(value)));
+                    appendTelemetry("page", "\"state\":" + TelemetryJson.quote(value)));
             mainHandler.postDelayed(this, 1000L);
         }
     };
@@ -184,7 +184,7 @@ public final class LockProbeService extends Service {
             appendTelemetry("lifecycle", "\"event\":\"presentation-shown\"");
             mainHandler.post(pageStateRunnable);
         } catch (RuntimeException error) {
-            appendTelemetry("error", "\"message\":" + jsonString("presentation: " + error));
+            appendTelemetry("error", "\"message\":" + TelemetryJson.quote("presentation: " + error));
             Log.e(TAG, "Could not show Presentation on virtual display", error);
         }
     }
@@ -220,7 +220,7 @@ public final class LockProbeService extends Service {
                 writeLatestPng(buffer, plane.getRowStride(), plane.getPixelStride());
             }
         } catch (RuntimeException error) {
-            appendTelemetry("error", "\"message\":" + jsonString("image: " + error));
+            appendTelemetry("error", "\"message\":" + TelemetryJson.quote("image: " + error));
             Log.e(TAG, "Image capture error", error);
         } finally {
             if (image != null) {
@@ -276,7 +276,7 @@ public final class LockProbeService extends Service {
                 cropped.compress(Bitmap.CompressFormat.PNG, 100, stream);
             }
         } catch (IOException | RuntimeException error) {
-            appendTelemetry("error", "\"message\":" + jsonString("png: " + error));
+            appendTelemetry("error", "\"message\":" + TelemetryJson.quote("png: " + error));
         } finally {
             if (cropped != null) {
                 cropped.recycle();
@@ -301,13 +301,13 @@ public final class LockProbeService extends Service {
             return;
         }
         if (!started || webView == null) {
-            appendTelemetry("command", "\"command\":" + jsonString(normalized) + ",\"result\":\"no-webview\"");
+            appendTelemetry("command", "\"command\":" + TelemetryJson.quote(normalized) + ",\"result\":\"no-webview\"");
             return;
         }
         appendTelemetry(
                 "command",
-                "\"command\":" + jsonString(normalized) +
-                        (value == null ? "" : ",\"value\":" + jsonString(value)));
+                "\"command\":" + TelemetryJson.quote(normalized) +
+                        (value == null ? "" : ",\"value\":" + TelemetryJson.quote(value)));
 
         switch (normalized) {
             case "scrollDown":
@@ -348,7 +348,7 @@ public final class LockProbeService extends Service {
                 mainHandler.post(pageStateRunnable);
                 break;
             default:
-                appendTelemetry("command", "\"command\":" + jsonString(normalized) + ",\"result\":\"unknown\"");
+                appendTelemetry("command", "\"command\":" + TelemetryJson.quote(normalized) + ",\"result\":\"unknown\"");
                 break;
         }
     }
@@ -364,7 +364,7 @@ public final class LockProbeService extends Service {
                 "{\"elapsedMs\":%d,\"wallMs\":%d,\"type\":%s,\"interactive\":%s,\"deviceLocked\":%s,%s%s%s}%n",
                 SystemClock.elapsedRealtime(),
                 System.currentTimeMillis(),
-                jsonString(type),
+                TelemetryJson.quote(type),
                 pm.isInteractive(),
                 km.isDeviceLocked(),
                 batteryFields(),
@@ -395,17 +395,6 @@ public final class LockProbeService extends Service {
         return "\"batteryPct\":" + percent + ",\"batteryStatus\":" + status + ",\"plugged\":" + plugged;
     }
 
-    private static String jsonString(String value) {
-        if (value == null) {
-            return "null";
-        }
-        return "\"" + value
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r") + "\"";
-    }
-
     private static String jsString(String value) {
         if (value == null) {
             return "''";
@@ -414,7 +403,9 @@ public final class LockProbeService extends Service {
                 .replace("\\", "\\\\")
                 .replace("'", "\\'")
                 .replace("\n", "\\n")
-                .replace("\r", "\\r") + "'";
+                .replace("\r", "\\r")
+                .replace("\u2028", "\\u2028")
+                .replace("\u2029", "\\u2029") + "'";
     }
 
     @Override

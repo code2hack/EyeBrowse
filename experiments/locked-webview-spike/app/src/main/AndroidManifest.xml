@@ -28,16 +28,8 @@
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
 
-        <!-- Debug-only command surface. Requiring DUMP means normal third-party apps cannot drive it;
-             adb shell can, which is exactly what this validation spike needs. -->
-        <receiver
-            android:name=".CommandReceiver"
-            android:exported="true"
-            android:permission="android.permission.DUMP">
-            <intent-filter>
-                <action android:name="com.code2hack.eyebrowse.lockprobe.COMMAND" />
-            </intent-filter>
-        </receiver>
+        <!-- The debug-only command receiver lives in app/src/debug/AndroidManifest.xml so it
+             is absent from release builds. See that overlay for its DUMP caller requirement. -->
 
     </application>
 

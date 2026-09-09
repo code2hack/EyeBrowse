@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug-only overlay. The command receiver exists only in debug builds, so release APKs
+     do not register the remote-style command surface at all. The DUMP requirement still
+     limits callers to privileged ones such as adb shell. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+
+        <receiver
+            android:name=".CommandReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.code2hack.eyebrowse.lockprobe.COMMAND" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+
+</manifest>
