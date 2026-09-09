@@ -487,6 +487,38 @@ Routine implementation reviews belong on the PR, as a review or attributed comme
 
 A durable GitHub comment is not proof of delivery to another agent. When a report requires action, the sender MUST also notify the intended agent through the established communication path; the Manager does not poll GitHub as its normal synchronization mechanism.
 
+## 13.3 Issue labels and dependency readiness
+
+EyeBrowse uses Matt-style triage state labels:
+
+```text
+needs-triage
+needs-info
+ready-for-agent
+ready-for-human
+wontfix
+```
+
+Their meanings are:
+
+| Label | Meaning |
+| --- | --- |
+| `needs-triage` | Incoming or unstructured issue has not yet been converted into an actionable project ticket. |
+| `needs-info` | Specific information required to make the issue actionable is missing. |
+| `ready-for-agent` | Scope and acceptance are defined, dependencies are satisfied, and the ticket is safe for Manager dispatch. |
+| `ready-for-human` | The next meaningful action requires Project Owner/human judgment or a physical/interactive gate. |
+| `wontfix` | Duplicate/already satisfied, explicitly rejected, or intentionally out of scope. |
+
+Planner-created implementation tickets MUST declare dependencies with an explicit `Blocked by:` entry. Use `Blocked by: none` when there are no prerequisites.
+
+Dependency blocking is represented by those `Blocked by:` references, not by inventing a separate `blocked` label. A ticket with unresolved blockers MUST NOT carry `ready-for-agent`.
+
+The Planner MAY apply `ready-for-agent` when publishing an already-unblocked ticket. After publication, the Manager owns execution-state label transitions and MUST derive readiness from current repository/dependency evidence. When blockers clear, the Manager adds `ready-for-agent`; when a human gate becomes the next required action, the Manager or Worker records the gate and the Manager applies `ready-for-human`; after the gate resolves, the Manager restores the appropriate state.
+
+External or unstructured intake SHOULD use exactly one of the five state labels while being triaged. Optional category labels such as `bug` and `enhancement` are orthogonal to these states and are primarily for external intake; Planner-created internal tickets do not need a category label unless it adds useful information.
+
+Avoid workflow-noise labels such as `in-progress`, `worker-running`, `reviewing`, or `blocked` when issue/PR state, dependency references, and durable comments already express that information.
+
 ---
 
 # 14. Failure and escalation
