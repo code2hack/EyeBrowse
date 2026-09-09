@@ -13,7 +13,7 @@ Manager-owned article. Initial preferences recorded with explicit Project Owner 
 
 | Mission role | Provider | Exact model ID | Thinking |
 | --- | --- | --- | --- |
-| Worker | `deepseek` | `deepseek-v4.1-flash-expires-on-0910` | `max` |
+| Worker | `deepseek` | `deepseek-v4.1-flash-expires-on-0910` | `high` (Owner approved after launch verification) |
 | Worker availability fallback | `spark` | `qwen3.8-flash-next` | `max` |
 | Reviewer | `openai-codex` | `gpt-6-astra` | `medium`; `max` for hard bugs |
 
@@ -28,7 +28,7 @@ Configuration is local to `~/.pi/agent/models.json`. Never copy credentials into
 - The DeepSeek and Spark model IDs above are present in local `models.json`, with reasoning enabled.
 - Installed Pi documents `--provider`, `--model`, and `--thinking`, including `max` and `medium`.
 - `pi --list-models astra` lists `openai-codex/gpt-6-astra`. The Owner explicitly approved `openai-codex` as the Reviewer provider, resolving the initial provider discrepancy.
-- Issue #1 launch verification: Pi 0.85.1 started `LockProbe-Worker` in tmux `work:Worker-1` (pane `%6`) with `--thinking max`, but the footer reports effective `high`. Pi's supported-level resolver requires an explicit model mapping for `max`/`xhigh` and otherwise clamps to a supported level. Mission dispatch is paused for Owner judgment; do not treat this as approved `max` execution. No live model request has been made, so API availability is still unverified.
+- Issue #1 launch verification: Pi 0.85.1 started `LockProbe-Worker` in tmux `work:Worker-1` (pane `%6`) with `--thinking max`, but the footer reports effective `high`. Pi's supported-level resolver requires an explicit model mapping for `max`/`xhigh` and otherwise clamps to a supported level. The Owner subsequently approved `high`, resolving this launch gate. This verifies the effective local setting, not the upstream model's maximum effort or live API availability.
 
 ## Visibility and isolation
 
@@ -45,7 +45,7 @@ Before launch, define the complete mission contract required by `AGENTS.md`, inc
 Pi argument templates (not yet end-to-end launch-tested):
 
 ```bash
-pi --provider deepseek --model deepseek-v4.1-flash-expires-on-0910 --thinking max --name Worker-42 @/absolute/path/to/mission.md
+pi --provider deepseek --model deepseek-v4.1-flash-expires-on-0910 --thinking high --name Worker-42 @/absolute/path/to/mission.md
 pi --provider spark --model qwen3.8-flash-next --thinking max --name Worker-42 @/absolute/path/to/mission.md
 pi --provider openai-codex --model gpt-6-astra --thinking medium --name Reviewer-42 @/absolute/path/to/review-mission.md
 ```
