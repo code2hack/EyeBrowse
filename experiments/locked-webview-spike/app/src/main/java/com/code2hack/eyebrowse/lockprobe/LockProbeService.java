@@ -361,15 +361,13 @@ public final class LockProbeService extends Service {
         KeyguardManager km = getSystemService(KeyguardManager.class);
         String line = String.format(
                 Locale.US,
-                "{\"elapsedMs\":%d,\"wallMs\":%d,\"type\":%s,\"interactive\":%s,\"deviceLocked\":%s,\"batteryPct\":%d,\"batteryStatus\":%d,\"plugged\":%d%s%s}%n",
+                "{\"elapsedMs\":%d,\"wallMs\":%d,\"type\":%s,\"interactive\":%s,\"deviceLocked\":%s,%s%s%s}%n",
                 SystemClock.elapsedRealtime(),
                 System.currentTimeMillis(),
                 jsonString(type),
                 pm.isInteractive(),
                 km.isDeviceLocked(),
-                batteryPercent(),
-                batteryStatus(),
-                batteryPlugged(),
+                batteryFields(),
                 fields == null || fields.isEmpty() ? "" : ",",
                 fields == null ? "" : fields);
         try (FileWriter writer = new FileWriter(telemetryFile, true)) {
@@ -380,24 +378,21 @@ public final class LockProbeService extends Service {
         Log.d(TAG, line.trim());
     }
 
-    private int batteryPercent() {
+    private String batteryFields() {
         Intent battery = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
-        if (battery == null) {
-            return -1;
+        int percent = -1;
+        int status = -1;
+        int plugged = -1;
+        if (battery != null) {
+            int level = battery.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+            int scale = battery.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+            if (level >= 0 && scale > 0) {
+                percent = Math.round(100f * level / scale);
+            }
+            status = battery.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+            plugged = battery.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1);
         }
-        int level = battery.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
-        int scale = battery.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
-        return level >= 0 && scale > 0 ? Math.round(100f * level / scale) : -1;
-    }
-
-    private int batteryStatus() {
-        Intent battery = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
-        return battery == null ? -1 : battery.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
-    }
-
-    private int batteryPlugged() {
-        Intent battery = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
-        return battery == null ? -1 : battery.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1);
+        return "\"batteryPct\":" + percent + ",\"batteryStatus\":" + status + ",\"plugged\":" + plugged;
     }
 
     private static String jsonString(String value) {
