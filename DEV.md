@@ -13,9 +13,13 @@ Manager-owned article. Initial preferences recorded with explicit Project Owner 
 
 | Mission role | Provider | Exact model ID | Thinking |
 | --- | --- | --- | --- |
-| Worker | `deepseek` | `deepseek-v4.1-flash-expires-on-0910` | `high` (Owner approved after launch verification) |
-| Worker availability fallback | `spark` | `qwen3.8-flash-next` | `max` |
+| Worker | `deepseek` | `deepseek-v4.1-flash-expires-on-0910` | Highest available thinking effort for the selected model |
+| Worker availability fallback | `spark` | `qwen3.8-flash-next` | Highest available thinking effort for the selected model |
 | Reviewer | `openai-codex` | `gpt-6-astra` | `medium`; `max` for hard bugs |
+
+For every Worker launch or model change, resolve the highest available effort from the selected model's current supported levels and provider mapping; do not hard-code `high`. Skip levels marked unsupported (`null`) and account for aliases: Pi's label is not necessarily the upstream effort name. Verify the effective runtime level and report clamping, rejection, or uncertain upstream support rather than silently accepting a downgrade. Resolve the fallback model independently.
+
+Current local mappings expose Pi `max` for both models: DeepSeek maps it to upstream `max`, and Spark/Qwen maps it to upstream `xhigh`. These mappings were validated locally; the temporary DeepSeek V4.1 model's upstream Max support and the Spark endpoint's handling remain unverified. Issue #1's initial Owner-approved `high` run is historical evidence, not the default for future Workers.
 
 Use the Spark fallback only when the requested DeepSeek model is unavailable, not to conceal reasoning or implementation failures. Record and report fallback use. Do not silently substitute other providers, models, or thinking levels.
 
@@ -28,7 +32,7 @@ Configuration is local to `~/.pi/agent/models.json`. Never copy credentials into
 - The DeepSeek and Spark model IDs above are present in local `models.json`, with reasoning enabled.
 - Installed Pi documents `--provider`, `--model`, and `--thinking`, including `max` and `medium`.
 - `pi --list-models astra` lists `openai-codex/gpt-6-astra`. The Owner explicitly approved `openai-codex` as the Reviewer provider, resolving the initial provider discrepancy.
-- Issue #1 launch verification: Pi 0.85.1 started `LockProbe-Worker` in tmux `work:Worker-1` (pane `%6`) with `--thinking max`, but the footer reports effective `high`. Pi's supported-level resolver requires an explicit model mapping for `max`/`xhigh` and otherwise clamps to a supported level. The Owner subsequently approved `high`, resolving this launch gate. This verifies the effective local setting, not the upstream model's maximum effort or live API availability.
+- Issue #1 launch verification: Pi 0.85.1 started `LockProbe-Worker` in tmux `work:Worker-1` (pane `%6`) with `--thinking max`, but the footer reports effective `high`. Pi's supported-level resolver requires an explicit model mapping for `max`/`xhigh` and otherwise clamps to a supported level. The Owner subsequently approved `high` for that initial run, resolving its launch gate. The later highest-available-effort policy above supersedes a fixed `high` default. This launch observation verifies the effective local setting, not the upstream model's maximum effort.
 
 ## Visibility and isolation
 
@@ -45,8 +49,10 @@ Before launch, define the complete mission contract required by `AGENTS.md`, inc
 Pi argument templates (not yet end-to-end launch-tested):
 
 ```bash
-pi --provider deepseek --model deepseek-v4.1-flash-expires-on-0910 --thinking high --name Worker-42 @/absolute/path/to/mission.md
-pi --provider spark --model qwen3.8-flash-next --thinking max --name Worker-42 @/absolute/path/to/mission.md
+# Resolve these separately from current model capabilities before launching.
+# Current mappings select max for both; these are not permanent model-independent defaults.
+pi --provider deepseek --model deepseek-v4.1-flash-expires-on-0910 --thinking "${DEEPSEEK_THINKING:?Resolve highest available effort first}" --name Worker-42 @/absolute/path/to/mission.md
+pi --provider spark --model qwen3.8-flash-next --thinking "${SPARK_THINKING:?Resolve highest available effort first}" --name Worker-42 @/absolute/path/to/mission.md
 pi --provider openai-codex --model gpt-6-astra --thinking medium --name Reviewer-42 @/absolute/path/to/review-mission.md
 ```
 
