@@ -42,24 +42,28 @@ When authoritative sources conflict, escalate instead of guessing.
 
 # 3. Protected project articles
 
-The following project articles have exclusive editors:
+The following project articles have designated editors and publication gates:
 
-| Article         | Purpose                                         | Editor  |
-| --------------- | ----------------------------------------------- | ------- |
-| `SPEC.md`       | Product behavior and architecture               | Planner |
-| `AGENTS.md`     | Agent governance                                | Planner |
-| `MILESTONES.md` | Milestone/dependency plan                       | Planner |
-| `DEV.md`        | Verified development environment and procedures | Manager |
+| Article | Purpose | Editor | Publication gate |
+| --- | --- | --- | --- |
+| `AGENTS.md` | Agent governance | Planner | Project Owner explicitly requests the edit, then reviews and explicitly approves the exact candidate before it reaches `main` |
+| `DEV.md` | Verified development environment and procedures | Manager | Project Owner explicitly requests the edit, then reviews and explicitly approves the exact candidate before it reaches `main` |
+| `SPEC.md` | Product behavior and architecture | Planner | Changes require explicit Project Owner instruction or approval |
+| `MILESTONES.md` | Milestone/dependency plan | Planner | Changes require explicit Project Owner instruction or approval |
 
-Changes to these articles require explicit Project Owner instruction or approval.
+Ownership of `AGENTS.md` or `DEV.md` does not grant standing authority to change them. The Planner or Manager MUST edit these files only when the Project Owner explicitly requests that specific edit.
 
-Their canonical copies live on remote `main`.
+Changes to `AGENTS.md` or `DEV.md` MUST be prepared outside `main`. The Project Owner MUST review and explicitly approve the exact candidate before it may be pushed, merged, or otherwise published to `main`.
 
-Implementation Workers and Reviewers MUST treat these files as read-only project inputs.
+If the candidate changes after Project Owner review, the changed candidate requires another explicit review and approval before publication.
 
-Implementation branches and PRs SHOULD contain only implementation changes. Article updates are made separately by the role that owns the article.
+The canonical copies live on remote `main`.
 
-`CONTRIBUTORS.md` is a separate, jointly maintained registry. The Planner and Manager have standing authorization to record already-approved contributor assignments and lifecycle changes under Section 15.1. This does not expand their authority over the four articles above.
+Implementation Workers and Reviewers MUST treat `AGENTS.md`, `DEV.md`, `SPEC.md`, and `MILESTONES.md` as read-only project inputs.
+
+Implementation branches and PRs SHOULD contain only implementation changes. Protected-article updates are handled separately by their designated editor.
+
+`CONTRIBUTORS.md` remains a separate jointly maintained registry under Section 15.1 and is not a protected project article.
 
 ---
 
@@ -470,7 +474,7 @@ The Manager records the final result, closes the accepted issue, and archives th
 
 New work discovered by a Worker, Reviewer, or Manager is proposed through the Manager to the Planner, who creates or revises the canonical ticket. The Manager sequences approved work and supplies execution plans within that ticket's boundaries.
 
-Ordinary implementation changes reach `main` through the Manager-managed PR workflow. Owner-approved protected-article edits are separate direct-to-`main` documentation commits by their Section 3 editor. Contributor registry updates follow Section 15.1.
+Ordinary implementation changes reach `main` through the Manager-managed PR workflow. Protected-article edits follow Section 3. In particular, `AGENTS.md` and `DEV.md` MUST be prepared outside `main` and may reach `main` only after the Project Owner reviews and explicitly approves the exact candidate. Contributor registry updates follow Section 15.1.
 
 ## 13.2 Durable comments
 
