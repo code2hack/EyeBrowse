@@ -15,6 +15,16 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "model": "gpt-6 Pro",
     "name": "Pre Design",
     "status": "active"
+  },
+  {
+    "role": "Manager",
+    "scope": "project-wide",
+    "host": "u4090",
+    "runtime": "pi",
+    "id": "01a0864a-e865-7447-96f3-6b653a20d3ac",
+    "model": "gpt-6-astra",
+    "name": "EyeBrowse-Manager",
+    "status": "active"
   }
 ]
 ```
