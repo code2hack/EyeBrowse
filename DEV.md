@@ -28,7 +28,7 @@ Configuration is local to `~/.pi/agent/models.json`. Never copy credentials into
 - The DeepSeek and Spark model IDs above are present in local `models.json`, with reasoning enabled.
 - Installed Pi documents `--provider`, `--model`, and `--thinking`, including `max` and `medium`.
 - `pi --list-models astra` lists `openai-codex/gpt-6-astra`. The Owner explicitly approved `openai-codex` as the Reviewer provider, resolving the initial provider discrepancy.
-- Live API availability and effective thinking levels have not been tested. Verify them at launch; report any unsupported level or clamping.
+- Issue #1 launch verification: Pi 0.85.1 started `LockProbe-Worker` in tmux `work:Worker-1` (pane `%6`) with `--thinking max`, but the footer reports effective `high`. Pi's supported-level resolver requires an explicit model mapping for `max`/`xhigh` and otherwise clamps to a supported level. Mission dispatch is paused for Owner judgment; do not treat this as approved `max` execution. No live model request has been made, so API availability is still unverified.
 
 ## Visibility and isolation
 
