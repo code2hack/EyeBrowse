@@ -97,9 +97,11 @@ WebView 95 requires real-RG feature qualification: exercise the APIs EyeBrowse a
 
 Synthetic input and emulator runs do not qualify real head motion, peripheral behavior, comfort, or optical readability. Follow EyeBrowse `AGENTS.md` for physical gates and independent acceptance.
 
-### Phone: emulator first; real phone explicitly deferred
+### Phone: emulator and Fold6 authorized for issue #1
 
-Owner direction: use the installed Android emulator during initial development. Do not install on, connect to, or run test/debug workflows against the Owner's phone until the Owner judges the product sufficiently mature and authorizes that phase. Emulator results do not establish Fold6 cover/inner-display or real-phone lifecycle behavior.
+The Owner explicitly authorized validation of issue #1 on both the installed Android emulator and the connected real Fold6. Fresh ADB inventory identifies the authorized phone as `SM_F956N`, serial `R3CX70NHTHK`. Reserve both targets for the assigned validation Worker; use explicit serials in every ADB command and leave RG (`1906092617103125`) untouched for this phone-only mission.
+
+This authorization covers the isolated locked-WebView spike, not unrelated phone apps, data, or production architecture changes. Never request or record the Owner's unlock secret; the Owner operates secure lock/unlock directly. Coordinate unplugged testing and any wireless-debugging setup with the Owner. Preserve existing device/AVD state and restore any temporary test settings. Emulator results remain separate from real Fold6 acceptance.
 
 Before emulator use, verify the intended AVD's configuration and reserve it; do not wipe or repurpose the existing `dealer-api36` AVD without approval. Launch long-running emulator processes visibly through the interactive execution tooling. Record the actual emulator serial and always target it explicitly.
 
@@ -123,9 +125,7 @@ Use fresh accessibility refs after state changes. Validate WebView accessibility
 
 ## Contacting the Owner
 
-The Owner is currently at the computer. **Do not play the alarm until the Owner explicitly enables it again.** Contact the Owner in this conversation instead. This applies to all subagents and all gates, including quota warnings.
-
-Once explicitly re-enabled, whenever Owner attention is required, run:
+The Owner explicitly re-enabled the music alarm when authorizing issue #1 validation. Whenever Owner attention is required, including physical gates and quota warnings, run:
 
 ```bash
 ~/Music/play-super-mario-alarm-hdmi.sh
