@@ -206,7 +206,7 @@ Before dispatching a Worker, the Manager MUST derive the mission from a Planner-
 - required target devices/platforms;
 - acceptance criteria inherited from the approved ticket;
 - required verification/evidence;
-- branch/worktree assignment;
+- assigned branch, exact worktree path, and unique mission-owned temporary directory;
 - resource or retry limits where relevant;
 - reporting and human-contact paths.
 
@@ -287,7 +287,7 @@ Typical gates include:
 - critical quota/resource exhaustion;
 - release or security-sensitive authorization.
 
-No specific communication transport is mandated.
+No specific communication transport is mandated for general human gates. Sudo operations follow the dedicated tmux-pane procedure in Section 9.3.
 
 The Manager uses whatever direct communication path is currently available.
 
@@ -330,24 +330,37 @@ Subordination to the Manager does not prevent direct Owner observation or intera
 
 ---
 
-# 9. Concurrent work and resources
+# 9. Concurrent work, private boundaries, and cleanup
 
-Concurrent writing missions MUST use explicit isolation when necessary.
+## 9.1 Assigned private space
 
-The Manager coordinates:
+The Manager MUST assign each Worker an exact worktree and a unique mission-owned temporary directory.
 
-- branches/worktrees;
-- overlapping source ownership;
-- connected devices;
-- exclusive device state;
-- shared test services;
-- integration environments.
+Workers MAY freely create, modify, and delete mission files and temporary artifacts within those assigned private spaces, subject to approved mission scope and the protected-article rules in Section 3.
 
-A phone, RG, or shared service whose mutable state affects a test SHOULD have one coordinated owner at a time.
+Shared Git metadata, other worktrees, and external resources reached through symlinks or mounts are outside those private boundaries. A path inside an assigned directory does not make its external target privately owned.
 
-Cross-device tests reserve all required resources together.
+## 9.2 Shared resources and operation approval
 
-Exact worktree and resource-lock procedures belong in `DEV.md`.
+Deletions outside assigned private space, destructive shared-resource changes, and operations with uncertain ownership MUST receive Manager approval for the specific operation.
+
+Ordinary mission-approved builds and toolchain-cache activity do not require per-file approval. This permission does not authorize purging shared caches or deleting unrelated files. Ordinary mission-approved Git operations continue under Section 13.
+
+The Manager coordinates concurrent writers, overlapping source changes, connected devices, and shared test services. A device or service whose mutable state affects a test SHOULD have one coordinated owner at a time. Cross-device tests reserve the required resources together.
+
+## 9.3 Sudo escalation
+
+For resource-operation approvals under this section, the Manager handles non-sudo decisions and escalates only commands requiring `sudo` to the Project Owner.
+
+For a `sudo` operation, the Manager MUST open a separate pane in the same tmux window as the Manager, briefly explain the specific command and why it is needed, and present the interactive password prompt for the Project Owner to enter directly in that pane.
+
+This resource-approval rule does not replace the other Project Owner gates defined in Sections 3 and 7.
+
+## 9.4 Evidence and cleanup
+
+Workers MUST preserve the evidence required for review before cleanup. Other mission-owned temporary artifacts may be removed; retaining every temporary artifact is not required.
+
+Exact worktree, temporary-directory, resource-coordination, and sudo-pane procedures belong in `DEV.md`, subject to its Section 3 edit and publication gate.
 
 ---
 
