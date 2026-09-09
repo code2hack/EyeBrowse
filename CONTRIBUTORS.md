@@ -25,6 +25,16 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "model": "gpt-6-astra",
     "name": "EyeBrowse-Manager",
     "status": "active"
+  },
+  {
+    "role": "Worker",
+    "scope": "issue #1; phone/experiment",
+    "host": "u4090",
+    "runtime": "pi",
+    "id": "01a08757-38e0-73f6-a82b-f38580993719",
+    "model": "deepseek-v4.1-flash-expires-on-0910",
+    "name": "LockProbe-Worker",
+    "status": "active"
   }
 ]
 ```
