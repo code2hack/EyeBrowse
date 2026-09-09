@@ -197,7 +197,7 @@ public final class LockProbeService extends Service {
             frameSequence++;
             Image.Plane plane = image.getPlanes()[0];
             ByteBuffer buffer = plane.getBuffer();
-            long hash = sampleHash(buffer, plane.getRowStride(), plane.getPixelStride());
+            long hash = frameHash(buffer, plane.getRowStride(), plane.getPixelStride());
             boolean changed = hash != lastFrameHash;
             lastFrameHash = hash;
 
@@ -227,20 +227,27 @@ public final class LockProbeService extends Service {
         }
     }
 
-    private long sampleHash(ByteBuffer source, int rowStride, int pixelStride) {
+    /**
+     * CRC32 over every valid pixel byte of the frame, excluding row padding.
+     *
+     * <p>An earlier version sampled only every 24th pixel, which stayed constant while the
+     * small on-page counter changed and therefore could not prove frame freshness. A full-frame
+     * hash makes stale/repeated surfaces detectable from telemetry alone.
+     */
+    private long frameHash(ByteBuffer source, int rowStride, int pixelStride) {
         CRC32 crc = new CRC32();
         ByteBuffer buffer = source.duplicate();
-        for (int y = 0; y < HEIGHT; y += 24) {
-            for (int x = 0; x < WIDTH; x += 24) {
-                int index = y * rowStride + x * pixelStride;
-                if (index < 0 || index + Math.min(pixelStride, 4) > buffer.limit()) {
-                    continue;
-                }
-                int bytes = Math.min(pixelStride, 4);
-                for (int b = 0; b < bytes; b++) {
-                    crc.update(buffer.get(index + b) & 0xff);
-                }
+        int rowBytes = WIDTH * pixelStride;
+        int limit = buffer.limit();
+        for (int y = 0; y < HEIGHT; y++) {
+            int rowStart = y * rowStride;
+            if (rowStart < 0 || rowStart + rowBytes > limit) {
+                break;
             }
+            ByteBuffer row = buffer.duplicate();
+            row.position(rowStart);
+            row.limit(rowStart + rowBytes);
+            crc.update(row);
         }
         return crc.getValue();
     }
@@ -283,11 +290,18 @@ public final class LockProbeService extends Service {
     }
 
     private void executeCommand(String command, String value) {
-        if (!started || webView == null) {
-            appendTelemetry("command", "\"command\":" + jsonString(command) + ",\"result\":\"no-webview\"");
+        String normalized = command == null ? "" : command;
+        if ("stop".equals(normalized)) {
+            // ADB cannot stop a non-exported service with `am stopservice`, so the debug
+            // command surface exposes an explicit post-lock stop that releases resources.
+            appendTelemetry("lifecycle", "\"event\":\"stop-requested\"");
+            stopSelf();
             return;
         }
-        String normalized = command == null ? "" : command;
+        if (!started || webView == null) {
+            appendTelemetry("command", "\"command\":" + jsonString(normalized) + ",\"result\":\"no-webview\"");
+            return;
+        }
         appendTelemetry(
                 "command",
                 "\"command\":" + jsonString(normalized) +
