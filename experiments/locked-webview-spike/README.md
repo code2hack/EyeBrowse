@@ -62,7 +62,7 @@ adb exec-out run-as com.code2hack.eyebrowse.lockprobe \
   cat files/lockprobe/latest.png > latest.png
 ```
 
-`telemetry.jsonl` records Android's `interactive` and `deviceLocked` values on every persisted event.
+`telemetry.jsonl` records Android's `interactive`, `deviceLocked`, `batteryPct`, `batteryStatus`, and `plugged` values on every persisted event.
 
 ## Post-lock commands
 
