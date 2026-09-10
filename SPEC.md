@@ -313,8 +313,6 @@ The tab-count control MUST display the number of tabs. Detailed manual tab-manag
 
 The Browser Core MUST nevertheless expose programmatic tab operations sufficient for the agent or future UI to list, switch, create, and close tabs.
 
-The agent-facing API MUST NOT expose arbitrary WebView internals as its normal interface.
-
 The reserved menu slot MAY remain visually reserved while its settings workflow is omitted from MVP.
 
 ## 7.3 Reading presentation
