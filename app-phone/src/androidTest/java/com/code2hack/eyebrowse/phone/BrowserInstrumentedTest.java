@@ -292,10 +292,13 @@ public class BrowserInstrumentedTest {
         assertEquals("automation-text", js("document.getElementById('text-field').value"));
         assertEquals("automation-editable", domText("editable-field"));
 
+        int postsBefore = countPosts(SYNTHETIC_TEST_ID);
+
         realClickElement("submit-button");
         waitUntil("submission page", () -> "Submission recorded".equals(domText("page-title")));
 
-        assertEquals(1, countPosts(SYNTHETIC_TEST_ID));
+        assertEquals("exactly one submission for this test id", postsBefore + 1,
+                countPosts(SYNTHETIC_TEST_ID));
         String fields = lastPost(SYNTHETIC_TEST_ID).getJSONArray("fields").toString();
         assertTrue(fields, fields.contains("test_id"));
         assertTrue(fields, fields.contains("message"));
