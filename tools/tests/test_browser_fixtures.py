@@ -141,6 +141,19 @@ class ConfigurationTests(unittest.TestCase):
                 fx.FixtureConfig(bind="127.0.0.1", http_port=0, https_port=25342,
                                  state_dir=Path(tmp))
 
+    def test_state_and_key_directories_are_private(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "state"
+            config = fx.FixtureConfig(bind="127.0.0.1", http_port=free_port(),
+                                      https_port=free_port(), state_dir=state)
+            server, _, _ = fx.create_servers(config)
+            try:
+                self.assertEqual(0o700, state.stat().st_mode & 0o777)
+                self.assertEqual(0o700, (state / "tls").stat().st_mode & 0o777)
+                self.assertEqual(0o600, (state / "tls" / "fixture-key.pem").stat().st_mode & 0o777)
+            finally:
+                server.server_close()
+
     def test_ready_file_guard_refuses_second_server(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             state = Path(tmp)

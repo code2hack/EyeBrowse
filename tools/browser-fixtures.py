@@ -552,7 +552,11 @@ class FixtureConfig:
 
 def ensure_certificate(cert_dir: Path, bind: str) -> tuple[Path, Path]:
     """Create/reuse a disposable self-signed certificate whose SAN matches the configured bind."""
-    cert_dir.mkdir(parents=True, exist_ok=True)
+    cert_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        cert_dir.chmod(0o700)
+    except OSError:
+        pass
     cert = cert_dir / "fixture-cert.pem"
     key = cert_dir / "fixture-key.pem"
     stamp = cert_dir / "bind-ip"
@@ -577,7 +581,11 @@ def ensure_certificate(cert_dir: Path, bind: str) -> tuple[Path, Path]:
 
 def create_servers(config: FixtureConfig) -> tuple[BoundedThreadingHTTPServer, BoundedThreadingHTTPServer, Observations]:
     """Builds both listeners without starting them (tests use this directly)."""
-    config.state_dir.mkdir(parents=True, exist_ok=True)
+    config.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        config.state_dir.chmod(0o700)
+    except OSError:
+        pass
     observations = Observations(config.state_dir)
     handler = type("ConfiguredFixtureHandler", (FixtureHandler,), {
         "observations": observations,
