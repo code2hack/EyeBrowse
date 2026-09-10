@@ -17,11 +17,11 @@ Approved development procedures and runtime configuration for EyeBrowse. Governa
 | Role/profile | Runtime | Provider | Model | Thinking | Name and lifecycle |
 | --- | --- | --- | --- | --- | --- |
 | v0.0.1 Planner | `pi` | `openai-codex` | `gpt-6-astra` | `max` | Reuse the registered `v0.0.1 Planner` session through v0.0.1 closeout |
-| Worker | `pi` | `deepseek` | `deepseek-v4.1-flash-expires-on-0910` | `max` | `Worker-#<issue>`; ticket mission through verified cleanup |
+| Worker | `pi` | `deepseek` | `deepseek-flash` | `max` | `Worker-#<issue>`; ticket mission through verified cleanup |
 | Worker availability fallback | `pi` | `spark` | `qwen3.8-flash-next` | `max` | Same mission; record the actual model/session change |
 | Reviewer | `pi` | `openai-codex` | `gpt-6-astra` | `max` | `Reviewer-#<issue>`; independent ticket-scoped session, reused for renewed reviews |
 
-Use `--thinking max` for every assigned profile. Refresh current model metadata and verify the effective level at startup; do not silently accept clamping or substitute a lower level. Pi's display label and upstream parameter can differ: current mappings send DeepSeek `reasoning_effort=max` and Spark/Qwen `reasoning.effort=xhigh`.
+Use `--thinking max` for every assigned profile. Refresh current model metadata and verify the effective level at startup; do not silently accept clamping or substitute a lower level. Pi's display label and upstream parameter can differ: current mappings send DeepSeek `reasoning_effort=max` and Spark/Qwen `reasoning.effort=xhigh`. Declare `"input": ["text", "image"]` for `deepseek-flash` in `models.json` to expose its vision capability in Pi.
 
 A replacement session receives a new native ID and a unique name suffix such as `Worker-#42-r2`; retain the prior registry record. Replacement does not reset ticket-level attempt counts. Resolve the persistent Planner through `CONTRIBUTORS.md` and current runtime routing rather than starting another Planner for each ticket.
 
