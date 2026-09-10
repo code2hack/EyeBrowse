@@ -45,6 +45,16 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "model": "gpt-6-astra",
     "name": "LockProbe-Reviewer",
     "status": "active"
+  },
+  {
+    "role": "Planner",
+    "scope": "project-wide",
+    "host": "chatgpt.com",
+    "runtime": "chatgpt",
+    "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70-eyebrowse/c/6aa24adb-d8f0-83ea-9f93-a68dcb21bd01",
+    "model": "gpt-6 Pro",
+    "name": "SPEC Design",
+    "status": "active"
   }
 ]
 ```
