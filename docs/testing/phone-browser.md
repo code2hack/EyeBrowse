@@ -109,9 +109,9 @@ Fixture-specific safety guards apply whenever the server runs:
   proxy, execution or write endpoint); page resolution refuses symlinks, nested/encoded traversal,
   hidden files and repository paths;
 * bounded requests/resources: 2 KiB targets, 16 KiB POST bodies with one valid `Content-Length`
-  (chunked/missing/conflicting lengths refused), 16 form fields, 8 active connections per server
-  group with a bounded 503 refusal, 5-second idle I/O and a 10-second request deadline, and no
-  keep-alive after a response;
+  (chunked/missing/conflicting lengths refused), 16 form fields, 8 active connections shared across
+  both listeners (including TLS handshakes), 5-second idle I/O and an absolute 10-second connection
+  deadline that interrupts partial TLS/header/body reads, and no keep-alive after a response;
 * bounded state and logging: fixed allowlisted load/note keys, 200-entry request history, records
   limited to known synthetic test IDs, field names, note names/outcomes and cookie modes/tokens, and
   log lines limited to route/status (never raw targets or values);
@@ -124,6 +124,34 @@ python3 -m unittest discover -s tools/tests -p 'test_browser_fixtures*.py'
 
 Those tests start isolated loopback listeners on ephemeral ports with temporary state directories;
 actual LAN reachability is a separate check and is not claimed by them.
+
+### 3.2 Per-case trace and fresh-document protocol
+
+`/api/case` version-2 records distinguish `baseline`, `dispatch`, `observation`, and `failure`.
+A baseline is not called dispatched. DOM marker/title/location/readiness come from one evaluation;
+`sampleStartMs`/`sampleEndMs` bound that evaluation. `actionStartMs`/`actionEndMs` and `dispatchStage`
+describe input API calls, not proof of a website effect. `uptimeMs` is client report-construction time;
+server `loadSeq` is sampled at receipt, not atomically with the client DOM snapshot.
+
+Capture is acknowledged explicitly. A false/missing acknowledgement fails the check. Preparation,
+partial/unknown dispatch, observation, assertion and capture failures retain a bounded failure record
+where possible; missing capture is reported separately and cannot replace the original exception.
+No uncertain tap is retried. A changed document is recorded as `changed` and still fails the strict
+continuity assertion; it is not accepted as an `engine-reload` exception.
+
+Reload baselines retain the settled outgoing identity **before** clicking Reload, including the
+first matrix case. The returned readiness snapshot must have a distinct marker, expected title and
+location, and complete DOM readiness. Later loading/title observations cannot bless an older marker.
+`HarnessProtocol` lives in `src/testShared` and is included only in JVM/androidTest sources; its
+regressions cover first-reload/interleaved snapshots, one-shot partial input, acknowledgement failure
+and preservation of the original failure. These host tests are not Android reproductions.
+
+Case IDs/outcomes/stages and numeric fields are bounded. Trace locations are sanitized at the client
+and parsed against the exact configured origin at the fixture: only an allowlisted fixture path or
+`(other)` is stored, with no raw query, fragment, userinfo or arbitrary path identifiers. Actual
+in-memory location-equality assertions remain strict and use the original location, not this redacted
+representation. Native matrix traces have `native-0` through `native-9` IDs; the six page-origin cases
+are distinct. Preserve older trace formats/results with their original meanings.
 
 ## 4. Host verification (V1)
 
@@ -142,14 +170,16 @@ errors, and three debug APKs (`app-phone`, `app-rg`, `app-phone` androidTest) wi
 
 ## 5. Device verification (debug only)
 
-Prerequisites: fixture server running on the host; `adb reverse` for the two reserved ports only
-(`tcp:25341`, `tcp:25342`); the Fold6 connected and authorized. No release builds are used.
+Prerequisites: the mission-owned fixture is running and the explicitly selected Fold6/RG are
+connected and authorized. Loopback mode uses only the two reserved reverse mappings; private-LAN
+mode uses its recorded origins directly without reverse. Follow the current unattended profile and
+resource reservations; no release builds or per-operation Owner prompts are used.
 
 ```bash
 adb -s <phone-serial> reverse tcp:25341 tcp:25341
 adb -s <phone-serial> reverse tcp:25342 tcp:25342
 adb -s <phone-serial> install -r app-phone/build/outputs/apk/debug/app-phone-debug.apk
-adb -s <phone-serial> install -r app-phone/build/outputs/apk/debug/androidTest/app-phone-debug-androidTest.apk
+adb -s <phone-serial> install -r app-phone/build/outputs/apk/androidTest/debug/app-phone-debug-androidTest.apk
 adb -s <phone-serial> shell am instrument -w \
   -e fixtureBaseUrl http://127.0.0.1:25341 \
   -e secureBaseUrl https://127.0.0.1:25342 \
@@ -163,14 +193,14 @@ scrolling, recreation retention (document, field values, load count), simulated 
 recovery without auto-load, untrusted-HTTPS refusal, controlled HTTP failure, unsupported
 destinations, and the harmless POST correlation (one submission, field names only).
 
-Device-observed notes from this slice's first run:
+Input/evidence boundaries:
 
 * Activations use `Instrumentation.sendPointerSync` with `SOURCE_TOUCHSCREEN` touch events. This is
   synthetic instrumented input: it establishes ordinary activation (links, buttons, form submit,
   swipe) in the focused EyeBrowse window, but it is **not** human touch, IME or physical-display
-  evidence. Espresso's view-level injection was not delivered to this WebView on the Fold6, so the
-  suite injects through the system input pipeline instead, with a bounded window-focus wait and at
-  most three attempts; a foreground/focus loss ends the attempt instead of retrying into another app.
+  evidence. Prepare focus and geometry before one DOWN/UP attempt. Any partial/uncertain failure
+  ends that attempt and is recorded; focus reacquisition never licenses replay. Input API return is
+  distinguished from the observed fixture effect.
 * Page reads and fixture setup use `WebView.evaluateJavascript` from the androidTest APK only. The
   pinned `espresso-web:3.6.1` was dropped as a simplification approved by the Planner (clarification
   C1). Its active evaluation path already calls `WebView.evaluateJavascript`, so the earlier note here
@@ -178,39 +208,41 @@ Device-observed notes from this slice's first run:
   was never established, and no product security property is claimed from it.
 * Field values and sentinels written by `setElementValue`/`setElementText` are fixture setup, not
   typing or IME evidence, and `simulateProcessRestartForTest()` is a simulation, not real
-  process-death evidence. Real IME, cover/inner display, actual process loss and RG optical rows
-  remain separate device rows.
+  process-death evidence. Actual automated input/IME, window and process-loss evidence remain
+  separate from setup. Unavailable physical-only observations follow the current unattended profile,
+  not a new Owner wait.
 * `realClickElement` calls `scrollIntoView` as setup before measuring geometry; input-driven
   scrolling is proven by the dedicated swipe test, not by that setup.
-* Unsupported page-origin destinations on the Fold6: `intent:`, `file:`, `mailto:` and `data:` links
-  produce the "Blocked unsupported address" notice with the document unchanged (each case is now
-  tested with its own clean baseline); `content:` links are an engine-level no-op with no app notice
-  and no change to document or location. The fixture's page-owned JavaScript links are labelled as
-  sandbox semantics: the `void(...)` probe changes only its sentinel, and the separate
-  string-completion link (`javascript:document.title='javascript-ran'`) can replace the document
-  with its completion value while keeping the URL - page behaviour, not an address-bar case.
+* Page-origin cases independently distinguish an actual app refusal from an engine no-op; both
+  require the original document/location and usable controls, with no inherited block notice. Do not
+  infer a universal callback/cause from earlier observations. The separate page-owned JavaScript
+  `void(...)` probe may change its sentinel; the labeled string-completion probe may replace its
+  document under normal page-script semantics. Neither permits native-address script execution.
 
 Argument names and bounds: the suite reads `fixtureBaseUrl` and `secureBaseUrl` (revision 1's
-`untrustedHttpsUrl` name is not consumed). Waits are bounded at 20 s per condition, 10 s per
-JavaScript evaluation, 15 s for window focus, up to 3 injection attempts 500 ms apart, and 10 s for
-fixture readiness.
+`untrustedHttpsUrl` is not consumed). Condition polling has a 20 s budget and may finish after the
+last bounded predicate call; each JavaScript evaluation has a 10 s bound, with at most one retry for
+read-only observations. Focus preparation has a 15 s bound, input is single-shot, failure-only DOM
+capture has one 2 s evaluation, and each trace HTTP connect/read has a 5 s timeout. Record actual
+runtime and nested waits rather than claiming a tighter wall-clock guarantee.
 
-Physical rows that automation cannot satisfy and that are exercised with the Owner: unlock and
-fold/unfold on the cover and inner displays, real IME entry/correction/submission (including masked
-password entry), and the RG optical check of the unconnected status screen.
+Run required software checks on the available real devices and use reserved supplemental window
+conditions as specified by the current plan. Unavailable physical-only observations are
+`NOT EXERCISED — unattended profile`, not passes or unchanged Owner blockers. Preserve valid prior
+Owner observations with their actual build/source. Secure-lock/private-authentication and management
+route safety remain real boundaries.
 
 For a private-LAN run, the address-field journey uses `fixtureBaseUrl=http://192.168.0.52:25341` and
-`secureBaseUrl=https://192.168.0.52:25342`, and must not depend on `adb reverse`. Before any Owner
-retry, prove the load through EyeBrowse's own address field: visible form page, fresh load marker,
+`secureBaseUrl=https://192.168.0.52:25342`, and must not depend on `adb reverse`. Before treating the
+fixture as available for an input journey, prove the load through EyeBrowse's own address field:
+visible form page, fresh load marker,
 real page location and a correlated server-side load observation on the pinned installed APK.
 Device-side curl or ping is not a substitute for that proof.
 
-Route history in this run (kept as evidence, not relabelled): two manual Owner OPEN attempts failed
-while the assigned `adb reverse` mappings were absent, and the Wi-Fi ADB endpoint later went stale
-(host ICMP/TCP to the old address dead, stale `adb device` entry, `adb shell` timing out). A bounded
-recovery (disconnect the old endpoint, neighbour/mDNS/tailnet discovery, one ICMP sweep and a 5555
-probe on live hosts) found no current Phone endpoint, so the Phone is not reachable from the host
-until it is awake on Wi-Fi (or attached by USB).
+Resolve current device access according to DEV.md. A failed cached IP, empty service discovery or
+stale ADB listing does not establish LAN absence, sleep, or a product cause. Keep website reachability,
+ADB control availability and actual app loading separate; preserve any failed run and its exact
+route/provenance instead of relabeling it after recovery.
 
 ## 6. Known limitations and open device items
 

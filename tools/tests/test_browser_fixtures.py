@@ -16,7 +16,9 @@ import http.client
 import importlib.util
 import io
 import json
+import select
 import socket
+import ssl
 import sys
 import tempfile
 import threading
@@ -24,6 +26,8 @@ import time
 import unittest
 from contextlib import redirect_stderr
 from pathlib import Path
+from urllib.parse import urlencode
+from unittest.mock import patch
 
 _TOOLS_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_TOOLS_DIR))
@@ -53,33 +57,34 @@ class FixtureServerCase(unittest.TestCase):
 
     idle_timeout = 1.0
     max_connections = 8
+    request_deadline = 10.0
 
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls._tmp = tempfile.TemporaryDirectory(prefix="eyebrowse-fixture-test-")
-        cls.addClassCleanup(cls._tmp.cleanup)
-        cls.state_dir = Path(cls._tmp.name)
-        cls.config = fx.FixtureConfig(
+    def setUp(self) -> None:
+        # Each case owns a fresh budget/state; a previous closing TLS handler cannot consume its slots.
+        self._tmp = tempfile.TemporaryDirectory(prefix="eyebrowse-fixture-test-")
+        self.addCleanup(self._tmp.cleanup)
+        self.state_dir = Path(self._tmp.name)
+        self.config = fx.FixtureConfig(
             bind="127.0.0.1",
             http_port=free_port(),
             https_port=free_port(),
-            state_dir=cls.state_dir,
-            idle_timeout=cls.idle_timeout,
-            max_connections=cls.max_connections,
+            state_dir=self.state_dir,
+            idle_timeout=self.idle_timeout,
+            max_connections=self.max_connections,
+            request_deadline=self.request_deadline,
         )
-        cls.http_server, cls.https_server, cls.observations = fx.create_servers(cls.config)
-        cls.addClassCleanup(cls._stop)
-        threading.Thread(target=cls.http_server.serve_forever, daemon=True).start()
-        threading.Thread(target=cls.https_server.serve_forever, daemon=True).start()
-        cls.http_port = cls.http_server.server_address[1]
-        cls.https_port = cls.https_server.server_address[1]
+        self.http_server, self.https_server, self.observations = fx.create_servers(self.config)
+        self.addCleanup(self._stop)
+        threading.Thread(target=self.http_server.serve_forever, daemon=True).start()
+        threading.Thread(target=self.https_server.serve_forever, daemon=True).start()
+        self.http_port = self.http_server.server_address[1]
+        self.https_port = self.https_server.server_address[1]
 
-    @classmethod
-    def _stop(cls) -> None:
-        cls.http_server.shutdown()
-        cls.https_server.shutdown()
-        cls.http_server.server_close()
-        cls.https_server.server_close()
+    def _stop(self) -> None:
+        self.http_server.shutdown()
+        self.https_server.shutdown()
+        self.http_server.server_close()
+        self.https_server.server_close()
 
     # ------------------------------------------------------------------ helpers
 
@@ -159,6 +164,17 @@ class ConfigurationTests(unittest.TestCase):
                 self.assertEqual(0o600, (state / "tls" / "fixture-key.pem").stat().st_mode & 0o777)
             finally:
                 close_servers(http_server, https_server)
+
+    def test_partial_startup_closes_http_listener(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            port = free_port()
+            config = fx.FixtureConfig(bind="127.0.0.1", http_port=port,
+                                      https_port=free_port(), state_dir=Path(tmp))
+            with patch.object(fx, "ensure_certificate", side_effect=OSError("synthetic TLS setup failure")):
+                with self.assertRaises(OSError):
+                    fx.create_servers(config)
+            with socket.socket() as probe:
+                probe.bind(("127.0.0.1", port))
 
     def test_ready_file_guard_refuses_second_server(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -288,41 +304,94 @@ class ReflectionAndCookieTests(FixtureServerCase):
     def test_case_channel_records_bounded_correlated_evidence(self) -> None:
         base = self.config.http_base
         status, body, _ = self.request(
-            "GET", "/api/case?case=dest-content&phase=start&marker=L7&location="
+            "GET", "/api/case?case=dest-content&phase=baseline&marker=L7&location="
                    + base.replace(":", "%3A").replace("/", "%2F") + "%2Fdestinations.html"
-                   + "&outcome=dispatched&t=4242")
+                   + "&outcome=prepared&t=4242&sampleStart=4200&sampleEnd=4230")
         self.assertEqual(200, status)
         self.assertTrue(json.loads(body)["recorded"])
         entry = self.observations.snapshot()["cases"][-1]
         self.assertEqual("dest-content", entry["case"])
-        self.assertEqual("start", entry["phase"])
+        self.assertEqual("baseline", entry["phase"])
         self.assertEqual("L7", entry["marker"])
-        self.assertEqual("dispatched", entry["outcome"])
+        self.assertEqual("prepared", entry["outcome"])
         self.assertEqual(4242, entry["uptimeMs"])
-        self.assertIn("destinations.html", entry["location"])
+        self.assertEqual(4200, entry["sampleStartMs"])
+        self.assertEqual(4230, entry["sampleEndMs"])
+        self.assertEqual(-1, entry["actionStartMs"])
+        self.assertEqual("not-attempted", entry["dispatchStage"])
+        self.assertEqual(2, entry["traceVersion"])
+        self.assertEqual("/destinations.html", entry["location"])
         self.assertIsInstance(entry["loadSeq"], int)
 
     def test_case_channel_rejects_unknown_values_and_sanitizes(self) -> None:
-        for query in ("case=evil&phase=start&marker=L1&location=x&outcome=dispatched",
-                      "case=dest-content&phase=middle&marker=L1&location=x&outcome=dispatched",
-                      "case=dest-content&phase=start&marker=L1&location=x&outcome=passed"):
+        for query in ("case=evil&phase=baseline&marker=L1&location=x&outcome=prepared&t=1",
+                      "case=dest-content&phase=middle&marker=L1&location=x&outcome=prepared&t=1",
+                      "case=dest-content&phase=baseline&marker=L1&location=x&outcome=passed&t=1",
+                      "case=dest-content&phase=baseline&marker=L1&location=x&outcome=returned&t=1",
+                      "case=dest-content&phase=start&marker=L1&location=x&outcome=dispatched&t=1"):
             status, body, _ = self.request("GET", "/api/case?" + query)
             self.assertEqual(200, status)
             self.assertFalse(json.loads(body)["recorded"], query)
         status, body, _ = self.request(
-            "GET", "/api/case?case=dest-intent&phase=end&marker=NOT-A-MARKER"
-                   "&location=http%3A%2F%2Fevil.example%2Fx&outcome=refused&t=abc")
+            "GET", "/api/case?case=dest-intent&phase=observation&marker=NOT-A-MARKER"
+                   "&location=http%3A%2F%2Fevil.example%2Fx&outcome=refused&t=4242")
         self.assertEqual(200, status)
         self.assertTrue(json.loads(body)["recorded"])
         entry = self.observations.snapshot()["cases"][-1]
         self.assertEqual("(other)", entry["marker"])
         self.assertEqual("(other)", entry["location"])
-        self.assertEqual(-1, entry["uptimeMs"])
+        self.assertEqual(4242, entry["uptimeMs"])
+
+    def test_case_location_parses_exact_origin_and_records_only_fixture_paths(self) -> None:
+        base = self.config.http_base
+        samples = [
+            (base + "/basic.html?SYNTHETIC_QUERY=value#SYNTHETIC_FRAGMENT", "/basic.html"),
+            (self.config.secure_base + "/secure-ok.html", "/secure-ok.html"),
+            (base + "@evil.invalid/basic.html", "(other)"),
+            (base + "0/basic.html", "(other)"),
+            (base.replace("http://", "http://user:SYNTHETIC_PASSWORD@") + "/basic.html", "(other)"),
+            (base + "/SYNTHETIC_IDENTIFIER.html", "(other)"),
+            (base + "/%62asic.html", "(other)"),
+            ("file:///basic.html", "(other)"),
+        ]
+        stream = io.StringIO()
+        with redirect_stderr(stream):
+            for location, expected in samples:
+                with self.subTest(location=location):
+                    query = urlencode({"case": "native-0", "phase": "observation", "marker": "L2",
+                                       "location": location, "outcome": "refused", "t": "12"})
+                    status, body, _ = self.request("GET", "/api/case?" + query)
+                    self.assertEqual(200, status)
+                    self.assertTrue(json.loads(body)["recorded"])
+                    self.assertEqual(expected, self.observations.snapshot()["cases"][-1]["location"])
+        for value in ("SYNTHETIC_QUERY", "SYNTHETIC_FRAGMENT", "SYNTHETIC_PASSWORD", "SYNTHETIC_IDENTIFIER"):
+            self.assertNotIn(value, self.state_text())
+            self.assertNotIn(value, stream.getvalue())
+
+    def test_case_failure_preserves_unknown_dispatch_and_missing_observation(self) -> None:
+        self.assertTrue(self.observations.record_case(
+            "dest-content", "failure", "", "(other)", "dispatch-unknown", "300",
+            "-1", "-1", "200", "250", "up-attempted"))
+        entry = self.observations.snapshot()["cases"][-1]
+        self.assertEqual("dispatch-unknown", entry["outcome"])
+        self.assertEqual("up-attempted", entry["dispatchStage"])
+        self.assertEqual(200, entry["actionStartMs"])
+        self.assertEqual(250, entry["actionEndMs"])
+        self.assertEqual(-1, entry["sampleEndMs"])
+        for bad in ("abc", "-2", str(1 << 63)):
+            self.assertFalse(self.observations.record_case(
+                "dest-content", "baseline", "L1", "(other)", "prepared", bad))
+
+    def test_malformed_request_does_not_log_its_query(self) -> None:
+        stream = io.StringIO()
+        with redirect_stderr(stream):
+            self.raw_request(b"GET /basic.html?SYNTHETIC_PRIVATE_QUERY invalid-version\r\n\r\n")
+        self.assertNotIn("SYNTHETIC_PRIVATE_QUERY", stream.getvalue())
 
     def test_case_channel_is_bounded(self) -> None:
         for index in range(fx.MAX_CASE_REPORTS + 5):
             self.assertTrue(self.observations.record_case(
-                "dest-file", "end", "L1", self.config.http_base + "/x", "no-op", str(index)))
+                "dest-file", "observation", "L1", self.config.http_base + "/x", "no-op", str(index)))
         self.assertEqual(fx.MAX_CASE_REPORTS, len(self.observations.snapshot()["cases"]))
 
     def test_unknown_note_route_reports_not_recorded(self) -> None:
@@ -348,6 +417,14 @@ class RequestBoundTests(FixtureServerCase):
             b"POST /submit HTTP/1.1\r\nHost: x\r\nContent-Length: 3\r\nContent-Length: 4\r\n"
             b"Connection: close\r\n\r\na=b")
         self.assertIn(b"411", raw)
+
+    def test_short_body_is_not_recorded_as_a_submission(self) -> None:
+        before = list(self.observations.snapshot()["requests"])
+        with socket.create_connection(("127.0.0.1", self.http_port), timeout=2) as sock:
+            sock.sendall(b"POST /submit HTTP/1.1\r\nHost: fixture\r\nContent-Length: 100\r\n\r\nx=1")
+            sock.shutdown(socket.SHUT_WR)
+            self.assertIn(b"400", sock.recv(4096))
+        self.assertEqual(before, self.observations.snapshot()["requests"])
 
     def test_oversize_body_is_refused(self) -> None:
         status, _, _ = self.request("POST", "/submit", body=b"a" * (fx.MAX_BODY_BYTES + 1),
@@ -390,6 +467,26 @@ class ConnectionBoundTests(FixtureServerCase):
         finally:
             sock.close()
 
+    def test_tls_handshakes_share_the_connection_budget(self) -> None:
+        held = []
+        try:
+            for _ in range(self.max_connections):
+                incoming, outgoing = ssl.MemoryBIO(), ssl.MemoryBIO()
+                client = ssl.create_default_context().wrap_bio(
+                    incoming, outgoing, server_side=False, server_hostname="127.0.0.1")
+                with self.assertRaises(ssl.SSLWantReadError):
+                    client.do_handshake()
+                sock = socket.create_connection(("127.0.0.1", self.https_port), timeout=2)
+                held.append(sock)
+                sock.sendall(outgoing.read())
+                # A TLS handshake response proves admission. Stop before ClientFinished; no trust bypass.
+                self.assertEqual(b"\x16", sock.recv(4096)[:1])
+            status, _, _ = self.request("GET", "/healthz")
+            self.assertEqual(503, status)
+        finally:
+            for sock in held:
+                sock.close()
+
     def test_tls_stall_does_not_block_http(self) -> None:
         stalled = socket.create_connection(("127.0.0.1", self.https_port), timeout=5)
         try:
@@ -401,6 +498,49 @@ class ConnectionBoundTests(FixtureServerCase):
             self.assertLess(time.monotonic() - start, self.idle_timeout + 2.5)
         finally:
             stalled.close()
+
+
+class AbsoluteDeadlineTests(FixtureServerCase):
+    idle_timeout = 1.0
+    request_deadline = 0.45
+
+    def assert_drip_is_closed(self, prefix: bytes, *, port: int | None = None,
+                              drip: bytes = b"x" * 64) -> None:
+        with socket.create_connection(("127.0.0.1", port or self.http_port), timeout=2) as sock:
+            sock.sendall(prefix)
+            start = time.monotonic()
+            closed = False
+            index = 0
+            while time.monotonic() - start < 1.3:
+                try:
+                    sock.sendall(drip[index:index + 1])
+                    index += 1
+                except OSError:
+                    closed = True
+                    break
+                readable, _, _ = select.select([sock], [], [], 0.08)
+                if readable:
+                    closed = sock.recv(4096) == b""
+                    if closed:
+                        break
+            self.assertTrue(closed, "drip traffic extended the absolute connection deadline")
+            self.assertLess(time.monotonic() - start, 1.3)
+
+    def test_partial_tls_handshake_cannot_extend_deadline(self) -> None:
+        incoming, outgoing = ssl.MemoryBIO(), ssl.MemoryBIO()
+        client = ssl.create_default_context().wrap_bio(
+            incoming, outgoing, server_side=False, server_hostname="127.0.0.1")
+        with self.assertRaises(ssl.SSLWantReadError):
+            client.do_handshake()
+        hello = outgoing.read()
+        self.assert_drip_is_closed(hello[:5], port=self.https_port, drip=hello[5:])
+
+    def test_partial_headers_cannot_extend_deadline(self) -> None:
+        self.assert_drip_is_closed(b"GET /healthz HTTP/1.1\r\nX-Drip: ")
+
+    def test_partial_body_cannot_extend_deadline(self) -> None:
+        self.assert_drip_is_closed(b"POST /submit HTTP/1.1\r\nHost: fixture\r\n"
+                                  b"Content-Length: 1024\r\n\r\n")
 
 
 if __name__ == "__main__":

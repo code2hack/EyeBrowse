@@ -38,7 +38,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, urlsplit
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_PAGES_DIR = REPO_ROOT / "test-fixtures" / "browser"
@@ -74,9 +74,16 @@ KNOWN_NOTE_VALUES = frozenset({"app-refused", "engine-no-op"})
 # Bounded per-activation evidence channel (R2): only these case ids, phases and outcome labels are
 # accepted, and only a marker/location shape is stored - never field contents or passwords.
 KNOWN_CASE_IDS = frozenset({"dest-mailto", "dest-content", "dest-file", "dest-intent", "dest-data",
-                            "content-standalone"})
-KNOWN_CASE_PHASES = frozenset({"start", "end"})
-KNOWN_CASE_OUTCOMES = frozenset({"dispatched", "refused", "no-op", "reloaded", "dispatch-failed"})
+                            "content-standalone", *(f"native-{index}" for index in range(10))})
+CASE_PHASE_OUTCOMES = {
+    "baseline": frozenset({"prepared"}),
+    "dispatch": frozenset({"returned"}),
+    "observation": frozenset({"refused", "no-op", "changed", "unexpected"}),
+    "failure": frozenset({"prepare-failed", "dispatch-unknown", "observation-failed",
+                           "assertion-failed", "capture-failed"}),
+}
+DISPATCH_STAGES = frozenset({"not-attempted", "down-attempted", "up-attempted",
+                            "action-attempted", "returned"})
 MAX_CASE_REPORTS = 400
 CASE_MARKER = re.compile(r"^L\d{1,6}$")
 KNOWN_API_ROUTES = frozenset({
@@ -164,6 +171,33 @@ def bounded_token(value: str, fallback: str = "") -> str:
     return candidate
 
 
+def case_location(location: str, origins: tuple[str, ...]) -> str:
+    """Store only an allowlisted fixture path; never raw URL values or prefix-matched origins."""
+    try:
+        actual = urlsplit(location)
+        if actual.username is not None or actual.password is not None:
+            return "(other)"
+        actual_origin = (actual.scheme, actual.hostname,
+                         actual.port or (443 if actual.scheme == "https" else 80))
+        for origin in origins:
+            expected = urlsplit(origin)
+            expected_origin = (expected.scheme, expected.hostname,
+                               expected.port or (443 if expected.scheme == "https" else 80))
+            if actual_origin == expected_origin and actual.path in PAGE_ROUTES:
+                return actual.path  # query and fragment are deliberately omitted
+    except (TypeError, ValueError):
+        pass
+    return "(other)"
+
+
+def case_time(value: str) -> int | None:
+    try:
+        number = int(value)
+        return number if -1 <= number <= (1 << 63) - 1 else None
+    except (TypeError, ValueError):
+        return None
+
+
 def html_safe(value: str) -> str:
     return html.escape(strip_control(value), quote=True)
 
@@ -243,29 +277,30 @@ class Observations:
             self._persist_locked()
 
     def record_case(self, case_id: str, phase: str, marker: str, location: str,
-                    outcome: str, uptime_ms: str) -> bool:
-        """Records a bounded per-activation observation; never stores page or field contents."""
-        if case_id not in KNOWN_CASE_IDS or phase not in KNOWN_CASE_PHASES \
-                or outcome not in KNOWN_CASE_OUTCOMES:
+                    outcome: str, uptime_ms: str, sample_start: str = "-1",
+                    sample_end: str = "-1", action_start: str = "-1", action_end: str = "-1",
+                    dispatch_stage: str = "not-attempted") -> bool:
+        """Version-2 evidence: sample/API-call intervals differ from report receipt/server state."""
+        if case_id not in KNOWN_CASE_IDS or outcome not in CASE_PHASE_OUTCOMES.get(phase, ()) \
+                or dispatch_stage not in DISPATCH_STAGES:
             return False
-        safe_marker = marker if CASE_MARKER.match(marker) else "(other)"
-        if self.origins and any(location.startswith(origin) for origin in self.origins):
-            safe_location = strip_control(location)[:120]
-        else:
-            safe_location = "(other)"
-        try:
-            safe_time = int(uptime_ms)
-        except (TypeError, ValueError):
-            safe_time = -1
+        times = [case_time(v) for v in (uptime_ms, sample_start, sample_end, action_start, action_end)]
+        if any(v is None for v in times):
+            return False
+        safe_marker = marker if CASE_MARKER.fullmatch(marker) else "(other)"
         with STATE_LOCK:
             self.cases.append({
+                "traceVersion": 2,
                 "case": case_id,
                 "phase": phase,
                 "marker": safe_marker,
-                "location": safe_location,
+                "location": case_location(location, self.origins),
                 "outcome": outcome,
-                "uptimeMs": safe_time,
-                "loadSeq": self.load_seq,
+                "uptimeMs": times[0],  # client report construction, not input dispatch time
+                "sampleStartMs": times[1], "sampleEndMs": times[2],
+                "actionStartMs": times[3], "actionEndMs": times[4],
+                "dispatchStage": dispatch_stage,
+                "loadSeq": self.load_seq,  # server state at receipt, not an atomic client snapshot
                 "at": time.strftime("%H:%M:%S"),
             })
             del self.cases[:-MAX_CASE_REPORTS]
@@ -313,8 +348,6 @@ class FixtureHandler(BaseHTTPRequestHandler):
     https_port: int = DEFAULT_HTTPS_PORT
     http_base: str = advertised_base_url("http", "127.0.0.1", DEFAULT_HTTP_PORT)
     secure_base: str = advertised_base_url("https", "127.0.0.1", DEFAULT_HTTPS_PORT)
-    idle_timeout: float = IDLE_TIMEOUT_S
-    request_deadline: float = REQUEST_DEADLINE_S
 
     # ------------------------------------------------------------------ http verbs
 
@@ -397,8 +430,11 @@ class FixtureHandler(BaseHTTPRequestHandler):
         if length > MAX_BODY_BYTES:
             self._send_bytes(413, b"body too large\n", "text/plain; charset=utf-8")
             return None
-        raw = self.rfile.read(length).decode("utf-8", "replace")
-        fields = parse_qs(raw, keep_blank_values=True)
+        body = self.rfile.read(length)
+        if len(body) != length:
+            self._send_bytes(400, b"incomplete body\n", "text/plain; charset=utf-8")
+            return None
+        fields = parse_qs(body.decode("utf-8", "replace"), keep_blank_values=True)
         if len(fields) > MAX_FORM_FIELDS:
             self._send_bytes(400, b"too many fields\n", "text/plain; charset=utf-8")
             return None
@@ -439,6 +475,11 @@ class FixtureHandler(BaseHTTPRequestHandler):
             (query.get("location") or [""])[0],
             (query.get("outcome") or [""])[0],
             (query.get("t") or [""])[0],
+            (query.get("sampleStart") or ["-1"])[0],
+            (query.get("sampleEnd") or ["-1"])[0],
+            (query.get("actionStart") or ["-1"])[0],
+            (query.get("actionEnd") or ["-1"])[0],
+            (query.get("dispatch") or ["not-attempted"])[0],
         )
         body = json.dumps({"recorded": recorded}).encode()
         self._send_bytes(200, body, "application/json")
@@ -513,17 +554,8 @@ class FixtureHandler(BaseHTTPRequestHandler):
         sys.stderr.write(f'fixture {self.address_string()} "{self.command} {route}" {code}\n')
 
     def log_message(self, fmt: str, *args: object) -> None:
-        sys.stderr.write("fixture " + strip_control(fmt % args)[:200] + "\n")
-
-    def setup(self) -> None:
-        self._accepted_at = time.monotonic()
-        super().setup()
-
-    def handle_one_request(self) -> None:
-        if time.monotonic() - self._accepted_at > self.request_deadline:
-            self.close_connection = True
-            return
-        super().handle_one_request()
+        # BaseHTTPRequestHandler can include a malformed raw request target in this path.
+        sys.stderr.write("fixture protocol event (request details omitted)\n")
 
 
 class BoundedThreadingHTTPServer(ThreadingHTTPServer):
@@ -534,39 +566,63 @@ class BoundedThreadingHTTPServer(ThreadingHTTPServer):
 
     def __init__(self, address: tuple[str, int], handler: type[FixtureHandler], *,
                  slots: threading.BoundedSemaphore, tls_context: ssl.SSLContext | None = None,
-                 secure: bool = False, idle_timeout: float = IDLE_TIMEOUT_S) -> None:
+                 secure: bool = False, idle_timeout: float = IDLE_TIMEOUT_S,
+                 request_deadline: float = REQUEST_DEADLINE_S) -> None:
         self._slots = slots
         self.tls_context = tls_context
         self.secure = secure
         self.idle_timeout = idle_timeout
+        self.request_deadline = request_deadline
         super().__init__(address, handler)
 
     def get_request(self):  # type: ignore[no-untyped-def]
         request, client_address = super().get_request()
         request.settimeout(self.idle_timeout)
-        if self.tls_context is not None:
-            try:
-                request = self.tls_context.wrap_socket(request, server_side=True)
-            except (ssl.SSLError, OSError):
-                request.close()
-                raise
-            request.settimeout(self.idle_timeout)
+        # TLS is performed only after admission, in a bounded handler, never in the accept loop.
         return request, client_address
 
     def process_request(self, request, client_address) -> None:  # type: ignore[no-untyped-def]
         if not self._slots.acquire(blocking=False):
             self._refuse_busy(request)
             return
+        accepted_at = time.monotonic()
         try:
-            super().process_request(request, client_address)
+            threading.Thread(target=self._serve_admitted,
+                             args=(request, client_address, accepted_at), daemon=True).start()
         except Exception:
+            request.close()
             self._slots.release()
             raise
 
-    def process_request_thread(self, request, client_address) -> None:  # type: ignore[no-untyped-def]
+    def _serve_admitted(self, request, client_address, accepted_at: float) -> None:  # type: ignore[no-untyped-def]
+        active_socket = [request]
+
+        def expire() -> None:
+            # shutdown interrupts blocked SSL/header/body reads; traffic cannot extend this deadline.
+            try:
+                active_socket[0].shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            active_socket[0].close()
+
+        remaining = max(0.0, self.request_deadline - (time.monotonic() - accepted_at))
+        timer = threading.Timer(remaining, expire)
+        timer.daemon = True
+        timer.start()
         try:
+            if self.tls_context is not None:
+                request = self.tls_context.wrap_socket(request, server_side=True,
+                                                       do_handshake_on_connect=False)
+                active_socket[0] = request
+                request.settimeout(self.idle_timeout)
+                request.do_handshake()
             super().process_request_thread(request, client_address)
+        except Exception:
+            self.handle_error(request, client_address)
+            self.shutdown_request(request)
         finally:
+            timer.cancel()
+            timer.join(timeout=1.0)
             self._slots.release()
 
     def handle_error(self, request, client_address) -> None:  # type: ignore[no-untyped-def]
@@ -594,7 +650,8 @@ class FixtureConfig:
 
     def __init__(self, *, bind: str, http_port: int, https_port: int, state_dir: Path,
                  pages_dir: Path = DEFAULT_PAGES_DIR, idle_timeout: float = IDLE_TIMEOUT_S,
-                 max_connections: int = MAX_ACTIVE_CONNECTIONS) -> None:
+                 max_connections: int = MAX_ACTIVE_CONNECTIONS,
+                 request_deadline: float = REQUEST_DEADLINE_S) -> None:
         self.bind = validate_bind(bind)
         self.http_port = validate_port(http_port, "--http-port")
         self.https_port = validate_port(https_port, "--https-port")
@@ -604,6 +661,7 @@ class FixtureConfig:
         self.pages_dir = pages_dir
         self.idle_timeout = idle_timeout
         self.max_connections = max_connections
+        self.request_deadline = request_deadline
         self.http_base = advertised_base_url("http", self.bind, self.http_port)
         self.secure_base = advertised_base_url("https", self.bind, self.https_port)
 
@@ -611,10 +669,7 @@ class FixtureConfig:
 def ensure_certificate(cert_dir: Path, bind: str) -> tuple[Path, Path]:
     """Create/reuse a disposable self-signed certificate whose SAN matches the configured bind."""
     cert_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    try:
-        cert_dir.chmod(0o700)
-    except OSError:
-        pass
+    cert_dir.chmod(0o700)
     cert = cert_dir / "fixture-cert.pem"
     key = cert_dir / "fixture-key.pem"
     stamp = cert_dir / "bind-ip"
@@ -640,10 +695,7 @@ def ensure_certificate(cert_dir: Path, bind: str) -> tuple[Path, Path]:
 def create_servers(config: FixtureConfig) -> tuple[BoundedThreadingHTTPServer, BoundedThreadingHTTPServer, Observations]:
     """Builds both listeners without starting them (tests use this directly)."""
     config.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    try:
-        config.state_dir.chmod(0o700)
-    except OSError:
-        pass
+    config.state_dir.chmod(0o700)
     observations = Observations(config.state_dir)
     observations.origins = (config.http_base, config.secure_base)
     handler = type("ConfiguredFixtureHandler", (FixtureHandler,), {
@@ -653,19 +705,24 @@ def create_servers(config: FixtureConfig) -> tuple[BoundedThreadingHTTPServer, B
         "https_port": config.https_port,
         "http_base": config.http_base,
         "secure_base": config.secure_base,
-        "idle_timeout": config.idle_timeout,
     })
     slots = threading.BoundedSemaphore(config.max_connections)
 
     http_server = BoundedThreadingHTTPServer((config.bind, config.http_port), handler,
                                              slots=slots, secure=False,
-                                             idle_timeout=config.idle_timeout)
-    cert, key = ensure_certificate(config.state_dir / "tls", config.bind)
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    context.load_cert_chain(certfile=cert, keyfile=key)
-    https_server = BoundedThreadingHTTPServer((config.bind, config.https_port), handler,
-                                              slots=slots, tls_context=context, secure=True,
-                                              idle_timeout=config.idle_timeout)
+                                             idle_timeout=config.idle_timeout,
+                                             request_deadline=config.request_deadline)
+    try:
+        cert, key = ensure_certificate(config.state_dir / "tls", config.bind)
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certfile=cert, keyfile=key)
+        https_server = BoundedThreadingHTTPServer((config.bind, config.https_port), handler,
+                                                slots=slots, tls_context=context, secure=True,
+                                                idle_timeout=config.idle_timeout,
+                                                request_deadline=config.request_deadline)
+    except Exception:
+        http_server.server_close()
+        raise
     return http_server, https_server, observations
 
 

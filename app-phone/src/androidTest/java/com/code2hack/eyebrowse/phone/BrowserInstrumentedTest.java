@@ -74,8 +74,8 @@ import java.util.function.BooleanSupplier;
  * sentinels are set through page JavaScript as fixture setup, not typing; and
  * {@code simulateProcessRestartForTest()} is a simulation, not real process-death evidence. Bounded
  * waits: 20&nbsp;s for a condition, 10&nbsp;s for one JavaScript evaluation, 15&nbsp;s for window
- * focus, up to 3 injection attempts 500&nbsp;ms apart, and 10&nbsp;s for fixture readiness. Real IME,
- * cover/inner display, actual process-loss and RG optical rows belong to the device procedure.
+ * focus, exactly one pointer-dispatch attempt, and 10&nbsp;s for fixture readiness. Input and
+ * physical-coverage claims follow the current R2 unattended evidence profile.
  */
 @RunWith(AndroidJUnit4.class)
 public class BrowserInstrumentedTest {
@@ -147,9 +147,8 @@ public class BrowserInstrumentedTest {
     @Test
     public void nativeAddressBarRefusesUnsupportedAndInvalidInputWithoutSideEffects() throws Exception {
         String valid = fixtureUrl("/basic.html");
-        openAddress(valid);
-        waitForMarker();
-        String previousMarker = null;
+        openFreshFixture("/basic.html", "Basic page");
+        int caseIndex = 0;
 
         String[][] cases = {
                 {"javascript:alert(1)", "Only http:// and https:// addresses are supported"},
@@ -170,34 +169,41 @@ public class BrowserInstrumentedTest {
             String input = testCase[0];
             String expectedFeedback = testCase[1];
 
-            // Clean baseline: reload and wait for the settled, CHANGED document so a pending load can
-            // never be mistaken for a change caused by the address submission below.
-            onView(withId(R.id.button_reload)).perform(click());
-            previousMarker = waitForFreshBaseline("Basic page", previousMarker);
+            // Capture the outgoing document BEFORE requesting the reload, including the first case.
+            HarnessProtocol.Snapshot baseline = reloadFreshFixture("/basic.html", "Basic page");
             waitUntil("baseline status for " + input, () -> !statusText().contains("http://")
                     && !statusText().contains("cannot contain"));
             js("window.__eyeProbe='kept'");
-            String marker = previousMarker;
-            String location = jsRead("String(document.location.href)");
             int loads = loadCount("/basic.html");
+            CaseTrace trace = new CaseTrace("native-" + caseIndex++, valid);
+            try {
+                trace.capture("baseline", "prepared", baseline);
+                trace.step = "dispatch";
+                trace.dispatch.actionOnce(() -> submitAddress(input), SystemClock::uptimeMillis);
+                trace.capture("dispatch", "returned", baseline);
+                trace.step = "observation";
+                HarnessProtocol.Snapshot after = readFixtureSnapshot();
+                trace.capture("observation", !baseline.marker.equals(after.marker) ? "changed"
+                        : (expectedFeedback.equals(statusText()) ? "refused" : "unexpected"), after);
+                trace.step = "assertion";
 
-            submitAddress(input);
-
-            assertEquals("draft preserved for " + input, input, addressFieldText());
-            assertEquals("feedback for " + input, expectedFeedback, statusText());
-            assertEquals("document preserved for " + input, marker, domText("load-marker"));
-            assertEquals("location preserved for " + input, location,
-                    jsRead("String(document.location.href)"));
-            assertEquals("no page load for " + input, loads, loadCount("/basic.html"));
-            assertEquals("page script state preserved for " + input, "kept",
-                    jsRead("String(window.__eyeProbe)"));
-            assertEquals("single engine for " + input, 1, attachedWebViews());
+                assertEquals("draft preserved for " + input, input, addressFieldText());
+                assertEquals("feedback for " + input, expectedFeedback, statusText());
+                assertEquals("document preserved for " + input, baseline.marker, after.marker);
+                assertEquals("location preserved for " + input, baseline.location, after.location);
+                assertEquals("no page load for " + input, loads, loadCount("/basic.html"));
+                assertEquals("page script state preserved for " + input, "kept",
+                        jsRead("String(window.__eyeProbe)"));
+                assertEquals("single engine for " + input, 1, attachedWebViews());
+            } catch (Exception | AssertionError failure) {
+                trace.failure(failure);
+                throw failure;
+            }
         }
 
         // A valid address still works after the refusals.
         int loadsBeforeCorrection = loadCount("/basic.html");
-        submitAddress(valid);
-        waitUntil("correction loads", () -> "Basic page".equals(domText("page-title")));
+        openFreshFixture("/basic.html", "Basic page");
         assertEquals(loadsBeforeCorrection + 1, loadCount("/basic.html"));
     }
 
@@ -328,44 +334,9 @@ public class BrowserInstrumentedTest {
     @Test
     public void pageOriginDestinationsNeverLeaveTheSession() throws Exception {
         int freshRefusals = 0;
-        String previousMarker = null;
         for (String element : new String[] {"dest-mailto", "dest-content", "dest-file", "dest-intent",
                 "dest-data"}) {
-            openAddress(fixtureUrl("/destinations.html"));
-            // A grouped case must baseline the NEW document: wait until the load has settled and the
-            // marker differs from the previously recorded one, otherwise a stale read of the outgoing
-            // document looks like a reload during the activation.
-            previousMarker = waitForFreshBaseline("Unsupported destinations", previousMarker);
-            String baselineStatus = statusText();
-            assertEquals("clean baseline before " + element, "Unsupported destinations", baselineStatus);
-            String markerBefore = previousMarker;
-            String locationBefore = jsRead("String(document.location.href)");
-            reportCase(element, "start", markerBefore, locationBefore, "dispatched");
-
-            realClickElement(element);
-            waitUntil("activation of " + element, () -> element.equals(domText("last-activated")));
-            SystemClock.sleep(600);
-
-            String statusAfter = statusText();
-            String markerAfter = domText("load-marker");
-            String locationAfter = jsRead("String(document.location.href)");
-            boolean refused = "Blocked unsupported address. Only http:// and https:// load here."
-                    .equals(statusAfter);
-            // Capture before asserting so a recurrence keeps its own current evidence.
-            reportCase(element, "end", markerAfter, locationAfter,
-                    markerBefore.equals(markerAfter) ? (refused ? "refused" : "no-op") : "reloaded");
-
-            assertTrue("unexpected status for " + element + ": " + statusAfter,
-                    refused || baselineStatus.equals(statusAfter));
-            if (refused) {
-                freshRefusals++;
-            }
-            // Faithful C1 continuity: an unsupported page-origin destination must leave the original
-            // document intact. A re-fetched same URL is not continuity and is not accepted.
-            assertEquals("document marker preserved for " + element, markerBefore, markerAfter);
-            assertEquals("location preserved for " + element, locationBefore, locationAfter);
-            assertEquals("single engine for " + element, 1, attachedWebViews());
-            onView(withId(R.id.button_reload)).check(matches(isEnabled()));
+            if (checkPageOriginCase(element, element, false)) freshRefusals++;
         }
         assertTrue("at least one page-origin destination must reach the app as a refusal",
                 freshRefusals > 0);
@@ -373,28 +344,42 @@ public class BrowserInstrumentedTest {
 
     @Test
     public void contentDestinationIsAnEngineNoOpWithoutAFabricatedNotice() throws Exception {
-        String caseId = "content-standalone";
-        openAddress(fixtureUrl("/destinations.html"));
-        String markerBefore = waitForFreshBaseline("Unsupported destinations", null);
-        String baselineStatus = statusText();
-        String locationBefore = jsRead("String(document.location.href)");
-        reportCase(caseId, "start", markerBefore, locationBefore, "dispatched");
+        checkPageOriginCase("content-standalone", "dest-content", true);
+    }
 
-        realClickElement("dest-content");
-        waitUntil("content activation", () -> "dest-content".equals(domText("last-activated")));
-        SystemClock.sleep(600);
-
-        String statusAfter = statusText();
-        String markerAfter = domText("load-marker");
-        String locationAfter = jsRead("String(document.location.href)");
-        reportCase(caseId, "end", markerAfter, locationAfter,
-                markerBefore.equals(markerAfter) ? "no-op" : "reloaded");
-
-        assertEquals("a no-op must not fabricate an app notice", baselineStatus, statusAfter);
-        assertEquals("document marker preserved for content", markerBefore, markerAfter);
-        assertEquals(locationBefore, locationAfter);
-        assertEquals(1, attachedWebViews());
-        onView(withId(R.id.button_reload)).check(matches(isEnabled()));
+    private boolean checkPageOriginCase(String caseId, String element, boolean requireNoOp)
+            throws Exception {
+        HarnessProtocol.Snapshot baseline = openFreshFixture("/destinations.html", "Unsupported destinations");
+        CaseTrace trace = new CaseTrace(caseId, fixtureUrl("/destinations.html"));
+        try {
+            trace.capture("baseline", "prepared", baseline);
+            String baselineStatus = statusText();
+            assertEquals("clean baseline before " + element, "Unsupported destinations", baselineStatus);
+            trace.step = "preparation";
+            realClickElement(element, trace.dispatch, baseline);
+            trace.capture("dispatch", "returned", baseline);
+            trace.step = "observation";
+            waitUntil("activation of " + element, () -> element.equals(domText("last-activated")));
+            SystemClock.sleep(600);
+            HarnessProtocol.Snapshot after = readFixtureSnapshot();
+            String statusAfter = statusText();
+            boolean refused = "Blocked unsupported address. Only http:// and https:// load here."
+                    .equals(statusAfter);
+            trace.capture("observation", !baseline.marker.equals(after.marker) ? "changed"
+                    : (refused ? "refused" : (baselineStatus.equals(statusAfter) ? "no-op" : "unexpected")), after);
+            trace.step = "assertion";
+            assertTrue("unexpected status for " + element,
+                    refused || baselineStatus.equals(statusAfter));
+            if (requireNoOp) assertEquals("a no-op must not fabricate an app notice", baselineStatus, statusAfter);
+            assertEquals("document marker preserved for " + element, baseline.marker, after.marker);
+            assertEquals("location preserved for " + element, baseline.location, after.location);
+            assertEquals("single engine for " + element, 1, attachedWebViews());
+            onView(withId(R.id.button_reload)).check(matches(isEnabled()));
+            return refused;
+        } catch (Exception | AssertionError failure) {
+            trace.failure(failure);
+            throw failure;
+        }
     }
 
     @Test
@@ -543,16 +528,9 @@ public class BrowserInstrumentedTest {
     // ---------------------------------------------------- page interaction
 
     /**
-     * Evaluates JavaScript through the platform API. This never navigates, so the app's refusal of
-     * {@code javascript:} destinations stays exactly as a user would experience it.
-     */
-    /**
-     * Read-only page observation with one bounded retry: the platform callback for
-     * {@code evaluateJavascript} can occasionally be dropped while a navigation settles (observed on
-     * the LAN origin). Only single-shot mutations (setters, scroll-and-measure) may use {@link #js},
-     * so a retry can never replay a mutation, click or submission. Callers compare every read against
-     * a previously captured marker/location, so a value from a different document fails the
-     * assertion instead of silently passing.
+     * Read-only observation with one bounded retry after an evaluation error/timeout. Earlier runs
+     * recorded callback timeouts; their cause was not established. Mutations use single-shot js(),
+     * and fixture identity snapshots are evaluated coherently rather than assembled from these reads.
      */
     private String jsRead(String expression) {
         IllegalStateException last = null;
@@ -578,6 +556,10 @@ public class BrowserInstrumentedTest {
     }
 
     private String jsOnce(String expression) {
+        return jsOnce(expression, 10_000);
+    }
+
+    private String jsOnce(String expression, long timeoutMs) {
         WebView view = attachedWebView();
         if (view == null) {
             throw new IllegalStateException("no WebView is attached");
@@ -590,12 +572,12 @@ public class BrowserInstrumentedTest {
                     latch.countDown();
                 }));
         try {
-            if (!latch.await(10, TimeUnit.SECONDS)) {
-                throw new IllegalStateException("JavaScript evaluation timed out: " + expression);
+            if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+                throw new IllegalStateException("JavaScript evaluation timed out");
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("interrupted while evaluating: " + expression, e);
+            throw new IllegalStateException("interrupted while evaluating JavaScript", e);
         }
         return decodeJsValue(raw.get());
     }
@@ -691,15 +673,36 @@ public class BrowserInstrumentedTest {
      * scrolling - and the geometry is measured after it, before this single tap attempt.
      */
     private void realClickElement(String elementId) throws Exception {
-        String rectJson = js("(function(){var el=document.getElementById('" + elementId + "');"
+        realClickElement(elementId, new HarnessProtocol.Dispatch(), null);
+    }
+
+    private void realClickElement(String elementId, HarnessProtocol.Dispatch dispatch,
+                                  HarnessProtocol.Snapshot expectedDocument) throws Exception {
+        awaitWindowFocus();
+        String identityGuard = expectedDocument == null ? "" :
+                "if(document.getElementById('load-marker')?.textContent!=="
+                        + JSONObject.quote(expectedDocument.marker)
+                        + "||String(document.location.href)!==" + JSONObject.quote(expectedDocument.location)
+                        + "){return JSON.stringify({marker:document.getElementById('load-marker')?.textContent,"
+                        + "location:String(document.location.href)});}";
+        String rectJson = js("(function(){" + identityGuard
+                + "var el=document.getElementById('" + elementId + "');"
                 + "if(!el){return null;}el.scrollIntoView({block:'center'});"
                 + "var r=el.getBoundingClientRect();"
                 + "return JSON.stringify({x:(r.left+r.width/2),y:(r.top+r.height/2),"
-                + "w:window.innerWidth,h:window.innerHeight});})()");
+                + "w:window.innerWidth,h:window.innerHeight,"
+                + "marker:document.getElementById('load-marker')?.textContent,"
+                + "location:String(document.location.href)});})()");
         if (rectJson == null) {
             fail("fixture element not found: " + elementId);
         }
         JSONObject rect = new JSONObject(rectJson);
+        if (expectedDocument != null) {
+            assertEquals("document changed during touch preparation", expectedDocument.marker,
+                    rect.optString("marker", null));
+            assertEquals("location changed during touch preparation", expectedDocument.location,
+                    rect.getString("location"));
+        }
         double cssWidth = rect.getDouble("w");
         double cssHeight = rect.getDouble("h");
         if (cssWidth <= 0 || cssHeight <= 0) {
@@ -708,6 +711,7 @@ public class BrowserInstrumentedTest {
         float[] viewSize = new float[2];
         int[] location = new int[2];
         scenario.onActivity(activity -> {
+            assertTrue("EyeBrowse lost focus before pointer dispatch", activity.hasWindowFocus());
             WebView view = activity.findViewById(R.id.browser_web_view);
             viewSize[0] = view.getWidth();
             viewSize[1] = view.getHeight();
@@ -720,33 +724,21 @@ public class BrowserInstrumentedTest {
             fail("computed touch point for " + elementId + " is outside the WebView: "
                     + x + "," + y + " of " + viewSize[0] + "x" + viewSize[1]);
         }
-        // Real input events through the system input pipeline: Espresso's view-level injection is
-        // not delivered to this WebView, while sendPointerSync is a genuine user gesture. Injection
-        // only works while this app owns the focused window.
-        for (int attempt = 1; attempt <= 3; attempt++) {
-            awaitWindowFocus();
-            try {
-                sendTap(location[0] + x, location[1] + y);
-                return;
-            } catch (RuntimeException e) {
-                if (attempt == 3) {
-                    fail("could not inject a touch event at " + (location[0] + x) + ","
-                            + (location[1] + y) + ": " + e);
-                }
-                SystemClock.sleep(500);
-            }
-        }
+        // One attempt only. A failed DOWN or UP is uncertain delivery, never automatic retry.
+        sendTap(location[0] + x, location[1] + y, dispatch);
     }
 
-    private void sendTap(float screenX, float screenY) {
+    private void sendTap(float screenX, float screenY, HarnessProtocol.Dispatch dispatch) {
         long now = SystemClock.uptimeMillis();
         MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, screenX, screenY, 0);
         MotionEvent up = MotionEvent.obtain(now, now + 60, MotionEvent.ACTION_UP, screenX, screenY, 0);
         down.setSource(InputDevice.SOURCE_TOUCHSCREEN);
         up.setSource(InputDevice.SOURCE_TOUCHSCREEN);
         try {
-            InstrumentationRegistry.getInstrumentation().sendPointerSync(down);
-            InstrumentationRegistry.getInstrumentation().sendPointerSync(up);
+            dispatch.tapOnce(
+                    () -> InstrumentationRegistry.getInstrumentation().sendPointerSync(down),
+                    () -> InstrumentationRegistry.getInstrumentation().sendPointerSync(up),
+                    SystemClock::uptimeMillis);
         } finally {
             down.recycle();
             up.recycle();
@@ -814,37 +806,121 @@ public class BrowserInstrumentedTest {
         return null;
     }
 
-    /**
-     * Waits for a settled document that is demonstrably NEW (its marker differs from the previous
-     * one) and returns that marker. Grouped and matrix cases must never baseline the outgoing
-     * document, otherwise a pending load looks like a change caused by the activation under test.
-     */
-    private String waitForFreshBaseline(String expectedTitle, String previousMarker) {
-        AtomicReference<String> marker = new AtomicReference<>();
-        waitUntil("fresh baseline (", () -> {
-            String value = domText("load-marker");
-            boolean fresh = value != null && value.matches("L\\d+")
-                    && (previousMarker == null || !previousMarker.equals(value));
-            if (fresh && !sessionLoading() && expectedTitle.equals(domText("page-title"))) {
-                marker.set(value);
+    private static final String FIXTURE_SNAPSHOT = "(function(){"
+            + "var m=document.getElementById('load-marker'),t=document.getElementById('page-title');"
+            + "return JSON.stringify({marker:m?m.textContent:null,title:t?t.textContent:null,"
+            + "location:String(document.location.href),readyState:document.readyState});})()";
+
+    private HarnessProtocol.Snapshot readFixtureSnapshot() {
+        long start = SystemClock.uptimeMillis();
+        return decodeSnapshot(jsRead(FIXTURE_SNAPSHOT), start, SystemClock.uptimeMillis());
+    }
+
+    private HarnessProtocol.Snapshot readFixtureSnapshotOnce(long timeoutMs) {
+        long start = SystemClock.uptimeMillis();
+        return decodeSnapshot(jsOnce(FIXTURE_SNAPSHOT, timeoutMs), start, SystemClock.uptimeMillis());
+    }
+
+    private HarnessProtocol.Snapshot decodeSnapshot(String json, long start, long end) {
+        try {
+            JSONObject value = new JSONObject(json);
+            return new HarnessProtocol.Snapshot(value.optString("marker", null),
+                    value.optString("title", null), value.getString("location"),
+                    value.getString("readyState"), start, end);
+        } catch (JSONException | NullPointerException invalid) {
+            throw new IllegalStateException("fixture snapshot was not valid JSON", invalid);
+        }
+    }
+
+    private HarnessProtocol.Snapshot openFreshFixture(String path, String title) {
+        HarnessProtocol.Snapshot before = attachedWebView() == null ? null : readFixtureSnapshot();
+        HarnessProtocol.Baseline gate = HarnessProtocol.Baseline.opening(before, title, fixtureUrl(path));
+        openAddress(fixtureUrl(path));
+        return awaitFreshFixture(gate);
+    }
+
+    private HarnessProtocol.Snapshot reloadFreshFixture(String path, String title) {
+        // This capture must precede the Reload action; a reload never receives a null outgoing ID.
+        HarnessProtocol.Baseline gate = HarnessProtocol.Baseline.reloading(
+                readFixtureSnapshot(), title, fixtureUrl(path));
+        onView(withId(R.id.button_reload)).perform(click());
+        return awaitFreshFixture(gate);
+    }
+
+    private HarnessProtocol.Snapshot awaitFreshFixture(HarnessProtocol.Baseline gate) {
+        AtomicReference<HarnessProtocol.Snapshot> accepted = new AtomicReference<>();
+        waitUntil("new complete fixture document", () -> {
+            HarnessProtocol.Snapshot sample = readFixtureSnapshot();
+            if (gate.accepts(sample)) {
+                accepted.set(sample);
                 return true;
             }
             return false;
         });
-        return marker.get();
+        return accepted.get();
     }
 
-    private void reportCase(String caseId, String phase, String marker, String location,
-                            String outcome) {
-        // Immediate per-activation evidence: case id, monotonic timing, dispatch outcome and the
-        // observed marker/location. Field contents and passwords are never included. A capture
-        // failure must not mask the behaviour under test, so the assertions still run afterwards.
-        try {
-            fetch(FIXTURE_BASE + "/api/case?case=" + enc(caseId) + "&phase=" + enc(phase)
-                    + "&marker=" + enc(marker) + "&location=" + enc(location)
-                    + "&outcome=" + enc(outcome) + "&t=" + SystemClock.uptimeMillis());
-        } catch (Exception e) {
-            System.out.println("case-capture failed for " + caseId + "/" + phase + ": " + e);
+    /** Version-2 trace: coherent DOM sample intervals and API attempt intervals are distinct. */
+    private final class CaseTrace {
+        final String caseId;
+        final String expectedLocation;
+        final HarnessProtocol.Dispatch dispatch = new HarnessProtocol.Dispatch();
+        String step = "preparation";
+
+        CaseTrace(String caseId, String expectedLocation) {
+            this.caseId = caseId;
+            this.expectedLocation = expectedLocation;
+        }
+
+        void capture(String phase, String outcome, HarnessProtocol.Snapshot snapshot) throws Exception {
+            String previousStep = step;
+            step = "capture";
+            reportCase(phase, outcome, snapshot);
+            step = previousStep;
+        }
+
+        void failure(Throwable original) {
+            String outcome;
+            if (!"not-attempted".equals(dispatch.stage) && !"returned".equals(dispatch.stage)) {
+                outcome = "dispatch-unknown";
+            } else if ("capture".equals(step)) {
+                outcome = "capture-failed";
+            } else if ("assertion".equals(step)) {
+                outcome = "assertion-failed";
+            } else if ("observation".equals(step)) {
+                outcome = "observation-failed";
+            } else {
+                outcome = "prepare-failed";
+            }
+            int suppressedBefore = original.getSuppressed().length;
+            HarnessProtocol.preserveFailure(original, () -> {
+                HarnessProtocol.Snapshot snapshot = null;
+                try {
+                    snapshot = readFixtureSnapshotOnce(2000);
+                } catch (RuntimeException | AssertionError missingObservation) {
+                    original.addSuppressed(missingObservation);
+                    System.out.println("CASE_OBSERVATION_MISSING " + caseId);
+                }
+                reportCase("failure", outcome, snapshot);
+            });
+            if (original.getSuppressed().length > suppressedBefore) {
+                System.out.println("CASE_EVIDENCE_INCOMPLETE " + caseId);
+            }
+        }
+
+        private void reportCase(String phase, String outcome, HarnessProtocol.Snapshot snapshot)
+                throws Exception {
+            String location = snapshot == null ? "(other)"
+                    : HarnessProtocol.traceLocation(snapshot.location, expectedLocation);
+            String response = fetch(FIXTURE_BASE + "/api/case?case=" + enc(caseId)
+                    + "&phase=" + enc(phase) + "&marker=" + enc(snapshot == null ? "" : snapshot.marker)
+                    + "&location=" + enc(location) + "&outcome=" + enc(outcome)
+                    + "&t=" + SystemClock.uptimeMillis()
+                    + "&sampleStart=" + (snapshot == null ? -1 : snapshot.sampleStartMs)
+                    + "&sampleEnd=" + (snapshot == null ? -1 : snapshot.sampleEndMs)
+                    + "&actionStart=" + dispatch.startMs + "&actionEnd=" + dispatch.endMs
+                    + "&dispatch=" + enc(dispatch.stage));
+            HarnessProtocol.requireRecorded(new JSONObject(response).optBoolean("recorded", false));
         }
     }
 
