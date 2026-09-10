@@ -77,17 +77,19 @@ The Project Owner approved the following decisions on 2026-09-10, including the 
 - The Phone–RG link MUST NOT depend on a cloud relay, public Internet rendezvous service, or built-in Tailscale. Website Internet access remains separate from this local link.
 - EyeBrowse does not supply its own VPN. Integration validation must exercise the intended Phone-hotspot topology with the Phone's configured global VPN enabled, checking both website access and the local Phone–RG link. A shared-router test alone does not establish the primary hotspot case.
 
-#### QR pairing direction
+#### QR pairing direction and permanent network-setup boundary
 
 - Quick pairing MUST use a QR code displayed by EyeBrowse Phone and scanned by EyeBrowse RG using the glasses camera.
 - The scan pairs the RG client with the Phone browser host; the normal pairing journey MUST NOT require manually typing the Phone's IP address or port.
 - QR scanning/decoding on actual RG hardware is part of the integrated pairing validation, not something issue #1 already proved.
-- QR application pairing and joining the Wi-Fi/hotspot are separate behaviors. Whether the same QR should also provision hotspot credentials or initiate Wi-Fi joining remains an explicit open product decision. The scan-direction approval does not silently approve either automatic network joining or a manual-joining requirement.
+- Network setup is user-managed and permanently outside EyeBrowse's scope. EyeBrowse MUST NOT enable/configure a hotspot, provision Wi-Fi/hotspot credentials through its pairing QR, or join/switch Wi-Fi networks for pairing. This is a project boundary, not a feature deferred to a later version.
+- QR scanning and decoding MUST NOT be gated on a same-network precheck, SSID comparison, or subnet comparison. A scan supplies app-pairing information; the app then attempts to reach the Phone host over the available local connection.
+- When the Phone cannot be reached, show a simple prompt asking the user to connect both devices to the same local network, including connecting RG to the Phone's already configured hotspot, and retry. Do not turn that prompt into an automatic network-joining workflow or claim a specific network-failure cause that has not been established.
 - QR payload, authentication/channel protection, expiry/reuse, trusted-device retention, unpairing, and reconnection details remain to be specified. No protocol, credential format, or automatic trust-by-LAN-presence policy is selected by this decision.
 
 #### Remaining scope boundaries
 
-The four approved choices settle shared-page handoff, a single tab, RG-independent text entry, and local-only transport without CXR. They do not automatically approve every other recommendation in the preceding discussion. In particular, the precise basic navigation controls, full RG Normal/Reading contract, custom ASR deferral, automatic hotspot joining, connection recovery, and detailed acceptance criteria remain to be reconciled explicitly. No new implementation ticket or device test is dispatched by this documentation update.
+The four approved choices settle shared-page handoff, a single tab, RG-independent text entry, and local-only transport without CXR. They do not automatically approve every other recommendation in the preceding discussion. In particular, the precise basic navigation controls, full RG Normal/Reading contract, custom ASR deferral, connection recovery, and detailed acceptance criteria remain to be reconciled explicitly. Network setup and automatic hotspot/Wi-Fi joining are permanently outside EyeBrowse, not unresolved decisions or future features. No new implementation ticket or device test is dispatched by this documentation update.
 
 ---
 
@@ -310,6 +312,8 @@ The `+` control MUST create a new empty tab.
 The tab-count control MUST display the number of tabs. Detailed manual tab-management UI is not required in MVP.
 
 The Browser Core MUST nevertheless expose programmatic tab operations sufficient for the agent or future UI to list, switch, create, and close tabs.
+
+The agent-facing API MUST NOT expose arbitrary WebView internals as its normal interface.
 
 The reserved menu slot MAY remain visually reserved while its settings workflow is omitted from MVP.
 
