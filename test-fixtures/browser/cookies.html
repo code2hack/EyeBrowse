@@ -25,15 +25,19 @@
   });
   document.getElementById('show-cookies').addEventListener('click', showCookies);
   document.getElementById('clear-cookies').addEventListener('click', function () {
-    document.cookie.split(';').forEach(function (part) {
-      var name = part.split('=')[0].trim();
-      if (name) { document.cookie = name + '=; Max-Age=0; Path=/'; }
+    // Only the two named fixture cookies are cleared; unrelated same-host cookies stay untouched.
+    ['fixture_session', 'fixture_persist'].forEach(function (name) {
+      document.cookie = name + '=; Max-Age=0; Path=/';
     });
     showCookies();
   });
   function showCookies() {
     fetch('/api/cookies').then(function (r) { return r.json(); }).then(function (data) {
-      document.getElementById('cookie-output').textContent = data.cookieHeader || '(none)';
+      var cookies = data.fixtureCookies || {};
+      var names = Object.keys(cookies);
+      document.getElementById('cookie-output').textContent = names.length
+        ? names.map(function (name) { return name + '=' + cookies[name]; }).join('; ')
+        : '(none)';
     });
   }
 </script>

@@ -72,17 +72,58 @@ Subresource failures never replace the page result.
 127.0.0.1:25341 (HTTP) and 127.0.0.1:25342 (HTTPS with a disposable self-signed certificate
 generated into the state directory). Pages carry a changing per-load marker (`L1`, `L2`, …), a click
 counter, `target=_blank`/popup/history/scroll/form/cookie/localStorage/destination pages, a
-controlled `500` (`/fail`), a 404 and an untrusted-TLS page.
+controlled `500` (`/fail`), a 404 and an untrusted-TLS page. The index page also prints the
+advertised fixture origin so the configured bind is visible in-app.
 
 ```bash
 python3 tools/browser-fixtures.py --state-dir /tmp/eyebrowse-fixtures
-# READY http=http://127.0.0.1:25341 https=https://127.0.0.1:25342 state=…
+# READY http=http://127.0.0.1:25341 https=https://127.0.0.1:25342 state=… bind=127.0.0.1
 ```
 
 `/api/observations` exposes load counters, request metadata and POST submissions. The POST endpoint
 records only a synthetic `test_id` and the submitted field **names**; typed values are discarded and
 never written to the state file. The TLS key pair is test-only scratch material, is never installed as
 a trusted certificate and is never committed.
+
+### 3.1 Opt-in private-LAN mode (C2)
+
+`--bind` defaults to `127.0.0.1` and accepts a numeric loopback or RFC1918 IPv4 address only;
+wildcard, public, multicast, link-local and hostname values are rejected, and the address is checked
+against the host's own interfaces before startup. Every advertised URL (`READY`, the in-page
+`{{BASE_URL}}`/`{{SECURE_URL}}` placeholders, the generated certificate SAN) derives from that
+validated configuration, never from a request `Host` header. Omitting `--bind` keeps the loopback
+mode unchanged. HTTPS stays an untrusted-certificate rejection fixture.
+
+```bash
+python3 tools/browser-fixtures.py --bind 192.168.0.52 \
+  --http-port 25341 --https-port 25342 --state-dir "$TMPDIR/fixtures-lan-c2"
+```
+
+Because the LAN phase is a different origin (`http://192.168.0.52:25341`), use a new state directory
+and fresh persistence baselines: cookies and Web storage are per-host, so absent data at the new host
+is not lost data from the loopback origin, and a new-origin success is not continuity of an old page.
+
+Fixture-specific safety guards apply whenever the server runs:
+
+* only the approved fixture pages and fixed API routes are served (no directory listing, upload,
+  proxy, execution or write endpoint); page resolution refuses symlinks, nested/encoded traversal,
+  hidden files and repository paths;
+* bounded requests/resources: 2 KiB targets, 16 KiB POST bodies with one valid `Content-Length`
+  (chunked/missing/conflicting lengths refused), 16 form fields, 8 active connections per server
+  group with a bounded 503 refusal, 5-second idle I/O and a 10-second request deadline, and no
+  keep-alive after a response;
+* bounded state and logging: fixed allowlisted load/note keys, 200-entry request history, records
+  limited to known synthetic test IDs, field names, note names/outcomes and cookie modes/tokens, and
+  log lines limited to route/status (never raw targets or values);
+* fixture-owned cookies: `/api/cookies` exposes only `fixture_session`/`fixture_persist`, and the
+  cookie page clears only those two names.
+
+```bash
+python3 -m unittest discover -s tools/tests -p 'test_browser_fixtures*.py'
+```
+
+Those tests start isolated loopback listeners on ephemeral ports with temporary state directories;
+actual LAN reachability is a separate check and is not claimed by them.
 
 ## 4. Host verification (V1)
 
@@ -157,6 +198,19 @@ fixture readiness.
 Physical rows that automation cannot satisfy and that are exercised with the Owner: unlock and
 fold/unfold on the cover and inner displays, real IME entry/correction/submission (including masked
 password entry), and the RG optical check of the unconnected status screen.
+
+For a private-LAN run, the address-field journey uses `fixtureBaseUrl=http://192.168.0.52:25341` and
+`secureBaseUrl=https://192.168.0.52:25342`, and must not depend on `adb reverse`. Before any Owner
+retry, prove the load through EyeBrowse's own address field: visible form page, fresh load marker,
+real page location and a correlated server-side load observation on the pinned installed APK.
+Device-side curl or ping is not a substitute for that proof.
+
+Route history in this run (kept as evidence, not relabelled): two manual Owner OPEN attempts failed
+while the assigned `adb reverse` mappings were absent, and the Wi-Fi ADB endpoint later went stale
+(host ICMP/TCP to the old address dead, stale `adb device` entry, `adb shell` timing out). A bounded
+recovery (disconnect the old endpoint, neighbour/mDNS/tailnet discovery, one ICMP sweep and a 5555
+probe on live hosts) found no current Phone endpoint, so the Phone is not reachable from the host
+until it is awake on Wi-Fi (or attached by USB).
 
 ## 6. Known limitations and open device items
 
