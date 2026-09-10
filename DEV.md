@@ -15,7 +15,7 @@ Manager-owned article. Initial preferences recorded with explicit Project Owner 
 | --- | --- | --- | --- |
 | Worker | `deepseek` | `deepseek-v4.1-flash-expires-on-0910` | Highest available thinking effort for the selected model |
 | Worker availability fallback | `spark` | `qwen3.8-flash-next` | Highest available thinking effort for the selected model |
-| Reviewer | `openai-codex` | `gpt-6-astra` | `medium`; `max` for hard bugs |
+| Reviewer | `openai-codex` | `gpt-6-astra` | `max` for every review |
 
 For every Worker launch or model change, resolve the highest available effort from the selected model's current supported levels and provider mapping; do not hard-code `high`. Skip levels marked unsupported (`null`) and account for aliases: Pi's label is not necessarily the upstream effort name. Verify the effective runtime level and report clamping, rejection, or uncertain upstream support rather than silently accepting a downgrade. Resolve the fallback model independently.
 
@@ -53,10 +53,10 @@ Pi argument templates (not yet end-to-end launch-tested):
 # Current mappings select max for both; these are not permanent model-independent defaults.
 pi --provider deepseek --model deepseek-v4.1-flash-expires-on-0910 --thinking "${DEEPSEEK_THINKING:?Resolve highest available effort first}" --name Worker-42 @/absolute/path/to/mission.md
 pi --provider spark --model qwen3.8-flash-next --thinking "${SPARK_THINKING:?Resolve highest available effort first}" --name Worker-42 @/absolute/path/to/mission.md
-pi --provider openai-codex --model gpt-6-astra --thinking medium --name Reviewer-42 @/absolute/path/to/review-mission.md
+pi --provider openai-codex --model gpt-6-astra --thinking max --name Reviewer-42 @/absolute/path/to/review-mission.md
 ```
 
-For hard-bug review use `--thinking max`. Start each CLI in its assigned worktree and separate tmux window using the interactive launch tool. Verify the actual selected model/thinking and mission receipt before ending the dispatch turn. Establish proactive completion/blocker reporting before dispatch; routine progress polling is not the workflow. Exact launch and notification transport integration remains to be verified before the first mission.
+For every review, including renewed reviews, use `--thinking max`. If `max` is unsupported or clamped, stop and report to the Manager rather than downgrade. Start each CLI in its assigned worktree and separate tmux window using the interactive launch tool. Verify the actual selected model/thinking and mission receipt before ending the dispatch turn. Establish proactive completion/blocker reporting before dispatch; routine progress polling is not the workflow. Exact launch and notification transport integration remains to be verified before the first mission.
 
 ## Android toolchain and device workflow
 
