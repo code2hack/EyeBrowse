@@ -34,7 +34,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "id": "01a08757-38e0-73f6-a82b-f38580993719",
     "model": "deepseek-v4.1-flash-expires-on-0910",
     "name": "LockProbe-Worker",
-    "status": "active"
+    "status": "retired"
   },
   {
     "role": "Reviewer",
@@ -44,7 +44,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "id": "01a08824-24ad-77a0-9f14-04ea2d91cbcd",
     "model": "gpt-6-astra",
     "name": "LockProbe-Reviewer",
-    "status": "active"
+    "status": "retired"
   },
   {
     "role": "Planner",
