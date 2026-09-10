@@ -1,25 +1,29 @@
 # Development and local agent operations
 
-Manager-owned article. Initial preferences recorded with explicit Project Owner approval. Governance remains in `AGENTS.md`; no product or architecture decisions are made here.
+Approved development procedures and runtime configuration for EyeBrowse. Governance and authority remain in `AGENTS.md`; product requirements remain in `SPEC.md`. Actual run choices, assignments, addresses, and test outcomes belong in runtime/issue/evidence records, not this file.
 
 ## Workspace
 
 - Repository: `git@github.com:code2hack/EyeBrowse.git`
 - Local checkout: `/home/code2hack/Projects/EyeBrowse`
 - Canonical branch: remote `main`.
-- Current repository is a specification/design scaffold. EyeBrowse build/test commands have not yet been established; host SDK and device inventory are verified below.
+- Local runtime root: `/home/code2hack/.local/state/eyebrowse`; keep credentials out of runtime records.
+- Per-version runtime settings: `<runtime-root>/<version>/runtime.json`; per-run records: `<runtime-root>/<version>/runs/<run-id>/run.json`.
+- Runtime records are consumed by Manager procedures, not automatically loaded by Pi. Provider configuration remains in `~/.pi/agent/models.json`.
+- Production build tasks are established by the approved ticket plans and implementation; the existing experiment has its own wrapper and commands below.
 
 ## Owner-approved agent settings
 
-| Mission role | Provider | Exact model ID | Thinking |
-| --- | --- | --- | --- |
-| Worker | `deepseek` | `deepseek-v4.1-flash-expires-on-0910` | Highest available thinking effort for the selected model |
-| Worker availability fallback | `spark` | `qwen3.8-flash-next` | Highest available thinking effort for the selected model |
-| Reviewer | `openai-codex` | `gpt-6-astra` | `max` for every review |
+| Role/profile | Runtime | Provider | Model | Thinking | Name and lifecycle |
+| --- | --- | --- | --- | --- | --- |
+| v0.0.1 Planner | `pi` | `openai-codex` | `gpt-6-astra` | `max` | Reuse the registered `v0.0.1 Planner` session through v0.0.1 closeout |
+| Worker | `pi` | `deepseek` | `deepseek-v4.1-flash-expires-on-0910` | `max` | `Worker-#<issue>`; ticket mission through verified cleanup |
+| Worker availability fallback | `pi` | `spark` | `qwen3.8-flash-next` | `max` | Same mission; record the actual model/session change |
+| Reviewer | `pi` | `openai-codex` | `gpt-6-astra` | `max` | `Reviewer-#<issue>`; independent ticket-scoped session, reused for renewed reviews |
 
-For every Worker launch or model change, resolve the highest available effort from the selected model's current supported levels and provider mapping; do not hard-code `high`. Skip levels marked unsupported (`null`) and account for aliases: Pi's label is not necessarily the upstream effort name. Verify the effective runtime level and report clamping, rejection, or uncertain upstream support rather than silently accepting a downgrade. Resolve the fallback model independently.
+Use `--thinking max` for every assigned profile. Refresh current model metadata and verify the effective level at startup; do not silently accept clamping or substitute a lower level. Pi's display label and upstream parameter can differ: current mappings send DeepSeek `reasoning_effort=max` and Spark/Qwen `reasoning.effort=xhigh`.
 
-Current local mappings expose Pi `max` for both models: DeepSeek maps it to upstream `max`, and Spark/Qwen maps it to upstream `xhigh`. These mappings were validated locally; the temporary DeepSeek V4.1 model's upstream Max support and the Spark endpoint's handling remain unverified. Issue #1's initial Owner-approved `high` run is historical evidence, not the default for future Workers.
+A replacement session receives a new native ID and a unique name suffix such as `Worker-#42-r2`; retain the prior registry record. Replacement does not reset ticket-level attempt counts. Resolve the persistent Planner through `CONTRIBUTORS.md` and current runtime routing rather than starting another Planner for each ticket.
 
 Use the Spark fallback only when the requested DeepSeek model is unavailable, not to conceal reasoning or implementation failures. Record and report fallback use. Do not silently substitute other providers, models, or thinking levels.
 
@@ -27,36 +31,82 @@ On any low weekly quota/limit warning or quota wall, notify the Owner immediatel
 
 Configuration is local to `~/.pi/agent/models.json`. Never copy credentials into repository files, prompts, or logs.
 
-### Verified facts and unresolved checks
+### Model preflight
 
-- The DeepSeek and Spark model IDs above are present in local `models.json`, with reasoning enabled.
-- Installed Pi documents `--provider`, `--model`, and `--thinking`, including `max` and `medium`.
-- `pi --list-models astra` lists `openai-codex/gpt-6-astra`. The Owner explicitly approved `openai-codex` as the Reviewer provider, resolving the initial provider discrepancy.
-- Issue #1 launch verification: Pi 0.85.1 started `LockProbe-Worker` in tmux `work:Worker-1` (pane `%6`) with `--thinking max`, but the footer reports effective `high`. Pi's supported-level resolver requires an explicit model mapping for `max`/`xhigh` and otherwise clamps to a supported level. The Owner subsequently approved `high` for that initial run, resolving its launch gate. The later highest-available-effort policy above supersedes a fixed `high` default. This launch observation verifies the effective local setting, not the upstream model's maximum effort.
+Use `pi --list-models <model-id>` and inspect only non-secret model metadata. A missing model/auth configuration is a startup blocker, not a successful fallback. Before relying on a newly configured mapping, make a bounded no-tool request through the configured Pi provider and record the outbound effort field, HTTP result, and whether a normal response completed; never record credentials or reasoning content. A successful request proves that route accepted the parameter, not a quantitative guarantee about internal reasoning or future availability.
 
-## Visibility and isolation
+The listed DeepSeek and Spark routes have passed this basic `max` request check; the Planner's Pi startup and receipt verified `openai-codex/gpt-6-astra` at `max`. Preserve detailed preflight results in the version runtime directory and repeat availability checks when dispatching or recovering a failed route. Each real mission still requires its own startup/receipt verification.
 
-All subagents must run interactively in separate named windows of the **same tmux session as the Manager**. Do not replace these windows with hidden/headless workers or a different tmux session. Leave agents directly reachable by the Owner, including when waiting at human gates.
+## Implementation operations
 
-At initial inspection the session was `work` (ID `$0`) and Manager pane was `%0`. These identifiers are observations, not permanent constants. Resolve the Manager session from its current pane when dispatching:
+This section implements the lifecycle in `AGENTS.md` using the current local harness; it does not redefine its authorization, batching, retry, or acceptance rules.
+
+### Run preparation and records
+
+Keep `implementationHold=true` in the version runtime settings until configuration and required version/run authorization are complete. A ready label alone does not lift the hold.
+
+For each authorized run, record the version/specification baseline, approved ticket set and version-plan reference, dependency DAG, Owner concurrency limit, gate inventory/alarm choice, current batch, resource claims, and links to durable issue/PR records. Store mutable details in `run.json`; record approvals and meaningful transitions in attributed comments linked from participating issues. An Owner limit of `unlimited` means no fixed count cap, not unlimited hardware/model capacity or exemption from exclusive device ownership and batch boundaries.
+
+For each ticket record its Planner-authored plan reference, current code baseline, assigned registry tuples, live routing, branch/worktree/scratch paths, resource reservation, attempt stage/count, candidate/evidence references, and cleanup state. Do not put these changing assignments or test results in `DEV.md`.
+
+### Planner requests and plan delivery
+
+Use the registered v0.0.1 Planner for that version's requested plans. Owner requests version planning; Manager requests each approved ticket's detailed plan before Worker dispatch. Send the issue, exact reference commit, constraints, available environment/evidence, and required reply path. Planner publishes the plan as an attributed issue comment or linked artifact and directly sends its reference to Manager. Verify receipt and current-code/dependency compatibility before assigning a Worker. Existing document ownership and protected-article gates remain unchanged.
+
+### Workspaces and visible launch
+
+All agents run in separate visible windows of the **same tmux session as Manager**, including human waits. Workers use `Worker-<issue>` window labels; Reviewers use `Reviewer-<issue>`. Window labels are for people, not authenticated routing.
+
+Resolve the session from Manager's current pane, create the exact assigned worktree and a unique scratch directory, and keep session/evidence files in a persistent per-ticket runtime directory. Set the child process's `TMPDIR` to its scratch directory. Existing branches/worktrees are inspected and reused only for their assigned mission; do not overwrite another assignment or clear predictable shared temporary paths.
+
+Shell templates below require Manager-resolved, safely quoted values for `issue`, `branch`, `worktree`, `base`, `window`, `provider`, `model`, `name`, and `session_file`. Run TUI launch commands through `interactive_shell` in dispatch mode; the agent itself stays in the created tmux window.
 
 ```bash
-tmux display-message -p -t "$TMUX_PANE" '#{session_id}'
+session=$(tmux display-message -p -t "$TMUX_PANE" '#{session_id}')
+scratch=$(mktemp -d "/tmp/eyebrowse-issue-${issue}.XXXXXXXX")
+git worktree add -b "$branch" "$worktree" "$base"
+
+tmux new-window -d -P -F '#{pane_id}' -t "$session" -n "$window" -c "$worktree" \
+  "exec env TMPDIR='$scratch' pi --provider '$provider' --model '$model' --thinking max --session '$session_file' --name '$name'"
 ```
 
-Before launch, define the complete mission contract required by `AGENTS.md`, including branch/worktree, platform scope, evidence, resource limits, and direct reporting paths. Use isolated worktrees for concurrent writing missions. Name windows by role and mission, e.g. `Worker-42` and `Reviewer-42`.
+Start a new session idle, obtain its real native ID with `/session`, and register it before sending project work. Update the local tuple-to-session/pane routing record; do not invent session IDs or pre-register hypothetical agents. Supply the full mission and confirm its receipt plus actual `PI_SESSION_ID`, `PI_PROVIDER`, `PI_MODEL`, and `PI_REASONING_LEVEL`. A successful tmux-launch helper only confirms window creation, not mission startup or completion.
 
-Pi argument templates (not yet end-to-end launch-tested):
+Resolve current `main` articles separately from the implementation baseline: an older issue branch may contain obsolete governance. Supply canonical read-only article paths/commit references without merging unrelated protected articles into the implementation branch.
+
+### Direct communication and recovery
+
+Match the recipient's active registry tuple to its current live pane before sending. Use captured pane IDs, not window-name parsing: names containing dots can be mistaken for pane selectors. Messages carry exact From/To tuples, a concise purpose/state, and issue/evidence references.
 
 ```bash
-# Resolve these separately from current model capabilities before launching.
-# Current mappings select max for both; these are not permanent model-independent defaults.
-pi --provider deepseek --model deepseek-v4.1-flash-expires-on-0910 --thinking "${DEEPSEEK_THINKING:?Resolve highest available effort first}" --name Worker-42 @/absolute/path/to/mission.md
-pi --provider spark --model qwen3.8-flash-next --thinking "${SPARK_THINKING:?Resolve highest available effort first}" --name Worker-42 @/absolute/path/to/mission.md
-pi --provider openai-codex --model gpt-6-astra --thinking max --name Reviewer-42 @/absolute/path/to/review-mission.md
+tmux send-keys -t "$recipient_pane" -l "$message"
+tmux send-keys -t "$recipient_pane" Enter
 ```
 
-For every review, including renewed reviews, use `--thinking max`. If `max` is unsupported or clamped, stop and report to the Manager rather than downgrade. Start each CLI in its assigned worktree and separate tmux window using the interactive launch tool. Verify the actual selected model/thinking and mission receipt before ending the dispatch turn. Establish proactive completion/blocker reporting before dispatch; routine progress polling is not the workflow. Exact launch and notification transport integration remains to be verified before the first mission.
+Planner plan delivery, Worker/Reviewer receipts, results and blockers use this direct path in addition to required GitHub records. End the dispatch turn after startup is confirmed; do not poll other panes for routine progress. A queued message may wait behind an active long-running tool: if urgent cancellation is required, explicitly stop the owned operation and verify its safe state rather than assuming a queued message was acted on.
+
+Removing an extension file does not unload it from an existing Pi process. Use `/reload` while idle, or resume the same saved session in its owned window when recovery requires a restart. Verify native identity/model, reconcile any interrupted command before retrying, and update routing. Never treat a restart as a fresh attempt budget.
+
+### Sudo pane procedure
+
+For an approved sudo escalation under `AGENTS.md` Section 9.3, open a separate pane in Manager's current window through the interactive execution tool:
+
+```bash
+manager_window=$(tmux display-message -p -t "$TMUX_PANE" '#{window_id}')
+tmux split-window -h -P -F '#{pane_id}' -t "$manager_window" -c "$worktree"
+```
+
+Explain the exact command and purpose, run it in that pane, and let the Owner enter the password directly there. Never request the password in chat or capture it in logs. Record the non-secret result and close only that operation's pane when finished; do not use a different tmux session or close Manager's pane.
+
+### Verification, review, and closeout
+
+Finish implementation and simplification before freezing the candidate used for final evidence. Record source SHA, APK hash, install output, target/software identity, commands, raw results, and limitations together. Keep raw captures immutable; corrections to summaries are explicitly attributed. Historical runs remain tied to their original builds, and partial/timed runs state their actual intervals and interruptions.
+
+Supply the Reviewer the approved ticket/plan, exact base/head, diff and evidence in a separate worktree. Verify the final remote SHA and renewed verdict before a guarded merge; for GitHub's merge API supply the expected `sha`. Use non-closing issue references so merge does not bypass closeout. Debug-only build policy below applies to every role and helper.
+
+Record failure-stage/attempt accounting in the ticket/run record using `AGENTS.md` Section 14. Manager-directed recovery gets explicit source/resource ownership and the same independent-review/evidence workflow; model/session replacements do not reset counts.
+
+After merge, request Worker cleanup. Preserve required APK/log/report provenance outside disposable scratch, approve exact worktree/shared-resource removals, verify the cleanup report and released resources, then retire the Worker/Reviewer and update the registry before closing the issue. Close only their verified tmux windows; keep the version Planner alive until version closeout. Retained artifacts and any cleanup limitation must have explicit locations/state, not an unverified 'done' claim.
 
 ## Android toolchain and device workflow
 
@@ -69,9 +119,16 @@ Sources: local `/home/code2hack/Projects/Glasseo/DEV.md` (checkout HEAD `5f9d235
 - SDK: `/home/code2hack/Android/Sdk`; platforms 35/36 and Build Tools 35.0.0/36.0.0/36.1.0 are present.
 - Java: OpenJDK `17.0.20`; Node: `v24.20.0`.
 - ADB: `/home/code2hack/.local/bin/adb`.
-- Emulator executable: `/home/code2hack/Android/Sdk/emulator/emulator`; `-list-avds` reports `dealer-api36`. An Android 36 system-image directory exists. Emulator boot and app automation have not been tested.
-- `ANDROID_HOME`, `ANDROID_SDK_ROOT`, and `JAVA_HOME` are unset in the inspected shell. Use an explicit SDK environment or an untracked `local.properties` when establishing builds; never commit a machine-specific SDK path.
-- Glasseo reports successful Gradle wrapper 9.1.0 / AGP 9.0.1 / JDK 17 builds with built-in Kotlin. This is a reusable compatibility reference, not an approved EyeBrowse dependency selection. No EyeBrowse wrapper or build tasks exist yet.
+- Emulator executable: `/home/code2hack/Android/Sdk/emulator/emulator`; AVD `dealer-api36` has been exercised with the isolated spike. Verify its actual configuration and serial for each mission; it has no secure lockscreen by default in the tested setup.
+- Set an explicit SDK environment or an untracked `local.properties` for builds; never commit a machine-specific SDK path.
+- The isolated `experiments/locked-webview-spike/` uses its verified Gradle 8.11.1 wrapper, AGP 8.7.3 and JDK 17. From that directory, the debug-only verification commands are:
+
+```bash
+ANDROID_HOME=/home/code2hack/Android/Sdk ./gradlew --no-daemon \
+  :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+```
+
+These are experiment commands, not an automatic dependency choice for production v0.0.1. Its approved ticket plans establish the applicable production tasks. Do not run the experiment's release-building `verify-variants.sh` unless explicitly requested by the Owner.
 
 ### Real-device ADB connection order (Phone and RG)
 
@@ -105,7 +162,7 @@ adb -s "$ADB_TARGET" tcpip 5555
 
 ### Rokid Glasses: available now
 
-Fresh ADB inspection confirms:
+Known RG identity and inspected platform values; recheck them before device-sensitive verification:
 
 | Property | Observed value |
 | --- | --- |
@@ -135,11 +192,11 @@ WebView 95 requires real-RG feature qualification: exercise the APIs EyeBrowse a
 
 Synthetic input and emulator runs do not qualify real head motion, peripheral behavior, comfort, or optical readability. Follow EyeBrowse `AGENTS.md` for physical gates and independent acceptance.
 
-### Phone: emulator and Fold6 authorized for issue #1
+### Phone and emulator procedures
 
-The Owner explicitly authorized validation of issue #1 on both the installed Android emulator and the connected real Fold6. Fresh ADB inventory identifies the authorized phone as `SM_F956N`, serial `R3CX70NHTHK`. Reserve both targets for the assigned validation Worker; use explicit serials in every ADB command and leave RG (`1906092617103125`) untouched for this phone-only mission.
+The Fold6 target is `SM-F956N` / serial `R3CX70NHTHK`. Reserve only the targets authorized by the mission; a connected RG is not a substitute for a phone test. Identify cover/inner display conditions and current Android/One UI/WebView versions where relevant. Emulator results remain separate from real Fold6 acceptance.
 
-This authorization covers the isolated locked-WebView spike, not unrelated phone apps, data, or production architecture changes. Never request or record the Owner's unlock secret; the Owner operates secure lock/unlock directly. Coordinate physical unplugged-testing steps with the Owner and follow the real-device ADB connection order above. Preserve existing device/AVD state; restore temporary test settings without disabling the configured TCP reconnection path. Emulator results remain separate from real Fold6 acceptance.
+Never request or record the Owner's unlock secret; the Owner operates secure lock/unlock directly. Coordinate physical unplugged-testing steps with the Owner and follow the real-device ADB connection order above. Preserve existing device/AVD state, avoid unrelated apps/data, and restore temporary test settings without disabling the configured TCP reconnection path.
 
 Before emulator use, verify the intended AVD's configuration and reserve it; do not wipe or repurpose the existing `dealer-api36` AVD without approval. Launch long-running emulator processes visibly through the interactive execution tooling. Record the actual emulator serial and always target it explicitly.
 
@@ -155,7 +212,7 @@ Upstream documents Android emulator/physical-device automation via ADB and a sna
 - CLI, MCP, and typed Node.js API entry points;
 - worktree-scoped sessions and host-local device claims for concurrent agents.
 
-The CLI requires Node 22.12+ according to upstream; this host's Node meets that requirement. `agent-device` was not found on the current PATH. No installation, helper deployment, emulator boot, or live compatibility test has been performed.
+The CLI requires Node 22.12+ according to upstream; this host's Node meets that requirement. `agent-device` is not installed on the current PATH, and its helper/runtime compatibility has not been qualified. Existing ADB procedures do not require it.
 
 Before adopting it, select and record an exact version, install deliberately, then run `agent-device doctor`, `agent-device help workflow`, and `agent-device capabilities --platform android`. Consult that installed version's help for exact device/session selection. Check `agent-device device status` before acquisition; never release a live mission's claim. Built-in claims supplement Manager ownership and do not protect against unrelated direct ADB commands.
 
@@ -163,7 +220,7 @@ Use fresh accessibility refs after state changes. Validate WebView accessibility
 
 ## Contacting the Owner
 
-The Owner explicitly re-enabled the music alarm when authorizing issue #1 validation. Whenever Owner attention is required, including physical gates and quota warnings, run:
+Always send a written gate report. Read the current run's Owner-approved alarm setting before sounding audio; later Owner instructions override it. When that setting is enabled and Owner attention is required, run:
 
 ```bash
 ~/Music/play-super-mario-alarm-hdmi.sh
