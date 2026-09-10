@@ -169,7 +169,8 @@ public class BrowserInstrumentedTest {
 
             // Clean baseline: reload so the status belongs to the page, not to an earlier refusal.
             onView(withId(R.id.button_reload)).perform(click());
-            waitUntil("baseline page for " + input, () -> "Basic page".equals(domText("page-title"))
+            waitUntil("baseline page for " + input, () -> !sessionLoading()
+                    && "Basic page".equals(domText("page-title"))
                     && !statusText().contains("http://") && !statusText().contains("cannot contain"));
             js("window.__eyeProbe='kept'");
             String marker = domText("load-marker");
@@ -524,6 +525,27 @@ public class BrowserInstrumentedTest {
      * {@code javascript:} destinations stays exactly as a user would experience it.
      */
     private String js(String expression) {
+        // The platform callback for evaluateJavascript can occasionally be dropped while a
+        // navigation settles (observed once on the LAN origin). Retry the read once, bounded, and
+        // still fail hard if the evaluation never answers; assertions stay strict.
+        IllegalStateException last = null;
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                return jsOnce(expression);
+            } catch (IllegalStateException e) {
+                last = e;
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw e;
+                }
+            }
+        }
+        throw last;
+    }
+
+    private String jsOnce(String expression) {
         WebView view = attachedWebView();
         if (view == null) {
             throw new IllegalStateException("no WebView is attached");
@@ -592,6 +614,12 @@ public class BrowserInstrumentedTest {
         AtomicReference<WebView> view = new AtomicReference<>();
         scenario.onActivity(activity -> view.set(activity.findViewById(R.id.browser_web_view)));
         return view.get();
+    }
+
+    private boolean sessionLoading() {
+        AtomicReference<Boolean> loading = new AtomicReference<>(false);
+        scenario.onActivity(activity -> loading.set(session.isLoading()));
+        return loading.get();
     }
 
     private String statusText() {
