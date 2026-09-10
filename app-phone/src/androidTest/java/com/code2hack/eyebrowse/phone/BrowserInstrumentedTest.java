@@ -326,15 +326,25 @@ public class BrowserInstrumentedTest {
     @Test
     public void pageOriginDestinationsNeverLeaveTheSession() throws Exception {
         int freshRefusals = 0;
+        String previousMarker = null;
         for (String element : new String[] {"dest-mailto", "dest-content", "dest-file", "dest-intent",
                 "dest-data"}) {
             openAddress(fixtureUrl("/destinations.html"));
-            waitForMarker();
+            // A grouped case must baseline the NEW document: wait until the load has settled and the
+            // marker differs from the previously recorded one, otherwise a stale read of the outgoing
+            // document looks like a reload during the activation.
+            final String previous = previousMarker;
+            waitUntil("fresh baseline for " + element, () -> {
+                String value = domText("load-marker");
+                return !sessionLoading() && value != null && value.matches("L\\d+")
+                        && (previous == null || !previous.equals(value));
+            });
             String baselineStatus = statusText();
             assertEquals("clean baseline before " + element, "Unsupported destinations", baselineStatus);
             String markerBefore = domText("load-marker");
             String locationBefore = jsRead("String(document.location.href)");
             reportCase(element, "start", markerBefore, locationBefore, "dispatched");
+            previousMarker = markerBefore;
 
             realClickElement(element);
             waitUntil("activation of " + element, () -> element.equals(domText("last-activated")));
@@ -369,7 +379,8 @@ public class BrowserInstrumentedTest {
     public void contentDestinationIsAnEngineNoOpWithoutAFabricatedNotice() throws Exception {
         String caseId = "content-standalone";
         openAddress(fixtureUrl("/destinations.html"));
-        waitForMarker();
+        waitUntil("settled baseline for content", () -> !sessionLoading()
+                && domText("load-marker") != null && domText("load-marker").matches("L\\d+"));
         String baselineStatus = statusText();
         String markerBefore = domText("load-marker");
         String locationBefore = jsRead("String(document.location.href)");
