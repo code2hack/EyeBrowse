@@ -126,6 +126,10 @@ Device-observed notes from this slice's first run:
   no-op (no navigation, no notice); `javascript:` links are refused but leave a blank document
   instead of running the script, so the session URL and single-WebView guarantees still hold.
 
+Whether those `content:` and `javascript:` outcomes satisfy the ticket's rejection requirement is
+under Planner clarification: this document records observed behaviour and does not treat it as
+accepted.
+
 Physical rows that automation cannot satisfy and that are exercised with the Owner: unlock and
 fold/unfold on the cover and inner displays, real IME entry/correction/submission (including masked
 password entry), and the RG optical check of the unconnected status screen.
