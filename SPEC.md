@@ -1,6 +1,8 @@
-# EyeBrowse SPEC v1
+# EyeBrowse SPEC v0.0.1
 
-**Status:** MVP product and engineering specification, v1 draft
+**Status:** Unreleased development draft; v0.0.1 scope refinement in progress
+
+**Target product version:** v0.0.1
 
 **Product:** EyeBrowse
 
@@ -22,6 +24,26 @@ It is derived from:
 Where the design study explicitly marks a value or behavior as illustrative or unresolved, this specification does not silently promote it to a requirement. Such items are listed under **Open validation items**.
 
 The words **MUST**, **SHOULD**, and **MAY** are normative.
+
+### 0.1 Current Owner direction: v0.0.1 scope reset
+
+The Project Owner directed the following refinement on 2026-09-10:
+
+- Use **SPEC v0.0.1** for this unreleased development version. This version label is not a release announcement or evidence of completed acceptance.
+- Build a minimal browser-first version: a simple WebView-based browser on Phone and a HUD application on RG.
+- The main browser core runs on Phone. Phone and RG MUST both offer basic browser functionality; the RG application is not merely a passive demonstration display. The exact function set and interaction contract remain to be refined.
+- No agent is included in v0.0.1. The earlier requirement for an agent runtime on each device does not apply to this version.
+- Built-in Mihomo is removed from the required architecture. Internet access uses the Phone's externally managed networking, including its configured global VPN; EyeBrowse does not need to provide that VPN itself.
+- Built-in Tailscale remains a future product requirement, but is deferred beyond v0.0.1. It is not a dependency or acceptance gate for this version.
+- Accepted issue #1 evidence is sufficient to proceed with this phone-hosted direction. It is not, by itself, evidence that Phone-to-RG transport, RG interaction, or integrated background/power behavior has passed.
+
+This direction supersedes conflicting requirements in the earlier draft material below, particularly the full Browser/Agent/Speech/Network feature bundle, duplicated on-device browser/agent runtimes, and built-in Mihomo/tailnet acceptance gates.
+
+Sections 1–29 are retained during refinement so prior design work is not silently lost. Their combined feature list and acceptance gates MUST NOT be treated as the approved v0.0.1 implementation contract. Previously approved, non-conflicting design decisions remain inputs; unsettled choices are not resolved merely by retaining their earlier wording.
+
+Still to refine: the precise basic-browser function set, Phone/RG session and viewport ownership, presentation/input transport, text-entry coverage, RG Normal/Reading scope, speech scope, connection/recovery behavior, and integrated acceptance criteria. No transport library, codec, new gesture, or unapproved fallback is selected by this scope reset.
+
+Evidence: [issue #1](https://github.com/code2hack/EyeBrowse/issues/1), [independent review under revised Owner acceptance](https://github.com/code2hack/EyeBrowse/pull/3#issuecomment-5614157830), and [Manager acceptance](https://github.com/code2hack/EyeBrowse/issues/1#issuecomment-5614203779). The accepted record includes Owner-accepted historical Fold6 locked-command/unplugged evidence and supplemental current-head observations; it does not claim final-head Fold6 post-lock command qualification or production transport/power validation. The cancelled repeat spike test is not reinstated by this specification update.
 
 ---
 
@@ -932,7 +954,7 @@ Simulator values recorded in the design study are evidence for prototyping only.
 
 # 27. Open Product Owner decisions
 
-The following decisions are intentionally unresolved in SPEC v1 and require explicit Project Owner input or hardware validation:
+The following decisions are intentionally unresolved in the earlier draft and require explicit Project Owner input or hardware validation. Their inclusion in v0.0.1 is subject to Section 0.1:
 
 1. Physical signal that starts Agent voice-command ASR.
 2. Physical signal that starts normal dictation ASR.
