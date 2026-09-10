@@ -501,7 +501,7 @@ class ConnectionBoundTests(FixtureServerCase):
 
 
 class AbsoluteDeadlineTests(FixtureServerCase):
-    idle_timeout = 1.0
+    idle_timeout = 3.0  # Exceeds the 1.3 s assertion bound, including SSL's cumulative handshake timeout.
     request_deadline = 0.45
 
     def assert_drip_is_closed(self, prefix: bytes, *, port: int | None = None,
