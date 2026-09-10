@@ -1,18 +1,19 @@
 # EyeBrowse SPEC v0.0.1
 
-**Status:** Unreleased development specification — replacement draft for Owner review  
+**Status:** Owner-approved unreleased development specification — unattended device-automation acceptance  
 **Target product version:** v0.0.1  
 **Project Owner:** code2hack  
 **Editor:** Planner: SPEC Design  
-**Decision baseline:** 2026-09-10
+**Product decision baseline:** 2026-09-10  
+**Acceptance baseline:** Owner-approved unattended automation, with real Phone and RG retained; see §15
 
 ## 0. Authority and interpretation
 
-This document defines the complete product and engineering contract for EyeBrowse v0.0.1. It is intended to replace the previous `SPEC.md` in full, not supplement it with overriding clauses.
+This document defines the current product and engineering contract for EyeBrowse v0.0.1. It replaces earlier specifications in full rather than retaining contradictory requirements beneath overrides.
 
-The current Project Owner direction governs this specification under `AGENTS.md`. The document consolidates the approved browser-first scope, Phone/RG ownership, pairing boundary, and the Owner's answers to refinement questions Q1–Q8.
+The current Project Owner direction governs this specification under `AGENTS.md`. The document consolidates the approved browser-first scope, Phone/RG ownership, pairing boundary, the Owner's answers to refinement questions Q1–Q8, and the subsequent approval of unattended ADB-driven verification. The later correction retains the real Fold6; emulator-only/no-real-Phone directions are superseded.
 
-Once approved, this document is the current v0.0.1 contract. Requirements from earlier drafts are not inherited unless restated here. Earlier design artifacts remain visual references only where consistent with this document. Historical specifications belong in Git history, not in an obsolete requirements appendix.
+This is the current v0.0.1 contract. Requirements from earlier drafts are not inherited unless restated here. Earlier design artifacts remain visual references only where consistent with this document. Historical specifications belong in Git history, not in an obsolete requirements appendix.
 
 **MUST** and **MUST NOT** identify required behavior. **SHOULD** identifies a recommendation whose deviation needs a documented reason. **MAY** identifies an optional implementation choice, not additional required scope.
 
@@ -52,7 +53,7 @@ Built-in Mihomo is removed from the required product architecture. EyeBrowse doe
 
 The primary Phone target is Samsung Galaxy Z Fold6, including its cover and inner displays. Phone layouts MUST respond to actual window dimensions, density, insets, orientation, and folding changes rather than fixed study screenshots.
 
-The RG app MUST have an API-32-compatible runtime path. Approximately **480 × 640 physical pixels** is the RG display design target, not a guarantee of the app's available content viewport or its logical density. Insets, density, camera access, sensor behavior, and optical readability require device validation.
+The RG app MUST have an API-32-compatible runtime path. Approximately **480 × 640 physical pixels** is the RG display design target, not a guarantee of the app's available content viewport or its logical density. Insets, density, camera access, and sensor integration require target-specific checks. The unattended development evidence requirements and limits on optical/wearer claims are defined in §15.
 
 | Term | Meaning |
 | --- | --- |
@@ -131,7 +132,7 @@ Unlocking Phone or bringing EyeBrowse to the foreground MUST NOT automatically t
 
 Normal Mode shows browser controls, webpage content, and a visible head pointer. Head yaw controls horizontal pointer movement and head pitch controls vertical movement. Pointer motion MUST be usable for both local controls and the remotely hosted page.
 
-A short tap activates the current target. The pointer MUST use suitable smoothing, a noise dead zone, and a usable recenter/reset mechanism. No dwell activation or new hardware gesture is implied. Exact tuning and the recenter affordance MUST be documented with hardware evidence.
+A short tap activates the current target. The pointer MUST use suitable smoothing, a noise dead zone, and a usable recenter/reset mechanism. No dwell activation or new hardware gesture is implied. Exact tuning and the recenter affordance MUST be documented with the evidence actually obtained. Automated controller and on-device sensor checks are required under §15; they do not establish wearer calibration or comfort.
 
 Forward touchpad swipes scroll down; backward swipes scroll up. The target is the current scrollable browser region, not whichever field or page happened to be active before a handoff.
 
@@ -141,7 +142,7 @@ Reading Mode shows the same webpage with EyeBrowse's browser controls, pointer, 
 
 On entry, EyeBrowse MUST dismiss the RG keyboard, end active text entry without deliberate submission, preserve entered text where the page permits, and initialize the head-scroll neutral reference. Returning to Normal MUST NOT automatically reopen the keyboard.
 
-Relative upward head pitch scrolls upward; downward pitch scrolls downward. A neutral dead zone stops scrolling. Larger displacement SHOULD produce greater speed within a bounded maximum. Neutral acquisition, drift control, and the response curve remain hardware-tuned values.
+Relative upward head pitch scrolls upward; downward pitch scrolls downward. A neutral dead zone stops scrolling. Larger displacement SHOULD produce greater speed within a bounded maximum. Neutral acquisition, drift control, and the response curve remain tunable values. Automated tests MUST exercise their behavior; final wearer tuning is not claimed by the unattended profile.
 
 An isolated short tap in Reading Mode does nothing. Double tap returns to Normal.
 
@@ -169,7 +170,7 @@ The in-app keyboard MUST allow URL entry and supported webpage field editing wit
 
 The initial keyboard uses English QWERTY with letters, Shift/case control, numbers, common punctuation/symbols, Space, Backspace, and appropriate Enter/Done actions. Chinese input, prediction, swipe typing, and a system-wide Android IME are outside v0.0.1.
 
-Head pointer plus short tap operates keys. The focused field or useful field context MUST remain visible above the keyboard. Keyboard sizing must preserve usable text and targets on real RG hardware; study dimensions are not fixed requirements.
+Head pointer plus short tap operates keys. The focused field or useful field context MUST remain visible above the keyboard. Keyboard sizing must preserve usable text and targets on real RG hardware; study dimensions are not fixed requirements. On-device layout and automated key-selection checks support development acceptance under §15 without claiming optical comfort.
 
 Done dismisses text entry without silently submitting an unrelated form. Enter follows the focused field's semantics, including newline for a multiline target or the relevant submit action. Editing MUST affect the current intended target, not a stale focus left by navigation or handoff.
 
@@ -215,13 +216,15 @@ Invitations MUST have bounded validity and be cancellable; successful consumptio
 
 Successful pairing establishes authorization and connection, not implicit handoff. RG uses its explicit **Use on glasses** action to take control.
 
-Camera permission denial, scanning failure, or an invalid/expired code MUST produce a recoverable status. The camera MUST be released on completion, cancellation, or leaving the scanner. QR pairing does not authorize continuous camera capture or webpage camera access.
+Camera permission denial, scanning failure, or an invalid/expired code MUST produce a recoverable status. The camera MUST be released on completion, cancellation, or leaving the scanner. QR pairing does not authorize continuous capture or webpage camera access.
 
-### 9.3 Remembered pairing and subsequent connection
+### 9.3 Remembered pairing and reconnect
 
-v0.0.1 MUST remember one Phone–RG pairing across ordinary disconnections and application restarts. An active, reachable Phone host MUST permit the remembered RG to reconnect without a fresh scan.
+v0.0.1 MUST remember one Phone–RG pairing across ordinary disconnects and app restarts. Reopening RG may reconnect to the remembered Phone when that Phone host is active and reachable; ordinary reconnect MUST NOT require a new scan each time.
 
-A current LAN address is a locator, not identity. An endpoint change MUST NOT authorize a different device. A fresh QR scan is an acceptable way to recover an unusable saved locator; automatic address rediscovery is not required.
+A changed network address is a locator change, not proof of changed identity. Reconnection MUST authenticate the remembered peer. A different device occupying an old address MUST NOT become trusted.
+
+Automatic address rediscovery is not a requirement. A fresh Phone QR scan MAY recover when the saved locator no longer works, provided pairing/authentication and explicit peer-replacement rules are preserved. Re-scan does not configure the network.
 
 Each device MUST offer a small Forget pairing action. Local forgetting removes its stored authorization, closes its live connection, and prevents reuse of the forgotten trust. It does not promise to erase secrets remotely from an offline peer. Replacing the one paired peer requires an explicit user action rather than silent replacement.
 
@@ -294,7 +297,7 @@ A new browser-host lifetime MUST be distinguishable from the lost one so old com
 
 Phone–RG browser presentation, typed input, and session messages MUST use authenticated, encrypted communication through maintained platform/library primitives. No plaintext “trusted LAN” exception or custom cryptographic algorithm is permitted.
 
-Secrets MUST NOT be committed to the repository or included in routine logs. Stored pairing credentials MUST use app-private secure storage appropriate to their type. Normal diagnostics SHOULD record timings, state transitions, and non-sensitive identifiers, not page images, full URLs with sensitive parameters, or field contents. Explicit debug evidence capture must be deliberate and kept separate from normal operation.
+Secrets MUST NOT be committed to the repository or included in routine logs. Stored pairing credentials MUST use app-private secure storage appropriate to their type. Normal diagnostics SHOULD record timings, state transitions, and non-sensitive identifiers, not page images, full URLs with sensitive parameters, or field contents. Explicit debug evidence capture must be deliberate and kept separate from normal operation. The Owner authorizes every project agent to capture, transfer, inspect, and retain screenshots from both real devices when useful for mission-scoped testing, debugging, or review, without per-capture approval. Use authorized, explicitly targeted ADB; prefer EyeBrowse/test-fixture screens, redact incidental private content before public attachments, and do not bypass OS capture restrictions.
 
 Arbitrary webpage code is untrusted. Web content MUST NOT obtain pairing credentials, hosting controls, unrestricted native bridges, or app-level device capabilities. Native/page messages, where needed for input integration, MUST be scoped and validated.
 
@@ -310,51 +313,63 @@ There MUST NOT be disabled Agent buttons, tab controls, microphone controls, or 
 
 RG Reading Mode has no persistent app controls during healthy browsing. A genuine error or disconnection MAY interrupt the clean presentation with necessary recovery UI; hiding an important failure is not part of Reading Mode.
 
-Text must remain legible after presentation transport. Pointer motion, key feedback, and local controls MUST not feel blocked by a remote round trip. Input-to-visible-page latency, frame freshness, reconnect delay, optical readability, and active/idle resource use MUST be measured on the intended devices.
+Text must remain legible after presentation transport. Pointer motion, key feedback, and local controls MUST not feel blocked by a remote round trip. Input-to-visible-page latency, frame freshness, reconnect delay, and active/idle resource use MUST be measured on the available intended devices under declared conditions. Screenshots and layout checks assess rendered output; optical readability and wearer comfort remain explicitly unqualified when no physical observation is available.
 
-This specification does not invent fixed frame rates, bitrate, latency, battery-life, or ergonomic thresholds. The implementation plan MUST set measurable targets and test conditions before integrated acceptance. Values justified only by a desktop simulation cannot establish RG comfort.
+This specification does not invent fixed frame rates, bitrate, latency, battery-life, or ergonomic thresholds. The implementation plan MUST set measurable automated targets and test conditions before integrated acceptance. Synthetic inputs, screenshots, charging-state simulation, or emulator results cannot establish wearer comfort or unplugged physical power behavior.
 
 ## 15. Acceptance and evidence
 
-All acceptance claims MUST identify the candidate commit/build and actual devices/software. Phone-only, emulator, synthetic-input, and real-RG evidence MUST remain distinguishable. App functionality MUST be exercised through the app's normal connection and controls; ADB may collect evidence but cannot substitute for the user-facing control path.
+### 15.1 Approved unattended development profile
 
-### 15.1 Required acceptance matrix
+The current v0.0.1 implementation run uses **unattended device-automation acceptance**. The real Fold6 and real RG remain authorized, primary test/debug targets, kept connected and operated through ADB. An explicitly selected emulator may supplement repeatable or otherwise unavailable conditions; it does not replace real-Phone testing by default. Host-side builds, fixture services, analysis, and Git operations do not need to run through ADB.
 
-| ID | Required demonstration |
+All agents may automate mission-scoped installation, launch, navigation, typing, test execution, screenshots, and diagnostics on these targets through existing authorized ADB connections. Manager coordinates explicit target identity, exclusive mutable-resource ownership, and recovery. Routine actions and screenshots do not require the Owner to act or approve each occurrence. The run's operating record is `docs/plans/v0.0.1-unattended-run.md`; governance and protected-article gates remain in `AGENTS.md` and `DEV.md`.
+
+Acceptance MUST identify the exact candidate/build, actual targets/software, input source, and connection topology. Drive ordinary UI and application behavior through ADB-launched UI automation/instrumentation. Browser operations MUST still use the implemented browser, keyboard/controller paths, and authenticated app protocol; setting a field through JavaScript, directly setting paired state, or substituting the spike's ADB command receiver is not equivalent evidence.
+
+Required automated functional, security, lifecycle, and target-integration checks MUST pass, with independent review and verified cleanup. Missing physical-only observations—wearer/optical judgments, physical hinge movements, optical QR alignment, unplugging, or a setup requiring unavailable private authentication—are **not merge, ticket-closure, or downstream-readiness prerequisites for this run**. Record each as `NOT EXERCISED — unattended profile`, with its exact coverage limit, rather than PASS. Do not move those same waits unchanged into the final integration ticket.
+
+This is an evidence-profile change, not removal of production QR, sensor, keyboard, Phone-hosting, LAN, or security requirements. A failing executable software assertion, missing required implementation, or unavailable essential device/app integration is not excused merely by labeling it a physical limitation. Fix such defects or record a genuine blocker. A successful development-profile closeout is not full physical qualification or release authorization.
+
+### 15.2 Required unattended acceptance matrix
+
+| ID | Required demonstration and evidence boundary |
 | --- | --- |
-| **A01 — Build and targets** | Produce two installable APKs from one repository. Launch on Fold6 cover/inner layouts and the API-32 RG target without inaccessible primary controls. |
-| **A02 — Phone-only browsing** | Without RG, open/normalize addresses; navigate links; use Back/Forward/Reload; scroll; edit supported fields; submit a harmless test form; recover from a failed address/navigation. Confirm no address-bar search or extra tabs. |
-| **A03 — Actual QR pairing** | RG camera decodes the QR shown on Phone and establishes protected pairing without CXR or manual IP/port entry. Test cancellation, invalid/expired invitation, camera denial, and unauthorized client rejection. |
-| **A04 — Network boundary** | Scanning is not blocked by a same-network precheck. An unreachable host produces the simple connection prompt. The user adjusts the network externally and retries. EyeBrowse never joins/configures Wi-Fi or hotspot. |
-| **A05 — Primary hotspot plus VPN** | With RG joined to Phone's hotspot and Phone's normal VPN enabled, both website access and the local browser link work. Also demonstrate the shared-LAN case. A shared-router result alone does not pass the hotspot requirement. |
-| **A06 — Explicit hosting and locked use** | Start hosting while Phone is unlocked, hand off, securely lock Phone, turn its display off, and use RG to navigate, click, scroll, enter a URL, edit a supported field, and submit a harmless form through the real app connection. Include unplugged/stationary use for a declared observation period. |
-| **A07 — Handoff and viewport** | Transfer Phone → RG → Phone without intentional reload. Preserve a deterministic page's form state and navigation continuity. Confirm inactive-device status, fresh geometry, no control steal on unlock/reconnect, and rejection of old-owner input. |
-| **A08 — RG Normal** | Use physical head movement and touchpad to operate browser controls, webpage targets, and keyboard targets with acceptable optical readability and stability. Confirm swipe directions. |
-| **A09 — RG Reading** | Double tap without accidental activation; hide chrome/pointer/keyboard; control up/down scroll; stop at neutral; give swipe priority until neutral; make isolated tap a no-op; exit without automatic keyboard reopening. |
-| **A10 — RG keyboard** | While Phone is locked, enter/correct a URL and text/password/multiline/basic editable content using English QWERTY, numbers/symbols, case, Backspace, Space, Enter, and Done. Check masking and stale-focus rejection. |
-| **A11 — Connection recovery** | Interrupt and restore the local link. Preserve the live page and pairing; stop head-scroll; clearly mark stale output; reconcile ownership/focus; do not blindly replay uncertain input. Test re-scan after locator change and refusal of a different peer at an old locator. |
-| **A12 — Restart, forgetting, and cleanup** | Distinguish interface recreation, RG restart, and Phone/browser process loss. Verify persisted settings/pairing/URL/site data, explicit interrupted-session recovery, forget/re-pair, and Stop releasing hosting-specific resources. |
-| **A13 — Usability and scope** | Record measured latency/freshness/resource behavior and Owner device-ergonomics acceptance against declared conditions. Confirm no agent, ASR, built-in VPN/Mihomo, tailnet, CXR, multi-tab, or network-onboarding dependency. |
+| **A01 — Build and targets** | Build both debug APKs and launch on real Fold6 and API-32 RG through ADB. Check the available real Phone display/window and supplement narrow/wide resize/recreation cases on a reserved emulator as needed. Record actual insets/density/layout screenshots; synthetic sizing does not prove physical folding or an inaccessible display. |
+| **A02 — Phone-only browsing** | Automate Phone address normalization, Back/Forward/Reload, links, scrolling, supported input correction, harmless submission, and navigation-error recovery. Include actual native controls and supported IME/field integration; distinguish key-event injection from software-IME key selection. No search provider or extra tabs. |
+| **A03 — QR and protected pairing** | Test Phone-generated QR output, the same RG decoder and genuine authenticated pairing with valid/invalid/expired/cancelled invitations and unauthorized peers. Where stationary camera alignment prevents an optical scan, feed the image through an instrumentation-only decoder input. Separately exercise actual RG camera open/capture, denial/cancel and release where ADB permits. Record optical scanning as unexercised, not simulated success. |
+| **A04 — Network boundary** | Test scanning without SSID/subnet prechecks, unreachable-host feedback, and successful retry after controlled link restoration. EyeBrowse never joins/configures Wi-Fi or hotspot. Fault injection or test infrastructure must not become network-onboarding product code. |
+| **A05 — Local networking** | Exercise both real applications and protected browser traffic on the existing reachable local network. Test already configured hotspot/VPN coexistence when it can be exercised safely through ADB without a physical setup gate. Where test routing/forwarding is necessary, preserve end-to-end app authentication/encryption and label that route; it is not evidence of direct hotspot/VPN routing or wireless performance. Unavailable physical topology qualification is non-blocking and explicitly unexercised. |
+| **A06 — Hosting and screen state** | Start/stop hosting using real Phone UI automation; verify same-page offscreen output, navigation/input while backgrounded or display-off, and cleanup. Exercise secure lock only when the authorized setup remains recoverable without unavailable credentials; measure actual lock/interactive state. Screen-off is not proof of secure lock. Leave devices connected; physical unplugged/power and unavailable secure-lock conditions remain unqualified rather than blockers. |
+| **A07 — Handoff and viewport** | Automate Phone → RG → Phone using actual apps and protocol. Preserve a deterministic page's state/history, check inactive status and fresh geometry, and reject stale/old-owner input. Unlock/foreground/reconnect must not implicitly change ownership. Use available real windows plus labeled resize tests without requiring physical hinge movement. |
+| **A08 — RG Normal** | Test real RG rendering and sensor registration/event acquisition. Replay timestamped yaw/pitch and tap/swipe sequences into the same controller to verify pointer movement, local/page target activation, directions, recentering, and stale-input rejection. Record real versus replayed sources; stationary acquisition and screenshots do not qualify dynamic physical touchpad/head calibration or comfort. |
+| **A09 — RG Reading** | Automate real RG Normal/Reading/keyboard transitions; replay tilt/neutral/swipe through the controller. Verify no double-tap leakage, isolated-tap no-op, hidden chrome/pointer/keyboard, correct up/down/neutral behavior, swipe suspension until neutral, and stop on lost liveness even without a final stop packet. No wearer sign-off is required for development acceptance. |
+| **A10 — RG keyboard** | Operate actual RG keys through UI/controller automation and verify remote URL/text/password/multiline/basic editable input, correction, case/symbols, Enter/Done, masking, and stale-focus rejection. Verify actual key activation, not direct DOM assignment. Test against the real Phone host and supported background/screen states; declare untested secure-lock/optical conditions. |
+| **A11 — Connection recovery** | Interrupt/restore the app link, delay/duplicate/drop messages, change a test locator, and refuse a different peer at the former locator. Preserve the live page/pairing, stop continuous input, mark stale output, reconcile ownership/focus, and prevent blind uncertain-input replay. Preserve ADB as the recovery channel. |
+| **A12 — Restart, forgetting, and cleanup** | Automate Activity recreation, RG app restart, and scoped Phone/browser process loss separately. Verify settings/pairing/URL/site storage, honest cold recovery with no automatic consequential replay, Forget/re-pair, and Stop cleanup. Use app-scoped operations rather than factory reset, device reboot, or ADB revocation. |
+| **A13 — Measured behavior and scope** | Record latency/freshness/reconnect/resource measurements against declared automated targets, with device/input/route labels and screenshots. Confirm no agent, ASR, built-in VPN/Mihomo, tailnet, CXR, multi-tab, or network-onboarding dependency. Include a non-blocking ledger of unexercised physical qualification; do not require an Owner optical/ergonomic sign-off to close this run. |
 
-### 15.2 Test boundaries
+### 15.3 Test boundaries and completion
 
-Prefer tests through stable externally observable browser/session interfaces and end-to-end user journeys. Use deterministic test pages to observe counters, navigation, scroll position, focus, field values, and harmless submissions. Include representative real webpages for ordinary browsing without substituting unpredictable websites for repeatable regression tests.
+Prefer stable externally observable interfaces and end-to-end application journeys. Deterministic pages should expose counters, navigation, scrolling, focus, field values, and harmless submission observations. Live-page smoke tests remain separate from repeatable regressions. Preserve existing valid evidence with its original candidate, target, and human/automated provenance; do not repeat an already recorded Owner observation merely to fill a new form.
 
-Automated tests SHOULD cover ownership transitions, protocol compatibility, stale/duplicate input, viewport changes, gesture arbitration, pairing expiry/revocation, and recovery. Real-device tests MUST cover the RG camera, optical keyboard/pointer comfort, physical gestures, hotspot/VPN coexistence, and integrated locked-Phone use.
+Test-only camera/sensor inputs and fault injection MUST be confined to instrumentation or controlled test-only seams. They MUST exercise the real downstream implementation and must not create a production authentication bypass, exported arbitrary-command interface, or user-facing ADB dependency. Source/manifest review and automated checks establish that boundary; no release build is introduced merely to check it.
 
-Timed observations MUST state their actual duration and interruptions. Partial coverage MUST NOT be described as an uninterrupted run. Numeric operating budgets and validation windows are declared engineering test conditions, not inferred guarantees.
+Target screenshot capture and inspection are permitted under §13. Screenshots prove only visible rendering/layout; correlate them with state/event/fixture observations for interaction claims. Record actual durations and interruptions; separate physical plugged-in operation from simulated battery state, actual lock from display-off, real network routing from test forwarding, and physical sensor events from replay.
 
-### 15.3 Existing spike evidence
+After the revised required checks pass and independent review/cleanup complete, implementation tickets may close and unblock dependents. The final integration ticket closes this same development profile, with a complete A01–A13 evidence ledger. Unavailable authorization, essential device connectivity, quota, privilege, or exhausted recovery remains a genuine blocker handled under the current run instructions; it is not a reason to fabricate evidence or bypass security.
+
+### 15.4 Existing spike evidence
 
 Issue #1 was accepted under revised Owner acceptance and merged through PR #3. That record includes accepted historical Fold6 locked-command/unplugged evidence and supplemental current-head observations; it does not demonstrate final-head Fold6 post-lock command execution or a complete Phone–RG product path.
 
-The accepted evidence is sufficient to proceed with this architecture. This specification does not reopen the cancelled repeat spike test. The acceptance matrix requires new integrated-product evidence wherever it exercises capabilities outside the spike. New architecture approval comes from the Owner's subsequent decisions, not retroactively from the spike's scope.
+The accepted evidence is sufficient to proceed with this architecture. This specification does not reopen the cancelled repeat spike test. New automated integration evidence must exercise the implemented product, while preserving historical coverage limits. New architecture approval comes from the Owner's subsequent decisions, not retroactively from the spike's scope.
 
 ## 16. Engineering decisions and implementation readiness
 
 The following remain engineering work, not unresolved product features: Android module organization; offscreen-host integration and foreground-service details; transport/encoding; authenticated pairing protocol and key storage; concrete message schema and freshness checks; ordinary field-input integration; camera/QR library; sensor filters; and documented timing/resource budgets.
 
-Implementers MAY propose the simplest supported choices within this contract. They MUST validate device-dependent assumptions and document their concrete contracts before claiming integrated acceptance. A limitation requiring scope or user-visible behavior to change is escalated to Planner/Owner rather than silently replaced with CXR, an RG browser engine, plaintext transport, remote-start machinery, or another unapproved workaround.
+Implementers MAY propose the simplest supported choices within this contract. They MUST test device-dependent assumptions under §15, document unqualified physical conditions, and record concrete contracts before claiming development-profile acceptance. A limitation requiring scope or user-visible behavior to change is escalated to Planner/Owner rather than silently replaced with CXR, an RG browser engine, plaintext transport, remote-start machinery, or another unapproved workaround.
 
 No ADR file, glossary framework, future subsystem scaffold, or particular third-party package is a prerequisite merely because a planning skill normally creates one. Meaningful architectural rationale can be recorded separately without duplicating or contradicting the current SPEC.
 
@@ -362,7 +377,7 @@ This document specifies the product; it does not dispatch work, create tickets, 
 
 ## 17. References
 
-The current Owner instructions and approved Q1–Q8 answers are the product-decision basis. Existing repository materials provide governance, visual evidence, and bounded experiment evidence:
+The current Owner instructions and approved Q1–Q8 answers are the product-decision basis. Subsequent Owner approval authorizes unattended automation while retaining the real Phone and RG and allowing all agents to inspect screenshots; the current run record consolidates those instructions. Existing repository materials provide governance, visual evidence, and bounded experiment evidence:
 
 - Governance: `AGENTS.md`; verified development procedures: `DEV.md`.
 - Visual evidence: `design/soft-dock/design-decisions.md` and `design/soft-dock/design-qa.md`. Earlier Agent/tab/menu fixtures are not current requirements.
