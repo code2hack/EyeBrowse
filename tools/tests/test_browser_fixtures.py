@@ -285,6 +285,46 @@ class ReflectionAndCookieTests(FixtureServerCase):
         self.assertFalse(self.observations.record_note("x" * 200, "engine-no-op"))
         self.assertEqual({"dest-file": "engine-no-op"}, self.observations.snapshot()["notes"])
 
+    def test_case_channel_records_bounded_correlated_evidence(self) -> None:
+        base = self.config.http_base
+        status, body, _ = self.request(
+            "GET", "/api/case?case=dest-content&phase=start&marker=L7&location="
+                   + base.replace(":", "%3A").replace("/", "%2F") + "%2Fdestinations.html"
+                   + "&outcome=dispatched&t=4242")
+        self.assertEqual(200, status)
+        self.assertTrue(json.loads(body)["recorded"])
+        entry = self.observations.snapshot()["cases"][-1]
+        self.assertEqual("dest-content", entry["case"])
+        self.assertEqual("start", entry["phase"])
+        self.assertEqual("L7", entry["marker"])
+        self.assertEqual("dispatched", entry["outcome"])
+        self.assertEqual(4242, entry["uptimeMs"])
+        self.assertIn("destinations.html", entry["location"])
+        self.assertIsInstance(entry["loadSeq"], int)
+
+    def test_case_channel_rejects_unknown_values_and_sanitizes(self) -> None:
+        for query in ("case=evil&phase=start&marker=L1&location=x&outcome=dispatched",
+                      "case=dest-content&phase=middle&marker=L1&location=x&outcome=dispatched",
+                      "case=dest-content&phase=start&marker=L1&location=x&outcome=passed"):
+            status, body, _ = self.request("GET", "/api/case?" + query)
+            self.assertEqual(200, status)
+            self.assertFalse(json.loads(body)["recorded"], query)
+        status, body, _ = self.request(
+            "GET", "/api/case?case=dest-intent&phase=end&marker=NOT-A-MARKER"
+                   "&location=http%3A%2F%2Fevil.example%2Fx&outcome=refused&t=abc")
+        self.assertEqual(200, status)
+        self.assertTrue(json.loads(body)["recorded"])
+        entry = self.observations.snapshot()["cases"][-1]
+        self.assertEqual("(other)", entry["marker"])
+        self.assertEqual("(other)", entry["location"])
+        self.assertEqual(-1, entry["uptimeMs"])
+
+    def test_case_channel_is_bounded(self) -> None:
+        for index in range(fx.MAX_CASE_REPORTS + 5):
+            self.assertTrue(self.observations.record_case(
+                "dest-file", "end", "L1", self.config.http_base + "/x", "no-op", str(index)))
+        self.assertEqual(fx.MAX_CASE_REPORTS, len(self.observations.snapshot()["cases"]))
+
     def test_unknown_note_route_reports_not_recorded(self) -> None:
         status, body, _ = self.request("GET", "/api/note?name=evil&value=DUMMYVALUE")
         self.assertEqual(200, status)

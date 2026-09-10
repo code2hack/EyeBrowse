@@ -41,8 +41,10 @@ import org.junit.runner.RunWith;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -330,29 +332,32 @@ public class BrowserInstrumentedTest {
             waitForMarker();
             String baselineStatus = statusText();
             assertEquals("clean baseline before " + element, "Unsupported destinations", baselineStatus);
-            String marker = domText("load-marker");
-            String location = jsRead("String(document.location.href)");
+            String markerBefore = domText("load-marker");
+            String locationBefore = jsRead("String(document.location.href)");
+            reportCase(element, "start", markerBefore, locationBefore, "dispatched");
 
             realClickElement(element);
             waitUntil("activation of " + element, () -> element.equals(domText("last-activated")));
             SystemClock.sleep(600);
 
-            String status = statusText();
+            String statusAfter = statusText();
+            String markerAfter = domText("load-marker");
+            String locationAfter = jsRead("String(document.location.href)");
             boolean refused = "Blocked unsupported address. Only http:// and https:// load here."
-                    .equals(status);
-            assertTrue("unexpected status for " + element + ": " + status,
-                    refused || baselineStatus.equals(status));
+                    .equals(statusAfter);
+            // Capture before asserting so a recurrence keeps its own current evidence.
+            reportCase(element, "end", markerAfter, locationAfter,
+                    markerBefore.equals(markerAfter) ? (refused ? "refused" : "no-op") : "reloaded");
+
+            assertTrue("unexpected status for " + element + ": " + statusAfter,
+                    refused || baselineStatus.equals(statusAfter));
             if (refused) {
                 freshRefusals++;
             }
-            // Invariants that matter: the session never navigates to the unsupported destination and
-            // never reports a false success. Whether the engine re-fetches the SAME url is recorded as
-            // an observed outcome instead of being asserted away.
-            String locationAfter = jsRead("String(document.location.href)");
-            String markerAfter = domText("load-marker");
-            assertEquals("location preserved for " + element, location, locationAfter);
-            recordOutcome(element, refused ? "app-refused"
-                    : (marker.equals(markerAfter) ? "engine-no-op" : "engine-reload"));
+            // Faithful C1 continuity: an unsupported page-origin destination must leave the original
+            // document intact. A re-fetched same URL is not continuity and is not accepted.
+            assertEquals("document marker preserved for " + element, markerBefore, markerAfter);
+            assertEquals("location preserved for " + element, locationBefore, locationAfter);
             assertEquals("single engine for " + element, 1, attachedWebViews());
             onView(withId(R.id.button_reload)).check(matches(isEnabled()));
         }
@@ -362,19 +367,27 @@ public class BrowserInstrumentedTest {
 
     @Test
     public void contentDestinationIsAnEngineNoOpWithoutAFabricatedNotice() throws Exception {
+        String caseId = "content-standalone";
         openAddress(fixtureUrl("/destinations.html"));
         waitForMarker();
         String baselineStatus = statusText();
-        String marker = domText("load-marker");
-        String location = jsRead("String(document.location.href)");
+        String markerBefore = domText("load-marker");
+        String locationBefore = jsRead("String(document.location.href)");
+        reportCase(caseId, "start", markerBefore, locationBefore, "dispatched");
 
         realClickElement("dest-content");
         waitUntil("content activation", () -> "dest-content".equals(domText("last-activated")));
         SystemClock.sleep(600);
 
-        assertEquals("a no-op must not fabricate an app notice", baselineStatus, statusText());
-        assertEquals(marker, domText("load-marker"));
-        assertEquals(location, jsRead("String(document.location.href)"));
+        String statusAfter = statusText();
+        String markerAfter = domText("load-marker");
+        String locationAfter = jsRead("String(document.location.href)");
+        reportCase(caseId, "end", markerAfter, locationAfter,
+                markerBefore.equals(markerAfter) ? "no-op" : "reloaded");
+
+        assertEquals("a no-op must not fabricate an app notice", baselineStatus, statusAfter);
+        assertEquals("document marker preserved for content", markerBefore, markerAfter);
+        assertEquals(locationBefore, locationAfter);
         assertEquals(1, attachedWebViews());
         onView(withId(R.id.button_reload)).check(matches(isEnabled()));
     }
@@ -796,8 +809,26 @@ public class BrowserInstrumentedTest {
         return null;
     }
 
-    private void recordOutcome(String name, String value) throws Exception {
-        fetch(FIXTURE_BASE + "/api/note?name=" + name + "&value=" + value);
+    private void reportCase(String caseId, String phase, String marker, String location,
+                            String outcome) {
+        // Immediate per-activation evidence: case id, monotonic timing, dispatch outcome and the
+        // observed marker/location. Field contents and passwords are never included. A capture
+        // failure must not mask the behaviour under test, so the assertions still run afterwards.
+        try {
+            fetch(FIXTURE_BASE + "/api/case?case=" + enc(caseId) + "&phase=" + enc(phase)
+                    + "&marker=" + enc(marker) + "&location=" + enc(location)
+                    + "&outcome=" + enc(outcome) + "&t=" + SystemClock.uptimeMillis());
+        } catch (Exception e) {
+            System.out.println("case-capture failed for " + caseId + "/" + phase + ": " + e);
+        }
+    }
+
+    private static String enc(String value) {
+        try {
+            return URLEncoder.encode(value == null ? "" : value, "UTF-8");
+        } catch (UnsupportedEncodingException e) {
+            return "";
+        }
     }
 
     private String fetch(String url) throws Exception {

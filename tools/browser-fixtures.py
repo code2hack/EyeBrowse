@@ -71,9 +71,17 @@ KNOWN_TEST_IDS = frozenset({"fixture-post-1"})
 KNOWN_FIELD_NAMES = frozenset({"test_id", "message", "secret", "notes"})
 KNOWN_NOTE_NAMES = frozenset({"dest-mailto", "dest-content", "dest-file", "dest-intent", "dest-data"})
 KNOWN_NOTE_VALUES = frozenset({"app-refused", "engine-no-op"})
+# Bounded per-activation evidence channel (R2): only these case ids, phases and outcome labels are
+# accepted, and only a marker/location shape is stored - never field contents or passwords.
+KNOWN_CASE_IDS = frozenset({"dest-mailto", "dest-content", "dest-file", "dest-intent", "dest-data",
+                            "content-standalone"})
+KNOWN_CASE_PHASES = frozenset({"start", "end"})
+KNOWN_CASE_OUTCOMES = frozenset({"dispatched", "refused", "no-op", "reloaded", "dispatch-failed"})
+MAX_CASE_REPORTS = 400
+CASE_MARKER = re.compile(r"^L\d{1,6}$")
 KNOWN_API_ROUTES = frozenset({
     "/healthz", "/api/observations", "/api/cookie", "/api/cookies", "/api/note", "/favicon.ico",
-    "/abort",
+    "/abort", "/api/case",
 })
 FIXTURE_COOKIES = ("fixture_session", "fixture_persist")
 
@@ -177,9 +185,11 @@ class Observations:
     def __init__(self, state_dir: Path) -> None:
         self.state_file = state_dir / "observations.json"
         self.started_at = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+        self.origins: tuple[str, ...] = ()
         self.load_seq = 0
         self.loads: dict[str, int] = {}
         self.notes: dict[str, str] = {}
+        self.cases: list[dict[str, object]] = []
         self.requests: list[dict[str, object]] = []
         if self.state_file.exists():
             try:
@@ -193,6 +203,8 @@ class Observations:
                     str(k): str(v) for k, v in data.get("notes", {}).items()
                     if k in KNOWN_NOTE_NAMES and v in KNOWN_NOTE_VALUES
                 }
+                self.cases = [c for c in data.get("cases", [])[-MAX_CASE_REPORTS:]
+                              if isinstance(c, dict)]
                 self.requests = list(data.get("requests", []))[-MAX_HISTORY:]
             except (OSError, ValueError) as exc:  # a corrupt scratch file must not hide readiness
                 print(f"WARN could not read {self.state_file}: {exc}", flush=True)
@@ -230,6 +242,36 @@ class Observations:
             del self.requests[:-MAX_HISTORY]
             self._persist_locked()
 
+    def record_case(self, case_id: str, phase: str, marker: str, location: str,
+                    outcome: str, uptime_ms: str) -> bool:
+        """Records a bounded per-activation observation; never stores page or field contents."""
+        if case_id not in KNOWN_CASE_IDS or phase not in KNOWN_CASE_PHASES \
+                or outcome not in KNOWN_CASE_OUTCOMES:
+            return False
+        safe_marker = marker if CASE_MARKER.match(marker) else "(other)"
+        if self.origins and any(location.startswith(origin) for origin in self.origins):
+            safe_location = strip_control(location)[:120]
+        else:
+            safe_location = "(other)"
+        try:
+            safe_time = int(uptime_ms)
+        except (TypeError, ValueError):
+            safe_time = -1
+        with STATE_LOCK:
+            self.cases.append({
+                "case": case_id,
+                "phase": phase,
+                "marker": safe_marker,
+                "location": safe_location,
+                "outcome": outcome,
+                "uptimeMs": safe_time,
+                "loadSeq": self.load_seq,
+                "at": time.strftime("%H:%M:%S"),
+            })
+            del self.cases[:-MAX_CASE_REPORTS]
+            self._persist_locked()
+            return True
+
     def record_note(self, name: str, value: str) -> bool:
         """Records an allowlisted test-case outcome; returns whether it was recorded."""
         if name not in KNOWN_NOTE_NAMES or value not in KNOWN_NOTE_VALUES:
@@ -246,6 +288,7 @@ class Observations:
                 "loadSeq": self.load_seq,
                 "loads": dict(self.loads),
                 "notes": dict(self.notes),
+                "cases": list(self.cases),
                 "requests": list(self.requests),
             }
 
@@ -298,6 +341,9 @@ class FixtureHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/note":
             self._handle_note(parse_qs(parsed.query))
+            return
+        if path == "/api/case":
+            self._handle_case(parse_qs(parsed.query))
             return
         if path == "/favicon.ico":
             self._send_bytes(204, b"", "image/x-icon")
@@ -383,6 +429,18 @@ class FixtureHandler(BaseHTTPRequestHandler):
             if name in FIXTURE_COOKIES:
                 found[name] = bounded_token(value, fallback="(invalid)")
         body = json.dumps({"fixtureCookies": found}).encode()
+        self._send_bytes(200, body, "application/json")
+
+    def _handle_case(self, query: dict[str, list[str]]) -> None:
+        recorded = self.observations.record_case(
+            (query.get("case") or [""])[0],
+            (query.get("phase") or [""])[0],
+            (query.get("marker") or [""])[0],
+            (query.get("location") or [""])[0],
+            (query.get("outcome") or [""])[0],
+            (query.get("t") or [""])[0],
+        )
+        body = json.dumps({"recorded": recorded}).encode()
         self._send_bytes(200, body, "application/json")
 
     def _handle_note(self, query: dict[str, list[str]]) -> None:
@@ -587,6 +645,7 @@ def create_servers(config: FixtureConfig) -> tuple[BoundedThreadingHTTPServer, B
     except OSError:
         pass
     observations = Observations(config.state_dir)
+    observations.origins = (config.http_base, config.secure_base)
     handler = type("ConfiguredFixtureHandler", (FixtureHandler,), {
         "observations": observations,
         "pages_dir": config.pages_dir,
