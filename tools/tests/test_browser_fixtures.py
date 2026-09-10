@@ -42,6 +42,12 @@ def free_port() -> int:
         return probe.getsockname()[1]
 
 
+def close_servers(*servers) -> None:
+    """Closes listeners created by create_servers (unstarted servers need server_close only)."""
+    for server in servers:
+        server.server_close()
+
+
 class FixtureServerCase(unittest.TestCase):
     """Base case: one loopback HTTP listener and one HTTPS listener with a temp state dir."""
 
@@ -146,13 +152,13 @@ class ConfigurationTests(unittest.TestCase):
             state = Path(tmp) / "state"
             config = fx.FixtureConfig(bind="127.0.0.1", http_port=free_port(),
                                       https_port=free_port(), state_dir=state)
-            server, _, _ = fx.create_servers(config)
+            http_server, https_server, _ = fx.create_servers(config)
             try:
                 self.assertEqual(0o700, state.stat().st_mode & 0o777)
                 self.assertEqual(0o700, (state / "tls").stat().st_mode & 0o777)
                 self.assertEqual(0o600, (state / "tls" / "fixture-key.pem").stat().st_mode & 0o777)
             finally:
-                server.server_close()
+                close_servers(http_server, https_server)
 
     def test_ready_file_guard_refuses_second_server(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -231,18 +237,18 @@ class ConfinementTests(FixtureServerCase):
             config = fx.FixtureConfig(bind="127.0.0.1", http_port=free_port(),
                                       https_port=free_port(), state_dir=Path(tmp) / "state",
                                       pages_dir=pages, idle_timeout=self.idle_timeout)
-            server, _, _ = fx.create_servers(config)
-            threading.Thread(target=server.serve_forever, daemon=True).start()
+            http_server, https_server, _ = fx.create_servers(config)
+            threading.Thread(target=http_server.serve_forever, daemon=True).start()
             try:
-                connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1],
+                connection = http.client.HTTPConnection("127.0.0.1", http_server.server_address[1],
                                                         timeout=5)
                 connection.request("GET", "/basic.html")
                 response = connection.getresponse()
                 self.assertEqual(404, response.status)
                 connection.close()
             finally:
-                server.shutdown()
-                server.server_close()
+                http_server.shutdown()
+                close_servers(http_server, https_server)
 
 
 class ReflectionAndCookieTests(FixtureServerCase):
