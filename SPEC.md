@@ -1,1068 +1,375 @@
 # EyeBrowse SPEC v0.0.1
 
-**Status:** Unreleased development draft; v0.0.1 scope refinement in progress
-
-**Target product version:** v0.0.1
-
-**Product:** EyeBrowse
-
-**Primary targets:**
-- Android phone, primarily Samsung Galaxy Z Fold6 cover and inner displays.
-- Rokid Glasses (RG), Android 12 / API 32, approximately 480 × 640 physical display target.
+**Status:** Unreleased development specification — replacement draft for Owner review  
+**Target product version:** v0.0.1  
+**Project Owner:** code2hack  
+**Editor:** Planner: SPEC Design  
+**Decision baseline:** 2026-09-10
 
 ## 0. Authority and interpretation
 
-This specification defines the intended EyeBrowse MVP behavior and architecture.
+This document defines the complete product and engineering contract for EyeBrowse v0.0.1. It is intended to replace the previous `SPEC.md` in full, not supplement it with overriding clauses.
 
-It is derived from:
-- `design/mvp-design-brief-v0.md`;
-- the selected Soft Dock direction;
-- `design/soft-dock/design-decisions.md`;
-- `design/soft-dock/design-qa.md`;
-- Project Owner decisions made after the design study.
+The current Project Owner direction governs this specification under `AGENTS.md`. The document consolidates the approved browser-first scope, Phone/RG ownership, pairing boundary, and the Owner's answers to refinement questions Q1–Q8.
 
-Where the design study explicitly marks a value or behavior as illustrative or unresolved, this specification does not silently promote it to a requirement. Such items are listed under **Open validation items**.
+Once approved, this document is the current v0.0.1 contract. Requirements from earlier drafts are not inherited unless restated here. Earlier design artifacts remain visual references only where consistent with this document. Historical specifications belong in Git history, not in an obsolete requirements appendix.
 
-The words **MUST**, **SHOULD**, and **MAY** are normative.
+**MUST** and **MUST NOT** identify required behavior. **SHOULD** identifies a recommendation whose deviation needs a documented reason. **MAY** identifies an optional implementation choice, not additional required scope.
 
-### 0.1 Current Owner direction: v0.0.1 scope reset
+Specification approval, implementation completion, device validation, and release publication are separate events. The version number does not claim that v0.0.1 has been released or has passed acceptance.
 
-The Project Owner directed the following refinement on 2026-09-10:
+## 1. Product definition
 
-- Use **SPEC v0.0.1** for this unreleased development version. This version label is not a release announcement or evidence of completed acceptance.
-- Build a minimal browser-first version: a simple WebView-based browser on Phone and a HUD application on RG.
-- The main browser core runs on Phone. Phone and RG MUST both offer basic browser functionality; the RG application is not merely a passive demonstration display. The exact function set and interaction contract remain to be refined.
-- No agent is included in v0.0.1. The earlier requirement for an agent runtime on each device does not apply to this version.
-- Built-in Mihomo is removed from the required architecture. Internet access uses the Phone's externally managed networking, including its configured global VPN; EyeBrowse does not need to provide that VPN itself.
-- Built-in Tailscale remains a future product requirement, but is deferred beyond v0.0.1. It is not a dependency or acceptance gate for this version.
-- Accepted issue #1 evidence is sufficient to proceed with this phone-hosted direction. It is not, by itself, evidence that Phone-to-RG transport, RG interaction, or integrated background/power behavior has passed.
+> EyeBrowse v0.0.1 is a minimal, single-tab, Phone-hosted browser that the user can operate either on Phone or through a Rokid Glasses HUD, including while an explicitly started Phone hosting session continues with Phone securely locked and its physical screen off.
 
-This direction supersedes conflicting requirements in the earlier draft material below, particularly the full Browser/Agent/Speech/Network feature bundle, duplicated on-device browser/agent runtimes, and built-in Mihomo/tailnet acceptance gates.
+There is one authoritative browser session and one active page. Phone and RG are two interfaces to that page, not independent browsers with synchronized URLs.
 
-Sections 1–29 are retained during refinement so prior design work is not silently lost. Their combined feature list and acceptance gates MUST NOT be treated as the approved v0.0.1 implementation contract. Previously approved, non-conflicting design decisions remain inputs; unsettled choices are not resolved merely by retaining their earlier wording.
+Phone MUST work as an ordinary touch-operated browser without RG. RG MUST provide usable browsing and text entry through the connected Phone host; it is not merely a passive display. RG does not provide standalone browsing when Phone is unavailable.
 
-Still to refine: remaining basic-browser behavior, presentation/control handoff and viewport policy, transport protocol/codec, text-entry details, RG Normal/Reading scope, speech scope, QR pairing details, connection/recovery behavior, and integrated acceptance criteria. Section 0.2 records settled choices; it does not select a transport library, codec, new gesture, or unapproved fallback.
+**Browser is the only permanent primary product surface in v0.0.1.** Pairing, scanning, connection status, hosting status, and handoff are utility views or controls. There is no Agent surface.
 
-Evidence: [issue #1](https://github.com/code2hack/EyeBrowse/issues/1), [independent review under revised Owner acceptance](https://github.com/code2hack/EyeBrowse/pull/3#issuecomment-5614157830), and [Manager acceptance](https://github.com/code2hack/EyeBrowse/issues/1#issuecomment-5614203779). The accepted record includes Owner-accepted historical Fold6 locked-command/unplugged evidence and supplemental current-head observations; it does not claim final-head Fold6 post-lock command qualification or production transport/power validation. The cancelled repeat spike test is not reinstated by this specification update.
+On RG, Browser has two presentation modes: **Normal** for interaction and **Reading** for consumption.
 
-### 0.2 Approved v0.0.1 browsing and pairing decisions
+## 2. Scope and exclusions
 
-The Project Owner approved the following decisions on 2026-09-10, including the QR scan direction. These decisions further refine Section 0.1 and supersede conflicting earlier draft requirements. They are requirements to implement, not claims of completed device validation.
+| In v0.0.1 | Outside v0.0.1 |
+| --- | --- |
+| Phone-owned System WebView, one live page, one tab | Multiple tabs and independent simultaneous Phone/RG browsing |
+| Manual address entry, navigation, scrolling, and ordinary field editing | Address-bar search, agent navigation, and browser automation tools |
+| Responsive Phone interface and RG HUD | Agent runtime, LLM integration, chat, and placeholder Agent controls |
+| RG head pointer, touchpad gestures, Reading head-scroll, and in-app keyboard | EyeBrowse ASR, microphone workflows, Chinese RG input, and system-wide IME/mouse |
+| Local LAN/hotspot communication and Phone-displayed QR pairing | CXR/CXR-L/CXR-S, cloud relays, Internet rendezvous, and built-in Tailscale |
+| Explicit hosting, handoff, remembered pairing, and recoverable connection loss | Automatic hosting after reboot or remote startup of an inactive Phone host |
+| Basic app-private settings and browser persistence | Cloud sync, password manager, bookmarks, history-management UI, extensions, and elaborate settings |
 
-#### Shared session and explicit handoff
+Dedicated download/upload workflows, PDF/document viewers, guaranteed audio/video playback, DRM, and comprehensive compatibility with arbitrary rich-text editors are not acceptance requirements. A video codec used for HUD presentation does not imply website video-playback support.
 
-- Phone owns one authoritative browser session and one active page. Phone and RG operate that same page, not independent simultaneous browsing sessions.
-- Use explicit presentation/control handoff between Phone and RG. The handoff controls, viewport resizing policy, and inactive-device presentation remain to be specified; implementation MUST NOT silently decide those user-visible behaviors.
-- Phone remains usable for ordinary browsing without RG connected.
-- Connecting RG or handing control between devices MUST NOT intentionally start a different browser session. Preserve the current page and its state as far as WebView permits; exact continuity/recovery behavior remains part of refinement.
+Built-in Mihomo is removed from the required product architecture. EyeBrowse does not establish or manage a VPN. Built-in Tailscale remains a future product requirement but MUST NOT become a dependency or acceptance gate for v0.0.1. No unimplemented feature needs a placeholder module, menu, or settings screen.
 
-#### Single tab
+**Wi-Fi and hotspot setup are permanently outside this project's scope.** EyeBrowse MUST NOT enable or configure a hotspot, provision Wi-Fi credentials through pairing, or join/switch Wi-Fi networks. This is not a deferred onboarding feature.
 
-- v0.0.1 is a single-tab browser.
-- Multiple tabs and tab-management workflows are outside this version. Earlier requirements for new-tab creation, a `+` control, tab count, and programmatic agent tab operations do not apply.
-- No placeholder Agent surface or Agent control is required for a version without an agent. Retain the applicable Soft Dock visual direction without controls for absent features.
+## 3. Targets and canonical terms
 
-#### RG text entry
+The primary Phone target is Samsung Galaxy Z Fold6, including its cover and inner displays. Phone layouts MUST respond to actual window dimensions, density, insets, orientation, and folding changes rather than fixed study screenshots.
 
-- RG MUST support entering a URL and entering, correcting, and submitting text in ordinary supported webpage fields without unlocking the phone during an already established browsing session.
-- Retain a minimal in-app RG keyboard, operated using the head pointer and tap. Phone-assisted typing MUST NOT be the only text-entry path.
-- The keyboard is EyeBrowse-local, not a system-wide IME. Phone uses its normal Android IME.
-- Exact supported field types, keyboard details, and focus/input delivery rules remain to be specified. The scope includes ordinary browser text entry, not an Agent composer.
+The RG app MUST have an API-32-compatible runtime path. Approximately **480 × 640 physical pixels** is the RG display design target, not a guarantee of the app's available content viewport or its logical density. Insets, density, camera access, sensor behavior, and optical readability require device validation.
 
-#### LAN and phone-hotspot connection
+| Term | Meaning |
+| --- | --- |
+| **Phone host** | The Phone-side runtime that owns and executes the browser session. |
+| **Browser session** | The live single-tab page, navigation state, and associated browser state owned by Phone. |
+| **Hosting session** | An explicitly started period during which Phone permits the paired RG to connect and use that browser. |
+| **Pairing** | Remembered authorization between one Phone and one RG; not a Wi-Fi association. |
+| **Connection** | A currently live, authenticated app-to-app link; losing it does not itself erase pairing. |
+| **Control owner** | The device currently permitted to send ordinary browser input and determine the page's presentation viewport. |
+| **Handoff** | An explicit transition of control ownership and presentation between Phone and RG. |
+| **Content viewport** | The browser content area available on the controlling device, excluding that device's visible local controls and keyboard. |
 
-- Phone–RG communication MUST use ordinary local LAN networking. The primary usage topology is RG connected to the Phone's hotspot; a shared local Wi-Fi LAN is also supported.
-- Phone is the browser host and RG is its local HUD client. Browser presentation travels toward RG and RG browser actions travel toward Phone; the concrete presentation format and transport protocol remain engineering decisions to refine.
-- No CXR, CXR-L, or CXR-S integration is included in v0.0.1, including as a fallback.
-- The Phone–RG link MUST NOT depend on a cloud relay, public Internet rendezvous service, or built-in Tailscale. Website Internet access remains separate from this local link.
-- EyeBrowse does not supply its own VPN. Integration validation must exercise the intended Phone-hotspot topology with the Phone's configured global VPN enabled, checking both website access and the local Phone–RG link. A shared-router test alone does not establish the primary hotspot case.
+Pairing, connection, hosting, control ownership, RG presentation mode, and text-entry state MUST be modeled separately. Being paired or connected MUST NOT, by itself, grant current browser control.
 
-#### QR pairing direction and permanent network-setup boundary
+## 4. Runtime and component boundaries
 
-- Quick pairing MUST use a QR code displayed by EyeBrowse Phone and scanned by EyeBrowse RG using the glasses camera.
-- The scan pairs the RG client with the Phone browser host; the normal pairing journey MUST NOT require manually typing the Phone's IP address or port.
-- QR scanning/decoding on actual RG hardware is part of the integrated pairing validation, not something issue #1 already proved.
-- Network setup is user-managed and permanently outside EyeBrowse's scope. EyeBrowse MUST NOT enable/configure a hotspot, provision Wi-Fi/hotspot credentials through its pairing QR, or join/switch Wi-Fi networks for pairing. This is a project boundary, not a feature deferred to a later version.
-- QR scanning and decoding MUST NOT be gated on a same-network precheck, SSID comparison, or subnet comparison. A scan supplies app-pairing information; the app then attempts to reach the Phone host over the available local connection.
-- When the Phone cannot be reached, show a simple prompt asking the user to connect both devices to the same local network, including connecting RG to the Phone's already configured hotspot, and retry. Do not turn that prompt into an automatic network-joining workflow or claim a specific network-failure cause that has not been established.
-- QR payload, authentication/channel protection, expiry/reuse, trusted-device retention, unpairing, and reconnection details remain to be specified. No protocol, credential format, or automatic trust-by-LAN-presence policy is selected by this decision.
+EyeBrowse MUST remain one repository producing two Android APKs: Phone and RG. Shared contracts MUST NOT become divergent product forks.
 
-#### Remaining scope boundaries
+| Boundary | Responsibility |
+| --- | --- |
+| **Phone browser host** | System WebView execution, navigation, live page and focus state, cookies/site storage, website requests, viewport management, and application of authorized input. |
+| **Phone interface** | Touch browsing, Android IME, pairing-code display, hosting controls, and explicit handoff. |
+| **RG interface** | HUD presentation, locally responsive controls and pointer, gesture interpretation, Reading behavior, in-app keyboard, QR scanning, and connection feedback. |
+| **Local connection layer** | Pairing authentication, protected communication, browser presentation/state delivery, input delivery, and connection recovery. |
+| **Shared contracts** | Browser actions/status, identity and session boundaries, handoff, viewport/focus identity, failures, and persisted non-page settings. |
 
-The four approved choices settle shared-page handoff, a single tab, RG-independent text entry, and local-only transport without CXR. They do not automatically approve every other recommendation in the preceding discussion. In particular, the precise basic navigation controls, full RG Normal/Reading contract, custom ASR deferral, connection recovery, and detailed acceptance criteria remain to be reconciled explicitly. Network setup and automatic hotspot/Wi-Fi joining are permanently outside EyeBrowse, not unresolved decisions or future features. No new implementation ticket or device test is dispatched by this documentation update.
+The webpage MUST execute on Phone using Android System WebView. RG MUST NOT open a separate copy of the website to simulate continuity. Website cookies, private storage, and execution state remain on Phone.
+
+RG presents the Phone-hosted page rather than mirroring the physical Phone screen. Phone-side offscreen hosting MUST allow RG use while Phone is locked. The spike's private-display approach is available implementation evidence, not a requirement to copy its debug harness unchanged.
+
+RG controls, pointer feedback, keyboard, and connection UI MUST remain locally responsive rather than depend on a returned frame for every local interaction. The precise page-presentation format, encoding, and transport library are engineering decisions within this ownership contract.
+
+Device-specific physical input MUST be translated into browser actions at device boundaries. A minimal action contract for human input is required; an agent semantic-observation runtime, arbitrary remote script executor, or CDP production control path is not.
+
+## 5. Single-tab browser behavior
+
+### 5.1 Address entry and navigation
+
+Both controlling interfaces MUST support entering a webpage address, opening it, showing the current location, going Back and Forward when available, and Reloading. They MUST support ordinary link/button activation and vertical scrolling.
+
+The location field is a primary manual navigation path, not an agent fallback. It MUST support HTTPS addresses and explicit HTTP addresses, including local host addresses. Ordinary domain names without a scheme SHOULD be normalized to HTTPS. Invalid or unsupported input MUST leave the current page intact, preserve the entered text for correction, and show a compact error.
+
+Free-text search phrases MUST NOT be silently sent to a search provider. Searching inside a webpage remains ordinary browsing. The exact accepted address grammar and normalization cases MUST be documented and tested; arbitrary script/file/native-intent execution is not part of address entry.
+
+Current URL, title where displayed, loading state, navigation availability, and errors MUST reflect the authoritative Phone browser. A failed navigation MUST offer a clear way to retry or enter another address.
+
+### 5.2 One tab and webpage-created windows
+
+Exactly one active tab is required. There MUST NOT be a new-tab button, tab counter, tab switcher, or hidden collection of independent browsing sessions.
+
+Ordinary user-activated links requesting a new tab/window MUST be handled in the existing tab. Unsolicited pop-up windows MUST NOT create additional browsing contexts. Flows requiring multiple windows may be reported as unsupported; they MUST NOT silently introduce another tab model.
+
+First use without a recoverable URL MAY present an empty browser with accessible address entry. A home feed or branded start-page product is not required.
+
+### 5.3 Supported field interaction
+
+Both controlling interfaces MUST support entering, correcting, and submitting text in standard single-line text inputs, password inputs, multiline text areas, and basic plain editable webpage regions. Ordinary form controls needed by the validated browsing journeys MUST remain operable.
+
+Universal support for complex rich-text editors, file pickers, special authentication flows, and every custom webpage widget is not claimed. Unsupported behavior MUST be visible rather than represented as a successful action.
+
+## 6. Phone interface
+
+While Phone owns control, EyeBrowse MUST provide direct touch interaction, ordinary scrolling, the normal Android IME, and accessible browser navigation controls.
+
+Android Back MUST first dismiss an active local keyboard or utility view when applicable, then traverse browser history when available. At the root, it follows normal application back behavior; leaving the activity MUST NOT be confused with the explicit Stop hosting action.
+
+Fold/unfold, resizing, and ordinary activity recreation MUST NOT intentionally create an unrelated browser session or force RG handoff. A surviving Phone host remains the session owner across interface recreation.
+
+While RG owns control, the Phone EyeBrowse interface MUST show compact hosting/connection status and a **Use on phone** action, not a second independently interactive page or a required live preview. It MUST also provide access to Stop hosting and pairing management.
+
+Unlocking Phone or bringing EyeBrowse to the foreground MUST NOT automatically take control away from RG.
+
+## 7. RG interface and interaction
+
+### 7.1 Normal Mode
+
+Normal Mode shows browser controls, webpage content, and a visible head pointer. Head yaw controls horizontal pointer movement and head pitch controls vertical movement. Pointer motion MUST be usable for both local controls and the remotely hosted page.
+
+A short tap activates the current target. The pointer MUST use suitable smoothing, a noise dead zone, and a usable recenter/reset mechanism. No dwell activation or new hardware gesture is implied. Exact tuning and the recenter affordance MUST be documented with hardware evidence.
+
+Forward touchpad swipes scroll down; backward swipes scroll up. The target is the current scrollable browser region, not whichever field or page happened to be active before a handoff.
+
+### 7.2 Reading Mode
+
+Reading Mode shows the same webpage with EyeBrowse's browser controls, pointer, and keyboard hidden. It uses the available content viewport. It MUST NOT extract, summarize, invert, or otherwise rewrite webpage content. Ordinary layout changes caused by viewport resizing are permitted; a separate reader document is not.
+
+On entry, EyeBrowse MUST dismiss the RG keyboard, end active text entry without deliberate submission, preserve entered text where the page permits, and initialize the head-scroll neutral reference. Returning to Normal MUST NOT automatically reopen the keyboard.
+
+Relative upward head pitch scrolls upward; downward pitch scrolls downward. A neutral dead zone stops scrolling. Larger displacement SHOULD produce greater speed within a bounded maximum. Neutral acquisition, drift control, and the response curve remain hardware-tuned values.
+
+An isolated short tap in Reading Mode does nothing. Double tap returns to Normal.
+
+### 7.3 Gesture and scroll arbitration
+
+| Input | Normal | Reading |
+| --- | --- | --- |
+| Short tap | Activate pointer target | No action |
+| Double tap | Enter Reading | Return to Normal |
+| Forward swipe | Scroll down | Scroll down |
+| Backward swipe | Scroll up | Scroll up |
+| Head movement | Move pointer | Control continuous vertical scrolling |
+
+Double-tap recognition MUST NOT dispatch either constituent tap as an unintended activation. Its recognition window MUST be bounded and tunable.
+
+A swipe in Reading Mode MUST suspend continuous head-scroll, perform the discrete scroll, and keep head-scroll suspended until the head returns to neutral. A held tilt MUST NOT immediately fight the swipe.
+
+Head-scroll MUST stop on loss of usable sensor data, connection, browser control, or active RG presentation. The Phone host MUST expire continuous remote input after a bounded loss of liveness; safety MUST NOT depend on receiving a final stop packet from a disconnected RG.
+
+After a handoff or connection recovery, continuous scrolling MUST remain stopped until fresh state and a neutral reference are established. Sensor failure MUST be reported recoverably and MUST leave a safe exit or Phone takeover path rather than uncontrollable motion.
+
+### 7.4 RG keyboard
+
+The in-app keyboard MUST allow URL entry and supported webpage field editing without unlocking Phone during an established hosting session. Phone-assisted typing MUST NOT be the only input path.
+
+The initial keyboard uses English QWERTY with letters, Shift/case control, numbers, common punctuation/symbols, Space, Backspace, and appropriate Enter/Done actions. Chinese input, prediction, swipe typing, and a system-wide Android IME are outside v0.0.1.
+
+Head pointer plus short tap operates keys. The focused field or useful field context MUST remain visible above the keyboard. Keyboard sizing must preserve usable text and targets on real RG hardware; study dimensions are not fixed requirements.
+
+Done dismisses text entry without silently submitting an unrelated form. Enter follows the focused field's semantics, including newline for a multiline target or the relevant submit action. Editing MUST affect the current intended target, not a stale focus left by navigation or handoff.
+
+Password fields MUST remain masked in EyeBrowse-controlled displays. Keyboard and transport diagnostics MUST NOT log passwords or typed text. Navigating, losing control, or invalidating the target MUST stop input delivery to that target.
+
+## 8. Hosting lifecycle
+
+### 8.1 Explicit start
+
+The user MUST be able to start a hosting session explicitly from Phone while unlocked. Starting hosting makes the current browser available to the paired RG; it MUST NOT discard the current page or automatically grant RG control.
+
+The active hosting session MUST have visible Phone status and an explicit Stop action. Implementation MUST use an appropriate ordinary Android lifecycle path for the supported device, without root, privileged signatures, device-owner privileges, a disabled secure lock, or an unlocked-black-screen workaround. MediaProjection-based physical-screen capture is not the hosting solution.
+
+After successful startup, RG browsing MUST continue with Phone securely locked and its physical display off, while the supported local connection remains available. Merely locking Phone does not transfer control; an explicit RG handoff action remains necessary when Phone owns the page.
+
+### 8.2 Stop and restart
+
+Stop hosting MUST revoke live RG control, terminate the remote connection, and release hosting-specific resources such as capture/encoding, private displays, service work, and wake locks. Phone-only browsing MAY continue without retaining those remote-hosting resources. Pairing and normal persisted browser data are not erased by stopping.
+
+A disconnected RG MUST receive or eventually detect the inactive/unavailable host state. It MUST NOT continue to present an old page as live.
+
+Automatic hosting after reboot and remote startup of an inactive Phone host are not required. After a stop or process loss, the supported recovery is for the user to restart hosting on Phone. Resources retained during a temporary reconnect window MUST be bounded and documented; the app MUST NOT perform indefinite high-rate capture for an absent client.
+
+## 9. Local networking and QR pairing
+
+### 9.1 Existing-network prerequisite
+
+Phone–RG communication MUST use ordinary local networking. The primary supported topology is RG connected to Phone's hotspot; a shared reachable Wi-Fi LAN is also supported. Website Internet access is separate from this local connection.
+
+The apps MUST NOT depend on CXR, cloud relay/rendezvous, a tailnet, or an EyeBrowse-managed VPN. Website requests use Phone's externally managed networking and applicable VPN policy.
+
+QR scanning MUST NOT be gated by matching SSIDs, matching subnets, or a same-network precheck. Scanning obtains pairing information; EyeBrowse then attempts to reach the identified Phone host.
+
+When Phone cannot be reached, a sufficient prompt is: **“Cannot reach Phone. Connect both devices to the same local network and retry.”** The app MAY mention Phone's existing hotspot. It MUST NOT automatically change network settings or claim a particular failure cause without evidence. Reachability, expired invitation, and authentication failure MUST remain distinguishable.
+
+### 9.2 First pairing
+
+Phone MUST provide a **Pair glasses** action displaying a QR code. RG MUST scan and decode that code using its own camera, without CXR or a separate desktop/ADB decoding step in the normal journey.
+
+The code MUST supply enough information to locate the host and securely establish the intended app pairing without manual IP/port entry. Pairing MUST authenticate the intended host and establish protected communication before browser content or input is exchanged.
+
+Invitations MUST have bounded validity and be cancellable; successful consumption or cancellation MUST prevent reuse as a standing browser-control credential. Exact payload, invitation lifetime, credential format, and cryptographic implementation are engineering decisions. Long-lived trust MUST NOT be an unauthenticated IP address or a reusable screenshot of an invitation.
+
+Successful pairing establishes authorization and connection, not implicit handoff. RG uses its explicit **Use on glasses** action to take control.
+
+Camera permission denial, scanning failure, or an invalid/expired code MUST produce a recoverable status. The camera MUST be released on completion, cancellation, or leaving the scanner. QR pairing does not authorize continuous camera capture or webpage camera access.
+
+### 9.3 Remembered pairing and subsequent connection
+
+v0.0.1 MUST remember one Phone–RG pairing across ordinary disconnections and application restarts. An active, reachable Phone host MUST permit the remembered RG to reconnect without a fresh scan.
+
+A current LAN address is a locator, not identity. An endpoint change MUST NOT authorize a different device. A fresh QR scan is an acceptable way to recover an unusable saved locator; automatic address rediscovery is not required.
+
+Each device MUST offer a small Forget pairing action. Local forgetting removes its stored authorization, closes its live connection, and prevents reuse of the forgotten trust. It does not promise to erase secrets remotely from an offline peer. Replacing the one paired peer requires an explicit user action rather than silent replacement.
+
+An unauthenticated local client MUST NOT view the page, submit browser input, or acquire control merely because it can reach the port.
+
+## 10. Control handoff and viewport ownership
+
+### 10.1 Single controller
+
+Phone remains the execution host at all times. Only one device owns ordinary browser input and the presentation viewport at a time.
+
+| Control owner | Phone interface | RG interface |
+| --- | --- | --- |
+| Phone | Interactive touch browser | Compact “Browsing on phone” status and explicit Use on glasses action |
+| RG | Hosting status and explicit Use on phone action | Interactive RG browser in Normal or Reading Mode |
+
+Handoff controls remain usable even on the inactive interface; they are not ordinary webpage input. A Phone takeover MUST remain possible after RG disconnects. Taking RG control requires an authenticated live connection and an active host.
+
+Unlocking Phone, launching an interface, pairing, or restoring a connection MUST NOT implicitly change the current control owner. Reconnection can resume existing RG ownership only if Phone has not since taken control and the session is still valid.
+
+### 10.2 Transition behavior
+
+A handoff MUST suspend outgoing browser input and continuous scroll, end active text entry without intentional submission, preserve the live Phone-owned page, update the receiving content viewport, and enable the receiving input only against fresh presentation/state.
+
+The Phone host MUST serialize competing handoff requests so both devices cannot simultaneously believe their ordinary input is authorized. Delayed input from the former owner MUST NOT execute after the transition.
+
+EyeBrowse MUST NOT implement handoff by opening the same URL in a different browser or intentionally reloading the existing page. Navigation history, live form values, and page execution state MUST not be deliberately discarded. Exact pixel-identical scroll positions across different viewport sizes are not required; preserve logical reading position where practical.
+
+### 10.3 Viewport changes
+
+The controlling device determines the actual content viewport. On Phone it follows the current window and IME/insets. On RG it follows the available browser area in Normal, Reading, or keyboard presentation; the full 480 × 640 target MUST NOT be mistaken for the content size in every state.
+
+Viewport or focus changes MUST invalidate incompatible in-flight coordinates and edit targets. Input MUST use the current document, control, and viewport context. RG MUST not activate a target using a frame from an earlier handoff or an incompatible viewport.
+
+## 11. Connection, input, and presentation contract
+
+The local protocol MUST provide version/capability compatibility checks, authenticated session identity, current ownership/status, ordered browser input, and enough document/viewport/focus identity to reject known-stale operations.
+
+Browser presentation MUST originate from the Phone-owned page and carry sufficient freshness information to distinguish current output from buffered old output. Queues, message sizes, retries, and liveness timers MUST be bounded. Recovery MUST converge to current state rather than replay a backlog of obsolete frames or actions.
+
+Inputs with potentially duplicating effects—clicks, text edits, navigation, and form submissions—MUST NOT be blindly resent after uncertain delivery. Identifiable duplicates MUST be rejected or safely resolved within the active session. An acknowledgement of delivery MUST NOT be represented as proof of a website-side transaction's success.
+
+The connection MUST expose compact recoverable states such as connecting, connected, reconnecting, host unavailable, authentication failure, and incompatible protocol. A stale last frame may remain only with an unmistakable stale/disconnected indication and disabled webpage input. Local recovery controls MUST remain usable.
+
+A disconnected client MUST NOT resume typing into a changed field, resume held head-scroll, or retake control without reconciling the host's current session and ownership. Continuous input needs fresh liveness and neutral acquisition even when the last page frame appears unchanged.
+
+These are behavior requirements, not a mandated wire schema or transport library. The implementation MUST document its concrete protocol before integrated acceptance.
+
+## 12. Persistence and recovery
+
+| Event | Required behavior |
+| --- | --- |
+| Phone/RG handoff or RG Normal/Reading transition | Keep the same live browser session; no intentional reload or loss of entered text. |
+| Temporary RG connection loss while Phone browser lives | Preserve page and pairing, stop remote input, show connection loss, and reconcile on reconnect. |
+| Phone interface recreation while host lives | Reattach to the existing session rather than create another one. |
+| RG app restart while Phone host lives | Use remembered pairing and reconcile the existing session and control owner. |
+| Browser/host process loss | Report interruption; do not claim that the former live page survived. |
+| Explicit Stop hosting | End remote use and release hosting resources without erasing pairing or normal browser persistence. |
+| Forget pairing | Revoke local remembered authorization and end its active connection. |
+
+App-private persistence MUST cover remembered pairing, relevant non-secret settings, and the last visited URL. The Phone browser MUST use normal app-private cookies and site-storage persistence, subject to site expiry and user/OS clearing.
+
+After actual browser-process loss, recovery MAY reload the last URL with clear recovery feedback. Exact restoration of JavaScript memory, unsaved forms, or the prior in-memory history stack is not guaranteed. Reloading MUST NOT automatically replay an uncertain POST or other consequential action from the lost session.
+
+Passwords, transient keystrokes, and arbitrary webpage form drafts MUST NOT be added to a custom persistent recovery log. Ordinary website-managed storage is distinct from EyeBrowse recording keyboard input.
+
+A new browser-host lifetime MUST be distinguishable from the lost one so old commands, focus tokens, and presentation references cannot be reused against it.
+
+## 13. Security and privacy boundaries
+
+Phone–RG browser presentation, typed input, and session messages MUST use authenticated, encrypted communication through maintained platform/library primitives. No plaintext “trusted LAN” exception or custom cryptographic algorithm is permitted.
+
+Secrets MUST NOT be committed to the repository or included in routine logs. Stored pairing credentials MUST use app-private secure storage appropriate to their type. Normal diagnostics SHOULD record timings, state transitions, and non-sensitive identifiers, not page images, full URLs with sensitive parameters, or field contents. Explicit debug evidence capture must be deliberate and kept separate from normal operation.
+
+Arbitrary webpage code is untrusted. Web content MUST NOT obtain pairing credentials, hosting controls, unrestricted native bridges, or app-level device capabilities. Native/page messages, where needed for input integration, MUST be scoped and validated.
+
+EyeBrowse MUST NOT silently bypass certificate errors or weaken Phone's VPN policy to make browsing appear successful. Local Phone–RG traffic and website traffic MUST be handled without globally bypassing the VPN for all EyeBrowse traffic.
+
+Required hosting and RG interaction MUST NOT depend on root, system signing, device-owner privileges, a system-wide accessibility mouse, or disabling secure lock. Debug-only ADB controls from the spike MUST NOT become a production remote-control interface.
+
+## 14. Visual and usability contract
+
+Retain the applicable **Soft Dock** direction: restrained rounded browser controls, large enough RG targets, and sparse persistent chrome. Phone and RG should share a visual identity without identical physical layouts.
+
+There MUST NOT be disabled Agent buttons, tab controls, microphone controls, or menus reserved for absent features. A small utility menu MAY contain actual navigation, pairing, hosting, handoff, and recovery actions; exact placement is a design implementation decision.
+
+RG Reading Mode has no persistent app controls during healthy browsing. A genuine error or disconnection MAY interrupt the clean presentation with necessary recovery UI; hiding an important failure is not part of Reading Mode.
+
+Text must remain legible after presentation transport. Pointer motion, key feedback, and local controls MUST not feel blocked by a remote round trip. Input-to-visible-page latency, frame freshness, reconnect delay, optical readability, and active/idle resource use MUST be measured on the intended devices.
+
+This specification does not invent fixed frame rates, bitrate, latency, battery-life, or ergonomic thresholds. The implementation plan MUST set measurable targets and test conditions before integrated acceptance. Values justified only by a desktop simulation cannot establish RG comfort.
+
+## 15. Acceptance and evidence
+
+All acceptance claims MUST identify the candidate commit/build and actual devices/software. Phone-only, emulator, synthetic-input, and real-RG evidence MUST remain distinguishable. App functionality MUST be exercised through the app's normal connection and controls; ADB may collect evidence but cannot substitute for the user-facing control path.
+
+### 15.1 Required acceptance matrix
+
+| ID | Required demonstration |
+| --- | --- |
+| **A01 — Build and targets** | Produce two installable APKs from one repository. Launch on Fold6 cover/inner layouts and the API-32 RG target without inaccessible primary controls. |
+| **A02 — Phone-only browsing** | Without RG, open/normalize addresses; navigate links; use Back/Forward/Reload; scroll; edit supported fields; submit a harmless test form; recover from a failed address/navigation. Confirm no address-bar search or extra tabs. |
+| **A03 — Actual QR pairing** | RG camera decodes the QR shown on Phone and establishes protected pairing without CXR or manual IP/port entry. Test cancellation, invalid/expired invitation, camera denial, and unauthorized client rejection. |
+| **A04 — Network boundary** | Scanning is not blocked by a same-network precheck. An unreachable host produces the simple connection prompt. The user adjusts the network externally and retries. EyeBrowse never joins/configures Wi-Fi or hotspot. |
+| **A05 — Primary hotspot plus VPN** | With RG joined to Phone's hotspot and Phone's normal VPN enabled, both website access and the local browser link work. Also demonstrate the shared-LAN case. A shared-router result alone does not pass the hotspot requirement. |
+| **A06 — Explicit hosting and locked use** | Start hosting while Phone is unlocked, hand off, securely lock Phone, turn its display off, and use RG to navigate, click, scroll, enter a URL, edit a supported field, and submit a harmless form through the real app connection. Include unplugged/stationary use for a declared observation period. |
+| **A07 — Handoff and viewport** | Transfer Phone → RG → Phone without intentional reload. Preserve a deterministic page's form state and navigation continuity. Confirm inactive-device status, fresh geometry, no control steal on unlock/reconnect, and rejection of old-owner input. |
+| **A08 — RG Normal** | Use physical head movement and touchpad to operate browser controls, webpage targets, and keyboard targets with acceptable optical readability and stability. Confirm swipe directions. |
+| **A09 — RG Reading** | Double tap without accidental activation; hide chrome/pointer/keyboard; control up/down scroll; stop at neutral; give swipe priority until neutral; make isolated tap a no-op; exit without automatic keyboard reopening. |
+| **A10 — RG keyboard** | While Phone is locked, enter/correct a URL and text/password/multiline/basic editable content using English QWERTY, numbers/symbols, case, Backspace, Space, Enter, and Done. Check masking and stale-focus rejection. |
+| **A11 — Connection recovery** | Interrupt and restore the local link. Preserve the live page and pairing; stop head-scroll; clearly mark stale output; reconcile ownership/focus; do not blindly replay uncertain input. Test re-scan after locator change and refusal of a different peer at an old locator. |
+| **A12 — Restart, forgetting, and cleanup** | Distinguish interface recreation, RG restart, and Phone/browser process loss. Verify persisted settings/pairing/URL/site data, explicit interrupted-session recovery, forget/re-pair, and Stop releasing hosting-specific resources. |
+| **A13 — Usability and scope** | Record measured latency/freshness/resource behavior and Owner device-ergonomics acceptance against declared conditions. Confirm no agent, ASR, built-in VPN/Mihomo, tailnet, CXR, multi-tab, or network-onboarding dependency. |
+
+### 15.2 Test boundaries
+
+Prefer tests through stable externally observable browser/session interfaces and end-to-end user journeys. Use deterministic test pages to observe counters, navigation, scroll position, focus, field values, and harmless submissions. Include representative real webpages for ordinary browsing without substituting unpredictable websites for repeatable regression tests.
+
+Automated tests SHOULD cover ownership transitions, protocol compatibility, stale/duplicate input, viewport changes, gesture arbitration, pairing expiry/revocation, and recovery. Real-device tests MUST cover the RG camera, optical keyboard/pointer comfort, physical gestures, hotspot/VPN coexistence, and integrated locked-Phone use.
+
+Timed observations MUST state their actual duration and interruptions. Partial coverage MUST NOT be described as an uninterrupted run. Numeric operating budgets and validation windows are declared engineering test conditions, not inferred guarantees.
+
+### 15.3 Existing spike evidence
+
+Issue #1 was accepted under revised Owner acceptance and merged through PR #3. That record includes accepted historical Fold6 locked-command/unplugged evidence and supplemental current-head observations; it does not demonstrate final-head Fold6 post-lock command execution or a complete Phone–RG product path.
+
+The accepted evidence is sufficient to proceed with this architecture. This specification does not reopen the cancelled repeat spike test. The acceptance matrix requires new integrated-product evidence wherever it exercises capabilities outside the spike. New architecture approval comes from the Owner's subsequent decisions, not retroactively from the spike's scope.
+
+## 16. Engineering decisions and implementation readiness
+
+The following remain engineering work, not unresolved product features: Android module organization; offscreen-host integration and foreground-service details; transport/encoding; authenticated pairing protocol and key storage; concrete message schema and freshness checks; ordinary field-input integration; camera/QR library; sensor filters; and documented timing/resource budgets.
+
+Implementers MAY propose the simplest supported choices within this contract. They MUST validate device-dependent assumptions and document their concrete contracts before claiming integrated acceptance. A limitation requiring scope or user-visible behavior to change is escalated to Planner/Owner rather than silently replaced with CXR, an RG browser engine, plaintext transport, remote-start machinery, or another unapproved workaround.
+
+No ADR file, glossary framework, future subsystem scaffold, or particular third-party package is a prerequisite merely because a planning skill normally creates one. Meaningful architectural rationale can be recorded separately without duplicating or contradicting the current SPEC.
+
+This document specifies the product; it does not dispatch work, create tickets, or claim a passing implementation. Execution, independent review, protected-document changes, and milestone approval follow the existing `AGENTS.md` and `DEV.md` procedures.
+
+## 17. References
+
+The current Owner instructions and approved Q1–Q8 answers are the product-decision basis. Existing repository materials provide governance, visual evidence, and bounded experiment evidence:
+
+- Governance: `AGENTS.md`; verified development procedures: `DEV.md`.
+- Visual evidence: `design/soft-dock/design-decisions.md` and `design/soft-dock/design-qa.md`. Earlier Agent/tab/menu fixtures are not current requirements.
+- [Issue #1 — Phone-hosted locked WebView spike](https://github.com/code2hack/EyeBrowse/issues/1).
+- [Independent review under revised Owner acceptance](https://github.com/code2hack/EyeBrowse/pull/3#issuecomment-5614157830).
+- [Manager acceptance and preserved limitations](https://github.com/code2hack/EyeBrowse/issues/1#issuecomment-5614203779).
 
 ---
 
-# 1. Product definition
-
-EyeBrowse is a minimal, AI-native Android browser in which the browser, an embedded Pi-like agent, speech input, public-Internet proxying, and private tailnet connectivity are designed as one system.
-
-EyeBrowse is not intended to reproduce Chrome's full feature set.
-
-The product has two primary surfaces:
-
-```text
-Browser ↔ Agent
-```
-
-The central product principle is:
-
-> Keep the browser visually minimal and let the agent absorb complexity.
-
-For Rokid Glasses, the primary interaction principle is:
-
-> Normal Mode is for manipulating content. Reading Mode is for consuming content.
-
----
-
-# 2. MVP goals
-
-The MVP MUST prove all of the following:
-
-1. A minimal Android WebView browser can serve as the visible web surface on both phone and RG.
-2. A built-in on-device agent loop can understand and manipulate that WebView through a semantic browser-control API while using a remote LLM endpoint for inference.
-3. RG can be operated through a head pointer, Rokid touchpad gestures, a Reading Mode with head-controlled scrolling, and an in-app keyboard.
-4. Phone can use normal Android touch and IME behavior while sharing the same browser, agent, state, speech, and networking platform.
-5. Mihomo and tailnet connectivity can coexist in the same app architecture without competing for two Android `VpnService` slots.
-6. EyeBrowse can consume remote LLM, ASR, web, Paseo, or other Spark-hosted services through configured HTTPS/tailnet endpoints.
-7. The product can remain visually sparse: Browser and Agent are the only permanent primary surfaces in the MVP.
-
----
-
-# 3. Explicit MVP non-goals
-
-The MVP does NOT require:
-
-- a conventional browser home page;
-- bookmark management;
-- history-management UI;
-- download-manager UI;
-- desktop-site controls;
-- browser extensions;
-- account sync;
-- a password manager;
-- a verbose privacy/settings hierarchy;
-- full Mihomo configuration UI;
-- full Tailscale configuration UI;
-- LLM-provider configuration UI;
-- ASR-provider configuration UI;
-- sophisticated visual tab management;
-- a system-wide RG mouse;
-- a system-wide Android keyboard/IME;
-- local LLM inference;
-- video support;
-- elaborate branding, animation, or onboarding;
-- a Chromium fork bundled into EyeBrowse.
-
-These are not prohibited future features; they are outside MVP scope.
-
----
-
-# 4. Repository and product architecture
-
-EyeBrowse MUST be one repository with one shared platform and two Android application shells.
-
-It MUST NOT be maintained as two divergent code forks.
-
-Conceptually:
-
-```text
-                         EyeBrowse
-                            │
-                    Shared Platform
-                            │
-        ┌──────────┬────────┼────────┬──────────┐
-        │          │        │        │          │
-     Browser      Agent   Speech   Network     State
-        │          │        │        │
-        │          │        │    ┌───┴────────┐
-        │          │        │    │            │
-      WebView    Pi-like   ASR  Mihomo      Tailnet
-        │
-        └───────────────────────┐
-                                │
-                     ┌──────────┴──────────┐
-                     │                     │
-                 app-phone              app-rg
-```
-
-The intended source boundaries are:
-
-```text
-app-phone/
-app-rg/
-core/browser/
-core/agent/
-core/speech/
-core/network/
-core/state/
-```
-
-The shared platform defines what EyeBrowse means. Device application modules define how the user physically interacts with it.
-
-Device-specific input rules MUST NOT be scattered through shared browser or agent logic.
-
----
-
-# 5. Android platform requirements
-
-## 5.1 Common
-
-- EyeBrowse MUST support Android 12 / API 32 because RG runs that platform.
-- The implementation MAY target a newer Android SDK, but runtime behavior required by RG MUST have an API-32-compatible path.
-- Production browsing MUST use Android System WebView unless an explicit later decision replaces it.
-- EyeBrowse MUST NOT bundle a full Chromium browser engine for MVP.
-
-## 5.2 Phone
-
-The phone APK MUST be responsive rather than designed against one fixed pixel canvas.
-
-The primary physical target is Samsung Galaxy Z Fold6:
-- cover display: tall/narrow phone layout;
-- inner display: near-square foldable layout.
-
-The Product Design study used 360 × 884 and 760 × 884 logical review viewports as representative layouts. These are design-study viewports, not normative hardware pixel resolutions.
-
-The app MUST adapt to the actual Android window size, density, system insets, folding state, and orientation exposed at runtime.
-
-## 5.3 RG
-
-The RG edition MUST treat 480 × 640 as the MVP design canvas target.
-
-Actual window insets, density behavior, and optical readability MUST be measured on hardware before ergonomic values are frozen.
-
----
-
-# 6. Shared state model
-
-At minimum, EyeBrowse MUST model the following independent state dimensions.
-
-```text
-Surface
-├── Browser
-└── Agent
-
-PresentationMode
-├── Normal
-└── Reading
-
-AgentState
-├── Idle
-├── Listening
-├── Thinking
-└── Acting
-
-TextEntryState
-├── Inactive
-└── Active
-```
-
-`Surface` and `PresentationMode` MUST NOT be collapsed into duplicated states such as `BrowserReadingAgentThinking`.
-
-The RG edition exposes both `Normal` and `Reading` modes.
-
-The Phone edition MAY keep `PresentationMode = Normal` for MVP; it MUST NOT imitate RG's head-controlled Reading interaction merely for parity.
-
-Switching Browser ↔ Agent MUST preserve:
-- current browser tabs and active tab;
-- page state and scroll position as far as WebView naturally permits;
-- agent conversation state;
-- unsent agent draft text.
-
-Switching Normal ↔ Reading on RG MUST preserve the underlying page or conversation content and its logical position.
-
----
-
-# 7. Browser Core
-
-## 7.1 WebView
-
-Each active browsing session MUST be backed by Android System WebView.
-
-The Browser Core is responsible for:
-- navigation;
-- current URL/title state;
-- back navigation;
-- tabs;
-- page lifecycle;
-- browser-agent semantic observation and action;
-- screenshots when required by the agent;
-- communication between native code and the page runtime.
-
-The Browser Core MUST NOT depend on the phone or RG physical input scheme.
-
-## 7.2 Browser chrome
-
-In Normal presentation, the Browser surface is based on the selected Soft Dock direction and contains the following controls:
-
-```text
-[Agent] [URL / location] [+] [tab count] [reserved menu]
-[web content]
-```
-
-The Agent control replaces the conventional browser Home role and switches to the Agent surface.
-
-The URL/location field:
-- MUST show the current location;
-- MAY allow manual URL entry;
-- is a fallback, not the intended primary navigation mechanism.
-
-The `+` control MUST create a new empty tab.
-
-The tab-count control MUST display the number of tabs. Detailed manual tab-management UI is not required in MVP.
-
-The Browser Core MUST nevertheless expose programmatic tab operations sufficient for the agent or future UI to list, switch, create, and close tabs.
-
-The reserved menu slot MAY remain visually reserved while its settings workflow is omitted from MVP.
-
-## 7.3 Reading presentation
-
-Browser Reading Mode on RG MUST:
-- show the same webpage, not an extracted reader copy;
-- preserve webpage styling/content;
-- hide EyeBrowse browser chrome;
-- hide the head pointer;
-- use the full available content viewport.
-
-Reading Mode MUST NOT automatically invert, simplify, reflow, summarize, or otherwise rewrite arbitrary webpages merely because Reading Mode is active.
-
----
-
-# 8. Semantic browser-control runtime
-
-## 8.1 Principle
-
-The built-in agent MUST manipulate EyeBrowse through a small semantic browser-control API.
-
-CDP is NOT a required production interface for the MVP.
-
-CDP MAY be used for development/debugging or a future fallback, but the agent MUST NOT depend on a WebView debugging socket for ordinary operation.
-
-The intended control loop is:
-
-```text
-observe
-  ↓
-reason
-  ↓
-act
-  ↓
-settle
-  ↓
-verify
-  ↓
-diff
-```
-
-## 8.2 Page runtime
-
-EyeBrowse SHOULD inject or otherwise host a small page runtime that can:
-- inspect visible/actionable DOM semantics;
-- derive roles, labels, text, state, and geometry;
-- create model-visible element references;
-- observe page mutations;
-- execute or coordinate page-level actions;
-- report structured results and failures to native code.
-
-The implementation MUST keep privileged Android capabilities outside the trust boundary of arbitrary webpage JavaScript.
-
-A webpage MUST NOT be able to call agent, networking, credential, or device-privileged capabilities merely because the semantic runtime is present.
-
-## 8.3 Observation
-
-The agent-facing observation SHOULD prioritize semantic information rather than raw HTML.
-
-A typical observation may contain:
-- document identity;
-- URL;
-- title;
-- viewport information;
-- visible text excerpts;
-- actionable elements with compact references;
-- semantic role/name/state;
-- relevant capability or limitation flags.
-
-The observation SHOULD omit irrelevant DOM noise to reduce token cost and improve reasoning quality.
-
-Sensitive fields, especially password inputs and explicitly protected values, MUST be redacted from model-facing observations.
-
-## 8.4 Element references
-
-Agent-visible element references MUST be scoped to the current document/frame identity.
-
-A reference MUST fail explicitly after the referenced document or element becomes invalid, detached, replaced, or navigated away.
-
-The agent SHOULD be required to re-observe rather than blindly reuse stale references.
-
-## 8.5 Standard browser tools
-
-The MVP agent-facing browser profile SHOULD remain small. It MUST support the semantic equivalents of:
-
-```text
-observe()
-open(url)
-back()
-activate(ref)
-type(ref, text)
-scroll(...)
-extract(...)
-screenshot()
-```
-
-Tab operations MAY be exposed separately.
-
-The agent-facing API MUST NOT expose arbitrary WebView internals as its normal interface.
-
-## 8.6 Actionability
-
-Before performing a user-level action such as activation or typing, EyeBrowse SHOULD verify relevant actionability conditions, including where applicable:
-- element exists;
-- element is visible;
-- element is stable enough to target;
-- element is enabled;
-- element can receive the intended event;
-- editable targets are actually editable;
-- the target is not blocked by another visible element.
-
-Failures MUST be structured and informative rather than silently ignored or blindly retried.
-
-## 8.7 Settle and verification
-
-After an action, the browser controller SHOULD wait for the relevant navigation/DOM churn to settle within bounded limits.
-
-The result SHOULD report a concise post-action state change or diff when possible rather than forcing a full page observation after every action.
-
-The agent MUST be able to distinguish:
-- action succeeded and page changed;
-- action succeeded with no meaningful page change;
-- action failed;
-- action result is uncertain and requires re-observation.
-
----
-
-# 9. Agent Core
-
-## 9.1 Runtime role
-
-EyeBrowse MUST contain an on-device agent orchestration loop.
-
-LLM inference itself is remote in MVP.
-
-The agent implementation MAY be:
-- an embedded Pi runtime;
-- a native Android implementation preserving the required Pi-like agent semantics;
-- another implementation explicitly approved later.
-
-This specification constrains agent behavior, not the internal programming language/runtime.
-
-## 9.2 Agent responsibilities
-
-The agent MUST be capable of:
-- receiving text prompts;
-- receiving ASR-derived command text;
-- maintaining the active conversation;
-- calling the configured remote LLM API;
-- dispatching typed browser tools;
-- dispatching approved networking/settings tools;
-- observing tool results and continuing until completion or bounded failure;
-- streaming assistant output to the Agent surface where supported by the provider.
-
-The agent MUST NOT require a separate external automation process merely to manipulate the EyeBrowse WebView.
-
-## 9.3 Agent surface
-
-The Agent surface is the peer of Browser, not a modal overlay.
-
-Agent Normal presentation contains:
-
-```text
-[Browser]                         [reserved menu]
-[conversation history]
-[input/composer]
-```
-
-The Browser control returns to the Browser surface.
-
-The selected Soft Dock direction uses:
-- sparse top controls;
-- a rounded composer;
-- right-aligned user messages;
-- open assistant text rather than enclosing every assistant response in a bubble.
-
-The exact typography and color tokens may be refined without changing the information architecture.
-
-## 9.4 Agent Reading Mode on RG
-
-Agent Reading Mode MUST:
-- hide the Agent taskbar;
-- hide the input/composer;
-- hide the head pointer;
-- show conversation history only;
-- permit Reading Mode scrolling using the RG interaction rules.
-
----
-
-# 10. Speech Core
-
-EyeBrowse MUST include a shared ASR subsystem.
-
-The speech architecture MUST distinguish two semantic destinations:
-
-```text
-voice command → Agent
-voice dictation → focused editable field
-```
-
-The ASR provider/model MAY be remote and SHOULD support a configured Spark-hosted endpoint.
-
-Provider endpoint/model settings MAY be developer-provisioned for MVP.
-
-The exact physical signals that start:
-- agent-command speech;
-- normal dictation;
-
-are not defined yet and MUST NOT be invented by implementation without a Project Owner decision.
-
-The UI MUST have a minimal way to present transient states such as listening, transcribing, thinking, and acting without permanently consuming large screen area.
-
----
-
-# 11. Network Core
-
-Networking is a first-class shared subsystem used by both Android editions.
-
-It contains two distinct capabilities:
-
-```text
-Mihomo  = public Internet proxy/routing
-Tailnet = private machine/service connectivity
-```
-
-They MUST be modeled separately even if a higher-level routing policy selects between them.
-
-## 11.1 Mihomo
-
-EyeBrowse MUST embed a Mihomo-based proxy core for MVP.
-
-Mihomo is the preferred owner of EyeBrowse's Android `VpnService` slot when TUN/VPN operation is enabled.
-
-The shared Network Core SHOULD provide abstractions for:
-- subscription/config loading;
-- proxy groups/nodes;
-- route/rule configuration;
-- connectivity/health state;
-- selecting the active proxy route;
-- diagnostics.
-
-Full user-facing configuration UI is not required in MVP.
-
-## 11.2 Tailnet
-
-EyeBrowse MUST support built-in private tailnet connectivity.
-
-The tailnet implementation MUST NOT require a second simultaneous Android `VpnService` if Mihomo already owns the system VPN slot.
-
-The preferred architecture is userspace Tailscale/tsnet-style connectivity embedded in the app.
-
-Exact library/binding choices are implementation details provided they preserve:
-- private tailnet identity;
-- tailnet ACL/Grant semantics at the network layer;
-- direct access to configured private services;
-- coexistence with Mihomo.
-
-Tailnet provisioning/login MAY be developer-driven in MVP; a polished user-facing pairing/settings flow is not required.
-
-## 11.3 Routing classes
-
-The shared Network Core SHOULD expose route intent rather than forcing higher layers to understand low-level interfaces.
-
-At minimum, it should be possible to distinguish:
-
-```text
-PUBLIC_DIRECT
-PUBLIC_PROXY
-TAILNET
-AUTO
-```
-
-Configured Spark services MAY use an `AUTO` policy that prefers private tailnet reachability and falls back to an explicitly configured public HTTPS/Funnel endpoint when available.
-
-The exact fallback policy MUST be deterministic and observable through diagnostics.
-
-## 11.4 Coexistence requirement
-
-The MVP network architecture passes only if:
-- Mihomo can be active for public Internet traffic;
-- EyeBrowse can simultaneously reach a configured private tailnet service;
-- enabling one does not disable the other through Android's one-VPN limitation.
-
----
-
-# 12. Spark and remote services
-
-EyeBrowse MAY consume remote services hosted on DGX Spark, including:
-- OpenAI-compatible LLM endpoints;
-- ASR endpoints;
-- normal websites/content services;
-- Paseo;
-- future personal context and agent services.
-
-Spark exposure may use:
-- tailnet/private addresses;
-- Tailscale Funnel / public HTTPS;
-- another explicitly configured HTTPS endpoint.
-
-EyeBrowse MUST treat these as configurable remote service endpoints rather than hard-coding assumptions about one transport into Browser or Agent logic.
-
-A public Funnel endpoint does not itself provide application authorization. Any sensitive public service exposed through Funnel MUST add appropriate application-level authentication outside this MVP client specification.
-
----
-
-# 13. MVP configuration policy
-
-The MVP does not require complete settings screens.
-
-The following MAY be developer-provisioned or supplied through local build/device configuration:
-- LLM endpoint;
-- LLM model;
-- LLM credentials;
-- ASR endpoint;
-- ASR model;
-- Mihomo configuration/subscription;
-- tailnet provisioning/configuration;
-- Spark endpoint(s).
-
-Secrets MUST NOT be committed to the repository.
-
-Hard-coded MVP behavior means hard-coded/product defaults and local developer provisioning, not checked-in production credentials.
-
-Eventually:
-- Browser settings belong primarily to network configuration;
-- Agent settings belong primarily to LLM/ASR configuration.
-
-Those settings workflows are not part of MVP acceptance.
-
----
-
-# 14. Phone interaction
-
-EyeBrowse Phone MUST use normal Android interaction conventions.
-
-At minimum:
-- touchscreen taps interact directly with Browser/Agent controls and WebView content;
-- ordinary touch scrolling is supported;
-- Android system back behavior is handled sensibly by the current surface/browser history;
-- normal Android IME/software keyboard is used for text entry;
-- the user can switch Browser ↔ Agent through the same conceptual controls as RG.
-
-The phone edition MUST NOT simulate head pointer or Reading-mode head scrolling.
-
-The phone UI SHOULD preserve the same product identity and Soft Dock visual structure while adapting spacing and typography to cover vs inner windows.
-
----
-
-# 15. RG interaction architecture
-
-RG input is device-specific and MUST be implemented in the RG application layer or RG-specific interaction module, then mapped into shared semantic intents/browser actions.
-
-The RG interaction stack conceptually is:
-
-```text
-Gyroscope / accelerometer / touchpad
-                 │
-                 ▼
-      RG Interaction Controller
-                 │
-         ┌───────┴────────┐
-         │                │
-      Normal           Reading
-         │                │
-   head pointer       head scroll
-         │                │
-         └───────┬────────┘
-                 ▼
-       shared Browser/Agent state
-```
-
-The implementation SHOULD reuse proven head-tracking ideas such as smoothing, dead zones, recentering, and motion adaptation, but EyeBrowse does not require a system-wide AccessibilityService mouse because it controls its own surfaces.
-
----
-
-# 16. RG Normal Mode
-
-Normal Mode is for manipulation.
-
-In Normal Mode:
-- the EyeBrowse taskbar appropriate to the active surface is visible;
-- a head-controlled pointer is visible;
-- head yaw controls pointer X;
-- head pitch controls pointer Y;
-- pointer motion applies to EyeBrowse UI and WebView content;
-- short tap activates the current pointer target;
-- touchpad swipe remains available for discrete scrolling.
-
-The pointer SHOULD be rendered by EyeBrowse itself rather than depending on a separate system-wide cursor overlay.
-
-Pointer movement SHOULD include:
-- smoothing;
-- a noise dead zone;
-- recenter/reset behavior;
-- motion compensation or sensitivity reduction when strong body motion would otherwise create false input.
-
-Exact gain/filter values are hardware-validation items, not fixed by this specification.
-
----
-
-# 17. RG Reading Mode
-
-Reading Mode is for consumption.
-
-On entry to Reading Mode:
-- the visible head pointer MUST disappear;
-- the surface taskbar MUST disappear;
-- Browser shows webpage content only;
-- Agent shows conversation history only;
-- an open RG keyboard MUST be dismissed;
-- Reading-mode head-scroll state MUST be initialized/recentered to a neutral reference.
-
-In Reading Mode:
-- upward relative head pitch scrolls upward;
-- downward relative head pitch scrolls downward;
-- neutral head position stops continuous scrolling;
-- larger pitch displacement SHOULD increase scroll speed;
-- a neutral dead zone MUST prevent drift from causing constant scroll.
-
-The implementation MAY use integrated/virtual pitch displacement rather than raw instantaneous gyro velocity so that a deliberate held displacement can produce continuous scrolling.
-
-Exact dead-zone size, acceleration curve, maximum velocity, neutral acquisition, and drift correction are hardware-validation items.
-
----
-
-# 18. RG touchpad bindings
-
-The MVP touchpad contract is:
-
-```text
-short tap      → normal activation/click in Normal Mode
-double tap     → toggle Normal ↔ Reading
-swipe forward  → scroll down
-swipe backward → scroll up
-```
-
-Swipe forward/backward MUST work in both Normal and Reading modes.
-
-Double-tap recognition MUST NOT leak the first constituent tap as an unwanted single activation.
-
-The implementation MAY defer single-tap dispatch for a bounded recognition window or use an equivalent gesture recognizer.
-
-The exact double-tap timing threshold is tunable.
-
-The behavior of an isolated short tap while in Reading Mode remains an open interaction decision because the pointer is hidden and no target semantics have been approved.
-
----
-
-# 19. RG in-app keyboard
-
-The RG edition MUST include an in-app keyboard for EyeBrowse text entry.
-
-It is not required to be a system-wide Android IME.
-
-The keyboard MUST be able to enter text into ordinary editable WebView controls and the Agent composer.
-
-The initial MVP keyboard SHOULD use familiar QWERTY organization and MUST provide at least:
-- letters;
-- Shift/case control;
-- Backspace;
-- Space;
-- Enter/Done;
-- common punctuation;
-- a symbols/numbers state.
-
-Password/private fields MUST remain visually masked and MUST NOT expose their contents to the agent observation stream.
-
-The keyboard is controlled through the RG head pointer plus short tap.
-
-The selected design study used approximately 300 px of the 640 px RG canvas for the keyboard and approximately 42.8 px key widths in the ten-key row. These are study values, not frozen production dimensions.
-
-Entering Reading Mode SHOULD dismiss the keyboard and clear active text-entry focus while preserving draft text where practical. Automatic keyboard reopening on exit from Reading Mode is not required.
-
-Exact key sizes, dwell/selection comfort, and optical readability MUST be validated on real RG hardware.
-
----
-
-# 20. Browser ↔ Agent surface switching
-
-The Browser surface exposes an Agent control.
-
-The Agent surface exposes a Browser control.
-
-These controls form the primary application navigation model.
-
-The application MUST NOT require a bottom navigation bar, side drawer, or third permanent primary surface for MVP.
-
-Switching surfaces MUST be fast and MUST NOT destroy the inactive surface's state.
-
-The agent MAY continue an in-flight remote request/tool sequence while the Browser surface is visible, subject to normal Android lifecycle constraints.
-
----
-
-# 21. Persistence
-
-For MVP, EyeBrowse MUST preserve state during ordinary surface/mode transitions and configuration changes where Android recreation can reasonably be handled.
-
-At minimum, app-local persistence SHOULD cover:
-- non-secret product settings;
-- configured endpoint metadata;
-- Mihomo configuration/subscription state;
-- tailnet device/provisioning state as required by the selected library;
-- active agent conversation state sufficient for ordinary use.
-
-WebView cookies/storage SHOULD use normal app-private WebView persistence.
-
-Full cloud sync or cross-device browser-session sync is not required.
-
----
-
-# 22. Security and trust boundaries
-
-## 22.1 Web content
-
-Arbitrary webpages are untrusted.
-
-The semantic page runtime MUST NOT expose privileged native application APIs directly to arbitrary page scripts.
-
-Native ↔ page messages MUST be scoped, validated, bounded, and versioned or equivalently structured.
-
-## 22.2 Agent observations
-
-Page content is untrusted input to the model.
-
-The Agent Core SHOULD treat webpage text as data rather than instruction authority.
-
-Sensitive editable values MUST be redacted where feasible.
-
-## 22.3 Credentials
-
-LLM/ASR credentials, tailnet provisioning secrets, private keys, and similar secrets MUST NOT be stored in source control.
-
-On-device secrets SHOULD use Android app-private secure storage/Keystore-backed mechanisms appropriate to their type.
-
-## 22.4 Tailnet
-
-A private tailnet connection MUST preserve normal tailnet identity/authorization semantics; EyeBrowse MUST NOT bypass ACL/Grant policy merely because tailnet networking is embedded.
-
----
-
-# 23. Failure and recovery behavior
-
-The MVP SHOULD fail visibly and recoverably rather than silently.
-
-At minimum:
-
-### Browser tool failure
-Return structured failure to the agent, including whether a fresh observation is required.
-
-### LLM failure
-Keep the current conversation/browser state and show a compact recoverable error on Agent.
-
-### ASR failure
-Do not submit fabricated text. Preserve current input state and allow retry.
-
-### Mihomo failure
-Expose disconnected/error status to the Network Core and diagnostics; do not claim proxy connectivity.
-
-### Tailnet failure
-Allow public/fallback routes where explicitly configured, but do not silently treat a public route as private tailnet reachability.
-
-### RG sensor failure
-The app MUST remain exit-able and operable through available touchpad/manual paths to the extent possible. It MUST NOT enter uncontrollable continuous scrolling.
-
----
-
-# 24. Visual direction: Soft Dock
-
-Soft Dock is the selected MVP visual direction.
-
-The following are design-level requirements unless real-device validation forces revision:
-- rounded browser control grouping/capsule treatment;
-- restrained persistent chrome;
-- rounded Agent composer;
-- right-aligned user messages;
-- open assistant text;
-- explicit rounded RG keyboard targets;
-- RG Reading Mode contains no persistent app controls;
-- Phone and RG should visibly feel like the same product while using device-appropriate density and interaction.
-
-The current study uses warm pale phone surfaces with restrained green accents and a black/light high-contrast RG presentation. Exact tokens and font metrics MAY change during native implementation while preserving the selected hierarchy and product identity.
-
----
-
-# 25. MVP acceptance gates
-
-The integrated MVP is acceptable only when the following are demonstrated.
-
-## 25.1 Build and launch
-
-- Two installable Android APKs can be produced from the same repository: Phone and RG.
-- RG build runs on Android 12 / API 32.
-- Phone build works on both Fold6 cover and inner windows without clipped primary controls.
-
-## 25.2 Browser
-
-- Browser loads ordinary HTTPS pages through System WebView.
-- URL/location state updates with navigation.
-- New tab creates an empty tab and count updates.
-- Browser ↔ Agent switching preserves browser state.
-
-## 25.3 Semantic agent control
-
-A configured agent can, using the semantic browser API rather than CDP as its normal path:
-- observe the current page;
-- navigate to a URL;
-- activate an observed target;
-- type into an editable field;
-- scroll;
-- receive structured success/failure and post-action state information.
-
-## 25.4 Agent
-
-- Agent accepts text input.
-- Agent calls the configured remote LLM endpoint.
-- Agent streams or displays the response.
-- Agent can invoke browser tools and continue reasoning from tool results.
-
-## 25.5 RG Normal Mode
-
-On real RG hardware:
-- head motion moves the visible pointer with usable stability;
-- short tap activates the pointed target;
-- pointer can operate both EyeBrowse chrome and WebView content;
-- forward/backward swipes scroll in the specified directions.
-
-## 25.6 RG Reading Mode
-
-On real RG hardware:
-- double tap enters Reading without triggering an unintended underlying click;
-- cursor/taskbar disappear;
-- head-pitch displacement produces controllable up/down continuous scrolling;
-- neutral position stops scrolling without persistent drift;
-- double tap returns to Normal;
-- swipe scrolling remains available.
-
-## 25.7 RG keyboard
-
-On real RG hardware:
-- focusing a supported editable field can open the in-app keyboard;
-- head pointer + tap can enter and correct text;
-- Backspace, Space, Shift, symbols, and Done work;
-- password/private text remains masked;
-- keyboard can be dismissed and does not survive into Reading Mode.
-
-## 25.8 Networking
-
-- Mihomo can provide the configured public proxy route.
-- Tailnet private connectivity can be active at the same time without taking over a second Android VPN slot.
-- A configured Spark/private service is reachable over tailnet while Mihomo is active.
-- A configured public HTTPS/Funnel service can be reached through the normal public networking path when used.
-
-## 25.9 Speech
-
-Once Project Owner activation signals are defined:
-- command speech can be transcribed and delivered to Agent;
-- dictation speech can be transcribed and delivered to the focused editable target.
-
-The activation-signal choice itself is not an acceptance criterion until explicitly specified.
-
----
-
-# 26. Required validation before values are frozen
-
-The following MUST be validated on real RG hardware and remain tunable until then:
-
-1. head-pointer gain;
-2. pointer smoothing/filtering;
-3. adaptive motion/noise behavior;
-4. pointer target comfort;
-5. Reading neutral acquisition;
-6. Reading dead zone;
-7. Reading pitch-to-scroll velocity curve;
-8. drift correction/recentering;
-9. taskbar height and optical readability;
-10. RG keyboard height/key sizes;
-11. swipe vs simultaneous head-scroll arbitration;
-12. native density/insets;
-13. exact double-tap timing;
-14. short-tap behavior in Reading Mode.
-
-Simulator values recorded in the design study are evidence for prototyping only.
-
----
-
-# 27. Open Product Owner decisions
-
-The following decisions are intentionally unresolved in the earlier draft and require explicit Project Owner input or hardware validation. Their inclusion in v0.0.1 is subject to Section 0.1:
-
-1. Physical signal that starts Agent voice-command ASR.
-2. Physical signal that starts normal dictation ASR.
-3. Reading Mode isolated short-tap behavior.
-4. Whether swipe input temporarily neutralizes/suspends head-scroll state or composes with it.
-5. Final RG cursor visual treatment.
-6. Final tab-count interaction/manual tab-selection behavior.
-7. Whether reserved `⋮` controls are visible-but-inert, hidden, or open a minimal status surface in the first shippable MVP.
-8. Exact Pi runtime strategy: embedded upstream runtime vs native Pi-compatible implementation.
-9. Exact tailnet Android embedding library/binding, provided the no-second-`VpnService` requirement is preserved.
-
-These unresolved items MUST NOT be silently decided by implementation agents.
-
----
-
-# 28. Reference projects and design evidence
-
-The following projects are useful references but are not automatically dependencies or authorities:
-
-- Android System WebView / AndroidX WebKit — browser substrate.
-- Agentic WebView — semantic WebView agent-control reference.
-- BrowserOS — semantic snapshot / ref-driven action / post-settle diff concepts.
-- Stagehand — token-efficient observation and agent-oriented browser semantics.
-- browser-use — model-visible element references and agent/browser state concepts.
-- Playwright — actionability concepts.
-- Lightpanda — close agent/browser integration and deterministic replay concepts.
-- GazeMou / RokidAppMaker — RG gyroscope head-pointer and scroll interaction reference.
-- Pi — agent-loop/product inspiration.
-
-Actual code reuse MUST be evaluated separately for license, Android suitability, maintenance cost, and scope.
-
-The selected Product Design evidence lives under:
-
-```text
-design/
-├── mvp-design-brief-v0.md
-└── soft-dock/
-    ├── README.md
-    ├── design-decisions.md
-    └── design-qa.md
-```
-
----
-
-# 29. Core MVP statement
-
-EyeBrowse MVP succeeds if one shared Android platform can produce:
-
-- a normal-touch Phone browser/agent experience;
-- a head-pointer/head-scroll RG browser/agent experience;
-- one semantic browser-control substrate for the built-in agent;
-- one speech layer for command and dictation;
-- one networking layer containing both Mihomo and private tailnet connectivity;
-
-while preserving the deliberately small product model:
-
-```text
-Browser ↔ Agent
-```
-
-and, on Rokid Glasses:
-
-```text
-Normal ↔ Reading
-```
+**v0.0.1 succeeds when one Phone-hosted page can be used as a normal Phone browser and as an independently operable RG browser over the user's existing local connection, with explicit handoff, QR app pairing, reliable recovery, and no agent or network-management product hidden inside the scope.**
