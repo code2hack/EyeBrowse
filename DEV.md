@@ -76,26 +76,30 @@ Sources: local `/home/code2hack/Projects/Glasseo/DEV.md` (checkout HEAD `5f9d235
 Apply this procedure to the mission's reserved physical device. Prefer **USB → local LAN TCP → Tailscale TCP → human gate**. An emulator or another connected device is not a substitute.
 
 1. **USB first.** Check `adb devices -l` for the intended device in authorized `device` state. Verify its identity, then enable legacy TCP ADB on port **5555** through that USB transport. Record its current LAN/Tailscale addresses and verify a TCP connection before a planned USB disconnect. If the listener is already enabled and verified, do not restart it unnecessarily.
-2. **Without USB, try LAN, then Tailscale.** Locate the intended device on the local LAN using its known addresses, local neighbor information (`ip neigh`), or router/DHCP records; use bounded local discovery if needed. Try `<LAN-IP>:5555`. If no usable LAN connection is established, identify its Tailscale peer with `tailscale status --json` and try `<Tailscale-IP-or-name>:5555`. Use short timeouts and bounded retries. A responding host or open port is not enough: ADB must report `device`, and the device identity must match.
-3. **Human gate only when no authorized route works.** Inform Manager and ask the Owner to connect USB, or enable the device's Tailscale and Android Wireless debugging where supported. Modern Wireless debugging uses pairing and a separately advertised port; it is not automatically legacy port 5555. Complete any required pairing/authorization interactively. Once any authorized ADB transport is established, use that transport to enable legacy TCP ADB on 5555, then verify reconnection. If the device rejects this mode, report the limitation rather than bypassing authentication or using root. Respect the Owner's current availability and no-alarm instructions.
+2. **Without USB, try LAN, then Tailscale.**
+   - **LAN:** locate the intended device using known addresses, `ip neigh`, router/DHCP records, or bounded local discovery. Try port **5555** and run `adb mdns services` to discover Wireless ADB's current random port. Use the target's `_adb-tls-connect._tcp` endpoint, not its `_adb-tls-pairing._tcp` port. An already trusted host can reconnect without new human pairing; discovery alone does not grant authorization.
+   - **Tailscale:** if LAN attempts fail, identify the device with `tailscale status --json`. Try its tailnet address on **5555**, then any known current Wireless ADB connection port. Do not assume LAN mDNS advertisements cross Tailscale.
+   - If necessary, use bounded port discovery only against identified target-device addresses on the trusted LAN/tailnet. Use short timeouts and bounded retries. An open port is not success: require authorized ADB `device` state and matching physical-device identity.
+3. **Human gate only when no authorized route works.** Inform Manager and ask the Owner to connect USB, or enable the device's Tailscale and Android Wireless debugging where supported. Complete any required pairing/authorization interactively. Respect the Owner's current availability and no-alarm instructions.
 
-Command templates (`USB_SERIAL` is the verified USB serial; `ADB_TARGET` is the current authorized transport identifier; `DEVICE_HOST` is the selected LAN/Tailscale address):
+After recovering through **any** authorized transport, verify the device identity, enable legacy TCP ADB on **5555**, and verify reconnection. If the device rejects this mode, report the limitation rather than bypassing authentication or using root.
+
+Command templates (`ADB_TARGET` is a verified authorized USB or network transport; `TCP_ENDPOINT` is the selected `HOST:PORT`, either 5555 or a discovered Wireless ADB connection port):
 
 ```bash
 adb devices -l
-adb -s "$USB_SERIAL" tcpip 5555
-# After recovery through another authorized transport, use instead:
-# adb -s "$ADB_TARGET" tcpip 5555
-
-timeout 10s adb connect "$DEVICE_HOST:5555"
-timeout 10s adb -s "$DEVICE_HOST:5555" get-state
-adb -s "$DEVICE_HOST:5555" shell getprop ro.serialno
-adb -s "$DEVICE_HOST:5555" shell getprop ro.product.model
+adb mdns services
+timeout 10s adb connect "$TCP_ENDPOINT"
+timeout 10s adb -s "$TCP_ENDPOINT" get-state
+adb -s "$TCP_ENDPOINT" shell getprop ro.serialno
+adb -s "$TCP_ENDPOINT" shell getprop ro.product.model
+# Enable the legacy listener through the verified authorized transport:
+adb -s "$ADB_TARGET" tcpip 5555
 ```
 
 - Use explicit `adb -s` targeting for every device operation. IP addresses can change or be reassigned; verify identity against the assigned device before mutation. Re-enabling TCP can restart `adbd`, so coordinate it with any active test.
 - Keep legacy TCP 5555 available as the reconnection path. Do not routinely run `adb usb` during cleanup; disable TCP only when explicitly requested by the Owner. Still stop test apps and restore other temporary test settings.
-- Retain ADB host authorization. Use only trusted LANs and authorized tailnet access; do not disable authentication or expose port 5555 through public forwarding.
+- Retain ADB host authorization. Legacy TCP ADB is unencrypted on the LAN; use only trusted LANs and authorized tailnet access. Do not disable authentication or expose port 5555 through public forwarding.
 
 ### Rokid Glasses: available now
 
