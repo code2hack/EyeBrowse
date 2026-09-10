@@ -13,7 +13,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "runtime": "chatgpt",
     "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70/c/6a9e2461-bf2c-83ea-8271-8946fceaef84",
     "model": "gpt-6 Pro",
-    "name": "Pre Design",
+    "name": "AGENTS.md Design",
     "status": "active"
   },
   {
