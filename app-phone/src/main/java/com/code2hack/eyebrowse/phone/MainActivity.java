@@ -185,6 +185,7 @@ public final class MainActivity extends ComponentActivity {
 
         String message;
         boolean isError = false;
+        StartupPolicy.Decision decision = session.startupDecision();
         if (session.errorMessage() != null) {
             message = session.errorMessage();
             isError = true;
@@ -192,11 +193,12 @@ public final class MainActivity extends ComponentActivity {
             message = session.noticeMessage();
         } else if (session.isLoading()) {
             message = getString(R.string.status_loading, committed == null ? "" : committed);
+        } else if (decision == StartupPolicy.Decision.OFFER_SAVED_URL) {
+            // Not live: never present the saved address as an existing page.
+            message = getString(R.string.status_recovery);
         } else if (committed != null) {
             String title = session.pageTitle();
             message = title == null || title.isEmpty() ? committed : title;
-        } else if (session.startupDecision() == StartupPolicy.Decision.OFFER_SAVED_URL) {
-            message = getString(R.string.status_recovery);
         } else {
             message = getString(R.string.status_empty);
         }

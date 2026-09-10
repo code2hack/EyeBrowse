@@ -69,6 +69,7 @@ final class PhoneBrowserSession {
     private final List<Listener> listeners = new ArrayList<>();
 
     private WebView webView;
+    private ViewGroup attachedContainer;
     private boolean rendererGone;
 
     private String displayUrl;
@@ -178,23 +179,23 @@ final class PhoneBrowserSession {
 
     void attach(Activity activity, ViewGroup container) {
         contextWrapper.setBaseContext(activity);
+        attachedContainer = container;
+        container.removeAllViews();
         if (webView != null) {
             ViewGroup parent = (ViewGroup) webView.getParent();
-            if (parent != null) {
+            if (parent != null && parent != container) {
                 parent.removeView(webView);
             }
-            container.removeAllViews();
             container.addView(webView, ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT);
             webView.requestLayout();
             webView.invalidate();
-        } else {
-            container.removeAllViews();
         }
         notifyListeners();
     }
 
     void detach() {
+        attachedContainer = null;
         if (webView != null) {
             ViewGroup parent = (ViewGroup) webView.getParent();
             if (parent != null) {
@@ -289,6 +290,13 @@ final class PhoneBrowserSession {
         view.setWebChromeClient(new Chrome());
         webView = view;
         rendererGone = false;
+        if (attachedContainer != null) {
+            // The first load may arrive after the Activity attached; attach the new WebView here so
+            // the loaded document is actually displayed instead of living in a detached view.
+            attachedContainer.removeAllViews();
+            attachedContainer.addView(view, ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT);
+        }
         return view;
     }
 

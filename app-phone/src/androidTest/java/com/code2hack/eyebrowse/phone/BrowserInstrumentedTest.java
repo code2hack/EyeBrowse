@@ -8,10 +8,6 @@ import static androidx.test.espresso.assertion.ViewAssertions.matches;
 import static androidx.test.espresso.matcher.ViewMatchers.isEnabled;
 import static androidx.test.espresso.matcher.ViewMatchers.withId;
 import static androidx.test.espresso.matcher.ViewMatchers.withText;
-import static androidx.test.espresso.web.sugar.Web.onWebView;
-import static androidx.test.espresso.web.webdriver.DriverAtoms.findElement;
-import static androidx.test.espresso.web.webdriver.DriverAtoms.webClick;
-import static androidx.test.espresso.web.webdriver.DriverAtoms.webKeys;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.junit.Assert.assertEquals;
@@ -29,17 +25,12 @@ import android.webkit.WebView;
 import android.widget.TextView;
 
 import androidx.test.core.app.ActivityScenario;
-import androidx.test.espresso.action.GeneralClickAction;
-import androidx.test.espresso.action.Press;
-import androidx.test.espresso.action.Tap;
-import androidx.test.espresso.web.model.Atoms;
-import androidx.test.espresso.web.model.Evaluation;
-import androidx.test.espresso.web.webdriver.Locator;
 import androidx.test.ext.junit.rules.ActivityScenarioRule;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 import org.junit.Before;
 import org.junit.Rule;
@@ -52,6 +43,8 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
@@ -60,17 +53,18 @@ import java.util.function.BooleanSupplier;
  * Instrumentation checks of the Phone browser against the local fixture server.
  *
  * <p>Run with the fixture server bound to 127.0.0.1:25341 (and the untrusted TLS endpoint on
- * 25342) plus {@code adb reverse tcp:25341 tcp:25341} on a real device:
+ * 25342) plus {@code adb reverse tcp:25341 tcp:25341}:
  *
  * <pre>
  * adb shell am instrument -w -e fixtureBaseUrl http://127.0.0.1:25341 \
  *   com.code2hack.eyebrowse.phone.test/androidx.test.runner.AndroidJUnitRunner
  * </pre>
  *
- * <p>Activation that must count as a user gesture (target=_blank links, window.open buttons, form
- * submission and scrolling) is performed with injected real touch events, not page JavaScript.
- * Typed text for form fields is synthetic automation input; the physical IME observation belongs to
- * the device procedure, not to these tests.
+ * <p>The suite drives the page through the platform WebView APIs only: JavaScript is read with
+ * {@link WebView#evaluateJavascript} (never a {@code javascript:} navigation, which the product
+ * correctly refuses), and activation that must count as a user gesture (links, popup buttons, form
+ * submission, scrolling) uses injected real touch events. Field text entry is synthetic automation
+ * input; the physical IME observation belongs to the device procedure, not to these tests.
  */
 @RunWith(AndroidJUnit4.class)
 public class BrowserInstrumentedTest {
@@ -113,12 +107,13 @@ public class BrowserInstrumentedTest {
     @Test
     public void opensFixtureThroughAddressControl() throws Exception {
         String url = fixtureUrl("/basic.html");
+        int loadsBefore = loadCount("/basic.html");
         openAddress(url);
         String marker = waitForMarker();
         assertTrue("marker looks like a per-load marker: " + marker, marker.matches("L\\d+"));
         assertEquals(url, sessionDisplayUrl());
         assertEquals("Basic page", domText("page-title"));
-        assertEquals(1, loadCount("/basic.html"));
+        assertEquals(loadsBefore + 1, loadCount("/basic.html"));
         assertEquals(1, attachedWebViews());
         onView(withId(R.id.button_reload)).check(matches(isEnabled()));
     }
@@ -196,15 +191,13 @@ public class BrowserInstrumentedTest {
     public void recreationRetainsLiveDocumentFieldValuesAndLoadCount() throws Exception {
         openAddress(fixtureUrl("/form.html"));
         String marker = waitForMarker();
-        onWebView().withElement(findElement(Locator.ID, "text-field")).perform(webClick())
-                .perform(webKeys("draft-value"));
+        setElementValue("text-field", "draft-value");
         int loadsBefore = loadCount("/form.html");
 
         scenario.recreate();
 
         assertEquals(marker, domText("load-marker"));
-        assertEquals("draft-value",
-                js("document.getElementById('text-field').value"));
+        assertEquals("draft-value", js("document.getElementById('text-field').value"));
         assertEquals(loadsBefore, loadCount("/form.html"));
         assertEquals(1, attachedWebViews());
         assertEquals(fixtureUrl("/form.html"), sessionDisplayUrl());
@@ -232,11 +225,13 @@ public class BrowserInstrumentedTest {
 
     @Test
     public void untrustedHttpsIsRefusedAndPageNeverRenders() throws Exception {
+        int loadsBefore = loadCount("/secure-ok.html");
         openAddress(SECURE_BASE + "/secure-ok.html");
         waitUntil("SSL refusal status", () -> statusText().contains("Could not load"));
-        assertEquals(null, jsOrNull("document.querySelector('[data-testid=\"secure-page\"]')"
-                + " ? 'present' : null"));
-        assertEquals(0, loadCount("/secure-ok.html"));
+        assertEquals("missing", js("document.querySelector('[data-testid=\"secure-page\"]')"
+                + " ? 'present' : 'missing'"));
+        assertEquals("the untrusted endpoint must never serve the page",
+                loadsBefore, loadCount("/secure-ok.html"));
         assertEquals(1, attachedWebViews());
     }
 
@@ -249,13 +244,29 @@ public class BrowserInstrumentedTest {
     }
 
     @Test
-    public void unsupportedDestinationIsBlockedWithoutReplacingPage() throws Exception {
+    public void unsupportedNavigationsNeverLeaveTheSession() throws Exception {
         openAddress(fixtureUrl("/destinations.html"));
         String marker = waitForMarker();
-        realClickElement("dest-javascript");
+
+        // A navigation-style unsupported scheme is refused with a compact notice.
+        realClickElement("dest-mailto");
         waitUntil("blocked destination notice", () -> statusText().contains("Blocked"));
         assertEquals(marker, domText("load-marker"));
         assertEquals(fixtureUrl("/destinations.html"), sessionDisplayUrl());
+
+        // content: is an engine-level no-op here: no navigation, no notice, page untouched.
+        realClickElement("dest-content");
+        SystemClock.sleep(800);
+        assertEquals(marker, domText("load-marker"));
+        assertEquals(fixtureUrl("/destinations.html"), sessionDisplayUrl());
+        assertEquals(1, attachedWebViews());
+
+        // javascript: is refused too. The engine then leaves a blank document instead of running
+        // the script; the session URL must not change and no second context may appear.
+        realClickElement("dest-javascript");
+        waitUntil("javascript destination blocked", () -> statusText().contains("Blocked"));
+        assertEquals(fixtureUrl("/destinations.html"), sessionDisplayUrl());
+        assertEquals(1, attachedWebViews());
     }
 
     @Test
@@ -274,27 +285,22 @@ public class BrowserInstrumentedTest {
     public void harmlessPostIsRecordedOnceWithoutTypedValues() throws Exception {
         openAddress(fixtureUrl("/form.html"));
         waitForMarker();
-        onWebView().withElement(findElement(Locator.ID, "text-field"))
-                .perform(webClick()).perform(webKeys("automation-text"));
-        onWebView().withElement(findElement(Locator.ID, "password-field"))
-                .perform(webClick()).perform(webKeys("automation-secret"));
-        onWebView().withElement(findElement(Locator.ID, "notes-field"))
-                .perform(webClick()).perform(webKeys("automation-notes"));
-        onWebView().withElement(findElement(Locator.ID, "editable-field"))
-                .perform(webClick()).perform(webKeys("automation-editable"));
+        setElementValue("text-field", "automation-text");
+        setElementValue("password-field", "automation-secret");
+        setElementValue("notes-field", "automation-notes");
+        setElementText("editable-field", "automation-editable");
         assertEquals("automation-text", js("document.getElementById('text-field').value"));
-        assertEquals("automation-editable",
-                js("document.getElementById('editable-field').textContent"));
+        assertEquals("automation-editable", domText("editable-field"));
 
         realClickElement("submit-button");
         waitUntil("submission page", () -> "Submission recorded".equals(domText("page-title")));
 
         assertEquals(1, countPosts(SYNTHETIC_TEST_ID));
-        JSONObject entry = lastPost(SYNTHETIC_TEST_ID);
-        assertTrue(entry.getJSONArray("fields").toString().contains("test_id"));
-        assertTrue(entry.getJSONArray("fields").toString().contains("message"));
-        assertTrue(entry.getJSONArray("fields").toString().contains("secret"));
-        assertTrue(entry.getJSONArray("fields").toString().contains("notes"));
+        String fields = lastPost(SYNTHETIC_TEST_ID).getJSONArray("fields").toString();
+        assertTrue(fields, fields.contains("test_id"));
+        assertTrue(fields, fields.contains("message"));
+        assertTrue(fields, fields.contains("secret"));
+        assertTrue(fields, fields.contains("notes"));
 
         String raw = observationsRaw();
         assertFalse("typed text must never reach the fixture record", raw.contains("automation-text"));
@@ -368,11 +374,33 @@ public class BrowserInstrumentedTest {
         fail("timed out waiting for " + description + (last == null ? "" : " (last: " + last + ")"));
     }
 
+    // ---------------------------------------------------- page interaction
+
+    /**
+     * Evaluates JavaScript through the platform API. This never navigates, so the app's refusal of
+     * {@code javascript:} destinations stays exactly as a user would experience it.
+     */
     private String js(String expression) {
-        Evaluation evaluation = onWebView().forceJavascriptEnabled()
-                .perform(Atoms.script(expression)).get();
-        Object value = evaluation == null ? null : evaluation.getValue();
-        return value == null ? null : String.valueOf(value);
+        WebView view = attachedWebView();
+        if (view == null) {
+            throw new IllegalStateException("no WebView is attached");
+        }
+        AtomicReference<String> raw = new AtomicReference<>();
+        CountDownLatch latch = new CountDownLatch(1);
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() ->
+                view.evaluateJavascript(expression, value -> {
+                    raw.set(value);
+                    latch.countDown();
+                }));
+        try {
+            if (!latch.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("JavaScript evaluation timed out: " + expression);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while evaluating: " + expression, e);
+        }
+        return decodeJsValue(raw.get());
     }
 
     private String jsOrNull(String expression) {
@@ -383,9 +411,42 @@ public class BrowserInstrumentedTest {
         }
     }
 
+    private static String decodeJsValue(String raw) {
+        if (raw == null || "null".equals(raw)) {
+            return null;
+        }
+        try {
+            Object value = new JSONObject("{\"v\":" + raw + "}").get("v");
+            return value == JSONObject.NULL ? null : String.valueOf(value);
+        } catch (JSONException e) {
+            return raw;
+        }
+    }
+
     private String domText(String elementId) {
-        return jsOrNull("(function(){var el=document.getElementById('" + elementId + "');"
+        return js("(function(){var el=document.getElementById('" + elementId + "');"
                 + "return el ? el.textContent : null;})()");
+    }
+
+    private void setElementValue(String elementId, String value) {
+        js("(function(){var el=document.getElementById('" + elementId + "');"
+                + "el.focus();el.value=" + JSONObject.quote(value) + ";"
+                + "el.dispatchEvent(new Event('input',{bubbles:true}));"
+                + "el.dispatchEvent(new Event('change',{bubbles:true}));"
+                + "return el.value;})()");
+    }
+
+    private void setElementText(String elementId, String value) {
+        js("(function(){var el=document.getElementById('" + elementId + "');"
+                + "el.focus();el.textContent=" + JSONObject.quote(value) + ";"
+                + "el.dispatchEvent(new Event('input',{bubbles:true}));"
+                + "return el.textContent;})()");
+    }
+
+    private WebView attachedWebView() {
+        AtomicReference<WebView> view = new AtomicReference<>();
+        scenario.onActivity(activity -> view.set(activity.findViewById(R.id.browser_web_view)));
+        return view.get();
     }
 
     private String statusText() {
@@ -418,38 +479,89 @@ public class BrowserInstrumentedTest {
         return count.get();
     }
 
-    @SuppressWarnings("deprecation")
-    private float webViewScale() {
-        AtomicReference<Float> scale = new AtomicReference<>(1f);
-        scenario.onActivity(activity -> {
-            WebView view = activity.findViewById(R.id.browser_web_view);
-            if (view != null) {
-                scale.set(view.getScale());
-            }
-        });
-        return scale.get();
-    }
-
-    /** Injects a real touch event so the page treats activation as a user gesture. */
+    /** Injects a real touchscreen tap so the page treats activation as a user gesture. */
     private void realClickElement(String elementId) throws Exception {
         String rectJson = js("(function(){var el=document.getElementById('" + elementId + "');"
                 + "if(!el){return null;}el.scrollIntoView({block:'center'});"
                 + "var r=el.getBoundingClientRect();"
-                + "return JSON.stringify({x:(r.left+r.width/2),y:(r.top+r.height/2)});})()");
+                + "return JSON.stringify({x:(r.left+r.width/2),y:(r.top+r.height/2),"
+                + "w:window.innerWidth,h:window.innerHeight});})()");
         if (rectJson == null) {
             fail("fixture element not found: " + elementId);
         }
         JSONObject rect = new JSONObject(rectJson);
-        float scale = webViewScale();
-        float x = (float) (rect.getDouble("x") * scale);
-        float y = (float) (rect.getDouble("y") * scale);
-        onView(withId(R.id.browser_web_view)).perform(new GeneralClickAction(
-                Tap.SINGLE,
-                view -> new float[] {x, y},
-                Press.FINGER,
-                InputDevice.SOURCE_UNKNOWN,
-                MotionEvent.BUTTON_PRIMARY));
+        double cssWidth = rect.getDouble("w");
+        double cssHeight = rect.getDouble("h");
+        if (cssWidth <= 0 || cssHeight <= 0) {
+            fail("no CSS viewport reported for " + elementId);
+        }
+        float[] viewSize = new float[2];
+        int[] location = new int[2];
+        scenario.onActivity(activity -> {
+            WebView view = activity.findViewById(R.id.browser_web_view);
+            viewSize[0] = view.getWidth();
+            viewSize[1] = view.getHeight();
+            view.getLocationOnScreen(location);
+        });
+        // Map CSS viewport pixels to WebView pixels using the measured ratio (density and zoom).
+        float x = (float) (rect.getDouble("x") * viewSize[0] / cssWidth);
+        float y = (float) (rect.getDouble("y") * viewSize[1] / cssHeight);
+        if (x < 1 || y < 1 || x > viewSize[0] - 1 || y > viewSize[1] - 1) {
+            fail("computed touch point for " + elementId + " is outside the WebView: "
+                    + x + "," + y + " of " + viewSize[0] + "x" + viewSize[1]);
+        }
+        // Real input events through the system input pipeline: Espresso's view-level injection is
+        // not delivered to this WebView, while sendPointerSync is a genuine user gesture. Injection
+        // only works while this app owns the focused window.
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            awaitWindowFocus();
+            try {
+                sendTap(location[0] + x, location[1] + y);
+                return;
+            } catch (RuntimeException e) {
+                if (attempt == 3) {
+                    fail("could not inject a touch event at " + (location[0] + x) + ","
+                            + (location[1] + y) + ": " + e);
+                }
+                SystemClock.sleep(500);
+            }
+        }
     }
+
+    private void sendTap(float screenX, float screenY) {
+        long now = SystemClock.uptimeMillis();
+        MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, screenX, screenY, 0);
+        MotionEvent up = MotionEvent.obtain(now, now + 60, MotionEvent.ACTION_UP, screenX, screenY, 0);
+        down.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+        up.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+        try {
+            InstrumentationRegistry.getInstrumentation().sendPointerSync(down);
+            InstrumentationRegistry.getInstrumentation().sendPointerSync(up);
+        } finally {
+            down.recycle();
+            up.recycle();
+        }
+    }
+
+    /** Real input injection is only accepted while this app owns the focused window. */
+    private void awaitWindowFocus() {
+        long deadline = SystemClock.uptimeMillis() + 15_000;
+        while (SystemClock.uptimeMillis() < deadline) {
+            AtomicReference<Boolean> focused = new AtomicReference<>(false);
+            try {
+                scenario.onActivity(activity -> focused.set(activity.hasWindowFocus()));
+            } catch (RuntimeException e) {
+                throw new IllegalStateException("browser activity unavailable for input", e);
+            }
+            if (Boolean.TRUE.equals(focused.get())) {
+                return;
+            }
+            SystemClock.sleep(200);
+        }
+        fail("the browser window never gained input focus");
+    }
+
+    // -------------------------------------------------------- observations
 
     private JSONObject observations() throws Exception {
         return new JSONObject(observationsRaw());

@@ -109,9 +109,22 @@ adb -s <rg-serial> install -r app-rg/build/outputs/apk/debug/app-rg-debug.apk
 The instrumented suite (`BrowserInstrumentedTest`) covers: fresh start, address open, real-touch
 activation, `target=_blank` and gesture popup in the same tab, unsolicited popup no-op, real swipe
 scrolling, recreation retention (document, field values, load count), simulated process-restart
-recovery without auto-load, untrusted-HTTPS refusal, controlled HTTP failure, blocked destinations,
-and the harmless POST correlation (one submission, field names only). Activation that must count as
-a user gesture uses injected real touch events, not page JavaScript.
+recovery without auto-load, untrusted-HTTPS refusal, controlled HTTP failure, unsupported
+destinations, and the harmless POST correlation (one submission, field names only).
+
+Device-observed notes from this slice's first run:
+
+* Activations that must count as a user gesture use `Instrumentation.sendPointerSync` with
+  `SOURCE_TOUCHSCREEN` touch events. Espresso's view-level injection was not delivered to this
+  WebView, and `espresso-web` cannot evaluate JavaScript against it because that library drives the
+  page through `javascript:` navigations, which the product (correctly) refuses. `espresso-web` was
+  therefore dropped from the test dependencies; page reads use `WebView.evaluateJavascript`.
+* Real input injection is only accepted while the browser owns the focused window, so the device
+  must be awake, unlocked and not in use by another app for the automated suite.
+* Unsupported in-page destinations on this WebView: `intent:`, `file:`, `mailto:` and `data:` links
+  are refused with the "Blocked unsupported address" notice; `content:` links are an engine-level
+  no-op (no navigation, no notice); `javascript:` links are refused but leave a blank document
+  instead of running the script, so the session URL and single-WebView guarantees still hold.
 
 Physical rows that automation cannot satisfy and that are exercised with the Owner: unlock and
 fold/unfold on the cover and inner displays, real IME entry/correction/submission (including masked
@@ -130,5 +143,8 @@ password entry), and the RG optical check of the unconnected status screen.
 * A gesture `window.open()`/`target=_blank` current-tab result depends on the platform WebView's
   documented single-window behavior; a device mismatch is reported rather than worked around with a
   hidden popup view.
+* Clicking a `javascript:` page link is refused at the navigation level, and the engine then leaves a
+  blank document (not the request URL). The session URL, history ownership and single-WebView
+  guarantees are unaffected, and the address bar itself rejects `javascript:` input outright.
 * Third-party fixture pages, RG Reading/gesture behavior, transport, hosting and multi-tab remain out
   of scope for this slice.
