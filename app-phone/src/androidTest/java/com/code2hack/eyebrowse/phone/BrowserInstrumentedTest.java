@@ -22,6 +22,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.WebView;
+import android.widget.EditText;
 import android.widget.TextView;
 
 import androidx.test.core.app.ActivityScenario;
@@ -57,14 +58,22 @@ import java.util.function.BooleanSupplier;
  *
  * <pre>
  * adb shell am instrument -w -e fixtureBaseUrl http://127.0.0.1:25341 \
+ *   -e secureBaseUrl https://127.0.0.1:25342 \
  *   com.code2hack.eyebrowse.phone.test/androidx.test.runner.AndroidJUnitRunner
  * </pre>
  *
- * <p>The suite drives the page through the platform WebView APIs only: JavaScript is read with
- * {@link WebView#evaluateJavascript} (never a {@code javascript:} navigation, which the product
- * correctly refuses), and activation that must count as a user gesture (links, popup buttons, form
- * submission, scrolling) uses injected real touch events. Field text entry is synthetic automation
- * input; the physical IME observation belongs to the device procedure, not to these tests.
+ * <p>This suite reads exactly two arguments: {@code fixtureBaseUrl} and {@code secureBaseUrl}. Both
+ * have defaults for the reserved ports, and the runner passes them explicitly. Revision 1 of the
+ * ticket plan showed {@code untrustedHttpsUrl}; that name is not consumed here.
+ *
+ * <p>Evidence boundaries: page reads use {@link WebView#evaluateJavascript}; activation uses
+ * synthetic instrumented pointer events ({@code sendPointerSync}) which prove ordinary activation in
+ * the focused EyeBrowse window but are <em>not</em> human touch or IME evidence; field values and
+ * sentinels are set through page JavaScript as fixture setup, not typing; and
+ * {@code simulateProcessRestartForTest()} is a simulation, not real process-death evidence. Bounded
+ * waits: 20&nbsp;s for a condition, 10&nbsp;s for one JavaScript evaluation, 15&nbsp;s for window
+ * focus, up to 3 injection attempts 500&nbsp;ms apart, and 10&nbsp;s for fixture readiness. Real IME,
+ * cover/inner display, actual process-loss and RG optical rows belong to the device procedure.
  */
 @RunWith(AndroidJUnit4.class)
 public class BrowserInstrumentedTest {
@@ -126,23 +135,83 @@ public class BrowserInstrumentedTest {
         waitUntil("click counter updates", () -> "1".equals(domText("click-count")));
     }
 
+    /**
+     * The mandatory address-bar contract: every unsupported or invalid input is refused before any
+     * WebView navigation, the live document and its page script state survive, the exact typed draft
+     * is kept, feedback belongs to that input (the page is reloaded first so no earlier notice can
+     * satisfy the check), and a following valid address still loads. The text is entered with the
+     * native toolbar control; this is not IME evidence.
+     */
     @Test
-    public void rejectedAddressKeepsTypedDraftAndLiveDocument() throws Exception {
-        String url = fixtureUrl("/basic.html");
+    public void nativeAddressBarRefusesUnsupportedAndInvalidInputWithoutSideEffects() throws Exception {
+        String valid = fixtureUrl("/basic.html");
+        openAddress(valid);
+        waitForMarker();
+
+        String[][] cases = {
+                {"javascript:alert(1)", "Only http:// and https:// addresses are supported"},
+                {"content://com.example.fixture/item",
+                        "Only http:// and https:// addresses are supported"},
+                {"file:///etc/hosts", "Only http:// and https:// addresses are supported"},
+                {"intent://scan/#Intent;scheme=zxing;end",
+                        "Only http:// and https:// addresses are supported"},
+                {"mailto:fixture@example.invalid",
+                        "Only http:// and https:// addresses are supported"},
+                {"data:text/html,hello", "Only http:// and https:// addresses are supported"},
+                {"hello world", "Addresses cannot contain spaces"},
+                {"bareword", "Enter a full address such as example.com or http://printer"},
+                {"http://", "Enter a full address such as example.com or http://printer"},
+                {"example.com/%zz", "That address is not valid"},
+        };
+        for (String[] testCase : cases) {
+            String input = testCase[0];
+            String expectedFeedback = testCase[1];
+
+            // Clean baseline: reload so the status belongs to the page, not to an earlier refusal.
+            onView(withId(R.id.button_reload)).perform(click());
+            waitUntil("baseline page for " + input, () -> "Basic page".equals(domText("page-title"))
+                    && !statusText().contains("http://") && !statusText().contains("cannot contain"));
+            js("window.__eyeProbe='kept'");
+            String marker = domText("load-marker");
+            String location = js("String(document.location.href)");
+            int loads = loadCount("/basic.html");
+
+            submitAddress(input);
+
+            assertEquals("draft preserved for " + input, input, addressFieldText());
+            assertEquals("feedback for " + input, expectedFeedback, statusText());
+            assertEquals("document preserved for " + input, marker, domText("load-marker"));
+            assertEquals("location preserved for " + input, location,
+                    js("String(document.location.href)"));
+            assertEquals("no page load for " + input, loads, loadCount("/basic.html"));
+            assertEquals("page script state preserved for " + input, "kept",
+                    js("String(window.__eyeProbe)"));
+            assertEquals("single engine for " + input, 1, attachedWebViews());
+        }
+
+        // A valid address still works after the refusals.
+        int loadsBeforeCorrection = loadCount("/basic.html");
+        submitAddress(valid);
+        waitUntil("correction loads", () -> "Basic page".equals(domText("page-title")));
+        assertEquals(loadsBeforeCorrection + 1, loadCount("/basic.html"));
+    }
+
+    /** The same page-script payload is refused when typed into the native address bar. */
+    @Test
+    public void nativeAddressBarRefusesTheScriptProbePayloadWithoutRunningIt() throws Exception {
+        String url = fixtureUrl("/destinations.html");
         openAddress(url);
-        String marker = waitForMarker();
-        int loadsBefore = loadCount("/basic.html");
+        waitForMarker();
+        assertEquals("idle", domText("script-probe"));
+        String marker = domText("load-marker");
 
-        String rejected = "javascript:alert(1)";
-        onView(withId(R.id.address_input)).perform(click(), replaceText(rejected));
-        onView(withId(R.id.button_open)).perform(click());
+        submitAddress("javascript:void(document.getElementById('script-probe').textContent='ran')");
 
-        onView(withId(R.id.address_input)).check(matches(withText(rejected)));
-        onView(withId(R.id.status_text)).check(matches(withText(
-                "Only http:// and https:// addresses are supported")));
+        assertEquals("Only http:// and https:// addresses are supported", statusText());
+        assertEquals("the payload must not run", "idle", domText("script-probe"));
         assertEquals(marker, domText("load-marker"));
-        assertEquals(loadsBefore, loadCount("/basic.html"));
-        assertEquals(url, sessionDisplayUrl());
+        assertEquals(url, js("String(document.location.href)"));
+        assertEquals(1, attachedWebViews());
     }
 
     @Test
@@ -204,7 +273,8 @@ public class BrowserInstrumentedTest {
     }
 
     @Test
-    public void processRestartOffersSavedUrlWithoutAutoLoading() throws Exception {
+    public void simulatedProcessRestartOffersSavedUrlWithoutAutoLoading() throws Exception {
+        // A simulated new browser-process lifetime; real process death remains a device row.
         String url = fixtureUrl("/basic.html");
         openAddress(url);
         waitForMarker();
@@ -244,28 +314,55 @@ public class BrowserInstrumentedTest {
     }
 
     @Test
-    public void unsupportedNavigationsNeverLeaveTheSession() throws Exception {
+    public void unsupportedDestinationIsRefusedPerActionWithAFreshNotice() throws Exception {
+        for (String element : new String[] {"dest-mailto", "dest-file", "dest-intent", "dest-data"}) {
+            openAddress(fixtureUrl("/destinations.html"));
+            waitForMarker();
+            assertEquals("no stale notice before " + element, "Unsupported destinations", statusText());
+            String marker = domText("load-marker");
+            String location = js("String(document.location.href)");
+
+            realClickElement(element);
+
+            waitUntil("refusal for " + element, () -> statusText().contains("Blocked"));
+            assertEquals("document preserved for " + element, marker, domText("load-marker"));
+            assertEquals("location preserved for " + element, location,
+                    js("String(document.location.href)"));
+            assertEquals("single engine for " + element, 1, attachedWebViews());
+        }
+    }
+
+    @Test
+    public void contentDestinationIsAnEngineNoOpWithoutAFabricatedNotice() throws Exception {
         openAddress(fixtureUrl("/destinations.html"));
-        String marker = waitForMarker();
+        waitForMarker();
+        String baselineStatus = statusText();
+        String marker = domText("load-marker");
+        String location = js("String(document.location.href)");
 
-        // A navigation-style unsupported scheme is refused with a compact notice.
-        realClickElement("dest-mailto");
-        waitUntil("blocked destination notice", () -> statusText().contains("Blocked"));
-        assertEquals(marker, domText("load-marker"));
-        assertEquals(fixtureUrl("/destinations.html"), sessionDisplayUrl());
-
-        // content: is an engine-level no-op here: no navigation, no notice, page untouched.
         realClickElement("dest-content");
         SystemClock.sleep(800);
-        assertEquals(marker, domText("load-marker"));
-        assertEquals(fixtureUrl("/destinations.html"), sessionDisplayUrl());
-        assertEquals(1, attachedWebViews());
 
-        // javascript: is refused too. The engine then leaves a blank document instead of running
-        // the script; the session URL must not change and no second context may appear.
-        realClickElement("dest-javascript");
-        waitUntil("javascript destination blocked", () -> statusText().contains("Blocked"));
-        assertEquals(fixtureUrl("/destinations.html"), sessionDisplayUrl());
+        assertEquals("a no-op must not fabricate an app notice", baselineStatus, statusText());
+        assertEquals(marker, domText("load-marker"));
+        assertEquals(location, js("String(document.location.href)"));
+        assertEquals(1, attachedWebViews());
+        onView(withId(R.id.button_reload)).check(matches(isEnabled()));
+    }
+
+    @Test
+    public void pageOwnedJavascriptRunsInThePageSandbox() throws Exception {
+        openAddress(fixtureUrl("/destinations.html"));
+        waitForMarker();
+        String marker = domText("load-marker");
+        String location = js("String(document.location.href)");
+        assertEquals("idle", domText("script-probe"));
+
+        realClickElement("dest-script-probe");
+
+        waitUntil("page script runs", () -> "ran".equals(domText("script-probe")));
+        assertEquals(marker, domText("load-marker"));
+        assertEquals(location, js("String(document.location.href)"));
         assertEquals(1, attachedWebViews());
     }
 
@@ -283,6 +380,8 @@ public class BrowserInstrumentedTest {
 
     @Test
     public void harmlessPostIsRecordedOnceWithoutTypedValues() throws Exception {
+        // Field values are filled by page JavaScript as fixture setup (not typing); activation and
+        // submission use the ordinary touch path.
         openAddress(fixtureUrl("/form.html"));
         waitForMarker();
         setElementValue("text-field", "automation-text");
@@ -313,9 +412,26 @@ public class BrowserInstrumentedTest {
     // -------------------------------------------------------------- utilities
 
     private void openAddress(String url) {
-        onView(withId(R.id.address_input)).perform(click(), replaceText(url));
+        submitAddress(url);
+    }
+
+    /**
+     * Types into the native address control and presses the native Open button. The text arrives as
+     * an instrumentation edit of the toolbar field, so it proves the address pipeline, not IME use.
+     */
+    private void submitAddress(String text) {
+        onView(withId(R.id.address_input)).perform(click(), replaceText(text));
         onView(withId(R.id.button_open)).perform(click());
         dismissIme();
+    }
+
+    private String addressFieldText() {
+        AtomicReference<String> text = new AtomicReference<>("");
+        scenario.onActivity(activity -> {
+            EditText field = activity.findViewById(R.id.address_input);
+            text.set(field.getText().toString());
+        });
+        return text.get();
     }
 
     private String fixtureUrl(String path) {
@@ -432,6 +548,7 @@ public class BrowserInstrumentedTest {
     }
 
     private void setElementValue(String elementId, String value) {
+        // Fixture setup through page JavaScript: this is not typing, IME or input-path evidence.
         js("(function(){var el=document.getElementById('" + elementId + "');"
                 + "el.focus();el.value=" + JSONObject.quote(value) + ";"
                 + "el.dispatchEvent(new Event('input',{bubbles:true}));"
@@ -440,6 +557,7 @@ public class BrowserInstrumentedTest {
     }
 
     private void setElementText(String elementId, String value) {
+        // Fixture setup through page JavaScript: this is not typing, IME or input-path evidence.
         js("(function(){var el=document.getElementById('" + elementId + "');"
                 + "el.focus();el.textContent=" + JSONObject.quote(value) + ";"
                 + "el.dispatchEvent(new Event('input',{bubbles:true}));"
@@ -482,7 +600,12 @@ public class BrowserInstrumentedTest {
         return count.get();
     }
 
-    /** Injects a real touchscreen tap so the page treats activation as a user gesture. */
+    /**
+     * Injects synthetic instrumented touch through the system input pipeline. It establishes ordinary
+     * activation in the foreground EyeBrowse window; it is not human touch and not IME evidence. The
+     * {@code scrollIntoView} call is setup only - the dedicated swipe test proves input-driven
+     * scrolling - and the geometry is measured after it, before this single tap attempt.
+     */
     private void realClickElement(String elementId) throws Exception {
         String rectJson = js("(function(){var el=document.getElementById('" + elementId + "');"
                 + "if(!el){return null;}el.scrollIntoView({block:'center'});"

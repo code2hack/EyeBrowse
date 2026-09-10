@@ -337,6 +337,10 @@ final class PhoneBrowserSession {
         public void onPageStarted(WebView view, String url, Bitmap favicon) {
             if (NavigationPolicy.isAllowed(url)) {
                 displayUrl = url;
+                // A new main-frame navigation supersedes earlier refusal/error feedback, so a stale
+                // notice can never be mistaken for the result of the current action.
+                noticeMessage = null;
+                errorMessage = null;
             }
             loading = true;
             progress = 0;

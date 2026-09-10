@@ -9,13 +9,29 @@
 <body>
 <h1 id="page-title">Unsupported destinations</h1>
 <p>Load marker: <span id="load-marker" class="marker" data-testid="load-marker">{{LOAD_ID}}</span></p>
-<p>Activating any link below must leave this document and its marker unchanged.</p>
-<a id="dest-javascript" href="javascript:document.title='javascript-ran'">javascript: destination</a>
-<a id="dest-content" href="content://com.example.fixture/item">content: destination</a>
+<p>Three different origins meet on this page: EyeBrowse's native address bar (tested through the
+   toolbar), destinations a webpage asks the browser to open, and this page's own JavaScript, which
+   runs inside the ordinary WebView sandbox. This page does not claim that every link leaves the
+   document unchanged.</p>
+
+<h2>Page-owned JavaScript</h2>
+<a id="dest-script-probe"
+   href="javascript:void(document.getElementById('script-probe').textContent='ran')">
+  javascript: void link that only changes the sentinel below (ordinary page script)
+</a>
+<p>Script probe: <span id="script-probe" data-testid="script-probe">idle</span></p>
+<a id="dest-javascript-string" href="javascript:document.title='javascript-ran'">
+  javascript: link with a string completion value (page-script document replacement; not a
+  native-navigation case)
+</a>
+
+<h2>Destinations the browser must refuse or ignore</h2>
 <a id="dest-intent" href="intent://scan/#Intent;scheme=zxing;end">intent: destination</a>
 <a id="dest-file" href="file:///etc/hosts">file: destination</a>
 <a id="dest-mailto" href="mailto:fixture@example.invalid">mailto: destination</a>
 <a id="dest-data" href="data:text/html,unsupported-data-destination">data: destination</a>
+<a id="dest-content" href="content://com.example.fixture/item">content: destination</a>
+
 <p><a id="link-home" href="/">Back to fixture index</a></p>
 <script>window.fixtureInfo = { loadId: "{{LOAD_ID}}", path: "{{PATH}}" };</script>
 </body>

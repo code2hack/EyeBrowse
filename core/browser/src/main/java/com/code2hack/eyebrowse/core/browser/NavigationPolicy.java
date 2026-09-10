@@ -8,6 +8,13 @@ import java.util.Locale;
  * <p>Only {@code http} and {@code https} remain inside the browser session. Every other scheme
  * (including {@code javascript:}, {@code data:}, {@code file:}, {@code content:}, {@code blob:},
  * {@code intent:} and {@code about:}) is refused instead of being loaded or forwarded.
+ *
+ * <p>Scope: this policy decides about a main-frame navigation that the WebView asks the host
+ * application to handle. It is not a blanket ban on page-owned JavaScript: a {@code javascript:}
+ * link that the page itself activates runs inside that page's ordinary WebView sandbox (with no
+ * EyeBrowse script bridge or native capability), and a destination the engine refuses on its own may
+ * simply be a no-op. Typing any of these values into EyeBrowse's address bar is a different origin
+ * and is rejected by {@link AddressPolicy} before any navigation.
  */
 public final class NavigationPolicy {
 

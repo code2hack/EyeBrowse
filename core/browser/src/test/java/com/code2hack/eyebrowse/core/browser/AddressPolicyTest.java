@@ -19,6 +19,11 @@ public class AddressPolicyTest {
         assertAccepted("https://example.com:8443/x", "https://example.com:8443/x");
         assertAccepted("localhost:8080", "https://localhost:8080");
         assertAccepted("http://localhost", "http://localhost");
+        assertAccepted("http://printer/", "http://printer/");
+        assertAccepted("HTTP://PRINTER/", "http://printer/");
+        assertAccepted("https://nas", "https://nas");
+        assertAccepted("http://printer:631/status", "http://printer:631/status");
+        assertAccepted("https://nas:8443/admin?x=1", "https://nas:8443/admin?x=1");
         assertAccepted("127.0.0.1:25341/", "https://127.0.0.1:25341/");
         assertAccepted("[::1]:25342", "https://[::1]:25342");
         assertAccepted("http://[2001:db8::1]/a", "http://[2001:db8::1]/a");
@@ -92,12 +97,16 @@ public class AddressPolicyTest {
     @Test
     public void rejectsUnsupportedHostForms() {
         assertRejected("singlelabel", AddressPolicy.RejectReason.NO_HOST);
+        assertRejected("printer", AddressPolicy.RejectReason.NO_HOST);
+        assertRejected("printer:631", AddressPolicy.RejectReason.NO_HOST);
         assertRejected("example.com.", AddressPolicy.RejectReason.MALFORMED);
         assertRejected("999.1.1.1", AddressPolicy.RejectReason.MALFORMED);
         assertRejected("256.1.1.1", AddressPolicy.RejectReason.MALFORMED);
         assertRejected("exa_mple.com", AddressPolicy.RejectReason.MALFORMED);
         assertRejected("-bad.example.com", AddressPolicy.RejectReason.MALFORMED);
         assertRejected("bad-.example.com", AddressPolicy.RejectReason.MALFORMED);
+        assertRejected("http://-printer/", AddressPolicy.RejectReason.MALFORMED);
+        assertRejected("https://bad_name/", AddressPolicy.RejectReason.MALFORMED);
     }
 
     @Test

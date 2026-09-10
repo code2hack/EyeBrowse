@@ -13,6 +13,7 @@ procedures for this slice; it is not a product specification.
 | `example.com`, `example.com/path?q=1#part`, `example.com:8443/` | normalized to `https://…` |
 | `http://example.com`, `https://example.com:8443/x` | kept (scheme and host lower-cased) |
 | `localhost`, `localhost:8080`, `127.0.0.1:25341/` | normalized to `https://…` |
+| `http://printer/`, `https://nas:8443/` (explicit LAN hostname) | kept/normalized |
 | `[::1]:25342`, `http://[2001:db8::1]/a` | kept/normalized with the bracketed IPv6 literal |
 | Unicode host labels (e.g. `例子.测试`) | converted with `java.net.IDN` to ASCII form |
 | valid `%XX` escapes in path/query | kept as written |
@@ -26,12 +27,21 @@ Rejected without any navigation, search fallback or "repair":
 * ports that are not 1–65535 (non-numeric, `0`, `65536`, over-long);
 * malformed authorities (`host:1:2`, unbracketed IPv6 colons, bad brackets), malformed `%` escapes,
   unsafe delimiters (`\ " < > ^ \` { | }`);
-* single-label hosts other than `localhost`, trailing-dot hosts, out-of-range IPv4 literals,
-  underscores or leading/trailing hyphens in DNS labels.
+* bare single-label input such as `printer` (a LAN hostname is accepted when an explicit scheme
+  makes it unambiguous: `http://printer/`, `https://nas:8443/`); `localhost` is also accepted bare;
+  trailing-dot hosts, out-of-range IPv4 literals, and underscores or leading/trailing hyphens in DNS
+  labels are rejected.
 
-Acceptance is syntactic only; it does not promise reachability. The same policy gates in-page
-destinations: only main-frame `http`/`https` navigation stays in the session; other schemes are
-refused with "Blocked unsupported address". Subresource failures never replace the page result.
+Acceptance is syntactic only; it does not promise reachability. The same policy decides the main-frame navigations the WebView asks the host to handle. Three
+different origins are kept distinct:
+
+| Origin | Expected behaviour |
+| --- | --- |
+| Native address bar (typed or pasted, including `javascript:`, `content:`, `file:`, `intent:`, `mailto:`, `data:` and free text) | Rejected before any navigation; the live document, its page script state and the exact editable draft survive; compact feedback appears; no script runs. Covered by the native-control regression. |
+| A webpage asks for an unsupported external/local destination | Refused or platform-suppressed: no other app launches, no file/content access, no capability grant, no second browsing session, no false success. A genuinely delivered refusal gets the "Blocked unsupported address" notice; a destination the engine refuses on its own may be a no-op, which is not an app notice. |
+| The page's own JavaScript (including a `javascript:` link inside that page) | Ordinary WebView sandbox semantics: the page may change its own DOM/title/document. This is not an address-entry script facility, and EyeBrowse exposes no script bridge. |
+
+Subresource failures never replace the page result.
 
 ## 2. Session, window and lifecycle behavior
 
@@ -114,21 +124,35 @@ destinations, and the harmless POST correlation (one submission, field names onl
 
 Device-observed notes from this slice's first run:
 
-* Activations that must count as a user gesture use `Instrumentation.sendPointerSync` with
-  `SOURCE_TOUCHSCREEN` touch events. Espresso's view-level injection was not delivered to this
-  WebView, and `espresso-web` cannot evaluate JavaScript against it because that library drives the
-  page through `javascript:` navigations, which the product (correctly) refuses. `espresso-web` was
-  therefore dropped from the test dependencies; page reads use `WebView.evaluateJavascript`.
-* Real input injection is only accepted while the browser owns the focused window, so the device
-  must be awake, unlocked and not in use by another app for the automated suite.
-* Unsupported in-page destinations on this WebView: `intent:`, `file:`, `mailto:` and `data:` links
-  are refused with the "Blocked unsupported address" notice; `content:` links are an engine-level
-  no-op (no navigation, no notice); `javascript:` links are refused but leave a blank document
-  instead of running the script, so the session URL and single-WebView guarantees still hold.
+* Activations use `Instrumentation.sendPointerSync` with `SOURCE_TOUCHSCREEN` touch events. This is
+  synthetic instrumented input: it establishes ordinary activation (links, buttons, form submit,
+  swipe) in the focused EyeBrowse window, but it is **not** human touch, IME or physical-display
+  evidence. Espresso's view-level injection was not delivered to this WebView on the Fold6, so the
+  suite injects through the system input pipeline instead, with a bounded window-focus wait and at
+  most three attempts; a foreground/focus loss ends the attempt instead of retrying into another app.
+* Page reads and fixture setup use `WebView.evaluateJavascript` from the androidTest APK only. The
+  pinned `espresso-web:3.6.1` was dropped as a simplification approved by the Planner (clarification
+  C1). Its active evaluation path already calls `WebView.evaluateJavascript`, so the earlier note here
+  that it "drives the page through `javascript:` navigations" was wrong; the precise original failure
+  was never established, and no product security property is claimed from it.
+* Field values and sentinels written by `setElementValue`/`setElementText` are fixture setup, not
+  typing or IME evidence, and `simulateProcessRestartForTest()` is a simulation, not real
+  process-death evidence. Real IME, cover/inner display, actual process loss and RG optical rows
+  remain separate device rows.
+* `realClickElement` calls `scrollIntoView` as setup before measuring geometry; input-driven
+  scrolling is proven by the dedicated swipe test, not by that setup.
+* Unsupported page-origin destinations on the Fold6: `intent:`, `file:`, `mailto:` and `data:` links
+  produce the "Blocked unsupported address" notice with the document unchanged (each case is now
+  tested with its own clean baseline); `content:` links are an engine-level no-op with no app notice
+  and no change to document or location. The fixture's page-owned JavaScript links are labelled as
+  sandbox semantics: the `void(...)` probe changes only its sentinel, and the separate
+  string-completion link (`javascript:document.title='javascript-ran'`) can replace the document
+  with its completion value while keeping the URL - page behaviour, not an address-bar case.
 
-Whether those `content:` and `javascript:` outcomes satisfy the ticket's rejection requirement is
-under Planner clarification: this document records observed behaviour and does not treat it as
-accepted.
+Argument names and bounds: the suite reads `fixtureBaseUrl` and `secureBaseUrl` (revision 1's
+`untrustedHttpsUrl` name is not consumed). Waits are bounded at 20 s per condition, 10 s per
+JavaScript evaluation, 15 s for window focus, up to 3 injection attempts 500 ms apart, and 10 s for
+fixture readiness.
 
 Physical rows that automation cannot satisfy and that are exercised with the Owner: unlock and
 fold/unfold on the cover and inner displays, real IME entry/correction/submission (including masked
@@ -147,8 +171,9 @@ password entry), and the RG optical check of the unconnected status screen.
 * A gesture `window.open()`/`target=_blank` current-tab result depends on the platform WebView's
   documented single-window behavior; a device mismatch is reported rather than worked around with a
   hidden popup view.
-* Clicking a `javascript:` page link is refused at the navigation level, and the engine then leaves a
-  blank document (not the request URL). The session URL, history ownership and single-WebView
-  guarantees are unaffected, and the address bar itself rejects `javascript:` input outright.
+* Page-owned JavaScript is not disabled or rewritten: a `javascript:` link inside a page executes in
+  that page's sandbox, and a link whose script completes with a string can replace the document with
+  that string while keeping the URL (HTML javascript-URL semantics). The native address bar rejects
+  the same payload without running it, which is covered by the address-bar regression.
 * Third-party fixture pages, RG Reading/gesture behavior, transport, hosting and multi-tab remain out
   of scope for this slice.

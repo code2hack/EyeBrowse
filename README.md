@@ -38,9 +38,10 @@ Application ids: `com.code2hack.eyebrowse.phone` and `com.code2hack.eyebrowse.rg
 
 ## Phone behavior in one screen
 
-* Address control accepts explicit `http://`/`https://` destinations; a scheme-less dotted domain,
-  IPv4 literal, bracketed IPv6 or `localhost` normalizes to HTTPS. Everything else is rejected with
-  a compact message and **no** navigation and **no** search fallback.
+* Address control accepts explicit `http://`/`https://` destinations (including LAN hostnames such
+  as `http://printer/`); a scheme-less dotted domain, IPv4 literal, bracketed IPv6 or `localhost`
+  normalizes to HTTPS. Everything else is rejected with a compact message and **no** navigation and
+  **no** search fallback.
 * One application-owned WebView survives Activity recreation; a process restart offers the saved
   address but never auto-loads it.
 * New-window requests stay in the same tab; unsolicited `window.open()` does nothing.

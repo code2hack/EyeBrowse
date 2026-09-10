@@ -10,10 +10,11 @@ import java.util.Locale;
  * {@code http://} or {@code https://} (scheme-less input becomes {@code https://}); there is no
  * search fallback and no silent repair, so a rejected address never navigates.
  *
- * <p>Documented consequences of the strict grammar: trailing-dot hosts, single-label hosts other
- * than {@code localhost}, userinfo ({@code user@host}), whitespace or control characters anywhere,
+ * <p>Documented consequences of the strict grammar: trailing-dot hosts, bare single words (no
+ * search fallback), userinfo ({@code user@host}), whitespace or control characters anywhere,
  * non-numeric or out-of-range ports, malformed percent escapes and unsafe delimiters are rejected
- * rather than rewritten.
+ * rather than rewritten. A single-label LAN hostname is accepted only when written with an explicit
+ * {@code http://} or {@code https://} scheme; {@code localhost} is also accepted bare.
  */
 public final class AddressPolicy {
 
@@ -23,7 +24,7 @@ public final class AddressPolicy {
         WHITESPACE("Addresses cannot contain spaces"),
         UNSUPPORTED_SCHEME("Only http:// and https:// addresses are supported"),
         MALFORMED("That address is not valid"),
-        NO_HOST("Enter a full address such as example.com"),
+        NO_HOST("Enter a full address such as example.com or http://printer"),
         INVALID_PORT("Port must be between 1 and 65535"),
         USERINFO("Addresses cannot include user names");
 
@@ -115,6 +116,7 @@ public final class AddressPolicy {
 
         String scheme;
         String remainder;
+        boolean explicitScheme = false;
         int firstColon = trimmed.indexOf(':');
         String prefix = firstColon > 0 ? trimmed.substring(0, firstColon) : null;
         boolean prefixIsScheme = prefix != null && prefix.indexOf('.') < 0
@@ -128,6 +130,7 @@ public final class AddressPolicy {
                 }
                 scheme = lowerPrefix;
                 remainder = after.substring(2);
+                explicitScheme = true;
             } else if (isForbiddenScheme(lowerPrefix)) {
                 return rejected(RejectReason.UNSUPPORTED_SCHEME);
             } else if (lowerPrefix.equals("http") || lowerPrefix.equals("https")) {
@@ -213,12 +216,20 @@ public final class AddressPolicy {
                 host = ascii;
             } else {
                 if (ascii.indexOf('.') < 0) {
-                    return rejected(RejectReason.NO_HOST);
-                }
-                if (!isValidDnsName(ascii)) {
+                    // A bare single word is never guessed into a host, but an explicit scheme makes
+                    // a LAN hostname such as http://printer/ an unambiguous address.
+                    if (!explicitScheme) {
+                        return rejected(RejectReason.NO_HOST);
+                    }
+                    if (!isValidSingleLabel(ascii)) {
+                        return rejected(RejectReason.MALFORMED);
+                    }
+                    host = ascii;
+                } else if (!isValidDnsName(ascii)) {
                     return rejected(RejectReason.MALFORMED);
+                } else {
+                    host = ascii;
                 }
-                host = ascii;
             }
         }
 
@@ -333,6 +344,23 @@ public final class AddressPolicy {
             }
             int value = Integer.parseInt(label);
             if (value > 255) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean isValidSingleLabel(String label) {
+        if (label.isEmpty() || label.length() > 63) {
+            return false;
+        }
+        if (label.charAt(0) == '-' || label.charAt(label.length() - 1) == '-') {
+            return false;
+        }
+        for (int i = 0; i < label.length(); i++) {
+            char c = label.charAt(i);
+            boolean ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-';
+            if (!ok) {
                 return false;
             }
         }
