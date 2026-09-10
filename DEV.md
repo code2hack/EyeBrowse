@@ -71,6 +71,32 @@ Sources: local `/home/code2hack/Projects/Glasseo/DEV.md` (checkout HEAD `5f9d235
 - `ANDROID_HOME`, `ANDROID_SDK_ROOT`, and `JAVA_HOME` are unset in the inspected shell. Use an explicit SDK environment or an untracked `local.properties` when establishing builds; never commit a machine-specific SDK path.
 - Glasseo reports successful Gradle wrapper 9.1.0 / AGP 9.0.1 / JDK 17 builds with built-in Kotlin. This is a reusable compatibility reference, not an approved EyeBrowse dependency selection. No EyeBrowse wrapper or build tasks exist yet.
 
+### Real-device ADB connection order (Phone and RG)
+
+Apply this procedure to the mission's reserved physical device. Prefer **USB → local LAN TCP → Tailscale TCP → human gate**. An emulator or another connected device is not a substitute.
+
+1. **USB first.** Check `adb devices -l` for the intended device in authorized `device` state. Verify its identity, then enable legacy TCP ADB on port **5555** through that USB transport. Record its current LAN/Tailscale addresses and verify a TCP connection before a planned USB disconnect. If the listener is already enabled and verified, do not restart it unnecessarily.
+2. **Without USB, try LAN, then Tailscale.** Locate the intended device on the local LAN using its known addresses, local neighbor information (`ip neigh`), or router/DHCP records; use bounded local discovery if needed. Try `<LAN-IP>:5555`. If no usable LAN connection is established, identify its Tailscale peer with `tailscale status --json` and try `<Tailscale-IP-or-name>:5555`. Use short timeouts and bounded retries. A responding host or open port is not enough: ADB must report `device`, and the device identity must match.
+3. **Human gate only when no authorized route works.** Inform Manager and ask the Owner to connect USB, or enable the device's Tailscale and Android Wireless debugging where supported. Modern Wireless debugging uses pairing and a separately advertised port; it is not automatically legacy port 5555. Complete any required pairing/authorization interactively. Once any authorized ADB transport is established, use that transport to enable legacy TCP ADB on 5555, then verify reconnection. If the device rejects this mode, report the limitation rather than bypassing authentication or using root. Respect the Owner's current availability and no-alarm instructions.
+
+Command templates (`USB_SERIAL` is the verified USB serial; `ADB_TARGET` is the current authorized transport identifier; `DEVICE_HOST` is the selected LAN/Tailscale address):
+
+```bash
+adb devices -l
+adb -s "$USB_SERIAL" tcpip 5555
+# After recovery through another authorized transport, use instead:
+# adb -s "$ADB_TARGET" tcpip 5555
+
+timeout 10s adb connect "$DEVICE_HOST:5555"
+timeout 10s adb -s "$DEVICE_HOST:5555" get-state
+adb -s "$DEVICE_HOST:5555" shell getprop ro.serialno
+adb -s "$DEVICE_HOST:5555" shell getprop ro.product.model
+```
+
+- Use explicit `adb -s` targeting for every device operation. IP addresses can change or be reassigned; verify identity against the assigned device before mutation. Re-enabling TCP can restart `adbd`, so coordinate it with any active test.
+- Keep legacy TCP 5555 available as the reconnection path. Do not routinely run `adb usb` during cleanup; disable TCP only when explicitly requested by the Owner. Still stop test apps and restore other temporary test settings.
+- Retain ADB host authorization. Use only trusted LANs and authorized tailnet access; do not disable authentication or expose port 5555 through public forwarding.
+
 ### Rokid Glasses: available now
 
 Fresh ADB inspection confirms:
@@ -107,7 +133,7 @@ Synthetic input and emulator runs do not qualify real head motion, peripheral be
 
 The Owner explicitly authorized validation of issue #1 on both the installed Android emulator and the connected real Fold6. Fresh ADB inventory identifies the authorized phone as `SM_F956N`, serial `R3CX70NHTHK`. Reserve both targets for the assigned validation Worker; use explicit serials in every ADB command and leave RG (`1906092617103125`) untouched for this phone-only mission.
 
-This authorization covers the isolated locked-WebView spike, not unrelated phone apps, data, or production architecture changes. Never request or record the Owner's unlock secret; the Owner operates secure lock/unlock directly. Coordinate unplugged testing and any wireless-debugging setup with the Owner. Preserve existing device/AVD state and restore any temporary test settings. Emulator results remain separate from real Fold6 acceptance.
+This authorization covers the isolated locked-WebView spike, not unrelated phone apps, data, or production architecture changes. Never request or record the Owner's unlock secret; the Owner operates secure lock/unlock directly. Coordinate physical unplugged-testing steps with the Owner and follow the real-device ADB connection order above. Preserve existing device/AVD state; restore temporary test settings without disabling the configured TCP reconnection path. Emulator results remain separate from real Fold6 acceptance.
 
 Before emulator use, verify the intended AVD's configuration and reserve it; do not wipe or repurpose the existing `dealer-api36` AVD without approval. Launch long-running emulator processes visibly through the interactive execution tooling. Record the actual emulator serial and always target it explicitly.
 
