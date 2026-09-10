@@ -46,6 +46,7 @@ class Observations:
         self.started_at = time.strftime("%Y-%m-%dT%H:%M:%S%z")
         self.load_seq = 0
         self.loads: dict[str, int] = {}
+        self.notes: dict[str, str] = {}
         self.requests: list[dict[str, object]] = []
         if self.state_file.exists():
             try:
@@ -53,6 +54,7 @@ class Observations:
                 self.started_at = data.get("startedAt", self.started_at)
                 self.load_seq = int(data.get("loadSeq", 0))
                 self.loads = {str(k): int(v) for k, v in data.get("loads", {}).items()}
+                self.notes = {str(k): str(v) for k, v in data.get("notes", {}).items()}
                 self.requests = list(data.get("requests", []))
             except (OSError, ValueError) as exc:  # a corrupt scratch file must not hide readiness
                 print(f"WARN could not read {self.state_file}: {exc}", flush=True)
@@ -69,6 +71,12 @@ class Observations:
         with STATE_LOCK:
             self.requests.append({"method": method, "path": path, "scheme": scheme})
             del self.requests[:-200]
+            self._persist_locked()
+
+    def record_note(self, name: str, value: str) -> None:
+        """Records only a test-case name and its observed outcome label."""
+        with STATE_LOCK:
+            self.notes[name] = value
             self._persist_locked()
 
     def record_submission(self, test_id: str, field_names: list[str]) -> None:
@@ -89,6 +97,7 @@ class Observations:
                 "startedAt": self.started_at,
                 "loadSeq": self.load_seq,
                 "loads": dict(self.loads),
+                "notes": dict(self.notes),
                 "requests": list(self.requests),
             }
 
@@ -121,6 +130,9 @@ class FixtureHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/cookie":
             self._handle_cookie(parse_qs(parsed.query))
+            return
+        if path == "/api/note":
+            self._handle_note(parse_qs(parsed.query))
             return
         if path == "/api/cookies":
             cookies = self.headers.get("Cookie", "")
@@ -187,6 +199,14 @@ class FixtureHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _handle_note(self, query: dict[str, list[str]]) -> None:
+        """Test-only channel recording an observed outcome label; no page or user content."""
+        name = (query.get("name") or [""])[0]
+        value = (query.get("value") or [""])[0]
+        self.observations.record_note(name, value)
+        body = json.dumps({"name": name, "value": value}).encode()
+        self._send_bytes(200, body, "application/json")
 
     def _send_page(self, status: int, page: str, path: str,
                    extra: dict[str, str] | None = None) -> None:

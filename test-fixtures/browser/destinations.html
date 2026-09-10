@@ -26,11 +26,17 @@
 </a>
 
 <h2>Destinations the browser must refuse or ignore</h2>
-<a id="dest-intent" href="intent://scan/#Intent;scheme=zxing;end">intent: destination</a>
-<a id="dest-file" href="file:///etc/hosts">file: destination</a>
-<a id="dest-mailto" href="mailto:fixture@example.invalid">mailto: destination</a>
-<a id="dest-data" href="data:text/html,unsupported-data-destination">data: destination</a>
-<a id="dest-content" href="content://com.example.fixture/item">content: destination</a>
+<p>Activated link: <span id="last-activated" data-testid="last-activated">none</span></p>
+<a id="dest-intent" href="intent://scan/#Intent;scheme=zxing;end"
+   onclick="document.getElementById('last-activated').textContent=this.id">intent: destination</a>
+<a id="dest-file" href="file:///etc/hosts"
+   onclick="document.getElementById('last-activated').textContent=this.id">file: destination</a>
+<a id="dest-mailto" href="mailto:fixture@example.invalid"
+   onclick="document.getElementById('last-activated').textContent=this.id">mailto: destination</a>
+<a id="dest-data" href="data:text/html,unsupported-data-destination"
+   onclick="document.getElementById('last-activated').textContent=this.id">data: destination</a>
+<a id="dest-content" href="content://com.example.fixture/item"
+   onclick="document.getElementById('last-activated').textContent=this.id">content: destination</a>
 
 <p><a id="link-home" href="/">Back to fixture index</a></p>
 <script>window.fixtureInfo = { loadId: "{{LOAD_ID}}", path: "{{PATH}}" };</script>

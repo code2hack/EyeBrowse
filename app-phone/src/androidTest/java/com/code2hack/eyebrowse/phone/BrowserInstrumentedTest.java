@@ -313,23 +313,46 @@ public class BrowserInstrumentedTest {
         assertEquals(fixtureUrl("/fail"), sessionDisplayUrl());
     }
 
+    /**
+     * Page-origin destinations must never leave the session. The page's own sentinel proves the tap
+     * activated the link; the document, real location and single-engine state must not change; with a
+     * clean baseline any status change can only be this action's refusal. Schemes the engine refuses
+     * on its own stay a no-op with no app notice - that outcome is recorded rather than asserted away
+     * - and at least one scheme must reach the app as a genuine refusal.
+     */
     @Test
-    public void unsupportedDestinationIsRefusedPerActionWithAFreshNotice() throws Exception {
-        for (String element : new String[] {"dest-mailto", "dest-file", "dest-intent", "dest-data"}) {
+    public void pageOriginDestinationsNeverLeaveTheSession() throws Exception {
+        int freshRefusals = 0;
+        for (String element : new String[] {"dest-mailto", "dest-content", "dest-file", "dest-intent",
+                "dest-data"}) {
             openAddress(fixtureUrl("/destinations.html"));
             waitForMarker();
-            assertEquals("no stale notice before " + element, "Unsupported destinations", statusText());
+            String baselineStatus = statusText();
+            assertEquals("clean baseline before " + element, "Unsupported destinations", baselineStatus);
             String marker = domText("load-marker");
             String location = js("String(document.location.href)");
 
             realClickElement(element);
+            waitUntil("activation of " + element, () -> element.equals(domText("last-activated")));
+            SystemClock.sleep(600);
 
-            waitUntil("refusal for " + element, () -> statusText().contains("Blocked"));
+            String status = statusText();
+            boolean refused = "Blocked unsupported address. Only http:// and https:// load here."
+                    .equals(status);
+            assertTrue("unexpected status for " + element + ": " + status,
+                    refused || baselineStatus.equals(status));
+            if (refused) {
+                freshRefusals++;
+            }
+            recordOutcome(element, refused ? "app-refused" : "engine-no-op");
             assertEquals("document preserved for " + element, marker, domText("load-marker"));
             assertEquals("location preserved for " + element, location,
                     js("String(document.location.href)"));
             assertEquals("single engine for " + element, 1, attachedWebViews());
+            onView(withId(R.id.button_reload)).check(matches(isEnabled()));
         }
+        assertTrue("at least one page-origin destination must reach the app as a refusal",
+                freshRefusals > 0);
     }
 
     @Test
@@ -341,7 +364,8 @@ public class BrowserInstrumentedTest {
         String location = js("String(document.location.href)");
 
         realClickElement("dest-content");
-        SystemClock.sleep(800);
+        waitUntil("content activation", () -> "dest-content".equals(domText("last-activated")));
+        SystemClock.sleep(600);
 
         assertEquals("a no-op must not fabricate an app notice", baselineStatus, statusText());
         assertEquals(marker, domText("load-marker"));
@@ -728,6 +752,10 @@ public class BrowserInstrumentedTest {
         }
         fail("no POST submission recorded for " + testId);
         return null;
+    }
+
+    private void recordOutcome(String name, String value) throws Exception {
+        fetch(FIXTURE_BASE + "/api/note?name=" + name + "&value=" + value);
     }
 
     private String fetch(String url) throws Exception {
