@@ -41,9 +41,53 @@ This direction supersedes conflicting requirements in the earlier draft material
 
 Sections 1–29 are retained during refinement so prior design work is not silently lost. Their combined feature list and acceptance gates MUST NOT be treated as the approved v0.0.1 implementation contract. Previously approved, non-conflicting design decisions remain inputs; unsettled choices are not resolved merely by retaining their earlier wording.
 
-Still to refine: the precise basic-browser function set, Phone/RG session and viewport ownership, presentation/input transport, text-entry coverage, RG Normal/Reading scope, speech scope, connection/recovery behavior, and integrated acceptance criteria. No transport library, codec, new gesture, or unapproved fallback is selected by this scope reset.
+Still to refine: remaining basic-browser behavior, presentation/control handoff and viewport policy, transport protocol/codec, text-entry details, RG Normal/Reading scope, speech scope, QR pairing details, connection/recovery behavior, and integrated acceptance criteria. Section 0.2 records settled choices; it does not select a transport library, codec, new gesture, or unapproved fallback.
 
 Evidence: [issue #1](https://github.com/code2hack/EyeBrowse/issues/1), [independent review under revised Owner acceptance](https://github.com/code2hack/EyeBrowse/pull/3#issuecomment-5614157830), and [Manager acceptance](https://github.com/code2hack/EyeBrowse/issues/1#issuecomment-5614203779). The accepted record includes Owner-accepted historical Fold6 locked-command/unplugged evidence and supplemental current-head observations; it does not claim final-head Fold6 post-lock command qualification or production transport/power validation. The cancelled repeat spike test is not reinstated by this specification update.
+
+### 0.2 Approved v0.0.1 browsing and pairing decisions
+
+The Project Owner approved the following decisions on 2026-09-10, including the QR scan direction. These decisions further refine Section 0.1 and supersede conflicting earlier draft requirements. They are requirements to implement, not claims of completed device validation.
+
+#### Shared session and explicit handoff
+
+- Phone owns one authoritative browser session and one active page. Phone and RG operate that same page, not independent simultaneous browsing sessions.
+- Use explicit presentation/control handoff between Phone and RG. The handoff controls, viewport resizing policy, and inactive-device presentation remain to be specified; implementation MUST NOT silently decide those user-visible behaviors.
+- Phone remains usable for ordinary browsing without RG connected.
+- Connecting RG or handing control between devices MUST NOT intentionally start a different browser session. Preserve the current page and its state as far as WebView permits; exact continuity/recovery behavior remains part of refinement.
+
+#### Single tab
+
+- v0.0.1 is a single-tab browser.
+- Multiple tabs and tab-management workflows are outside this version. Earlier requirements for new-tab creation, a `+` control, tab count, and programmatic agent tab operations do not apply.
+- No placeholder Agent surface or Agent control is required for a version without an agent. Retain the applicable Soft Dock visual direction without controls for absent features.
+
+#### RG text entry
+
+- RG MUST support entering a URL and entering, correcting, and submitting text in ordinary supported webpage fields without unlocking the phone during an already established browsing session.
+- Retain a minimal in-app RG keyboard, operated using the head pointer and tap. Phone-assisted typing MUST NOT be the only text-entry path.
+- The keyboard is EyeBrowse-local, not a system-wide IME. Phone uses its normal Android IME.
+- Exact supported field types, keyboard details, and focus/input delivery rules remain to be specified. The scope includes ordinary browser text entry, not an Agent composer.
+
+#### LAN and phone-hotspot connection
+
+- Phone–RG communication MUST use ordinary local LAN networking. The primary usage topology is RG connected to the Phone's hotspot; a shared local Wi-Fi LAN is also supported.
+- Phone is the browser host and RG is its local HUD client. Browser presentation travels toward RG and RG browser actions travel toward Phone; the concrete presentation format and transport protocol remain engineering decisions to refine.
+- No CXR, CXR-L, or CXR-S integration is included in v0.0.1, including as a fallback.
+- The Phone–RG link MUST NOT depend on a cloud relay, public Internet rendezvous service, or built-in Tailscale. Website Internet access remains separate from this local link.
+- EyeBrowse does not supply its own VPN. Integration validation must exercise the intended Phone-hotspot topology with the Phone's configured global VPN enabled, checking both website access and the local Phone–RG link. A shared-router test alone does not establish the primary hotspot case.
+
+#### QR pairing direction
+
+- Quick pairing MUST use a QR code displayed by EyeBrowse Phone and scanned by EyeBrowse RG using the glasses camera.
+- The scan pairs the RG client with the Phone browser host; the normal pairing journey MUST NOT require manually typing the Phone's IP address or port.
+- QR scanning/decoding on actual RG hardware is part of the integrated pairing validation, not something issue #1 already proved.
+- QR application pairing and joining the Wi-Fi/hotspot are separate behaviors. Whether the same QR should also provision hotspot credentials or initiate Wi-Fi joining remains an explicit open product decision. The scan-direction approval does not silently approve either automatic network joining or a manual-joining requirement.
+- QR payload, authentication/channel protection, expiry/reuse, trusted-device retention, unpairing, and reconnection details remain to be specified. No protocol, credential format, or automatic trust-by-LAN-presence policy is selected by this decision.
+
+#### Remaining scope boundaries
+
+The four approved choices settle shared-page handoff, a single tab, RG-independent text entry, and local-only transport without CXR. They do not automatically approve every other recommendation in the preceding discussion. In particular, the precise basic navigation controls, full RG Normal/Reading contract, custom ASR deferral, automatic hotspot joining, connection recovery, and detailed acceptance criteria remain to be reconciled explicitly. No new implementation ticket or device test is dispatched by this documentation update.
 
 ---
 
