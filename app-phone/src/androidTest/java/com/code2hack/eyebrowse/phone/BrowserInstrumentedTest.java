@@ -149,6 +149,7 @@ public class BrowserInstrumentedTest {
         String valid = fixtureUrl("/basic.html");
         openAddress(valid);
         waitForMarker();
+        String previousMarker = null;
 
         String[][] cases = {
                 {"javascript:alert(1)", "Only http:// and https:// addresses are supported"},
@@ -169,13 +170,14 @@ public class BrowserInstrumentedTest {
             String input = testCase[0];
             String expectedFeedback = testCase[1];
 
-            // Clean baseline: reload so the status belongs to the page, not to an earlier refusal.
+            // Clean baseline: reload and wait for the settled, CHANGED document so a pending load can
+            // never be mistaken for a change caused by the address submission below.
             onView(withId(R.id.button_reload)).perform(click());
-            waitUntil("baseline page for " + input, () -> !sessionLoading()
-                    && "Basic page".equals(domText("page-title"))
-                    && !statusText().contains("http://") && !statusText().contains("cannot contain"));
+            previousMarker = waitForFreshBaseline("Basic page", previousMarker);
+            waitUntil("baseline status for " + input, () -> !statusText().contains("http://")
+                    && !statusText().contains("cannot contain"));
             js("window.__eyeProbe='kept'");
-            String marker = domText("load-marker");
+            String marker = previousMarker;
             String location = jsRead("String(document.location.href)");
             int loads = loadCount("/basic.html");
 
@@ -333,18 +335,12 @@ public class BrowserInstrumentedTest {
             // A grouped case must baseline the NEW document: wait until the load has settled and the
             // marker differs from the previously recorded one, otherwise a stale read of the outgoing
             // document looks like a reload during the activation.
-            final String previous = previousMarker;
-            waitUntil("fresh baseline for " + element, () -> {
-                String value = domText("load-marker");
-                return !sessionLoading() && value != null && value.matches("L\\d+")
-                        && (previous == null || !previous.equals(value));
-            });
+            previousMarker = waitForFreshBaseline("Unsupported destinations", previousMarker);
             String baselineStatus = statusText();
             assertEquals("clean baseline before " + element, "Unsupported destinations", baselineStatus);
-            String markerBefore = domText("load-marker");
+            String markerBefore = previousMarker;
             String locationBefore = jsRead("String(document.location.href)");
             reportCase(element, "start", markerBefore, locationBefore, "dispatched");
-            previousMarker = markerBefore;
 
             realClickElement(element);
             waitUntil("activation of " + element, () -> element.equals(domText("last-activated")));
@@ -379,10 +375,8 @@ public class BrowserInstrumentedTest {
     public void contentDestinationIsAnEngineNoOpWithoutAFabricatedNotice() throws Exception {
         String caseId = "content-standalone";
         openAddress(fixtureUrl("/destinations.html"));
-        waitUntil("settled baseline for content", () -> !sessionLoading()
-                && domText("load-marker") != null && domText("load-marker").matches("L\\d+"));
+        String markerBefore = waitForFreshBaseline("Unsupported destinations", null);
         String baselineStatus = statusText();
-        String markerBefore = domText("load-marker");
         String locationBefore = jsRead("String(document.location.href)");
         reportCase(caseId, "start", markerBefore, locationBefore, "dispatched");
 
@@ -818,6 +812,26 @@ public class BrowserInstrumentedTest {
         }
         fail("no POST submission recorded for " + testId);
         return null;
+    }
+
+    /**
+     * Waits for a settled document that is demonstrably NEW (its marker differs from the previous
+     * one) and returns that marker. Grouped and matrix cases must never baseline the outgoing
+     * document, otherwise a pending load looks like a change caused by the activation under test.
+     */
+    private String waitForFreshBaseline(String expectedTitle, String previousMarker) {
+        AtomicReference<String> marker = new AtomicReference<>();
+        waitUntil("fresh baseline (", () -> {
+            String value = domText("load-marker");
+            boolean fresh = value != null && value.matches("L\\d+")
+                    && (previousMarker == null || !previousMarker.equals(value));
+            if (fresh && !sessionLoading() && expectedTitle.equals(domText("page-title"))) {
+                marker.set(value);
+                return true;
+            }
+            return false;
+        });
+        return marker.get();
     }
 
     private void reportCase(String caseId, String phase, String marker, String location,
