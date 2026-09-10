@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Simple browser-window glyph inside the adaptive-icon safe zone. -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,34h48a6,6 0 0 1 6,6v28a6,6 0 0 1 -6,6h-48a6,6 0 0 1 -6,-6v-28a6,6 0 0 1 6,-6z" />
+    <path
+        android:fillColor="#2F5BD7"
+        android:pathData="M24,42h60v7h-60z" />
+    <path
+        android:fillColor="#2F5BD7"
+        android:pathData="M32,57h24a3,3 0 0 1 3,3v3a3,3 0 0 1 -3,3h-24a3,3 0 0 1 -3,-3v-3a3,3 0 0 1 3,-3z" />
+    <path
+        android:fillColor="#2F5BD7"
+        android:pathData="M64,57h12a3,3 0 0 1 3,3v3a3,3 0 0 1 -3,3h-12a3,3 0 0 1 -3,-3v-3a3,3 0 0 1 3,-3z" />
+</vector>

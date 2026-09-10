@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cookies</title>
+<style>body { font: 16px/1.5 sans-serif; margin: 16px; } button { margin: 6px 6px 6px 0; padding: 10px; font-size: 16px; }</style>
+</head>
+<body>
+<h1 id="page-title">Cookie controls</h1>
+<p>Load marker: <span id="load-marker" class="marker" data-testid="load-marker">{{LOAD_ID}}</span></p>
+<button id="set-persistent" type="button">Set persistent cookie (24h)</button>
+<button id="set-session" type="button">Set session cookie</button>
+<button id="show-cookies" type="button">Show cookies</button>
+<button id="clear-cookies" type="button">Clear cookies</button>
+<p>Cookies: <span id="cookie-output" data-testid="cookie-output">(none read yet)</span></p>
+<p><a id="link-home" href="/">Back to fixture index</a></p>
+<script>
+  window.fixtureInfo = { loadId: "{{LOAD_ID}}", path: "{{PATH}}" };
+  document.getElementById('set-persistent').addEventListener('click', function () {
+    fetch('/api/cookie?mode=persistent&value=persist-' + Date.now()).then(showCookies);
+  });
+  document.getElementById('set-session').addEventListener('click', function () {
+    fetch('/api/cookie?mode=session&value=session-' + Date.now()).then(showCookies);
+  });
+  document.getElementById('show-cookies').addEventListener('click', showCookies);
+  document.getElementById('clear-cookies').addEventListener('click', function () {
+    // Only the two named fixture cookies are cleared; unrelated same-host cookies stay untouched.
+    ['fixture_session', 'fixture_persist'].forEach(function (name) {
+      document.cookie = name + '=; Max-Age=0; Path=/';
+    });
+    showCookies();
+  });
+  function showCookies() {
+    fetch('/api/cookies').then(function (r) { return r.json(); }).then(function (data) {
+      var cookies = data.fixtureCookies || {};
+      var names = Object.keys(cookies);
+      document.getElementById('cookie-output').textContent = names.length
+        ? names.map(function (name) { return name + '=' + cookies[name]; }).join('; ')
+        : '(none)';
+    });
+  }
+</script>
+</body>
+</html>

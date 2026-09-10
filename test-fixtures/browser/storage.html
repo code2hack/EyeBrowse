@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>localStorage</title>
+<style>body { font: 16px/1.5 sans-serif; margin: 16px; } button { margin: 6px 6px 6px 0; padding: 10px; font-size: 16px; }</style>
+</head>
+<body>
+<h1 id="page-title">localStorage controls</h1>
+<p>Load marker: <span id="load-marker" class="marker" data-testid="load-marker">{{LOAD_ID}}</span></p>
+<button id="store-set" type="button">Store value</button>
+<button id="store-read" type="button">Read value</button>
+<button id="store-clear" type="button">Clear value</button>
+<p>Stored value: <span id="store-output" data-testid="store-output">(not read yet)</span></p>
+<p><a id="link-home" href="/">Back to fixture index</a></p>
+<script>
+  window.fixtureInfo = { loadId: "{{LOAD_ID}}", path: "{{PATH}}" };
+  function show() {
+    document.getElementById('store-output').textContent =
+      localStorage.getItem('fixture-key') || '(empty)';
+  }
+  document.getElementById('store-set').addEventListener('click', function () {
+    localStorage.setItem('fixture-key', 'stored-' + Date.now());
+    show();
+  });
+  document.getElementById('store-read').addEventListener('click', show);
+  document.getElementById('store-clear').addEventListener('click', function () {
+    localStorage.removeItem('fixture-key');
+    show();
+  });
+  show();
+</script>
+</body>
+</html>

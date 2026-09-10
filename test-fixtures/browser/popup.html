@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Popup attempts</title>
+<style>body { font: 16px/1.5 sans-serif; margin: 16px; }</style>
+</head>
+<body>
+<h1 id="page-title">Popup page</h1>
+<p>Load marker: <span id="load-marker" class="marker" data-testid="load-marker">{{LOAD_ID}}</span></p>
+<p id="popup-status" data-testid="popup-status">waiting for unsolicited popup attempt</p>
+<button id="gesture-popup-button" type="button" style="padding:12px 18px;font-size:17px">
+  window.open from a user gesture
+</button>
+<p><a id="link-home" href="/">Back to fixture index</a></p>
+<script>
+  window.fixtureInfo = { loadId: "{{LOAD_ID}}", path: "{{PATH}}" };
+  document.getElementById('gesture-popup-button').addEventListener('click', function () {
+    window.open('/opened.html', '_blank');
+  });
+  // Unsolicited (no user gesture) popup attempt after load.
+  setTimeout(function () {
+    window.open('/opened.html', '_blank');
+    document.getElementById('popup-status').textContent = 'unsolicited window.open attempted';
+  }, 400);
+</script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EyeBrowse fixtures</title>
+<style>
+  body { font: 16px/1.5 sans-serif; margin: 16px; }
+  .marker { font-weight: 700; }
+  nav a { display: block; padding: 10px 0; font-size: 17px; }
+</style>
+</head>
+<body>
+<h1 id="page-title">EyeBrowse fixtures</h1>
+<p>Load marker: <span id="load-marker" class="marker" data-testid="load-marker">{{LOAD_ID}}</span></p>
+<p>Fixture origin: <span id="advertised-base" data-testid="advertised-base">{{BASE_URL}}</span>
+   | secure: <span id="advertised-secure" data-testid="advertised-secure">{{SECURE_URL}}</span></p>
+<nav>
+  <a id="link-basic" href="/basic.html">Basic page and click counter</a>
+  <a id="link-target-blank" href="/target-blank.html">New-window link page</a>
+  <a id="link-popup" href="/popup.html">Popup page</a>
+  <a id="link-history-one" href="/history-one.html">History page one</a>
+  <a id="link-scroll" href="/scroll.html">Long and nested scroll</a>
+  <a id="link-form" href="/form.html">Form and editable fields</a>
+  <a id="link-cookies" href="/cookies.html">Cookie controls</a>
+  <a id="link-storage" href="/storage.html">localStorage controls</a>
+  <a id="link-destinations" href="/destinations.html">Unsupported destinations</a>
+  <a id="link-fail" href="/fail">Controlled 500 failure</a>
+  <a id="link-missing" href="/nothing-here.html">Controlled 404</a>
+  <a id="link-secure" href="{{SECURE_URL}}/secure-ok.html">Untrusted HTTPS endpoint</a>
+</nav>
+<script>window.fixtureInfo = { loadId: "{{LOAD_ID}}", path: "{{PATH}}" };</script>
+</body>
+</html>

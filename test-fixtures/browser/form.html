@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Form</title>
+<style>
+  body { font: 16px/1.5 sans-serif; margin: 16px; }
+  label { display: block; margin-top: 12px; }
+  input, textarea, #editable-field {
+    font-size: 17px; padding: 8px; width: 100%; box-sizing: border-box;
+  }
+  #editable-field { min-height: 44px; border: 1px solid #888; margin-top: 4px; }
+  button { margin-top: 16px; padding: 12px 18px; font-size: 17px; }
+</style>
+</head>
+<body>
+<h1 id="page-title">Form page</h1>
+<p>Load marker: <span id="load-marker" class="marker" data-testid="load-marker">{{LOAD_ID}}</span></p>
+<form id="fixture-form" method="post" action="/submit">
+  <input id="test-id-field" type="hidden" name="test_id" value="fixture-post-1">
+  <label for="text-field">Text field</label>
+  <input id="text-field" name="message" type="text" autocomplete="off">
+  <label for="password-field">Password field</label>
+  <input id="password-field" name="secret" type="password" autocomplete="off">
+  <label for="notes-field">Textarea</label>
+  <textarea id="notes-field" name="notes" rows="3"></textarea>
+  <label>Contenteditable field</label>
+  <div id="editable-field" data-testid="editable-field" contenteditable="true">editable</div>
+  <button id="submit-button" type="submit">Submit form</button>
+</form>
+<p><a id="link-home" href="/">Back to fixture index</a></p>
+<script>window.fixtureInfo = { loadId: "{{LOAD_ID}}", path: "{{PATH}}" };</script>
+</body>
+</html>
