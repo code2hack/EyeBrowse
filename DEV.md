@@ -60,6 +60,8 @@ For hard-bug review use `--thinking max`. Start each CLI in its assigned worktre
 
 ## Android toolchain and device workflow
 
+**Build policy:** Use debug builds by default. Do not build release APKs or treat release-build/test success as a hard acceptance gate unless the Project Owner explicitly requests the corresponding release build or gate. This restriction also applies to helper scripts and aggregate tasks that invoke release builds.
+
 Sources: local `/home/code2hack/Projects/Glasseo/DEV.md` (checkout HEAD `5f9d23512359aaaef7d5e1ba203ea7322cae433b`) and fresh read-only host/device inspection. Glasseo architecture, package IDs, toolchain pins, unattended-only policy, concurrency limits, and alarm policy are **not** EyeBrowse policy. Its prior tests are environment references, not EyeBrowse acceptance evidence.
 
 ### Verified host inventory
