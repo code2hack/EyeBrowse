@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="eyebrowse_background">#EEF0F6</color>
+    <color name="eyebrowse_surface">#FFFFFF</color>
+    <color name="eyebrowse_outline">#DFE3EC</color>
+    <color name="eyebrowse_text_primary">#14161A</color>
+    <color name="eyebrowse_text_secondary">#5A6172</color>
+    <color name="eyebrowse_accent">#2F5BD7</color>
+    <color name="eyebrowse_error">#B3261E</color>
+    <color name="ic_launcher_background">#DCE3FA</color>
+</resources>
