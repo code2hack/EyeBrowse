@@ -40,21 +40,22 @@ final class FrameGate {
 
     /**
      * Admits a frame only for the current token and generation, while the gate is open and the
-     * authoritative expiry deadline has not passed at {@code nowElapsedMs} (R4).
+     * authoritative expiry deadline has not yet been reached at {@code nowElapsedMs} (R4):
+     * authority expires AT the deadline instant, so {@code now == acceptUntil} is expired.
      */
     boolean admit(Object token, int frameGeneration, long nowElapsedMs) {
         return accepting && currentToken == token && generation == frameGeneration
-                && nowElapsedMs <= acceptUntilElapsedMs;
+                && nowElapsedMs < acceptUntilElapsedMs;
     }
 
     /**
      * Attempts a renewal at {@code nowElapsedMs}: accepted only while the gate is open and the
-     * current deadline has not passed; on success the deadline moves to {@code newAcceptUntilMs}.
-     * A renewal arriving after expiry is rejected and moves nothing — an expired lease cannot
-     * revive its delivery authority (R4).
+     * current deadline has not yet been reached (expiry is AT the deadline); on success the
+     * deadline moves to {@code newAcceptUntilMs}. A renewal at or after expiry is rejected and
+     * moves nothing — an expired lease cannot revive its delivery authority (R4).
      */
     boolean renew(long nowElapsedMs, long newAcceptUntilMs) {
-        if (!accepting || nowElapsedMs > acceptUntilElapsedMs) {
+        if (!accepting || nowElapsedMs >= acceptUntilElapsedMs) {
             return false;
         }
         acceptUntilElapsedMs = newAcceptUntilMs;

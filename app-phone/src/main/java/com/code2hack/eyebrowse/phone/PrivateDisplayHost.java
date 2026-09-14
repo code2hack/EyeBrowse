@@ -271,13 +271,38 @@ final class PrivateDisplayHost {
     }
 
     /**
-     * Starts (or restarts) frame production for a live consumer through the caller's bound sink;
-     * latest-only and throttled. The sink is retained as-is: delivery identity lives in the sink,
-     * not in a reassigned callback.
+     * Rearms frame production for the SAME live capture owner on the current reader (R6): legal
+     * only while this owner is ACTIVE with an open reader and a live capture path. Used after a
+     * geometry rebuild replaced the reader underneath an existing lease. Returns {@code false}
+     * when the owner is not actively capturable — the caller must surface that, never display a
+     * healthy capturing state over an unarmed reader.
+     */
+    boolean rearmCapture(int hostingGeneration, FrameSink boundSink) {
+        if (!ownerPhase.isActive() || imageReader == null || boundSink == null
+                || captureThread == null || captureHandler == null) {
+            return false;
+        }
+        frameSink = boundSink;
+        frameSequence = 0;
+        deliveredAny = false;
+        captureGeneration = hostingGeneration;
+        captureActive = true;
+        captureReleased = false;
+        imageReader.setOnImageAvailableListener(this::onImageAvailable, captureHandler);
+        scheduleDrain();
+        Log.i(TAG, "rearmCapture gen=" + hostingGeneration + " on rebuilt reader");
+        return true;
+    }
+
+    /**
+     * Starts (or restarts) frame production for a NEW capture owner through the caller's bound
+     * sink; latest-only and throttled. The sink is retained as-is: delivery identity lives in the
+     * sink, not in a reassigned callback.
      *
      * <p>Returns {@code false} when no capture surface exists or a previous capture owner is
-     * still retiring (R2): reacquisition waits for the quiescence callback instead of racing the
-     * outstanding teardown. The controller defers and retries on quiescence.
+     * still retiring (R2): reacquisition waits for quiescence instead of racing the outstanding
+     * teardown. The caller retries explicitly after quiescence — a null acquisition has no
+     * hidden side effects.
      */
     boolean startCapture(int hostingGeneration, FrameSink boundSink) {
         if (imageReader == null || boundSink == null) {
@@ -347,7 +372,11 @@ final class PrivateDisplayHost {
         }
     }
 
-    /** Stops frame delivery; native resources stay until the owning teardown path releases them. */
+    /**
+     * Stops frame delivery for revocation; the capture owner (thread/reader) stays retained for
+     * same-owner reacquisition via {@link #rearmCapture(int, FrameSink)}. Native resources leave
+     * only through the owning retirement path.
+     */
     void stopCapture() {
         captureActive = false;
         frameSink = null;
@@ -403,9 +432,11 @@ final class PrivateDisplayHost {
     }
 
     /**
-     * The owning retirement completion: closes only the snapshot references of the retiring
-     * owner (never the current mutable fields a replacement may already use), then marks the
-     * phase QUIESCENT and fires the quiescence callback once.
+     * The owning teardown close: retires only the snapshot references of the retiring owner
+     * (never the current mutable fields a replacement may already use) and marks the teardown
+     * task complete. Phase QUIESCENT is NOT set here: with a live capture thread this executes
+     * on that thread BEFORE it exits, so quiescence is declared only later, on the main thread,
+     * once the thread has actually terminated ({@link #evaluateRetirementCompletion()}).
      */
     private void finishRetirement(ImageReader retiringReader, Bitmap retiringBitmap,
             HandlerThread retiringThread) {
@@ -418,15 +449,36 @@ final class PrivateDisplayHost {
         }
         // The retiring borrowed bitmap is dropped without recycle (a completed delivery may
         // still hold it); reclamation stays with GC, which is safe for borrowed bitmaps.
-        if (retiringThread != null) {
-            Log.i(TAG, "capture retirement complete threadAlive=" + retiringThread.isAlive());
-        }
-        ownerPhase.completeRetirement();
         teardownComplete = true;
         Runnable callback = onQuiesced;
         if (callback != null) {
-            callback.run(); // Completing thread; the controller hops to main.
+            callback.run(); // Signals the controller to evaluate completion on the main thread.
         }
+    }
+
+    /**
+     * Main-thread retirement completion check: declares the owner QUIESCENT only when the
+     * teardown task has completed AND the retiring capture thread has actually exited — a
+     * still-running thread is never quiescent (R2). Fires the quiescence callback once on the
+     * transition. Returns true when this call reached quiescence.
+     */
+    boolean evaluateRetirementCompletion() {
+        if (ownerPhase.phase() != CaptureOwnerPhase.Phase.RETIRING || !teardownComplete) {
+            return false;
+        }
+        Thread thread = retainedCaptureThread;
+        if (thread != null && thread.isAlive()) {
+            return false; // The retiring owner's thread is still terminating.
+        }
+        if (ownerPhase.completeRetirement()) {
+            Log.i(TAG, "capture retirement quiescent");
+            Runnable callback = onQuiesced;
+            if (callback != null) {
+                callback.run();
+            }
+            return true;
+        }
+        return false;
     }
 
     /** Full teardown for Stop: detaches the session view, dismisses, releases the display. */
@@ -496,6 +548,11 @@ final class PrivateDisplayHost {
     /** True when replacement capture ownership is safe (no outstanding teardown). */
     boolean isQuiescent() {
         return ownerPhase.isQuiescent() && teardownComplete;
+    }
+
+    /** True while a capture owner is live (frame production possible). */
+    boolean isOwnerActive() {
+        return ownerPhase.isActive();
     }
 
     private void onImageAvailable(ImageReader reader) {

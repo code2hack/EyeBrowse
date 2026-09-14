@@ -218,6 +218,9 @@ final class HostingController {
     /** Expiry is detected within one tick; production stops within 6 s total of the last renewal. */
     private static final long WATCHDOG_INTERVAL_MS = 500;
 
+    /** Re-check interval for retiring-owner completion (thread exit is observed, not assumed). */
+    private static final long RETIREMENT_RECHECK_MS = 50;
+
     /** Plan bound: Start reaches active or explicit failure within 5 seconds of the request. */
     private static final long START_COMPLETION_TIMEOUT_MS = 5_000;
 
@@ -248,7 +251,6 @@ final class HostingController {
 
     private Lease lease;
     private HostingController.FrameConsumer frameConsumer;
-    private HostingController.FrameConsumer pendingLeaseConsumer; // Deferred reacquire (R2).
     private long lastLeaseRenewElapsedMs;
     private long lastDemandElapsedMs; // Last successful demand/readiness; anchors the idle deadline.
     private boolean stopRequestedDuringStart;
@@ -266,6 +268,7 @@ final class HostingController {
 
     private final Runnable startTimeout = this::onStartTimeout;
     private final Runnable idleRelease = this::runIdleRelease;
+    private boolean retirementRecheckQueued;
 
     private final Runnable watchdog = new Runnable() {
         @Override
@@ -337,6 +340,14 @@ final class HostingController {
             failureReason = appContext.getString(R.string.hosting_failure_no_page);
             return false;
         }
+        if ((displayHost != null && !displayHost.isQuiescent()) || !retiringHostsQuiescent()) {
+            // R2: one ownership transition at a time — a previous capture owner is still
+            // retiring. Explicit refusal with a bounded visible failure state; the retirement
+            // recheck notifies when replacement is safe, and the caller retries.
+            failureReason = appContext.getString(R.string.hosting_failure_previous_shutdown);
+            notifyHostingChanged();
+            return false;
+        }
         failureReason = null;
         stopRequestedDuringStart = false;
         state = State.STARTING;
@@ -383,11 +394,11 @@ final class HostingController {
             return;
         }
         if (displayHost != null && !displayHost.isQuiescent()) {
-            // A previous owner's snapshot teardown is still outstanding (R2): retain it for
-            // introspection until it completes; it closes only its own snapshots.
+            // A previous owner's teardown is still outstanding (R2): retain it — it closes only
+            // its own snapshots — and replace it only when its thread has actually exited.
             retiringHosts.add(displayHost);
         }
-        displayHost = new PrivateDisplayHost(resourceFactory, this::onCaptureQuiesced);
+        displayHost = new PrivateDisplayHost(resourceFactory, this::onRetirementSignal);
         pruneQuiescedRetiringHostsLocked();
         try {
             displayHost.create(service, metric.width, metric.height, metric.densityDpi);
@@ -498,7 +509,6 @@ final class HostingController {
         mainHandler.removeCallbacks(idleRelease);
         mainHandler.removeCallbacks(startTimeout);
         pendingStartGeneration = -1;
-        pendingLeaseConsumer = null; // Stop cancels any deferred reacquisition (R2).
         revokeLease();
         releaseWakeLock();
         if (displayHost != null) {
@@ -615,24 +625,32 @@ final class HostingController {
             return; // The view stays with the (hidden) Phone UI; the condition is explicit.
         }
         lastViewport = metric;
-        try {
-            displayHost.ensureCaptureSurface(hostingContext, metric.width, metric.height,
-                    metric.densityDpi, session);
-        } catch (HostingException error) {
-            failureReason = error.getMessage();
-            if (displayHost != null) {
+        boolean demandLive = lease != null && frameConsumer != null;
+        if (demandLive) {
+            // Only live demand justifies capture-surface allocation/reconciliation here (R1):
+            // rebuild for width/height/density and REARM the same active owner on the new reader.
+            try {
+                displayHost.ensureCaptureSurface(hostingContext, metric.width, metric.height,
+                        metric.densityDpi, session);
+            } catch (HostingException error) {
+                failureReason = error.getMessage();
                 displayHost.stopCapture(); // No surviving reader: report not-capturing honestly.
+                notifyHostingChanged();
+                return;
             }
-            notifyHostingChanged();
-            return;
+            if (!displayHost.rearmCapture(generation,
+                    new BoundSink(lease, generation, frameConsumer))) {
+                // A checked rearm failure must not leave a healthy capturing label (R6).
+                failureReason = "capture rearm failed after geometry rebuild";
+                displayHost.stopCapture();
+                notifyHostingChanged();
+                return;
+            }
         }
+        // Without live demand: the private move attaches the surviving browser WITHOUT capture
+        // allocation or deadline changes — post-idle moves recreate nothing (R1 corrected).
         displayHost.attachSessionView(session);
         attachment = Attachment.PRIVATE_DISPLAY;
-        if (lease != null && frameConsumer != null) {
-            // R6: a live lease survives the geometry rebuild — rearm frame production on the new
-            // reader with the same bound delivery identity (gate token/generation unchanged).
-            displayHost.startCapture(generation, new BoundSink(lease, generation, frameConsumer));
-        }
     }
 
     /**
@@ -681,10 +699,10 @@ final class HostingController {
         if (state != State.HOSTING || lease != null || displayHost == null) {
             return null;
         }
-        if (!displayHost.isQuiescent() && displayHost.isRetiring()) {
-            // R2: a previous capture owner is still retiring; defer the acquisition until its
-            // quiescence callback, instead of racing the outstanding teardown.
-            pendingLeaseConsumer = consumer;
+        if (displayHost.isRetiring()) {
+            // R2: the current capture owner is still retiring. Null means NO lease and NO hidden
+            // side effect; the caller retries explicitly once retirement is quiescent (the
+            // retirement recheck notifies listeners at that point).
             return null;
         }
         WebViewMetric metric = WebViewMetric.measure(session);
@@ -708,12 +726,16 @@ final class HostingController {
         long now = android.os.SystemClock.elapsedRealtime();
         Lease newLease = new Lease();
         frameGate.open(newLease, generation, now + HostingPolicy.LEASE_TTL_MS);
-        boolean started = displayHost.startCapture(generation,
-                new BoundSink(newLease, generation, consumer)); // Bound at acquisition (F1).
+        // Same-owner rearm vs new-owner start: revocation retains the capture owner (thread and
+        // reader stay for reacquisition), so a new lease after expiry/release rearms the SAME
+        // active owner with the new bound sink; only a quiescent host starts a fresh owner (R2).
+        boolean started = displayHost.isOwnerActive()
+                ? displayHost.rearmCapture(generation,
+                        new BoundSink(newLease, generation, consumer))
+                : displayHost.startCapture(generation,
+                        new BoundSink(newLease, generation, consumer));
         if (!started) {
-            // Retirement raced between the quiescence check and start (R2): defer identically.
-            pendingLeaseConsumer = consumer;
-            frameGate.close();
+            frameGate.close(); // Nothing retained; the caller retries after quiescence (R2).
             return null;
         }
         lease = newLease;
@@ -732,7 +754,6 @@ final class HostingController {
         }
         frameGate.close(); // No further admissions; an admitted frame finishes its own delivery.
         frameConsumer = null;
-        pendingLeaseConsumer = null; // A deferred reacquisition does not survive revocation (R2).
         if (displayHost != null) {
             displayHost.stopCapture();
         }
@@ -765,14 +786,15 @@ final class HostingController {
     }
 
     /**
-     * Schedules the idle-release callback against the anchored deadline: exactly
+     * Schedules the idle-release callback against the anchored deadline: teardown INITIATES at
+     * deadline minus the completion lead so it completes by exactly
      * {@link HostingPolicy#IDLE_RELEASE_MS} after the last successful demand/readiness — never
      * re-anchored to the scheduling moment (R1).
      */
     private void scheduleIdleReleaseLocked() {
         mainHandler.removeCallbacks(idleRelease);
         mainHandler.postDelayed(idleRelease,
-                HostingPolicy.idleReleaseDelayMs(android.os.SystemClock.elapsedRealtime(),
+                HostingPolicy.idleReleaseInitiationDelayMs(android.os.SystemClock.elapsedRealtime(),
                         lastDemandElapsedMs));
     }
 
@@ -785,39 +807,81 @@ final class HostingController {
         notifyHostingChanged();
     }
 
-    /** The anchored deadline callback: a bounded guarantee, not the release authority. */
+    /** The anchored deadline callback: initiates teardown early enough to complete by it. */
     private void runIdleRelease() {
         synchronized (this) {
             long now = android.os.SystemClock.elapsedRealtime();
             if (state != State.HOSTING || lease != null) {
                 return; // Demand resumed or hosting stopped; nothing to release.
             }
-            if (!HostingPolicy.idleDeadlineReached(now, lastDemandElapsedMs)) {
+            if (!HostingPolicy.idleReleaseDue(now, lastDemandElapsedMs)) {
                 scheduleIdleReleaseLocked(); // Anchor moved since posting; re-post, never drift (R1).
                 return;
             }
-            releaseIdleCaptureResourcesLocked();
+            releaseIdleCaptureResourcesLocked(); // Initiates here; completes by the deadline (R1).
         }
     }
 
     /**
-     * Quiescence signal from a retiring capture owner (posted to main): prune retained owners and
-     * complete a deferred reacquisition now that replacement is safe (R2).
+     * Teardown-task completion signal from a retiring capture owner (may fire off-main): hop to
+     * main and evaluate actual completion. Replacement is never auto-started here — callers
+     * retry explicitly once quiescence is observed.
      */
-    private void onCaptureQuiesced() {
+    private void onRetirementSignal() {
+        mainHandler.post(this::evaluateRetirements);
+    }
+
+    /** Main-thread retirement evaluation: quiescence requires the thread to have exited (R2). */
+    private void evaluateRetirements() {
         synchronized (this) {
+            boolean changed = false;
+            if (displayHost != null && displayHost.evaluateRetirementCompletion()) {
+                changed = true;
+            }
+            for (PrivateDisplayHost host : retiringHosts) {
+                if (host.evaluateRetirementCompletion()) {
+                    changed = true;
+                }
+            }
+            int before = retiringHosts.size();
             pruneQuiescedRetiringHostsLocked();
-            if (state == State.HOSTING && lease == null && displayHost != null
-                    && displayHost.isQuiescent() && pendingLeaseConsumer != null) {
-                HostingController.FrameConsumer consumer = pendingLeaseConsumer;
-                pendingLeaseConsumer = null;
-                acquireLease(consumer); // Reentrant; deferred acquisition is now safe.
+            if (changed || retiringHosts.size() != before) {
+                notifyHostingChanged(); // Start/acquisition may be retried explicitly now.
+            }
+            if (!retiringHosts.isEmpty()
+                    || (displayHost != null && !displayHost.isQuiescent())) {
+                scheduleRetirementRecheckLocked();
             }
         }
     }
 
+    private void scheduleRetirementRecheckLocked() {
+        if (retirementRecheckQueued) {
+            return;
+        }
+        retirementRecheckQueued = true;
+        mainHandler.postDelayed(() -> {
+            retirementRecheckQueued = false;
+            evaluateRetirements();
+        }, RETIREMENT_RECHECK_MS);
+    }
+
+    private boolean retiringHostsQuiescent() {
+        for (PrivateDisplayHost host : retiringHosts) {
+            if (!host.isQuiescent()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private void pruneQuiescedRetiringHostsLocked() {
         retiringHosts.removeIf(PrivateDisplayHost::isQuiescent);
+    }
+
+    /** Authoritative idle anchor (diagnostic/test seam): the last successful demand/readiness. */
+    synchronized long lastDemandAnchorElapsedMs() {
+        return lastDemandElapsedMs;
     }
 
     private void releaseWakeLock() {

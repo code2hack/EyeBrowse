@@ -706,30 +706,23 @@ public class HostingInstrumentedTest {
         recordDeviceState("backgrounded-before-capture");
 
         // --- Never-leased idle: with no demand ever, capture resources are actually released by
-        // readiness + 30s. The anchor is the readiness event itself: readyElapsed is sampled
-        // after status() reports HOSTING, and status() takes the controller monitor that
-        // onServiceReady holds through its anchor assignment, so anchor <= readyElapsed and
-        // readyUpperBound + 30s is a strict upper bound of the true deadline — no scheduling
-        // margin is granted to production. The extra 250ms window below is observation
-        // granularity (poll dispatch), not a target extension; the actual observation is
-        // recorded in the milestone.
-        long readyUpperBound = readyElapsed;
-        long neverLeasedDeadline = readyUpperBound + HostingPolicy.IDLE_RELEASE_MS;
+        // readiness + 30s. The anchor is the AUTHORITATIVE readiness/demand anchor read from the
+        // controller (set inside onServiceReady before it returns), so the deadline below is the
+        // exact plan deadline. Production initiates teardown one lead interval early and the
+        // never-leased path completes inline, so completion lands by the deadline; the assertion
+        // is evaluated AT the deadline with no acceptance margin.
+        long readinessAnchor = runOnMainSync(hosting::lastDemandAnchorElapsedMs);
+        long neverLeasedDeadline = readinessAnchor + HostingPolicy.IDLE_RELEASE_MS;
         while (SystemClock.elapsedRealtime() < neverLeasedDeadline
-                && runOnMainSync(hosting::captureResourcesPresent)) {
-            SystemClock.sleep(100);
-        }
-        long neverLeasedObserveLimit = neverLeasedDeadline + 250;
-        while (SystemClock.elapsedRealtime() < neverLeasedObserveLimit
                 && runOnMainSync(hosting::captureResourcesPresent)) {
             SystemClock.sleep(50);
         }
-        assertEquals("never-leased capture resources released by readiness+30s (strict anchor)",
+        assertEquals("never-leased capture resources released by readiness+30s (exact anchor)",
                 false, runOnMainSync(hosting::captureResourcesPresent));
         assertEquals("never-leased hosting session persists", HostingController.State.HOSTING,
                 runOnMainSync(hosting::status).state);
-        memoryMilestone("after-never-leased-idle releasedAt="
-                + (SystemClock.elapsedRealtime() - readyUpperBound) + "msAfterReadinessUpperBound");
+        memoryMilestone("after-never-leased-idle observedAt="
+                + (SystemClock.elapsedRealtime() - readinessAnchor) + "msAfterExactAnchor");
 
         // --- Lease acquisition (recreates the surface on the surviving display) and first frame
         // measured at CONSUMER delivery, within 2s of eligibility.
@@ -853,20 +846,16 @@ public class HostingInstrumentedTest {
         // granularity only.
         renewal2.stopRenewing();
         runOnMain(lease2::renew); // Synchronous on main; the definitive last successful demand.
-        long lastDemandAckBound = SystemClock.elapsedRealtime();
+        long demandAnchor = runOnMainSync(hosting::lastDemandAnchorElapsedMs); // Authoritative.
         runOnMain(lease2::release);
         memoryMilestone("lease-released-idle-window-start");
-        long idleDeadline = lastDemandAckBound + HostingPolicy.IDLE_RELEASE_MS;
+        long idleDeadline = demandAnchor + HostingPolicy.IDLE_RELEASE_MS; // Exact plan deadline.
         while (SystemClock.elapsedRealtime() < idleDeadline
-                && runOnMainSync(hosting::captureResourcesPresent)) {
-            SystemClock.sleep(100);
-        }
-        long idleObserveLimit = idleDeadline + 250;
-        while (SystemClock.elapsedRealtime() < idleObserveLimit
                 && runOnMainSync(hosting::captureResourcesPresent)) {
             SystemClock.sleep(50);
         }
-        assertEquals("capture resources released by demand+30s (strict anchored bound)", false,
+        assertEquals("capture resources released by demand+30s (exact anchor; release itself is"
+                + " immediate and never later than the deadline)", false,
                 runOnMainSync(hosting::captureResourcesPresent));
         assertEquals("display/presentation attachment survives idle release", true,
                 runOnMainSync(hosting::hasDisplayResources));
@@ -1038,8 +1027,10 @@ public class HostingInstrumentedTest {
         HostingController.Lease lease = runOnMainSync(() -> hosting.acquireLease(consumer));
         assertNotNull(lease);
         waitUntil("first frame before expiry", () -> consumer.count() > 0);
-        // No renewal: the authoritative deadline passes; the gate rejects delivery from the
-        // deadline instant itself and the watchdog revokes within its tick.
+        // No renewal: the authoritative deadline passes; the gate rejects delivery and renewal
+        // from the deadline instant itself (strict boundary covered with controlled clocks in
+        // FrameGateTest, including inside the TTL-to-watchdog interval), and the watchdog
+        // revokes within its tick. This device case proves the observable no-revival endpoint.
         SystemClock.sleep(HostingPolicy.LEASE_TTL_MS + 1_500);
         int framesAtExpiry = consumer.count();
         // The late renewal arrives between TTL expiry and any later tick: it must move nothing.
@@ -1057,37 +1048,50 @@ public class HostingInstrumentedTest {
     public void delayedConsumerReleaseReacquireIsolatesBorrowedFrames() throws Exception {
         openFixture("/hosting.html", "Hosting capture page");
         tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
-        DelayedConsumer first = new DelayedConsumer(300);
+        // Offscreen precondition: private capture must have the hosted page (Phone-UI attachment
+        // has no hosted offscreen page to deliver).
+        scenario.onActivity(activity -> activity.moveTaskToBack(true));
+        waitUntil("webview hosted offscreen", () -> {
+            HostViewSnapshot snapshot = hostViewSnapshot();
+            return snapshot.status.attachment == HostingController.Attachment.PRIVATE_DISPLAY
+                    && snapshot.viewAttached;
+        });
+        DelayedConsumer first = new DelayedConsumer(400);
         HostingController.Lease lease1 = runOnMainSync(() -> hosting.acquireLease(first));
         assertNotNull(lease1);
         waitUntil("first consumer receiving", () -> first.collector().count() > 0);
-        // Release while the delayed consumer may be inside its callback; reacquire immediately.
+        // Controlled barrier: release+reacquire while the consumer is inside its callback
+        // (entered latch), not on a maybe-sleep.
+        assertTrue("consumer entered its callback", first.awaitEntered(5_000));
         runOnMain(lease1::release);
         CollectingConsumer second = new CollectingConsumer();
         HostingController.Lease lease2 = runOnMainSync(() -> hosting.acquireLease(second));
         if (lease2 == null) {
-            // Retirement outstanding: the deferred reacquisition completes on quiescence (R2).
-            waitUntil("deferred reacquisition delivers after quiescence",
-                    () -> second.count() > 0, 15_000);
-        } else {
-            waitUntil("replacement consumer receiving", () -> second.count() > 0);
+            // Declared ownership semantics of a null return: no lease and no hidden acquisition.
+            SystemClock.sleep(1_000);
+            assertEquals("no anonymous delivery after a null acquisition", 0, second.count());
         }
+        // Explicit acquisition after quiescence succeeds (no callback-only hidden lease, R2).
+        HostingController.Lease lease3 = null;
+        long explicitDeadline = SystemClock.elapsedRealtime() + 15_000;
+        while (lease3 == null && SystemClock.elapsedRealtime() < explicitDeadline) {
+            SystemClock.sleep(200);
+            lease3 = runOnMainSync(() -> hosting.acquireLease(second));
+        }
+        assertNotNull("explicit acquisition succeeds once retirement is quiescent", lease3);
+        waitUntil("replacement consumer receiving", () -> second.count() > 0);
         assertTrue("the retiring consumer's borrowed frames were not rewritten by the replacement",
                 first.collector().allFramesNearColor(CAPTURE_PAGE_COLOR));
         assertTrue("the replacement consumer's frames show the same document",
                 second.allFramesNearColor(CAPTURE_PAGE_COLOR));
-        runOnMain(() -> {
-            if (lease2 != null) {
-                lease2.release();
-            }
-        });
+        runOnMain(lease3::release);
         bringMainActivityToFrontForTest();
         tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
     }
 
-    /** R1: after a never-leased idle release, a private move recreates under a NEW anchored deadline. */
+    /** R1: after a never-leased idle release, a private move allocates nothing without demand. */
     @Test
-    public void homeAfterNeverLeasedIdleAnchorsNewDeadlineWithoutDemand() throws Exception {
+    public void homeAfterNeverLeasedIdleDoesNotReallocateWithoutDemand() throws Exception {
         openFixture("/hosting.html", "Hosting capture page");
         tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
         scenario.onActivity(activity -> activity.moveTaskToBack(true));
@@ -1096,38 +1100,38 @@ public class HostingInstrumentedTest {
             return snapshot.status.attachment == HostingController.Attachment.PRIVATE_DISPLAY
                     && snapshot.viewAttached;
         });
-        long readyUpperBound = SystemClock.elapsedRealtime();
-        while (runOnMainSync(hosting::captureResourcesPresent)
-                && SystemClock.elapsedRealtime() < readyUpperBound + 40_000) {
-            SystemClock.sleep(250);
+        // Wait out the never-leased idle release against the authoritative anchor (exact deadline).
+        long readinessAnchor = runOnMainSync(hosting::lastDemandAnchorElapsedMs);
+        long neverLeasedDeadline = readinessAnchor + HostingPolicy.IDLE_RELEASE_MS;
+        while (SystemClock.elapsedRealtime() < neverLeasedDeadline
+                && runOnMainSync(hosting::captureResourcesPresent)) {
+            SystemClock.sleep(50);
         }
-        assertEquals("never-leased idle release completed", false,
+        assertEquals("never-leased idle release completed by the exact deadline", false,
                 runOnMainSync(hosting::captureResourcesPresent));
-        // Return, then background again: the private move recreates the reader WITHOUT consumer
-        // demand; that recreation is a new readiness event anchoring its own bounded deadline.
+        // Return to the Phone UI and background again: the private move must preserve the same
+        // live attachment WITHOUT recreating capture resources (no demand, deadline passed) and
+        // without introducing any new idle window (R1 corrected wiring).
         bringMainActivityToFrontForTest();
         waitUntil("webview back on phone ui", () -> hostViewSnapshot().viewAttached);
         scenario.onActivity(activity -> activity.moveTaskToBack(true));
-        waitUntil("hosted offscreen again", () -> {
+        waitUntil("hosted offscreen again without capture allocation", () -> {
             HostViewSnapshot snapshot = hostViewSnapshot();
             return snapshot.status.attachment == HostingController.Attachment.PRIVATE_DISPLAY
                     && snapshot.viewAttached;
         });
-        long recreationUpperBound = SystemClock.elapsedRealtime();
-        waitUntil("reader recreated for the demand-free private attachment",
-                () -> runOnMainSync(hosting::captureResourcesPresent), 15_000);
-        long deadline = recreationUpperBound + HostingPolicy.IDLE_RELEASE_MS;
-        while (SystemClock.elapsedRealtime() < deadline
-                && runOnMainSync(hosting::captureResourcesPresent)) {
-            SystemClock.sleep(100);
-        }
-        long observeLimit = deadline + 250; // Observation granularity only; the bound is strict.
-        while (SystemClock.elapsedRealtime() < observeLimit
-                && runOnMainSync(hosting::captureResourcesPresent)) {
-            SystemClock.sleep(50);
-        }
-        assertEquals("demand-free recreated resources released by recreation+30s", false,
+        // Bounded no-reallocation observation: nothing recreates the reader absent demand.
+        SystemClock.sleep(5_000);
+        assertEquals("no capture resources recreated by the demand-free private move", false,
                 runOnMainSync(hosting::captureResourcesPresent));
+        assertEquals("hosting session persists through the demand-free moves",
+                HostingController.State.HOSTING, runOnMainSync(hosting::status).state);
+        // Genuine demand still recreates and delivers (the approved allocation path).
+        CollectingConsumer consumer = new CollectingConsumer();
+        HostingController.Lease lease = runOnMainSync(() -> hosting.acquireLease(consumer));
+        assertNotNull("genuine demand recreates the capture surface", lease);
+        waitUntil("frames flow after genuine demand", () -> consumer.count() > 0);
+        runOnMain(lease::release);
         bringMainActivityToFrontForTest();
         tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
     }
@@ -1485,12 +1489,16 @@ public class HostingInstrumentedTest {
 
     /**
      * Wraps a {@link CollectingConsumer} with an in-callback hold, occupying the borrowed bitmap
-     * across release/reacquire so the isolation property is exercised, not assumed (R2).
+     * across release/reacquire so the isolation property is exercised, not assumed (R2). The
+     * entered latch is a controlled barrier: the test observes that the consumer actually entered
+     * its callback before driving the ownership transition.
      */
     private static final class DelayedConsumer implements HostingController.FrameConsumer {
 
         private final long holdMs;
         private final CollectingConsumer collector = new CollectingConsumer();
+        private final java.util.concurrent.CountDownLatch entered =
+                new java.util.concurrent.CountDownLatch(1);
 
         DelayedConsumer(long holdMs) {
             this.holdMs = holdMs;
@@ -1498,12 +1506,17 @@ public class HostingInstrumentedTest {
 
         @Override
         public void onFrame(HostingFrame frame) {
+            entered.countDown(); // Barrier: the borrowed use is (about to be) in flight.
             SystemClock.sleep(holdMs); // Hold the borrowed bitmap across the ownership transition.
             collector.onFrame(frame);
         }
 
         CollectingConsumer collector() {
             return collector;
+        }
+
+        boolean awaitEntered(long timeoutMs) throws InterruptedException {
+            return entered.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
         }
     }
 

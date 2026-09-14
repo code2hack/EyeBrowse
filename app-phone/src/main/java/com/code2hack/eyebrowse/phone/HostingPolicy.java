@@ -18,6 +18,13 @@ final class HostingPolicy {
     /** After this long without lease demand, capture reader/surface/thread are released. */
     static final long IDLE_RELEASE_MS = 30_000;
 
+    /**
+     * Teardown initiation lead before the anchored idle deadline: asynchronous completion needs
+     * time, so cleanup STARTS before the deadline in order to complete by it — the plan deadline
+     * itself is never extended (R1).
+     */
+    static final long IDLE_RELEASE_LEAD_MS = 500;
+
     /** Minimum interval between delivered frames: the 5 fps capture cap. */
     static final long MIN_FRAME_INTERVAL_MS = 200;
 
@@ -65,6 +72,22 @@ final class HostingPolicy {
     /** True when {@code nowMs} has reached the anchored idle deadline. */
     static boolean idleDeadlineReached(long nowMs, long lastDemandMs) {
         return nowMs >= idleReleaseDeadlineMs(lastDemandMs);
+    }
+
+    /**
+     * True when idle-release teardown should INITIATE at {@code nowMs}: at/after the deadline
+     * minus the completion lead, so teardown completes by the exact plan deadline (R1).
+     */
+    static boolean idleReleaseDue(long nowMs, long lastDemandMs) {
+        return nowMs >= idleReleaseDeadlineMs(lastDemandMs) - IDLE_RELEASE_LEAD_MS;
+    }
+
+    /**
+     * Delay until teardown INITIATION (deadline minus lead), anchored to {@code lastDemandMs};
+     * never negative.
+     */
+    static long idleReleaseInitiationDelayMs(long nowMs, long lastDemandMs) {
+        return Math.max(0L, idleReleaseDeadlineMs(lastDemandMs) - IDLE_RELEASE_LEAD_MS - nowMs);
     }
 
     static boolean frameThrottled(long nowMs, long lastDeliveryMs) {

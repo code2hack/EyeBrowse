@@ -74,14 +74,13 @@ public class FrameGateTest {
     // ------------------------------------------------- expiry authority (R4)
 
     @Test
-    public void admissionIsRejectedAtTheAuthoritativeDeadlineBeforeAnyWatchdogTick() {
+    public void authorityExpiresAtTheDeadlineInstantIndependentlyOfAnyWatchdogTick() {
         FrameGate gate = new FrameGate();
         Object lease = new Object();
         long openAt = 10_000;
         gate.open(lease, 1, openAt + TTL);
-        assertTrue(gate.admit(lease, 1, openAt + TTL)); // Deadline instant itself still admits.
-        assertFalse("delivery authority ends at the 5 s deadline, not at the next tick",
-                gate.admit(lease, 1, openAt + TTL + 1));
+        assertTrue(gate.admit(lease, 1, openAt + TTL - 1)); // Last instant of authority.
+        assertFalse("authority expires AT the 5 s deadline instant", gate.admit(lease, 1, openAt + TTL));
         assertFalse(gate.admit(lease, 1, openAt + TTL + 400)); // Well before a 500 ms watchdog.
     }
 
@@ -94,8 +93,9 @@ public class FrameGateTest {
         long renewalAt = openAt + 3_000; // Successful main-thread renewal inside the TTL.
         assertTrue(gate.renew(renewalAt, renewalAt + TTL));
         assertEquals(renewalAt + TTL, gate.acceptUntilElapsedMs());
-        assertTrue(gate.admit(lease, 1, renewalAt + TTL)); // New deadline admits at its instant.
-        assertFalse(gate.admit(lease, 1, renewalAt + TTL + 1));
+        assertTrue(gate.admit(lease, 1, renewalAt + TTL - 1)); // Last instant of the new authority.
+        assertFalse("the renewed deadline also expires AT its instant",
+                gate.admit(lease, 1, renewalAt + TTL));
     }
 
     @Test
@@ -104,7 +104,10 @@ public class FrameGateTest {
         Object lease = new Object();
         long openAt = 10_000;
         gate.open(lease, 1, openAt + TTL);
-        long lateRenewalAt = openAt + TTL + 50; // Between TTL expiry and the next watchdog tick.
+        long lateRenewalAt = openAt + TTL; // AT the deadline, before any watchdog tick.
+        assertFalse("renewal at the exact expiry instant is already rejected",
+                gate.renew(lateRenewalAt, lateRenewalAt + TTL));
+        lateRenewalAt = openAt + TTL + 50; // Inside the TTL-to-watchdog interval.
         assertFalse("an expired lease cannot resurrect its delivery authority",
                 gate.renew(lateRenewalAt, lateRenewalAt + TTL));
         assertEquals("a rejected renewal moves no deadline", openAt + TTL,
