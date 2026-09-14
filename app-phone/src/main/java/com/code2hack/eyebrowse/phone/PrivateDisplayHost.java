@@ -74,7 +74,8 @@ final class PrivateDisplayHost {
 
     // Capture-side state, touched on the capture thread.
     private long frameSequence;
-    private long lastDeliveryElapsedMs = Long.MIN_VALUE;
+    private long lastDeliveryElapsedMs;
+    private boolean deliveredAny;
     private volatile boolean capturing;
     private volatile int generation;
     private Bitmap frameBitmap;
@@ -142,20 +143,50 @@ final class PrivateDisplayHost {
         return presentation != null && session.isAttachedExternal(presentation.container());
     }
 
-    /** Starts frame production for a live consumer; delivery is latest-only and throttled. */
+    /** Starts (or restarts) frame production for a live consumer; latest-only and throttled. */
     void startCapture(int hostingGeneration, FrameSink sink) {
-        if (imageReader == null || captureThread != null) {
+        if (imageReader == null) {
             return;
         }
         generation = hostingGeneration;
         frameSink = sink;
         frameSequence = 0;
-        lastDeliveryElapsedMs = Long.MIN_VALUE;
+        deliveredAny = false;
+        Log.i(TAG, "startCapture gen=" + hostingGeneration + " reader=" + (imageReader != null)
+                + " threadAlive=" + (captureThread != null));
+        if (captureThread != null) {
+            // Reacquisition after lease loss: the capture thread survived; rearm the listener.
+            capturing = true;
+            imageReader.setOnImageAvailableListener(this::onImageAvailable, captureHandler);
+            drainPendingImages();
+            return;
+        }
+        capturing = true;
         captureThread = new HandlerThread("EyeBrowseHostingCapture");
         captureThread.start();
         captureHandler = new Handler(captureThread.getLooper());
-        capturing = true;
         imageReader.setOnImageAvailableListener(this::onImageAvailable, captureHandler);
+        drainPendingImages();
+    }
+
+    /**
+     * Images queued before the listener was armed do not reliably fire the callback; acquire and
+     * close them so the producer cannot stay blocked on a full (maxImages=2) queue and stale
+     * frames are dropped, latest-only.
+     */
+    private void drainPendingImages() {
+        int drained = 0;
+        while (imageReader != null) {
+            Image stale = imageReader.acquireLatestImage();
+            if (stale == null) {
+                break;
+            }
+            stale.close();
+            drained++;
+        }
+        if (drained > 0) {
+            Log.i(TAG, "drained " + drained + " stale capture image(s)");
+        }
     }
 
     /**
@@ -264,9 +295,10 @@ final class PrivateDisplayHost {
             if (!capturing || sink == null) {
                 return; // Latest-only: stale buffers are dropped by closing the image.
             }
-            if (HostingPolicy.frameThrottled(nowElapsed, lastDeliveryElapsedMs)) {
+            if (deliveredAny && HostingPolicy.frameThrottled(nowElapsed, lastDeliveryElapsedMs)) {
                 return;
             }
+            deliveredAny = true;
             lastDeliveryElapsedMs = nowElapsed;
             deliverFrame(image, sink, nowElapsed);
         } catch (RuntimeException error) {
@@ -306,10 +338,11 @@ final class PrivateDisplayHost {
     private static ByteBuffer packedRowCopy(Image.Plane plane, int rows, int rowStride,
             int rowBytes) {
         ByteBuffer source = plane.getBuffer().duplicate();
+        final int planeLimit = source.limit(); // Captured before per-row limit mutation.
         ByteBuffer packed = ByteBuffer.allocateDirect(rowBytes * rows);
         for (int y = 0; y < rows; y++) {
             int rowStart = y * rowStride;
-            if (rowStart + rowBytes > source.limit()) {
+            if (rowStart + rowBytes > planeLimit) {
                 break;
             }
             source.limit(rowStart + rowBytes).position(rowStart);
