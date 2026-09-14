@@ -57,6 +57,9 @@ public final class HostingService extends Service {
     @Override
     public void onDestroy() {
         HostingController.get(this).onServiceDestroyed(this);
+        // Remove the foreground notification with the service; the platform does not reliably
+        // retract it on this device when a started-foreground service merely stops.
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE);
         super.onDestroy();
     }
 
