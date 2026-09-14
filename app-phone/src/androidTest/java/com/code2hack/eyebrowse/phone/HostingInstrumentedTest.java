@@ -12,6 +12,7 @@ import static org.junit.Assert.fail;
 
 import android.content.Context;
 import android.os.SystemClock;
+import android.view.View;
 import android.webkit.WebView;
 
 import androidx.test.core.app.ActivityScenario;
@@ -55,7 +56,7 @@ public class HostingInstrumentedTest {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         session = PhoneBrowserSession.get(context);
         hosting = HostingController.get(context);
-        grantNotificationPermissionForTest();
+        ensureNotificationPermissionSetupForTest();
         // Independent cases: hosting stopped and the session back to a clean, never-loaded state.
         runOnMain(hosting::stop);
         waitUntilMain("hosting stopped", () -> hosting.status().state == HostingController.State.NOT_HOSTING);
@@ -63,9 +64,46 @@ public class HostingInstrumentedTest {
         scenario.onActivity(activity -> session.resetForTest());
     }
 
-    /** App-scoped test setup so the POST_NOTIFICATIONS dialog never interrupts the Start control. */
-    private void grantNotificationPermissionForTest() {
-        runShellCommandForTest("pm grant com.code2hack.eyebrowse.phone android.permission.POST_NOTIFICATIONS");
+    /**
+     * App-scoped permission setup so the POST_NOTIFICATIONS dialog never interrupts the Start
+     * control. The pre-existing grant state is recorded once per class (reported as
+     * {@code NOTIF_PERM_BEFORE} in the instrumentation stream) so cleanup can restore it; a failed
+     * setup fails loudly instead of proceeding as if verified.
+     */
+    private void ensureNotificationPermissionSetupForTest() {
+        boolean granted = notificationPermissionGranted();
+        if (!notificationPermissionSetupRecorded) {
+            notificationPermissionWasGrantedBeforeSetup = granted;
+            notificationPermissionSetupRecorded = true;
+            System.out.println("NOTIF_PERM_BEFORE granted=" + granted);
+        }
+        if (!granted) {
+            runShellCommandForTest("pm grant com.code2hack.eyebrowse.phone android.permission.POST_NOTIFICATIONS");
+            if (!notificationPermissionGranted()) {
+                fail("POST_NOTIFICATIONS setup did not take effect; not proceeding as verified success");
+            }
+        }
+    }
+
+    /** Recorded before-state for cleanup restoration; true when the permission was pre-granted. */
+    private static boolean notificationPermissionWasGrantedBeforeSetup;
+
+    private static boolean notificationPermissionSetupRecorded;
+
+    static boolean notificationPermissionNeedsCleanupRestore() {
+        return notificationPermissionSetupRecorded && !notificationPermissionWasGrantedBeforeSetup;
+    }
+
+    private boolean notificationPermissionGranted() {
+        String dump = runShellCommandWithOutputForTest(
+                "dumpsys package com.code2hack.eyebrowse.phone");
+        for (String line : dump.split("\n")) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("android.permission.POST_NOTIFICATIONS:")) {
+                return trimmed.contains("granted=true");
+            }
+        }
+        return false;
     }
 
     /** Shell-launched return to the foreground reusing the existing instance (REORDER_TO_FRONT). */
@@ -80,7 +118,27 @@ public class HostingInstrumentedTest {
                     .getUiAutomation().executeShellCommand(command);
             descriptor.close();
         } catch (RuntimeException | java.io.IOException ignored) {
-            // Proceed: callers wait for the observable effect instead of the command result.
+            // Proceed: callers verify the observable effect instead of the command result.
+        }
+    }
+
+    private String runShellCommandWithOutputForTest(String command) {
+        try {
+            android.os.ParcelFileDescriptor descriptor = InstrumentationRegistry.getInstrumentation()
+                    .getUiAutomation().executeShellCommand(command);
+            try (java.io.InputStream in = new java.io.FileInputStream(descriptor.getFileDescriptor())) {
+                java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, read);
+                }
+                return out.toString("UTF-8");
+            } finally {
+                descriptor.close();
+            }
+        } catch (RuntimeException | java.io.IOException e) {
+            return "(command failed: " + e + ")";
         }
     }
 
@@ -103,28 +161,101 @@ public class HostingInstrumentedTest {
     }
 
     /**
-     * Activates the real hosting control. Primary route is a synthetic system-pipeline tap; after a
-     * background/foreground transition One UI can accept focus while dropping injected taps, so the
-     * same button's own click listener is invoked directly as the bounded fallback. Both routes
-     * exercise the ordinary hosting control; neither is IME or remote-input evidence.
+     * ONE actual tap on the real hosting control via the codebase's validated instrumentation input
+     * route (explicit screen coordinates, {@code sendPointerSync}, touchscreen source), after
+     * verified readiness: focused window, laid-out visible button inside the window on the default
+     * display, and a bounded post-transition settle. No retry — an unchanged state after the tap is
+     * uncertain delivery and fails with diagnosis. A test-only touch observer on the button records
+     * whether the window received the injected events at all.
      */
-    private void clickHostingToggleWithFallback() {
-        HostingController.Status before = runOnMainSync(hosting::status);
-        onView(withId(R.id.button_hosting_toggle)).perform(click());
-        long deadline = SystemClock.uptimeMillis() + 2_000;
+    private void tapHostingToggleOnce(HostingController.State expectedAfter, long boundMs) {
+        awaitWindowFocusForTest();
+        AtomicReference<int[]> centerRef = new AtomicReference<>();
+        AtomicReference<String> diagnosis = new AtomicReference<>();
+        scenario.onActivity(activity -> {
+            View button = activity.findViewById(R.id.button_hosting_toggle);
+            boolean focusedWindow = activity.hasWindowFocus();
+            boolean laidOut = button.isShown() && button.getWidth() > 0 && button.getHeight() > 0;
+            int[] location = new int[2];
+            button.getLocationOnScreen(location);
+            View decor = activity.getWindow().getDecorView();
+            boolean onScreen = location[0] >= 0 && location[1] >= 0
+                    && location[0] + button.getWidth() <= decor.getWidth()
+                    && location[1] + button.getHeight() <= decor.getHeight();
+            android.view.Display display = activity.getDisplay();
+            boolean defaultDisplayOn = display != null
+                    && display.getDisplayId() == android.view.Display.DEFAULT_DISPLAY
+                    && display.getState() == android.view.Display.STATE_ON;
+            if (focusedWindow && laidOut && onScreen && defaultDisplayOn) {
+                centerRef.set(new int[]{location[0] + button.getWidth() / 2,
+                        location[1] + button.getHeight() / 2});
+                button.setOnTouchListener((view, event) -> {
+                    android.util.Log.i("EyeBrowseTap", "button touch " + event.getActionMasked());
+                    return false; // Observes delivery; normal click handling is preserved.
+                });
+            } else {
+                diagnosis.set("focus=" + focusedWindow + " laidOut=" + laidOut + " onScreen="
+                        + onScreen + " at=" + location[0] + "," + location[1]
+                        + " display=" + (display == null ? "null"
+                                : display.getDisplayId() + "/" + display.getState()));
+            }
+        });
+        if (diagnosis.get() != null) {
+            fail("hosting control not ready for a single tap: " + diagnosis.get());
+        }
+        // Bounded transition settle before the one attempt (not a retry: nothing was sent yet).
+        SystemClock.sleep(800);
+        int[] center = centerRef.get();
+        long now = SystemClock.uptimeMillis();
+        android.view.MotionEvent down = android.view.MotionEvent.obtain(now, now,
+                android.view.MotionEvent.ACTION_DOWN, center[0], center[1], 0);
+        android.view.MotionEvent up = android.view.MotionEvent.obtain(now, now + 60,
+                android.view.MotionEvent.ACTION_UP, center[0], center[1], 0);
+        down.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+        up.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+        try {
+            InstrumentationRegistry.getInstrumentation().sendPointerSync(down);
+            InstrumentationRegistry.getInstrumentation().sendPointerSync(up);
+        } finally {
+            down.recycle();
+            up.recycle();
+        }
+        long deadline = SystemClock.uptimeMillis() + boundMs;
+        HostingController.Status current = runOnMainSync(hosting::status);
         while (SystemClock.uptimeMillis() < deadline) {
-            HostingController.Status status = runOnMainSync(hosting::status);
-            if (status.state != before.state) {
+            current = runOnMainSync(hosting::status);
+            if (current.state == expectedAfter) {
                 return;
             }
-            SystemClock.sleep(100);
+            SystemClock.sleep(50);
         }
-        // The injected tap was silently dropped; activate the same control's listener directly.
-        scenario.onActivity(activity -> activity.findViewById(R.id.button_hosting_toggle)
-                .performClick());
+        fail("injected tap produced no " + expectedAfter + " within " + boundMs + "ms (last="
+                + current.state + " reason=" + current.failureReason
+                + "); focus, geometry and display state were verified before this single attempt; "
+                + "button touch delivery is in the EyeBrowseTap logcat; cause unknown if no touch "
+                + "was logged; no retry performed");
     }
 
     // ------------------------------------------------------------------ tests
+
+    /**
+     * Labeled DIAGNOSTIC, not UI-journey evidence: the hosting toggle's own click listener is wired
+     * and functional when invoked directly. This isolates product-listener defects from input-
+     * injection quirks; it never substitutes the actual Start/Stop tap journey, which lives in the
+     * {@code ...UiJourney} tests using single verified taps.
+     */
+    @Test
+    public void hostingToggleListenerWiredDirectCallbackDiagnostic() throws Exception {
+        openFixture("/hosting.html", "Hosting capture page");
+        long generationBefore = runOnMainSync(() -> (long) hosting.currentGeneration());
+        scenario.onActivity(activity -> activity.findViewById(R.id.button_hosting_toggle)
+                .performClick());
+        awaitHostingState(HostingController.State.HOSTING, START_BOUND_MS);
+        assertEquals(generationBefore + 1,
+                (long) runOnMainSync(() -> (long) hosting.currentGeneration()));
+        runOnMain(hosting::stop);
+        awaitHostingState(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
+    }
 
     /**
      * The core same-instance continuity check: Phone → private presentation → Phone keeps the
@@ -140,9 +271,8 @@ public class HostingInstrumentedTest {
         long generationBefore = runOnMainSync(() -> (long) hosting.currentGeneration());
 
         long startBegin = SystemClock.uptimeMillis();
-        onView(withId(R.id.button_hosting_toggle)).perform(click());
-        HostingController.Status started = awaitHostingState(HostingController.State.HOSTING,
-                START_BOUND_MS);
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
+        HostingController.Status started = runOnMainSync(hosting::status);
         long startElapsed = SystemClock.uptimeMillis() - startBegin;
         assertEquals(generationBefore + 1, (long) started.generation);
         assertEquals(HostingController.Attachment.PHONE_UI, started.attachment);
@@ -173,9 +303,7 @@ public class HostingInstrumentedTest {
                 loadCount("/hosting.html"));
 
         long stopBegin = SystemClock.uptimeMillis();
-        awaitWindowFocusForTest(); // Input injection needs the returned window focused again.
-        clickHostingToggleWithFallback();
-        awaitHostingState(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
         long stopElapsed = SystemClock.uptimeMillis() - stopBegin;
         assertTrue("stop bound " + stopElapsed + "ms", stopElapsed <= STOP_BOUND_MS);
         assertTrue("stop bound " + startElapsed + "ms", startElapsed <= START_BOUND_MS);

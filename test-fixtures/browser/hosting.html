@@ -29,7 +29,11 @@ setInterval(function () {
   document.getElementById('live-counter').textContent = n + ' @ ' + Date.now();
 }, 1000);
 // Test-only fixture setup hook: freeze/resume the autonomous counter without page input.
-window.__eyebrowseFreeze = function (value) { frozen = !!value; };
+// Freezing also blurs the active element so the caret blink cannot keep producing frames.
+window.__eyebrowseFreeze = function (value) {
+  frozen = !!value;
+  if (frozen && document.activeElement) { document.activeElement.blur(); }
+};
 </script>
 </body>
 </html>
