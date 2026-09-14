@@ -235,7 +235,19 @@ final class PhoneBrowserSession {
      * untouched, preserving its container and live Activity context (F5).
      */
     void detachExternal(ViewGroup container) {
-        if (webView == null || webView.getParent() != container) {
+        if (webView == null) {
+            // The view is already gone (e.g. renderer loss disposed it): still release the
+            // external context ownership so the hosting service context does not stay rooted
+            // through the wrapper when cleanup relies on this path (R7).
+            if (contextWrapper.getBaseContext() != appContext) {
+                contextWrapper.setBaseContext(appContext);
+            }
+            if (attachedContainer == container) {
+                attachedContainer = null;
+            }
+            return;
+        }
+        if (webView.getParent() != container) {
             return; // Not hosted here: a Phone attachment's container/context stays untouched.
         }
         container.removeView(webView);

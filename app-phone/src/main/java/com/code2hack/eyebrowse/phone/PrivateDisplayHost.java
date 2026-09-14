@@ -79,6 +79,16 @@ final class PrivateDisplayHost {
     private final Factory factory;
     private final Object nativeLock = new Object();
 
+    /** One capture owner at a time: ACTIVE → RETIRING → QUIESCENT is real and observable (R2). */
+    private final CaptureOwnerPhase ownerPhase = new CaptureOwnerPhase();
+
+    /**
+     * One-shot callback fired when a requested retirement completes (on the completing thread;
+     * the controller wraps it to hop to main). This is the safe-replacement signal: reacquisition
+     * and restart wait for it instead of racing the outstanding teardown.
+     */
+    private Runnable onQuiesced;
+
     private VirtualDisplay virtualDisplay;      // main-thread only
     private PresentationHost presentation;      // main-thread only
     private ImageReader imageReader;            // nativeLock-protected
@@ -100,8 +110,9 @@ final class PrivateDisplayHost {
     private volatile boolean teardownComplete = true;
     private volatile int captureGeneration;     // hosting generation stamped into produced frames
 
-    PrivateDisplayHost(Factory factory) {
+    PrivateDisplayHost(Factory factory, Runnable onQuiesced) {
         this.factory = factory;
+        this.onQuiesced = onQuiesced;
     }
 
     /**
@@ -183,9 +194,10 @@ final class PrivateDisplayHost {
     }
 
     /**
-     * Ensures a capture surface for {@code desiredWidth}×{@code desiredHeight}: a matching live
-     * reader is kept, a missing reader is created on the surviving display, and a differing
-     * geometry triggers a full display/presentation rebuild without navigation (the caller
+     * Ensures a capture surface for {@code desiredWidth}×{@code desiredHeight}×
+     * {@code desiredDensityDpi}: a matching live reader is kept, a missing reader is created on
+     * the surviving display, and any differing geometry (including density) triggers a full
+     * display/presentation rebuild without navigation (the caller rearms a live lease and
      * reattaches the session view afterwards). Throws {@link HostingException} on failure.
      */
     void ensureCaptureSurface(Context serviceContext, int desiredWidth, int desiredHeight,
@@ -195,13 +207,21 @@ final class PrivateDisplayHost {
             throw new HostingException(sizeError);
         }
         synchronized (nativeLock) {
-            if (imageReader != null && width == desiredWidth && height == desiredHeight) {
+            if (imageReader != null && width == desiredWidth && height == desiredHeight
+                    && densityDpi == desiredDensityDpi) {
                 return;
             }
         }
-        if (imageReader == null && width == desiredWidth && height == desiredHeight) {
+        if (imageReader == null && width == desiredWidth && height == desiredHeight
+                && densityDpi == desiredDensityDpi) {
             // Same geometry, surface recreated after an idle release — no presentation change.
-            ImageReader reader = factory.createImageReader(width, height);
+            // Same recoverable allocation path as initial creation (R7).
+            ImageReader reader;
+            try {
+                reader = factory.createImageReader(width, height);
+            } catch (RuntimeException error) {
+                throw new HostingException("reader recreation failed: " + error.getMessage());
+            }
             if (reader == null) {
                 throw new HostingException("image reader creation failed");
             }
@@ -216,8 +236,8 @@ final class PrivateDisplayHost {
             }
             return;
         }
-        // Differing geometry: reconcile to the last measured Phone content viewport by rebuilding
-        // the private display/presentation/reader at the new size, without navigation.
+        // Differing geometry or density: reconcile by rebuilding the private
+        // display/presentation/reader, without navigation (R6).
         rebuildAtSize(serviceContext, desiredWidth, desiredHeight, desiredDensityDpi, session);
     }
 
@@ -254,10 +274,18 @@ final class PrivateDisplayHost {
      * Starts (or restarts) frame production for a live consumer through the caller's bound sink;
      * latest-only and throttled. The sink is retained as-is: delivery identity lives in the sink,
      * not in a reassigned callback.
+     *
+     * <p>Returns {@code false} when no capture surface exists or a previous capture owner is
+     * still retiring (R2): reacquisition waits for the quiescence callback instead of racing the
+     * outstanding teardown. The controller defers and retries on quiescence.
      */
-    void startCapture(int hostingGeneration, FrameSink boundSink) {
+    boolean startCapture(int hostingGeneration, FrameSink boundSink) {
         if (imageReader == null || boundSink == null) {
-            return;
+            return false;
+        }
+        if (!ownerPhase.beginActive()) {
+            Log.i(TAG, "startCapture deferred: owner phase=" + ownerPhase.phase());
+            return false;
         }
         frameSink = boundSink;
         frameSequence = 0;
@@ -271,7 +299,7 @@ final class PrivateDisplayHost {
             // Reacquisition after lease loss: the capture thread survived; rearm the listener.
             imageReader.setOnImageAvailableListener(this::onImageAvailable, captureHandler);
             scheduleDrain();
-            return;
+            return true;
         }
         captureThread = new HandlerThread("EyeBrowseHostingCapture");
         captureThread.start();
@@ -279,6 +307,7 @@ final class PrivateDisplayHost {
         retainedCaptureThread = captureThread;
         imageReader.setOnImageAvailableListener(this::onImageAvailable, captureHandler);
         scheduleDrain();
+        return true;
     }
 
     /**
@@ -329,40 +358,75 @@ final class PrivateDisplayHost {
     }
 
     /**
-     * Releases the capture reader/surface/thread. With a live capture thread the native close
-     * executes on that thread after all pending callbacks (serialized by nativeLock and the
-     * handler queue); without one it executes inline. The host object stays introspectable until
-     * {@link #isTeardownComplete()} confirms the marker; nothing joins under a controller monitor.
+     * Releases the capture reader/surface/thread as one coherent ownership transition (R2): the
+     * owner enters {@code RETIRING} synchronously (no replacement capture can start), the
+     * retiring reader/bitmap are snapshotted and the current fields released, and the retirement
+     * closes only those snapshots on the capture path. With a live capture thread the native
+     * close executes on that thread after all pending callbacks (serialized by nativeLock and the
+     * handler queue); without one it executes inline. Nothing joins under a controller monitor;
+     * quiescence is observable via {@link #isQuiescent()} and the quiescence callback.
      */
     void releaseCaptureResources() {
+        if (ownerPhase.isRetiring()) {
+            return; // Retirement already requested and outstanding; do not re-post.
+        }
+        if (ownerPhase.isActive() && !ownerPhase.beginRetiring()) {
+            return; // Concurrent transition; treat as already retiring.
+        }
+        // ACTIVE enters RETIRING above; IDLE/QUIESCENT hosts only residual resources (e.g. the
+        // never-leased reader) and releases them inline without a phase transition.
         captureActive = false;
         frameSink = null;
+        captureReleased = true;
+        teardownComplete = false;
+        final ImageReader retiringReader;
+        final Bitmap retiringBitmap;
+        synchronized (nativeLock) {
+            retiringReader = imageReader;
+            retiringBitmap = frameBitmap;
+            // Current fields release now: introspection sees no live reader and any later
+            // allocation creates fresh resources the old teardown will never touch.
+            imageReader = null;
+            frameBitmap = null;
+        }
         if (captureThread != null && captureHandler != null) {
-            captureHandler.post(this::teardownCaptureOnCapturePath);
-            captureThread.quitSafely(); // Pending callbacks and the teardown task run first.
+            final HandlerThread retiringThread = captureThread;
+            final Handler retiringHandler = captureHandler;
+            retiringHandler.post(() -> finishRetirement(retiringReader, retiringBitmap,
+                    retiringThread));
+            retiringThread.quitSafely(); // Pending callbacks and the teardown task run first.
             captureThread = null;
             captureHandler = null;
         } else {
-            teardownCaptureOnCapturePath(); // No capture path exists; inline is race-free.
+            finishRetirement(retiringReader, retiringBitmap, null); // No capture path; inline.
         }
     }
 
-    /** The owning teardown path: reader close, buffer drop and completion marker, in order. */
-    private void teardownCaptureOnCapturePath() {
-        synchronized (nativeLock) {
-            if (imageReader != null) {
-                try {
-                    imageReader.close();
-                } catch (RuntimeException ignored) {
-                    // Serialized with capture-path use; a platform refusal must not block teardown.
-                }
-                imageReader = null;
+    /**
+     * The owning retirement completion: closes only the snapshot references of the retiring
+     * owner (never the current mutable fields a replacement may already use), then marks the
+     * phase QUIESCENT and fires the quiescence callback once.
+     */
+    private void finishRetirement(ImageReader retiringReader, Bitmap retiringBitmap,
+            HandlerThread retiringThread) {
+        if (retiringReader != null) {
+            try {
+                retiringReader.close();
+            } catch (RuntimeException ignored) {
+                // Serialized with capture-path use; a platform refusal must not block teardown.
             }
-            // The reused frame bitmap may be borrowed by a completed delivery; dropping the
-            // reference (no recycle) leaves reclamation to GC, which is safe for borrowed bitmaps.
-            frameBitmap = null;
         }
+        // The retiring borrowed bitmap is dropped without recycle (a completed delivery may
+        // still hold it); reclamation stays with GC, which is safe for borrowed bitmaps.
+        if (retiringThread != null) {
+            Log.i(TAG, "capture retirement complete threadAlive=" + retiringThread.isAlive());
+        }
+        ownerPhase.completeRetirement();
         teardownComplete = true;
+        Runnable callback = onQuiesced;
+        if (callback != null) {
+            callback.run(); // Completing thread; the controller hops to main.
+        }
     }
 
     /** Full teardown for Stop: detaches the session view, dismisses, releases the display. */
@@ -422,6 +486,16 @@ final class PrivateDisplayHost {
     /** Completion marker for the requested capture teardown. */
     boolean isTeardownComplete() {
         return teardownComplete;
+    }
+
+    /** True when a previous capture owner is still retiring (R2). */
+    boolean isRetiring() {
+        return ownerPhase.isRetiring();
+    }
+
+    /** True when replacement capture ownership is safe (no outstanding teardown). */
+    boolean isQuiescent() {
+        return ownerPhase.isQuiescent() && teardownComplete;
     }
 
     private void onImageAvailable(ImageReader reader) {

@@ -195,6 +195,9 @@ public final class MainActivity extends ComponentActivity {
         // A destroyed Activity must not steal the view from a successor; only when this Activity
         // still owns the session does the host move the view offscreen and keep hosting alive.
         hosting.moveWebViewToPrivateDisplay(attachment);
+        // R5: actual destruction releases the controller-held Activity/container references for
+        // the matching UI owner and clears availability (identity-checked by token).
+        hosting.onPhoneUiDestroyed(attachment);
         session.detach(attachment);
         super.onDestroy();
     }
@@ -307,10 +310,16 @@ public final class MainActivity extends ComponentActivity {
         String text;
         switch (hostingStatus.state) {
             case HOSTING:
+                hostingButton.setText(R.string.action_hosting_stop);
+                if (hostingStatus.failureReason != null) {
+                    // R6: a rebuild/attachment failure inside HOSTING must not keep a healthy
+                    // label; the recoverable failure is surfaced while hosting remains Stop-able.
+                    text = getString(R.string.hosting_status_failed, hostingStatus.failureReason);
+                    break;
+                }
                 text = getString(R.string.hosting_status_active, hostingStatus.generation,
                         getString(hostingStatus.captureActive ? R.string.hosting_capture_active
                                 : R.string.hosting_capture_idle));
-                hostingButton.setText(R.string.action_hosting_stop);
                 break;
             case STARTING:
             case STOPPING:

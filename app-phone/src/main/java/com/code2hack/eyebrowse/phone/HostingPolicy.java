@@ -45,6 +45,28 @@ final class HostingPolicy {
         return nowMs - lastDemandMs > IDLE_RELEASE_MS;
     }
 
+    /**
+     * The immutable idle-release deadline: exactly {@link #IDLE_RELEASE_MS} after the last
+     * successful demand (acquire/renewal) or resource readiness. Release, expiry ticks and other
+     * lifecycle events never move this anchor (R1); only a new successful demand/readiness does.
+     */
+    static long idleReleaseDeadlineMs(long lastDemandMs) {
+        return lastDemandMs + IDLE_RELEASE_MS;
+    }
+
+    /**
+     * Delay until the idle deadline, anchored to {@code lastDemandMs} — NOT to {@code nowMs} — so
+     * a late release/expiry can never extend the deadline. Never negative.
+     */
+    static long idleReleaseDelayMs(long nowMs, long lastDemandMs) {
+        return Math.max(0L, idleReleaseDeadlineMs(lastDemandMs) - nowMs);
+    }
+
+    /** True when {@code nowMs} has reached the anchored idle deadline. */
+    static boolean idleDeadlineReached(long nowMs, long lastDemandMs) {
+        return nowMs >= idleReleaseDeadlineMs(lastDemandMs);
+    }
+
     static boolean frameThrottled(long nowMs, long lastDeliveryMs) {
         return nowMs - lastDeliveryMs < MIN_FRAME_INTERVAL_MS;
     }

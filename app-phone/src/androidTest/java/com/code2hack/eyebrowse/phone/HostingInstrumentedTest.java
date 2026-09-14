@@ -6,6 +6,7 @@ import static androidx.test.espresso.action.ViewActions.replaceText;
 import static androidx.test.espresso.matcher.ViewMatchers.withId;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -38,7 +39,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 
 /**
- * Focused hosting-lifecycle instrumentation (correction round 2).
+ * Focused hosting-lifecycle instrumentation (correction rounds 2–3).
  *
  * <p>Evidence boundaries: activation uses the real Start/Stop controls through single verified
  * system-pipeline taps (bounded direct-callback activation is a separately labeled diagnostic);
@@ -705,17 +706,30 @@ public class HostingInstrumentedTest {
         recordDeviceState("backgrounded-before-capture");
 
         // --- Never-leased idle: with no demand ever, capture resources are actually released by
-        // readiness + 30s (scheduled one-shot; 1.5s scheduling margin is measurement, not target).
-        long neverLeasedDeadline = readyElapsed + HostingPolicy.IDLE_RELEASE_MS + 1_500;
+        // readiness + 30s. The anchor is the readiness event itself: readyElapsed is sampled
+        // after status() reports HOSTING, and status() takes the controller monitor that
+        // onServiceReady holds through its anchor assignment, so anchor <= readyElapsed and
+        // readyUpperBound + 30s is a strict upper bound of the true deadline — no scheduling
+        // margin is granted to production. The extra 250ms window below is observation
+        // granularity (poll dispatch), not a target extension; the actual observation is
+        // recorded in the milestone.
+        long readyUpperBound = readyElapsed;
+        long neverLeasedDeadline = readyUpperBound + HostingPolicy.IDLE_RELEASE_MS;
         while (SystemClock.elapsedRealtime() < neverLeasedDeadline
                 && runOnMainSync(hosting::captureResourcesPresent)) {
-            SystemClock.sleep(500);
+            SystemClock.sleep(100);
         }
-        assertEquals("never-leased capture resources released by readiness+30s", false,
-                runOnMainSync(hosting::captureResourcesPresent));
+        long neverLeasedObserveLimit = neverLeasedDeadline + 250;
+        while (SystemClock.elapsedRealtime() < neverLeasedObserveLimit
+                && runOnMainSync(hosting::captureResourcesPresent)) {
+            SystemClock.sleep(50);
+        }
+        assertEquals("never-leased capture resources released by readiness+30s (strict anchor)",
+                false, runOnMainSync(hosting::captureResourcesPresent));
         assertEquals("never-leased hosting session persists", HostingController.State.HOSTING,
                 runOnMainSync(hosting::status).state);
-        memoryMilestone("after-never-leased-idle");
+        memoryMilestone("after-never-leased-idle releasedAt="
+                + (SystemClock.elapsedRealtime() - readyUpperBound) + "msAfterReadinessUpperBound");
 
         // --- Lease acquisition (recreates the surface on the surviving display) and first frame
         // measured at CONSUMER delivery, within 2s of eligibility.
@@ -799,10 +813,16 @@ public class HostingInstrumentedTest {
 
         // --- Lease loss: production stops within 6s TOTAL of the last successful renewal (5s TTL
         // + <=1s expiry detection), and the wake lock releases in the same bound.
-        long lastRenewElapsed = renewal.stopRenewing();
+        renewal.stopRenewing();
+        // R4 oracle: the anchor must be a successful MAIN-THREAD renewal, not a producer-thread
+        // enqueue timestamp. One synchronous renewal is the definitive last successful demand:
+        // runOnMainSync returns only after the renewal executed on main, so the sampled time is a
+        // true post-ack upper bound (ack <= sample) and the 6s bound below is strict.
+        runOnMain(lease::renew); // Synchronous on main; returns after the renewal executed.
+        long lastRenewElapsed = SystemClock.elapsedRealtime();
         waitUntil("capture stopped after lease expiry",
                 () -> SystemClock.elapsedRealtime() - consumer.latestCaptureElapsed() > 1_000);
-        assertTrue("no frame later than 6s total after the last renewal",
+        assertTrue("no frame later than 6s total after the last successful renewal",
                 consumer.latestCaptureElapsed() <= lastRenewElapsed + 6_000);
         long wakeDeadline = lastRenewElapsed + 6_000;
         while (SystemClock.elapsedRealtime() < wakeDeadline
@@ -826,18 +846,27 @@ public class HostingInstrumentedTest {
         assertEquals("no reload of the counter page on reacquisition", loadsHostingBeforeReturn + 1,
                 loadCount("/hosting.html"));
 
-        // --- Idle release anchored at the last successful demand: resources actually released by
-        // demand + 30s (1.5s scheduling margin is measurement, not target).
+        // --- Idle release anchored at the last successful demand: resources are released at
+        // voluntary release (immediately — earlier than the bound is always allowed) and in no
+        // case later than demand + 30s. The anchor is the synchronous final renewal's post-ack
+        // bound (R1/R4): strict, no scheduling margin; the 250ms window is observation
+        // granularity only.
         renewal2.stopRenewing();
+        runOnMain(lease2::renew); // Synchronous on main; the definitive last successful demand.
+        long lastDemandAckBound = SystemClock.elapsedRealtime();
         runOnMain(lease2::release);
-        long demandElapsed = SystemClock.elapsedRealtime();
         memoryMilestone("lease-released-idle-window-start");
-        long idleDeadline = demandElapsed + HostingPolicy.IDLE_RELEASE_MS + 1_500;
+        long idleDeadline = lastDemandAckBound + HostingPolicy.IDLE_RELEASE_MS;
         while (SystemClock.elapsedRealtime() < idleDeadline
                 && runOnMainSync(hosting::captureResourcesPresent)) {
-            SystemClock.sleep(500);
+            SystemClock.sleep(100);
         }
-        assertEquals("capture resources released by demand+30s", false,
+        long idleObserveLimit = idleDeadline + 250;
+        while (SystemClock.elapsedRealtime() < idleObserveLimit
+                && runOnMainSync(hosting::captureResourcesPresent)) {
+            SystemClock.sleep(50);
+        }
+        assertEquals("capture resources released by demand+30s (strict anchored bound)", false,
                 runOnMainSync(hosting::captureResourcesPresent));
         assertEquals("display/presentation attachment survives idle release", true,
                 runOnMainSync(hosting::hasDisplayResources));
@@ -878,6 +907,231 @@ public class HostingInstrumentedTest {
         milestones.flushToStream("capture acceptance session");
     }
 
+    // ------------------------------------------------- correction3 controlled cases (R1–R7)
+
+    // Added with the attempt-3 source checkpoint to cover the ownership/deadline/attachment paths
+    // the renewed review found unproved. They are part of the declared test identities for the
+    // NEXT device phase and are UNEXECUTED at this host-only checkpoint: no device pass is
+    // claimed here, and the next combined invocation must reconcile the new count explicitly.
+
+    /** R3: Stop while backgrounded, then return: the surviving live page reattaches, no reload. */
+    @Test
+    public void backgroundStopThenReturnReattachesLivePageWithoutReload() throws Exception {
+        openFixture("/hosting.html", "Hosting capture page");
+        int loadsBefore = loadCount("/hosting.html");
+        setFieldValue("bgstop-value");
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
+        scenario.onActivity(activity -> activity.moveTaskToBack(true));
+        waitUntil("webview hosted offscreen", () -> {
+            HostViewSnapshot snapshot = hostViewSnapshot();
+            return snapshot.status.attachment == HostingController.Attachment.PRIVATE_DISPLAY
+                    && snapshot.viewAttached;
+        });
+        // Background Stop through the same controller entry the notification Stop action drives.
+        runOnMain(() -> hosting.stop());
+        awaitHostingState(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
+        // Return to the existing Activity without any new navigation.
+        bringMainActivityToFrontForTest();
+        waitUntil("live page reattached on return after background Stop",
+                () -> hostViewSnapshot().viewAttached);
+        assertEquals("no reload across background Stop and return", loadsBefore + 1,
+                loadCount("/hosting.html"));
+        assertEquals("field value survived background Stop and return", "bgstop-value",
+                readFieldValue());
+        assertEquals("hosting remains stopped after return", HostingController.State.NOT_HOSTING,
+                runOnMainSync(hosting::status).state);
+    }
+
+    /** R6: a live lease survives a geometry rebuild; delivery rearms at the rebuilt viewport. */
+    @Test
+    public void liveLeaseSurvivesGeometryRebuildWithRearmedDelivery() throws Exception {
+        openFixture("/hosting.html", "Hosting capture page");
+        int[] sizeBefore = currentWebViewSize();
+        long generationBefore = runOnMainSync(() -> (long) hosting.currentGeneration());
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
+        CollectingConsumer consumer = new CollectingConsumer();
+        HostingController.Lease lease = runOnMainSync(() -> hosting.acquireLease(consumer));
+        assertNotNull("live lease before geometry change", lease);
+        waitUntil("frames flow before geometry change", () -> consumer.count() > 0);
+        // App-scoped reversible window change while the lease is live, then the offscreen move
+        // reconciles (rebuilds) the capture surface to the new measured geometry.
+        scenario.onActivity(activity -> activity.setRequestedOrientation(
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE));
+        scenario.onActivity(activity -> activity.moveTaskToBack(true));
+        waitUntil("rebuild completed offscreen with live lease", () -> {
+            HostViewSnapshot snapshot = hostViewSnapshot();
+            return snapshot.status.attachment == HostingController.Attachment.PRIVATE_DISPLAY
+                    && snapshot.viewAttached;
+        });
+        int[] sizeAfter = currentWebViewSize();
+        assertTrue("the window change actually changed the geometry",
+                sizeAfter[0] != sizeBefore[0] || sizeAfter[1] != sizeBefore[1]);
+        int framesAtRebuild = consumer.count();
+        waitUntil("delivery rearmed after the rebuild", () -> consumer.count() > framesAtRebuild);
+        assertTrue("post-rebuild delivery carries the rebuilt viewport "
+                        + sizeAfter[0] + "x" + sizeAfter[1],
+                consumer.tailFramesMatchSize(framesAtRebuild, sizeAfter[0], sizeAfter[1]));
+        assertTrue("rearmed delivery keeps the same hosting generation",
+                consumer.allFramesMatchGeneration((int) (generationBefore + 1)));
+        assertTrue("rearmed delivery shows the same document",
+                consumer.tailFramesNearColor(framesAtRebuild, CAPTURE_PAGE_COLOR));
+        scenario.onActivity(activity -> activity.setRequestedOrientation(
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT));
+        bringMainActivityToFrontForTest();
+        waitUntil("webview restored to phone ui", () -> {
+            HostViewSnapshot snapshot = hostViewSnapshot();
+            return snapshot.status.attachment == HostingController.Attachment.PHONE_UI
+                    && snapshot.viewAttached;
+        });
+        runOnMain(lease::release);
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
+    }
+
+    /** R7: a thrown reader recreation after idle rolls back and surfaces in actual status. */
+    @Test
+    public void thrownReaderRecreationSurfacesFailureAndRollsBack() throws Exception {
+        SettableFactory factory = new SettableFactory();
+        runOnMain(() -> hosting.setResourceFactoryForTest(factory));
+        openFixture("/hosting.html", "Hosting capture page");
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
+        scenario.onActivity(activity -> activity.moveTaskToBack(true));
+        waitUntil("webview hosted offscreen", () -> {
+            HostViewSnapshot snapshot = hostViewSnapshot();
+            return snapshot.status.attachment == HostingController.Attachment.PRIVATE_DISPLAY
+                    && snapshot.viewAttached;
+        });
+        // Wait out the never-leased idle release so the next acquisition must RECREATE the reader.
+        long readyUpperBound = SystemClock.elapsedRealtime();
+        while (runOnMainSync(hosting::captureResourcesPresent)
+                && SystemClock.elapsedRealtime() < readyUpperBound + 40_000) {
+            SystemClock.sleep(250);
+        }
+        assertEquals("idle release completed before the injection", false,
+                runOnMainSync(hosting::captureResourcesPresent));
+        // Inject the recoverable allocation failure on the recreation path (R7).
+        factory.throwOnNextReader = true;
+        CollectingConsumer consumer = new CollectingConsumer();
+        HostingController.Lease lease = runOnMainSync(() -> hosting.acquireLease(consumer));
+        assertNull("acquisition fails explicitly when reader recreation throws", lease);
+        HostingController.Status status = runOnMainSync(hosting::status);
+        assertEquals("hosting session survives the recoverable failure",
+                HostingController.State.HOSTING, status.state);
+        assertNotNull("failure surfaced in actual status", status.failureReason);
+        assertEquals("allocation rolled back: no live capture resources", false,
+                runOnMainSync(hosting::captureResourcesPresent));
+        // Recovery: clear the injection; the next acquisition recreates and delivers.
+        factory.throwOnNextReader = false;
+        lease = runOnMainSync(() -> hosting.acquireLease(consumer));
+        assertNotNull("recovery after failed recreation", lease);
+        waitUntil("frames flow after recovery", () -> consumer.count() > 0);
+        runOnMain(lease::release);
+        bringMainActivityToFrontForTest();
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
+    }
+
+    /** R4: after the 5s deadline, a late renewal must not revive delivery or the wake lock. */
+    @Test
+    public void lateRenewalAfterExpiryCannotReviveDelivery() throws Exception {
+        openFixture("/hosting.html", "Hosting capture page");
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
+        CollectingConsumer consumer = new CollectingConsumer();
+        HostingController.Lease lease = runOnMainSync(() -> hosting.acquireLease(consumer));
+        assertNotNull(lease);
+        waitUntil("first frame before expiry", () -> consumer.count() > 0);
+        // No renewal: the authoritative deadline passes; the gate rejects delivery from the
+        // deadline instant itself and the watchdog revokes within its tick.
+        SystemClock.sleep(HostingPolicy.LEASE_TTL_MS + 1_500);
+        int framesAtExpiry = consumer.count();
+        // The late renewal arrives between TTL expiry and any later tick: it must move nothing.
+        runOnMain(lease::renew);
+        SystemClock.sleep(2_000); // A revived pipeline would deliver within this window.
+        assertEquals("no delivery revived by the late renewal", framesAtExpiry, consumer.count());
+        assertEquals("wake lock released after expiry despite the late renewal", false,
+                runOnMainSync(hosting::isWakeLockHeld));
+        bringMainActivityToFrontForTest();
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
+    }
+
+    /** R2: a delayed in-flight consumer and a reacquiring consumer never share a borrowed frame. */
+    @Test
+    public void delayedConsumerReleaseReacquireIsolatesBorrowedFrames() throws Exception {
+        openFixture("/hosting.html", "Hosting capture page");
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
+        DelayedConsumer first = new DelayedConsumer(300);
+        HostingController.Lease lease1 = runOnMainSync(() -> hosting.acquireLease(first));
+        assertNotNull(lease1);
+        waitUntil("first consumer receiving", () -> first.collector().count() > 0);
+        // Release while the delayed consumer may be inside its callback; reacquire immediately.
+        runOnMain(lease1::release);
+        CollectingConsumer second = new CollectingConsumer();
+        HostingController.Lease lease2 = runOnMainSync(() -> hosting.acquireLease(second));
+        if (lease2 == null) {
+            // Retirement outstanding: the deferred reacquisition completes on quiescence (R2).
+            waitUntil("deferred reacquisition delivers after quiescence",
+                    () -> second.count() > 0, 15_000);
+        } else {
+            waitUntil("replacement consumer receiving", () -> second.count() > 0);
+        }
+        assertTrue("the retiring consumer's borrowed frames were not rewritten by the replacement",
+                first.collector().allFramesNearColor(CAPTURE_PAGE_COLOR));
+        assertTrue("the replacement consumer's frames show the same document",
+                second.allFramesNearColor(CAPTURE_PAGE_COLOR));
+        runOnMain(() -> {
+            if (lease2 != null) {
+                lease2.release();
+            }
+        });
+        bringMainActivityToFrontForTest();
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
+    }
+
+    /** R1: after a never-leased idle release, a private move recreates under a NEW anchored deadline. */
+    @Test
+    public void homeAfterNeverLeasedIdleAnchorsNewDeadlineWithoutDemand() throws Exception {
+        openFixture("/hosting.html", "Hosting capture page");
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
+        scenario.onActivity(activity -> activity.moveTaskToBack(true));
+        waitUntil("webview hosted offscreen", () -> {
+            HostViewSnapshot snapshot = hostViewSnapshot();
+            return snapshot.status.attachment == HostingController.Attachment.PRIVATE_DISPLAY
+                    && snapshot.viewAttached;
+        });
+        long readyUpperBound = SystemClock.elapsedRealtime();
+        while (runOnMainSync(hosting::captureResourcesPresent)
+                && SystemClock.elapsedRealtime() < readyUpperBound + 40_000) {
+            SystemClock.sleep(250);
+        }
+        assertEquals("never-leased idle release completed", false,
+                runOnMainSync(hosting::captureResourcesPresent));
+        // Return, then background again: the private move recreates the reader WITHOUT consumer
+        // demand; that recreation is a new readiness event anchoring its own bounded deadline.
+        bringMainActivityToFrontForTest();
+        waitUntil("webview back on phone ui", () -> hostViewSnapshot().viewAttached);
+        scenario.onActivity(activity -> activity.moveTaskToBack(true));
+        waitUntil("hosted offscreen again", () -> {
+            HostViewSnapshot snapshot = hostViewSnapshot();
+            return snapshot.status.attachment == HostingController.Attachment.PRIVATE_DISPLAY
+                    && snapshot.viewAttached;
+        });
+        long recreationUpperBound = SystemClock.elapsedRealtime();
+        waitUntil("reader recreated for the demand-free private attachment",
+                () -> runOnMainSync(hosting::captureResourcesPresent), 15_000);
+        long deadline = recreationUpperBound + HostingPolicy.IDLE_RELEASE_MS;
+        while (SystemClock.elapsedRealtime() < deadline
+                && runOnMainSync(hosting::captureResourcesPresent)) {
+            SystemClock.sleep(100);
+        }
+        long observeLimit = deadline + 250; // Observation granularity only; the bound is strict.
+        while (SystemClock.elapsedRealtime() < observeLimit
+                && runOnMainSync(hosting::captureResourcesPresent)) {
+            SystemClock.sleep(50);
+        }
+        assertEquals("demand-free recreated resources released by recreation+30s", false,
+                runOnMainSync(hosting::captureResourcesPresent));
+        bringMainActivityToFrontForTest();
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
+    }
+
     /** First-frame delivery bound: 2s from eligibility (uptime-based, consumer-side). */
     private boolean firstFrameDelayIsValid(long deliveryDelayMs) {
         return deliveryDelayMs >= 0 && deliveryDelayMs <= 2_000;
@@ -909,7 +1163,7 @@ public class HostingInstrumentedTest {
     @AfterClass
     public static void flushMilestoneSink() {
         if (milestones != null) {
-            milestones.flushToStream("hosting correction round 2 execution");
+            milestones.flushToStream("hosting correction round 3 execution");
         }
     }
 
@@ -1154,6 +1408,17 @@ public class HostingInstrumentedTest {
             return frames.stream().allMatch(f -> f[4] == width && f[5] == height);
         }
 
+        /** True when frames from {@code fromIndex} on all match the given viewport. */
+        synchronized boolean tailFramesMatchSize(int fromIndex, int width, int height) {
+            for (int i = Math.max(0, fromIndex); i < frames.size(); i++) {
+                long[] frame = frames.get(i);
+                if (frame[4] != width || frame[5] != height) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         synchronized boolean monotonicCaptureStamps() {
             for (int i = 1; i < frames.size(); i++) {
                 if (frames.get(i)[2] < frames.get(i - 1)[2]) {
@@ -1161,6 +1426,18 @@ public class HostingInstrumentedTest {
                 }
             }
             return true;
+        }
+
+        /** True when frames from {@code fromIndex} on all match the expected sampled pixel. */
+        synchronized boolean tailFramesNearColor(int fromIndex, int expectedColor) {
+            boolean any = false;
+            for (int i = Math.max(0, fromIndex); i < frames.size(); i++) {
+                any = true;
+                if (!nearColor((int) frames.get(i)[6], expectedColor)) {
+                    return false;
+                }
+            }
+            return any;
         }
 
         /** True when the latest delivered frame's sampled pixel matches the expected color. */
@@ -1204,6 +1481,60 @@ public class HostingInstrumentedTest {
         return Math.abs(Color.red(actual) - Color.red(expected)) <= PIXEL_CHANNEL_TOLERANCE
                 && Math.abs(Color.green(actual) - Color.green(expected)) <= PIXEL_CHANNEL_TOLERANCE
                 && Math.abs(Color.blue(actual) - Color.blue(expected)) <= PIXEL_CHANNEL_TOLERANCE;
+    }
+
+    /**
+     * Wraps a {@link CollectingConsumer} with an in-callback hold, occupying the borrowed bitmap
+     * across release/reacquire so the isolation property is exercised, not assumed (R2).
+     */
+    private static final class DelayedConsumer implements HostingController.FrameConsumer {
+
+        private final long holdMs;
+        private final CollectingConsumer collector = new CollectingConsumer();
+
+        DelayedConsumer(long holdMs) {
+            this.holdMs = holdMs;
+        }
+
+        @Override
+        public void onFrame(HostingFrame frame) {
+            SystemClock.sleep(holdMs); // Hold the borrowed bitmap across the ownership transition.
+            collector.onFrame(frame);
+        }
+
+        CollectingConsumer collector() {
+            return collector;
+        }
+    }
+
+    /**
+     * Platform factory with an injectable, recoverable reader-recreation failure for the R7
+     * rollback/failure-surfacing case; otherwise fully delegating.
+     */
+    private static final class SettableFactory implements PrivateDisplayHost.Factory {
+
+        final PrivateDisplayHost.PlatformFactory platform = new PrivateDisplayHost.PlatformFactory();
+        volatile boolean throwOnNextReader;
+
+        @Override
+        public VirtualDisplay createVirtualDisplay(DisplayManager manager, String name, int width,
+                int height, int densityDpi, Object surface) {
+            return platform.createVirtualDisplay(manager, name, width, height, densityDpi, surface);
+        }
+
+        @Override
+        public ImageReader createImageReader(int width, int height) {
+            if (throwOnNextReader) {
+                throw new IllegalStateException("injected reader recreation failure");
+            }
+            return platform.createImageReader(width, height);
+        }
+
+        @Override
+        public PrivateDisplayHost.PresentationHost createPresentation(Context context,
+                android.view.Display display) {
+            return platform.createPresentation(context, display);
+        }
     }
 
     /** Renews the lease every second from a test thread; {@code renew()} posts to the main thread. */
