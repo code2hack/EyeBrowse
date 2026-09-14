@@ -391,9 +391,16 @@ public class HostingInstrumentedTest {
         // Stale-callback fencing across Stop: a consumer holding a lease when Stop lands receives
         // no further frames once teardown is confirmed (reader closed, capture thread exited),
         // and the teardown is bounded. The frame bitmap is deliberately not recycled while an
-        // in-flight callback may still borrow it.
+        // in-flight callback may still borrow it. The app is backgrounded first so the live view
+        // is actually hosted: a foregrounded presentation is empty and produces no frames.
         onView(withId(R.id.button_hosting_toggle)).perform(click());
         awaitHostingState(HostingController.State.HOSTING, START_BOUND_MS);
+        scenario.onActivity(activity -> activity.moveTaskToBack(true));
+        waitUntil("webview hosted offscreen", () -> {
+            HostViewSnapshot snapshot = hostViewSnapshot();
+            return snapshot.status.attachment == HostingController.Attachment.PRIVATE_DISPLAY
+                    && snapshot.viewAttached;
+        });
         CollectingConsumer staleConsumer = new CollectingConsumer();
         HostingController.Lease stoppedLease = runOnMainSync(() -> hosting.acquireLease(staleConsumer));
         assertNotNull("lease before Stop", stoppedLease);
