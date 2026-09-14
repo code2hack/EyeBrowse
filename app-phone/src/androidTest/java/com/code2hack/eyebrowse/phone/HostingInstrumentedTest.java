@@ -547,18 +547,21 @@ public class HostingInstrumentedTest {
 
         // --- In-process browser-action navigation while hosted offscreen: to the static second
         // page (proves the hosted view tracks navigation), then back to the counter page so active
-        // capture continues for the 120-second window.
+        // capture continues for the 120-second window. The correlation baseline is taken
+        // immediately before the navigation: the post-navigation frame must carry content hashes
+        // never seen before it, correlating the frame with the second page's new content.
         int loadsTwoBefore = loadCount("/hosting-two.html");
+        final java.util.Set<Long> hashesBeforeNavigation = consumer.distinctHashSet();
+        final int framesBeforeNavigation = consumer.count();
         runOnMain(() -> session.openAddress(FIXTURE_BASE + "/hosting-two.html"));
         waitUntil("second page loaded while hosted",
                 () -> "Second hosting page".equals(domText("page-title")));
         assertEquals("navigation load recorded once", loadsTwoBefore + 1,
                 loadCount("/hosting-two.html"));
         int loadsTwoAfter = loadsTwoBefore + 1;
-        final int distinctAtNavigation = distinctBefore;
-        waitUntil("frame reflects the navigated page", () -> {
-            synchronized (consumer) { return consumer.distinctHashes() > distinctAtNavigation + 1; }
-        });
+        waitUntil("frame with never-before-seen content after navigation", () ->
+                consumer.hasFrameOutside(hashesBeforeNavigation)
+                        && consumer.count() > framesBeforeNavigation);
         int loadsHostingBeforeReturn = loadCount("/hosting.html");
         runOnMain(() -> session.openAddress(FIXTURE_BASE + "/hosting.html"));
         waitUntil("counter page restored while hosted",
@@ -875,6 +878,23 @@ public class HostingInstrumentedTest {
 
         synchronized int distinctHashes() {
             return (int) frames.stream().mapToLong(f -> f[1]).distinct().count();
+        }
+
+        synchronized java.util.Set<Long> distinctHashSet() {
+            java.util.Set<Long> hashes = new java.util.HashSet<>();
+            for (long[] frame : frames) {
+                hashes.add(frame[1]);
+            }
+            return hashes;
+        }
+
+        synchronized boolean hasFrameOutside(java.util.Set<Long> knownHashes) {
+            for (long[] frame : frames) {
+                if (!knownHashes.contains(frame[1])) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         synchronized boolean allFramesMatchGeneration(int generation) {

@@ -158,7 +158,7 @@ final class PrivateDisplayHost {
             // Reacquisition after lease loss: the capture thread survived; rearm the listener.
             capturing = true;
             imageReader.setOnImageAvailableListener(this::onImageAvailable, captureHandler);
-            drainPendingImages();
+            scheduleDrain();
             return;
         }
         capturing = true;
@@ -166,17 +166,25 @@ final class PrivateDisplayHost {
         captureThread.start();
         captureHandler = new Handler(captureThread.getLooper());
         imageReader.setOnImageAvailableListener(this::onImageAvailable, captureHandler);
-        drainPendingImages();
+        scheduleDrain();
     }
 
     /**
      * Images queued before the listener was armed do not reliably fire the callback; acquire and
      * close them so the producer cannot stay blocked on a full (maxImages=2) queue and stale
-     * frames are dropped, latest-only.
+     * frames are dropped, latest-only. The drain runs on the capture handler, serialized with
+     * {@link #onImageAvailable} acquisitions, and is bounded.
      */
+    private void scheduleDrain() {
+        if (captureHandler != null) {
+            captureHandler.post(this::drainPendingImages);
+        }
+    }
+
     private void drainPendingImages() {
+        final int maxDrain = 8; // maxImages=2 plus settling headroom; bounded by construction.
         int drained = 0;
-        while (imageReader != null) {
+        while (drained < maxDrain && imageReader != null) {
             Image stale = imageReader.acquireLatestImage();
             if (stale == null) {
                 break;
@@ -334,16 +342,25 @@ final class PrivateDisplayHost {
                 captureElapsedMs, contentHash(plane)));
     }
 
-    /** Packs a stride-padded image buffer into tight rows for {@code copyPixelsFromBuffer}. */
+    /** Packs a stride-padded image plane into tight rows for {@code copyPixelsFromBuffer}. */
     private static ByteBuffer packedRowCopy(Image.Plane plane, int rows, int rowStride,
             int rowBytes) {
         ByteBuffer source = plane.getBuffer().duplicate();
-        final int planeLimit = source.limit(); // Captured before per-row limit mutation.
+        return packRows(source, source.limit(), rows, rowStride, rowBytes);
+    }
+
+    /**
+     * Pure row-packing core (JVM-testable): copies {@code rows} tight {@code rowBytes} rows from a
+     * stride-padded buffer of declared {@code sourceLimit} into a fresh direct buffer. The limit is
+     * captured by the caller because per-row slicing mutates the working buffer's limit.
+     */
+    static ByteBuffer packRows(ByteBuffer source, int sourceLimit, int rows, int rowStride,
+            int rowBytes) {
         ByteBuffer packed = ByteBuffer.allocateDirect(rowBytes * rows);
         for (int y = 0; y < rows; y++) {
             int rowStart = y * rowStride;
-            if (rowStart + rowBytes > planeLimit) {
-                break;
+            if (rowStart + rowBytes > sourceLimit) {
+                break; // Buffer holds a short tail row; packed output stays smaller than requested.
             }
             source.limit(rowStart + rowBytes).position(rowStart);
             packed.put(source);
