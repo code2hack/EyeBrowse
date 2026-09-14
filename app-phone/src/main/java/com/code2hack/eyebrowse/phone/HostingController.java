@@ -104,6 +104,7 @@ final class HostingController {
                     // release/expiry/lifecycle events never move the anchor (R1/R4).
                     lastLeaseRenewElapsedMs = now;
                     lastDemandElapsedMs = now;
+                    idleReleaseCompletedElapsedMs = 0; // Continued demand: evidence re-scoped.
                     wakeLockKeeper.refresh(); // Refresh the bounded platform timeout while live (F9).
                     scheduleIdleReleaseLocked();
                 }
@@ -253,7 +254,8 @@ final class HostingController {
     private HostingController.FrameConsumer frameConsumer;
     private long lastLeaseRenewElapsedMs;
     private long lastDemandElapsedMs; // Last successful demand/readiness; anchors the idle deadline.
-    private long idleReleaseCompletedElapsedMs; // Authoritative idle-release completion observation.
+    private long idleReleaseCompletedElapsedMs; // Idle-release completion, scoped to its cycle.
+    private PrivateDisplayHost idleReleasePendingOwner; // The owner whose release is outstanding.
     private boolean stopRequestedDuringStart;
     private int pendingStartGeneration = -1;
 
@@ -420,6 +422,7 @@ final class HostingController {
         // Never-leased readiness is a real resource-readiness event: it anchors the idle deadline
         // exactly like a successful demand (R1).
         lastDemandElapsedMs = android.os.SystemClock.elapsedRealtime();
+        idleReleaseCompletedElapsedMs = 0; // Fresh readiness: prior completion evidence is stale.
         scheduleIdleReleaseLocked();
         mainHandler.removeCallbacks(watchdog);
         mainHandler.post(watchdog);
@@ -754,6 +757,7 @@ final class HostingController {
         frameConsumer = consumer;
         lastLeaseRenewElapsedMs = now;
         lastDemandElapsedMs = now; // Successful demand anchors the idle deadline (R1).
+        idleReleaseCompletedElapsedMs = 0; // New demand cycle: prior completion evidence is stale.
         wakeLockKeeper.refresh();
         scheduleIdleReleaseLocked();
         return lease;
@@ -810,20 +814,32 @@ final class HostingController {
                         lastDemandElapsedMs));
     }
 
-    /** Immediate bounded release of idle capture resources (voluntary release/expiry paths). */
+    /**
+     * Immediate bounded release of idle capture resources (voluntary release/expiry paths). The
+     * completion evidence is bound to THIS owner/cycle: any prior completion is invalidated here,
+     * and only the bound owner's completion is recorded (an older retiring owner never overwrites
+     * it).
+     */
     private void releaseIdleCaptureResourcesLocked() {
         if (displayHost != null && displayHost.hasLiveCaptureResources()) {
             Log.i(TAG, "idle release gen=" + generation);
+            idleReleasePendingOwner = displayHost;
+            idleReleaseCompletedElapsedMs = 0; // Invalidate any earlier cycle's completion.
             displayHost.releaseCaptureResources();
             if (displayHost.isQuiescent()) {
-                // Inline completion (no capture thread): the authoritative completion timestamp.
+                // Inline completion (no capture thread) of the bound owner: record it.
                 idleReleaseCompletedElapsedMs = android.os.SystemClock.elapsedRealtime();
+                idleReleasePendingOwner = null;
             }
         }
         notifyHostingChanged();
     }
 
-    /** Authoritative idle-release completion observation (diagnostic/test seam); 0 until seen. */
+    /**
+     * Authoritative idle-release completion observation (diagnostic/test seam), scoped to the
+     * current release cycle: 0 until the bound owner completes, invalidated by new demand or
+     * readiness. Consumers must require completion >= their cycle's anchor.
+     */
     synchronized long lastIdleReleaseCompletedElapsedMs() {
         return idleReleaseCompletedElapsedMs;
     }
@@ -858,12 +874,19 @@ final class HostingController {
             boolean changed = false;
             if (displayHost != null && displayHost.evaluateRetirementCompletion()) {
                 changed = true;
-                idleReleaseCompletedElapsedMs = android.os.SystemClock.elapsedRealtime();
+                if (idleReleasePendingOwner == displayHost) {
+                    // Record completion only for the owner this release cycle is waiting on.
+                    idleReleaseCompletedElapsedMs = android.os.SystemClock.elapsedRealtime();
+                    idleReleasePendingOwner = null;
+                }
             }
             for (PrivateDisplayHost host : retiringHosts) {
                 if (host.evaluateRetirementCompletion()) {
                     changed = true;
-                    idleReleaseCompletedElapsedMs = android.os.SystemClock.elapsedRealtime();
+                    if (idleReleasePendingOwner == host) {
+                        idleReleaseCompletedElapsedMs = android.os.SystemClock.elapsedRealtime();
+                        idleReleasePendingOwner = null;
+                    }
                 }
             }
             int before = retiringHosts.size();

@@ -641,11 +641,14 @@ public class HostingInstrumentedTest {
             return snapshot.status.attachment == HostingController.Attachment.PRIVATE_DISPLAY
                     && snapshot.viewAttached;
         });
+        // The privately re-laid-out view now measures the OLD presentation geometry (no lease
+        // existed during the move, so nothing rebuilt): the first demand below must reconcile to
+        // the SAVED Phone viewport (sizeAfterChange), not to this stale private layout.
         CollectingConsumer consumer = new CollectingConsumer();
         HostingController.Lease lease = runOnMainSync(() -> hosting.acquireLease(consumer));
         assertNotNull("lease after geometry reconciliation", lease);
         waitUntil("frames flow at the reconciled geometry", () -> consumer.count() > 0);
-        assertTrue("delivered frames carry the reconciled viewport "
+        assertTrue("delivered frames carry the reconciled (saved Phone) viewport "
                         + sizeAfterChange[0] + "x" + sizeAfterChange[1],
                 consumer.allFramesMatchSize(sizeAfterChange[0], sizeAfterChange[1]));
         assertTrue("delivered pixels show the same document after reconcile",
@@ -1151,11 +1154,36 @@ public class HostingInstrumentedTest {
                 runOnMainSync(hosting::captureResourcesPresent));
         assertEquals("hosting session persists through the demand-free moves",
                 HostingController.State.HOSTING, runOnMainSync(hosting::status).state);
-        // Genuine demand still recreates and delivers (the approved allocation path).
+        // Regression (completion epoch): cycle 1's completion event must not satisfy cycle 2.
+        // The new demand invalidates the recorded completion immediately...
+        long staleCompletion = runOnMainSync(hosting::lastIdleReleaseCompletedElapsedMs);
+        assertTrue("cycle 1 completion was observed", staleCompletion > 0);
         CollectingConsumer consumer = new CollectingConsumer();
         HostingController.Lease lease = runOnMainSync(() -> hosting.acquireLease(consumer));
         assertNotNull("genuine demand recreates the capture surface", lease);
+        assertEquals("new demand invalidates the prior cycle's completion evidence", 0L,
+                runOnMainSync(hosting::lastIdleReleaseCompletedElapsedMs).longValue());
         waitUntil("frames flow after genuine demand", () -> consumer.count() > 0);
+        // ...and cycle 2's own release must produce a completion bound to THIS cycle's anchor
+        // (>= anchor2 rejects the stale event by construction: anchor2 > staleCompletion).
+        long anchor2 = runOnMainSync(hosting::lastDemandAnchorElapsedMs);
+        assertTrue("cycle 2 anchor postdates the stale completion", anchor2 > staleCompletion);
+        runOnMain(lease::release);
+        long cycle2Deadline = anchor2 + HostingPolicy.IDLE_RELEASE_MS;
+        long cycle2Completion = 0;
+        while (SystemClock.elapsedRealtime() < cycle2Deadline + 10_000) {
+            cycle2Completion = runOnMainSync(hosting::lastIdleReleaseCompletedElapsedMs);
+            if (cycle2Completion >= anchor2) {
+                break;
+            }
+            SystemClock.sleep(50);
+        }
+        assertTrue("cycle 2 completion observed for the current release only",
+                cycle2Completion >= anchor2);
+        assertTrue("cycle 2 completion within the exact deadline",
+                cycle2Completion <= cycle2Deadline);
+        assertEquals("capture resources absent after cycle 2 completion", false,
+                runOnMainSync(hosting::captureResourcesPresent));
         runOnMain(lease::release);
         bringMainActivityToFrontForTest();
         tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
