@@ -25,6 +25,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 
 import org.json.JSONObject;
+import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -66,12 +67,16 @@ public class HostingInstrumentedTest {
     private ActivityScenario<MainActivity> scenario;
     private PhoneBrowserSession session;
     private HostingController hosting;
+    private static MilestoneSink milestones;
 
     @Before
     public void setUp() {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         session = PhoneBrowserSession.get(context);
         hosting = HostingController.get(context);
+        if (milestones == null) {
+            milestones = new MilestoneSink(context, System.currentTimeMillis());
+        }
         ensureNotificationPermissionSetupForTest();
         // Independent cases: hosting stopped and the session back to a clean, never-loaded state.
         runOnMain(hosting::stop);
@@ -864,7 +869,8 @@ public class HostingInstrumentedTest {
                 runOnMainSync(hosting::status).state);
         recordDeviceState("after-final-stop");
         memoryMilestone("after-final-stop");
-        dumpHostingEvidence("final capture session");
+        milestones.record("capture acceptance sequence complete");
+        milestones.flushToStream("capture acceptance session");
     }
 
     /** First-frame delivery bound: 2s from eligibility (uptime-based, consumer-side). */
@@ -892,24 +898,14 @@ public class HostingInstrumentedTest {
                                 + "unlock credential, which is never requested or recorded)"
                         : "safely recoverable");
         System.out.println(assessment);
-        HostingEvidence.log(assessment);
+        milestones.record(assessment);
     }
 
-    /** Reads the app-scoped evidence sink into the instrumentation output (bounded). */
-    private void dumpHostingEvidence(String label) {
-        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        java.io.File file = new java.io.File(context.getFilesDir(), "hosting-evidence.log");
-        System.out.println("EVIDENCE_LOG_BEGIN " + label);
-        try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                new java.io.FileReader(file))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                System.out.println("EVIDENCE_LOG " + line);
-            }
-        } catch (java.io.IOException e) {
-            System.out.println("EVIDENCE_LOG_UNAVAILABLE " + e);
+    @AfterClass
+    public static void flushMilestoneSink() {
+        if (milestones != null) {
+            milestones.flushToStream("hosting correction round 2 execution");
         }
-        System.out.println("EVIDENCE_LOG_END");
     }
 
     // -------------------------------------------------------------- utilities
@@ -1247,7 +1243,7 @@ public class HostingInstrumentedTest {
                 + " deviceLocked=" + keyguard.isDeviceLocked()
                 + " keyguardRestricted=" + keyguard.inKeyguardRestrictedInputMode();
         System.out.println(line);
-        HostingEvidence.log(line);
+        milestones.record(line);
     }
 
     /** Same-process memory milestone; no process reset occurs between milestones. */
@@ -1258,6 +1254,6 @@ public class HostingInstrumentedTest {
         String line = "MEMORY_MILESTONE " + label + " nativeHeapMB=" + nativeHeap
                 + " javaUsedMB=" + javaUsed;
         System.out.println(line);
-        HostingEvidence.log(line);
+        milestones.record(line);
     }
 }

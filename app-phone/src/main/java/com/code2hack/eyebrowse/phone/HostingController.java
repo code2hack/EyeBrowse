@@ -304,8 +304,6 @@ final class HostingController {
         state = State.STARTING;
         generation++;
         pendingStartGeneration = generation;
-        HostingEvidence.startNew(appContext);
-        HostingEvidence.log("start gen=" + generation);
         notifyHostingChanged();
         Intent intent = new Intent(appContext, HostingService.class);
         intent.setAction(HostingService.ACTION_START);
@@ -360,8 +358,6 @@ final class HostingController {
         lastViewport = metric;
         reconcileAttachmentAfterReadiness();
         state = State.HOSTING;
-        HostingEvidence.log("hosting active gen=" + generation + " viewport=" + metric.width
-                + "x" + metric.height + "@" + metric.densityDpi + " attachment=" + attachment);
         notifyHostingChanged();
         Log.i(TAG, "hosting active gen=" + generation + " viewport=" + metric.width + "x"
                 + metric.height + "@" + metric.densityDpi + " attachment=" + attachment);
@@ -416,7 +412,6 @@ final class HostingController {
         mainHandler.removeCallbacks(watchdog);
         mainHandler.removeCallbacks(idleRelease);
         Log.i(TAG, "start failed gen=" + generation + " reason=" + reason);
-        HostingEvidence.log("start failed gen=" + generation + " reason=" + reason);
         notifyHostingChanged();
     }
 
@@ -463,7 +458,6 @@ final class HostingController {
         state = State.NOT_HOSTING;
         attachment = Attachment.NONE;
         Log.i(TAG, "stop complete gen=" + generation);
-        HostingEvidence.log("stop complete gen=" + generation);
         notifyHostingChanged();
     }
 
@@ -479,7 +473,6 @@ final class HostingController {
         phoneUiAvailable = true;
         phoneUiActivity = activity;
         phoneUiContainer = container;
-        HostingEvidence.log("phone ui available state=" + state);
         if (state == State.HOSTING && displayHost != null) {
             if (attachment == Attachment.PRIVATE_DISPLAY) {
                 return moveWebViewToPhoneUi(activity, container);
@@ -498,7 +491,6 @@ final class HostingController {
     synchronized @Nullable PhoneBrowserSession.Attachment onPhoneUiHidden(
             @Nullable PhoneBrowserSession.Attachment token) {
         phoneUiAvailable = false;
-        HostingEvidence.log("phone ui hidden state=" + state);
         if (state == State.HOSTING && attachment == Attachment.PHONE_UI
                 && session.isCurrentAttachment(token)) {
             hostOffscreenWithReconciledGeometry();
@@ -516,7 +508,6 @@ final class HostingController {
         phoneUiAvailable = false;
         phoneUiActivity = null;
         phoneUiContainer = null;
-        HostingEvidence.log("phone ui destroyed state=" + state);
         if (state == State.HOSTING && attachment == Attachment.PHONE_UI
                 && session.isCurrentAttachment(token)) {
             hostOffscreenWithReconciledGeometry();
@@ -541,7 +532,6 @@ final class HostingController {
         String sizeError = HostingPolicy.viewportError(metric.width, metric.height);
         if (sizeError != null) {
             failureReason = sizeError;
-            HostingEvidence.log("geometry unsupported: " + sizeError);
             notifyHostingChanged();
             return; // The view stays with the (hidden) Phone UI; the condition is explicit.
         }
@@ -551,13 +541,11 @@ final class HostingController {
                     metric.densityDpi, session);
         } catch (HostingException error) {
             failureReason = error.getMessage();
-            HostingEvidence.log("geometry reconcile failed: " + error.getMessage());
             notifyHostingChanged();
             return;
         }
         displayHost.attachSessionView(session);
         attachment = Attachment.PRIVATE_DISPLAY;
-        HostingEvidence.log("view hosted offscreen " + metric.width + "x" + metric.height);
     }
 
     /**
@@ -633,7 +621,6 @@ final class HostingController {
         displayHost.startCapture(generation,
                 new BoundSink(lease, generation, consumer)); // Bound at acquisition (F1).
         scheduleIdleRelease();
-        HostingEvidence.log("lease acquired gen=" + generation);
         return lease;
     }
 
@@ -664,7 +651,6 @@ final class HostingController {
                     // Liveness lost: revoke (stops new admissions, releases the wake lock) and
                     // anchor the idle window here.
                     Log.i(TAG, "lease expired gen=" + generation);
-                    HostingEvidence.log("lease expired gen=" + generation);
                     revokeLease();
                     scheduleIdleRelease();
                     notifyHostingChanged();
@@ -688,7 +674,6 @@ final class HostingController {
             }
             if (displayHost != null && displayHost.hasLiveCaptureResources()) {
                 Log.i(TAG, "idle release gen=" + generation);
-                HostingEvidence.log("idle release gen=" + generation);
                 displayHost.releaseCaptureResources();
                 notifyHostingChanged();
             }

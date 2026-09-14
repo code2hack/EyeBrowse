@@ -139,7 +139,6 @@ final class PrivateDisplayHost {
             rollbackDisplayAllocation();
             throw new HostingException("platform allocation failed: " + error.getMessage());
         }
-        HostingEvidence.log("display created " + width + "x" + height + "@" + measuredDensityDpi);
     }
 
     /** Rolls back whatever subset of display resources was already allocated. */
@@ -249,7 +248,6 @@ final class PrivateDisplayHost {
             }
         }
         create(serviceContext, newWidth, newHeight, newDensityDpi);
-        HostingEvidence.log("display rebuilt " + newWidth + "x" + newHeight);
     }
 
     /**
@@ -269,7 +267,6 @@ final class PrivateDisplayHost {
         captureReleased = false;
         Log.i(TAG, "startCapture gen=" + hostingGeneration + " reader=" + (imageReader != null)
                 + " threadAlive=" + (captureThread != null));
-        HostingEvidence.log("capture start gen=" + hostingGeneration);
         if (captureThread != null) {
             // Reacquisition after lease loss: the capture thread survived; rearm the listener.
             imageReader.setOnImageAvailableListener(this::onImageAvailable, captureHandler);
@@ -348,7 +345,6 @@ final class PrivateDisplayHost {
         } else {
             teardownCaptureOnCapturePath(); // No capture path exists; inline is race-free.
         }
-        HostingEvidence.log("capture release requested");
     }
 
     /** The owning teardown path: reader close, buffer drop and completion marker, in order. */
@@ -367,7 +363,6 @@ final class PrivateDisplayHost {
             frameBitmap = null;
         }
         teardownComplete = true;
-        HostingEvidence.log("capture teardown complete");
     }
 
     /** Full teardown for Stop: detaches the session view, dismisses, releases the display. */
