@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Second hosting page</title>
+<style>
+  body{font-family:sans-serif;background:#eef4f0;color:#171717;margin:0;padding:16px}
+  h1{font-size:30px;margin:8px 0}
+</style>
+</head>
+<body>
+<h1 id="page-title">Second hosting page</h1>
+<div>load marker: <span id="load-marker"></span></div>
+<p><a id="back-link" href="/hosting.html">Back to capture page</a></p>
+<script>
+var marker = 'L' + Math.floor(Math.random() * 1e9);
+document.getElementById('load-marker').textContent = marker;
+</script>
+</body>
+</html>

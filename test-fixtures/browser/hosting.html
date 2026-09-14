@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hosting capture page</title>
+<style>
+  body{font-family:sans-serif;background:#f6f3ea;color:#171717;margin:0;padding:16px}
+  h1{font-size:30px;margin:8px 0}
+  .counter{font-size:72px;font-weight:700;color:#2F5BD7}
+  input{font-size:20px;padding:12px;width:100%;box-sizing:border-box;margin-top:12px}
+  a{font-size:20px}
+</style>
+</head>
+<body>
+<h1 id="page-title">Hosting capture page</h1>
+<div>load marker: <span id="load-marker"></span></div>
+<div class="counter" id="live-counter">0</div>
+<div><label for="hosting-field">State field <input id="hosting-field" placeholder="state target"></label></div>
+<p><a id="to-two" href="/hosting-two.html">Go to second page</a></p>
+<script>
+var marker = 'L' + Math.floor(Math.random() * 1e9);
+document.getElementById('load-marker').textContent = marker;
+var n = 0;
+var frozen = false;
+setInterval(function () {
+  if (frozen) { return; }
+  n++;
+  document.getElementById('live-counter').textContent = n + ' @ ' + Date.now();
+}, 1000);
+// Test-only fixture setup hook: freeze/resume the autonomous counter without page input.
+window.__eyebrowseFreeze = function (value) { frozen = !!value; };
+</script>
+</body>
+</html>
