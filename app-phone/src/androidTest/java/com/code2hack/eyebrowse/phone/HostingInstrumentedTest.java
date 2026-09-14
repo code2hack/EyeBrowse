@@ -594,7 +594,7 @@ public class HostingInstrumentedTest {
         scenario = ActivityScenario.launch(MainActivity.class);
         openFixture("/storage.html", "localStorage controls");
         assertEquals("site persistence before hosting cycle", storedValue,
-                evaluateJs("localStorage.getItem('fixture-key')"));
+                decode(evaluateJs("localStorage.getItem('fixture-key')")));
         tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
         tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
         onView(withId(R.id.address_input)).perform(click(),
@@ -603,7 +603,7 @@ public class HostingInstrumentedTest {
         waitUntil("storage page reloaded after hosting cycle",
                 () -> "localStorage controls".equals(domText("page-title")));
         assertEquals("site persistence across hosting start/stop", storedValue,
-                evaluateJs("localStorage.getItem('fixture-key')"));
+                decode(evaluateJs("localStorage.getItem('fixture-key')")));
     }
 
     /**
