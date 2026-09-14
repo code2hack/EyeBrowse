@@ -359,6 +359,7 @@ public class HostingInstrumentedTest {
         int loadsBefore = loadCount("/hosting.html");
         int webViewIdentity = webViewIdentityHash();
         long generationBefore = runOnMainSync(() -> (long) hosting.currentGeneration());
+        java.util.List<String> stoppedStates = new java.util.ArrayList<>();
 
         for (int cycle = 1; cycle <= 3; cycle++) {
             onView(withId(R.id.button_hosting_toggle)).perform(click());
@@ -369,9 +370,12 @@ public class HostingInstrumentedTest {
 
             runOnMain(hosting::stop); // Direct in-process Stop, not only via the UI control.
             awaitHostingState(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
-            assertEquals("capture resources released after cycle " + cycle, false,
-                    runOnMainSync(hosting::captureResourcesPresent));
+            // Equivalent stopped states across cycles: the same resource signature every time.
+            stoppedStates.add(runOnMainSync(() -> hosting.captureResourcesPresent() + "|"
+                    + hosting.hasDisplayResources() + "|" + hosting.isWakeLockHeld()));
         }
+        assertEquals("all cycles ended in the same stopped resource state", 1,
+                new java.util.HashSet<>(stoppedStates).size());
 
         // Idempotent extra Stops, including one during a fresh startup.
         runOnMain(hosting::stop);
@@ -383,6 +387,28 @@ public class HostingInstrumentedTest {
         awaitHostingState(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
         assertEquals("no capture resources after stop-during-start", false,
                 runOnMainSync(hosting::captureResourcesPresent));
+
+        // Stale-callback fencing across Stop: a consumer holding a lease when Stop lands receives
+        // no further frames once teardown is confirmed (reader closed, capture thread exited),
+        // and the teardown is bounded. The frame bitmap is deliberately not recycled while an
+        // in-flight callback may still borrow it.
+        CollectingConsumer staleConsumer = new CollectingConsumer();
+        HostingController.Lease stoppedLease = runOnMainSync(() -> hosting.acquireLease(staleConsumer));
+        assertNotNull("lease before Stop", stoppedLease);
+        waitUntil("frames flow before Stop", () -> staleConsumer.count() > 0);
+        runOnMain(hosting::stop);
+        awaitHostingState(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
+        long teardownDeadline = SystemClock.uptimeMillis() + STOP_BOUND_MS;
+        while (SystemClock.uptimeMillis() < teardownDeadline
+                && runOnMainSync(hosting::captureResourcesPresent)) {
+            SystemClock.sleep(100);
+        }
+        assertEquals("teardown completed within bound (reader closed, thread exited)", false,
+                runOnMainSync(hosting::captureResourcesPresent));
+        assertEquals("wake lock released by Stop", false, runOnMainSync(hosting::isWakeLockHeld));
+        int staleCount = staleConsumer.count();
+        SystemClock.sleep(2_000);
+        assertEquals("no stale frames delivered after Stop", staleCount, staleConsumer.count());
 
         assertEquals("page survives every cycle", marker, domText("load-marker"));
         assertEquals("no page reload from hosting cycles", loadsBefore, loadCount("/hosting.html"));

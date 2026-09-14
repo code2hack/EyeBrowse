@@ -244,10 +244,6 @@ final class PhoneBrowserSession {
         return webView;
     }
 
-    boolean isAttachedExternal(ViewGroup container) {
-        return webView != null && webView.getParent() == container;
-    }
-
     /** True when {@code attachment} is still the current owner of the WebView. */
     boolean isCurrentAttachment(Attachment attachment) {
         return attachment != null && attachment == currentAttachment;

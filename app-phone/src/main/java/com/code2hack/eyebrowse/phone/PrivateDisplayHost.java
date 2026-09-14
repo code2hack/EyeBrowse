@@ -76,6 +76,7 @@ final class PrivateDisplayHost {
     private long frameSequence;
     private long lastDeliveryElapsedMs;
     private boolean deliveredAny;
+    private volatile boolean captureThreadExited;
     private volatile boolean capturing;
     private volatile int generation;
     private Bitmap frameBitmap;
@@ -139,10 +140,6 @@ final class PrivateDisplayHost {
         }
     }
 
-    boolean isHostingSessionView(PhoneBrowserSession session) {
-        return presentation != null && session.isAttachedExternal(presentation.container());
-    }
-
     /** Starts (or restarts) frame production for a live consumer; latest-only and throttled. */
     void startCapture(int hostingGeneration, FrameSink sink) {
         if (imageReader == null) {
@@ -162,6 +159,7 @@ final class PrivateDisplayHost {
             return;
         }
         capturing = true;
+        captureThreadExited = false;
         captureThread = new HandlerThread("EyeBrowseHostingCapture");
         captureThread.start();
         captureHandler = new Handler(captureThread.getLooper());
@@ -241,15 +239,29 @@ final class PrivateDisplayHost {
     void releaseCaptureResources() {
         capturing = false;
         frameSink = null;
+        // The reused frame bitmap may be borrowed by an in-flight consumer callback; dropping the
+        // reference (no recycle) leaves reclamation to GC, which is safe for borrowed bitmaps.
         frameBitmap = null;
         if (imageReader != null) {
-            imageReader.close();
+            try {
+                imageReader.close(); // An in-flight acquire sees a closed reader and is caught.
+            } catch (RuntimeException ignored) {
+                // Teardown must not be blocked by a racing acquire.
+            }
             imageReader = null;
+        }
+        if (captureHandler != null) {
+            // Posted before quitSafely: it runs after any pending callback on the same thread and
+            // records actual thread completion without anyone blocking on a join.
+            captureHandler.post(() -> captureThreadExited = true);
         }
         if (captureThread != null) {
             captureThread.quitSafely();
             captureThread = null;
             captureHandler = null;
+            // Deliberately not joined here: joining while the controller monitor is held could
+            // deadlock a delivery callback waiting for that lock. Completion is observable via
+            // {@link #hasCaptureThread()}, which stays true until the marker confirms exit.
         }
     }
 
@@ -288,7 +300,7 @@ final class PrivateDisplayHost {
     }
 
     boolean hasCaptureThread() {
-        return captureThread != null;
+        return captureThread != null || !captureThreadExited;
     }
 
     private void onImageAvailable(ImageReader reader) {

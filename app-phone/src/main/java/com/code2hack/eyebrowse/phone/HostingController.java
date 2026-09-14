@@ -107,6 +107,9 @@ final class HostingController {
     private static final String WAKE_LOCK_TAG = "EyeBrowse:HostingCapture";
     private static final long WATCHDOG_INTERVAL_MS = 1_000;
 
+    /** Plan bound: Start reaches active or explicit failure within 5 seconds of the request. */
+    private static final long START_COMPLETION_TIMEOUT_MS = 5_000;
+
     private static HostingController instance;
 
     static synchronized HostingController get(Context context) {
@@ -119,7 +122,6 @@ final class HostingController {
     private final Context appContext;
     private final PhoneBrowserSession session;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private final HostingPolicy.Clock clock = android.os.SystemClock::elapsedRealtime;
 
     private PrivateDisplayHost displayHost;
     private HostingService hostingService;
@@ -131,6 +133,7 @@ final class HostingController {
     private @Nullable String failureReason;
 
     private Lease lease;
+    private Lease deliveryLease;
     private HostingController.FrameConsumer frameConsumer;
     private long lastLeaseRenewElapsedMs;
     private long lastDemandElapsedMs;
@@ -205,7 +208,7 @@ final class HostingController {
             failStart("service start: " + error.getMessage());
             return true;
         }
-        mainHandler.postDelayed(startTimeout, HostingPolicy.LEASE_TTL_MS + 3_000);
+        mainHandler.postDelayed(startTimeout, START_COMPLETION_TIMEOUT_MS);
         return true;
     }
 
@@ -266,10 +269,6 @@ final class HostingController {
         attachment = Attachment.NONE;
         failureReason = reason;
         mainHandler.removeCallbacks(watchdog);
-    }
-
-    private Runnable startTimeoutCanceller() {
-        return this::onStartTimeout;
     }
 
     // ---------------------------------------------------------------- stop
@@ -372,6 +371,7 @@ final class HostingController {
             }
         }
         lease = new Lease();
+        deliveryLease = lease;
         frameConsumer = consumer;
         lastLeaseRenewElapsedMs = android.os.SystemClock.elapsedRealtime();
         lastDemandElapsedMs = lastLeaseRenewElapsedMs;
@@ -383,8 +383,11 @@ final class HostingController {
     private void deliverFrameIfLive(HostingFrame frame) {
         HostingController.FrameConsumer consumer;
         synchronized (this) {
-            if (lease == null || state != State.HOSTING) {
-                return; // Fenced: stale capture after Stop or replacement.
+            // Fenced on lease IDENTITY (an in-flight frame from a superseded lease must not reach
+            // the replacement's consumer), hosting generation, and state.
+            if (lease == null || lease != deliveryLease || frame.generation != generation
+                    || state != State.HOSTING) {
+                return;
             }
             consumer = frameConsumer;
         }
@@ -398,6 +401,7 @@ final class HostingController {
             lease.markRevoked();
             lease = null;
         }
+        deliveryLease = null;
         frameConsumer = null;
         if (displayHost != null) {
             displayHost.stopCapture();
@@ -408,7 +412,7 @@ final class HostingController {
     // ------------------------------------------------------------- watchdog
 
     private void watchdogTick() {
-        long now = clock.now();
+        long now = android.os.SystemClock.elapsedRealtime();
         synchronized (this) {
             if (state != State.HOSTING) {
                 return;
