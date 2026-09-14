@@ -556,8 +556,9 @@ public class HostingInstrumentedTest {
         // Site persistence across a hosting start/stop cycle (fixture storage page).
         openFixture("/storage.html", "localStorage controls");
         String storedValue = "persist-check-" + SystemClock.uptimeMillis();
-        evaluateJs("localStorage.setItem('fixture-key',"
-                + JSONObject.quote(storedValue) + ");localStorage.getItem('fixture-key')");
+        evaluateJs("(function(){localStorage.setItem('fixture-key',"
+                + JSONObject.quote(storedValue) + ");"
+                + "return localStorage.getItem('fixture-key');})()");
         long generationBefore = runOnMainSync(() -> (long) hosting.currentGeneration());
 
         // Hosting-active recreation: the same live WebView reattaches; hosting generation holds.

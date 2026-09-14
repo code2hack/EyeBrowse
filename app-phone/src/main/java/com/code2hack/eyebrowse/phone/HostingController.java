@@ -255,6 +255,12 @@ final class HostingController {
         this.appContext = appContext;
         this.session = PhoneBrowserSession.get(appContext);
         this.session.addListener(this::onSessionChanged);
+        PowerManager powerManager = (PowerManager) appContext.getSystemService(
+                Context.POWER_SERVICE);
+        this.wakeLockKeeper = new WakeLockKeeper(
+                new PowerManagerHandle(powerManager.newWakeLock(
+                        PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG)),
+                android.os.SystemClock::elapsedRealtime);
     }
 
     // ---------------------------------------------------------------- status
@@ -678,18 +684,6 @@ final class HostingController {
                 notifyHostingChanged();
             }
         }
-    }
-
-    private void ensureWakeLock() {
-        if (wakeLockKeeper == null) {
-            PowerManager powerManager = (PowerManager) appContext.getSystemService(
-                    Context.POWER_SERVICE);
-            wakeLockKeeper = new WakeLockKeeper(
-                    new PowerManagerHandle(powerManager.newWakeLock(
-                            PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG)),
-                    android.os.SystemClock::elapsedRealtime);
-        }
-        wakeLockKeeper.refresh();
     }
 
     private void releaseWakeLock() {
