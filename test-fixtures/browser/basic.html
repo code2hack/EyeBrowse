@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Basic</title>
+<style>body { font: 16px/1.5 sans-serif; margin: 16px; }</style>
+</head>
+<body>
+<h1 id="page-title">Basic page</h1>
+<p>Load marker: <span id="load-marker" class="marker" data-testid="load-marker">{{LOAD_ID}}</span></p>
+<button id="click-button" type="button" style="padding:12px 18px;font-size:17px">Count a click</button>
+<p>Clicks: <span id="click-count" data-testid="click-count">0</span></p>
+<p><a id="link-home" href="/">Back to fixture index</a></p>
+<script>
+  window.fixtureInfo = { loadId: "{{LOAD_ID}}", path: "{{PATH}}" };
+  var clicks = 0;
+  document.getElementById('click-button').addEventListener('click', function () {
+    clicks += 1;
+    document.getElementById('click-count').textContent = String(clicks);
+  });
+</script>
+</body>
+</html>

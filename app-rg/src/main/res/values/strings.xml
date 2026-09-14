@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">EyeBrowse</string>
+    <string name="rg_status">Not connected to Phone</string>
+    <string name="rg_detail">EyeBrowse for Reading Glasses is not available in this version. No page is loaded and no Phone connection is active.</string>
+</resources>

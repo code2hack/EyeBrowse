@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Untrusted HTTPS endpoint</title>
+<style>body { font: 16px/1.5 sans-serif; margin: 16px; }</style>
+</head>
+<body>
+<h1 id="page-title" data-testid="secure-page">Untrusted HTTPS endpoint</h1>
+<p>Load marker: <span id="load-marker" class="marker" data-testid="load-marker">{{LOAD_ID}}</span></p>
+<p>This page uses a self-signed test certificate. If it is ever visible, the app accepted an
+   untrusted certificate, which it must not do.</p>
+<script>window.fixtureInfo = { loadId: "{{LOAD_ID}}", path: "{{PATH}}" };</script>
+</body>
+</html>

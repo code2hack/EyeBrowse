@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Simple glasses glyph inside the adaptive-icon safe zone. -->
+    <path
+        android:fillColor="#F2F4F8"
+        android:pathData="M22,54a12,12 0 1 1 24,0a12,12 0 0 1 -24,0z" />
+    <path
+        android:fillColor="#F2F4F8"
+        android:pathData="M62,54a12,12 0 1 1 24,0a12,12 0 0 1 -24,0z" />
+    <path
+        android:fillColor="#F2F4F8"
+        android:pathData="M46,50h16a3,3 0 0 1 0,6h-16a3,3 0 0 1 0,-6z" />
+</vector>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">EyeBrowse</string>
+
+    <string name="action_back">Back</string>
+    <string name="action_forward">Forward</string>
+    <string name="action_reload">Reload</string>
+    <string name="action_open">Open</string>
+
+    <string name="address_hint">Enter an https:// address</string>
+
+    <string name="status_empty">Enter an address to browse. Pages open in this single tab.</string>
+    <string name="status_recovery">This page is no longer live. The saved address is in the bar above; tap Open to load it again.</string>
+    <string name="status_renderer_gone">The page stopped unexpectedly. The address is still in the bar above; tap Open to load it again.</string>
+    <string name="status_loading">Loading %1$s</string>
+    <string name="status_load_failed">Could not load %1$s</string>
+    <string name="status_blocked">Blocked unsupported address. Only http:// and https:// load here.</string>
+    <string name="status_permission_denied">This site asked for a device permission; EyeBrowse denies camera, microphone, location and file access.</string>
+</resources>

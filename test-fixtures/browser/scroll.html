@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Long scroll</title>
+<style>
+  body { font: 16px/1.5 sans-serif; margin: 16px; }
+  .row { padding: 14px 0; border-bottom: 1px solid #ddd; }
+  #nested-scroller { height: 150px; overflow-y: auto; border: 1px solid #888; padding: 8px; }
+</style>
+</head>
+<body>
+<h1 id="page-title">Long scroll page</h1>
+<p>Load marker: <span id="load-marker" class="marker" data-testid="load-marker">{{LOAD_ID}}</span></p>
+<p>Scroll position: <span id="scroll-y" data-testid="scroll-y">0</span></p>
+<h2>Nested scroller</h2>
+<div id="nested-scroller" data-testid="nested-scroller">
+  <div class="row">nested row 1</div><div class="row">nested row 2</div>
+  <div class="row">nested row 3</div><div class="row">nested row 4</div>
+  <div class="row">nested row 5</div><div class="row">nested row 6</div>
+  <div class="row">nested row 7</div><div class="row">nested row 8</div>
+  <div class="row">nested row 9</div><div class="row">nested row 10</div>
+  <div class="row">nested row 11</div><div class="row">nested row 12</div>
+  <div class="row">nested row 13</div><div class="row">nested row 14</div>
+  <div class="row">nested row 15</div><div class="row">nested row 16</div>
+</div>
+<h2>Document rows</h2>
+<div id="document-rows">
+  <div class="row">row 1</div><div class="row">row 2</div><div class="row">row 3</div>
+  <div class="row">row 4</div><div class="row">row 5</div><div class="row">row 6</div>
+  <div class="row">row 7</div><div class="row">row 8</div><div class="row">row 9</div>
+  <div class="row">row 10</div><div class="row">row 11</div><div class="row">row 12</div>
+  <div class="row">row 13</div><div class="row">row 14</div><div class="row">row 15</div>
+  <div class="row">row 16</div><div class="row">row 17</div><div class="row">row 18</div>
+  <div class="row">row 19</div><div class="row">row 20</div><div class="row">row 21</div>
+  <div class="row">row 22</div><div class="row">row 23</div><div class="row">row 24</div>
+  <div class="row">row 25</div><div class="row">row 26</div><div class="row">row 27</div>
+  <div class="row">row 28</div><div class="row">row 29</div><div class="row">row 30</div>
+  <div class="row">row 31</div><div class="row">row 32</div><div class="row">row 33</div>
+  <div class="row">row 34</div><div class="row">row 35</div><div class="row">row 36</div>
+  <div class="row">row 37</div><div class="row">row 38</div><div class="row">row 39</div>
+  <div class="row">row 40</div>
+</div>
+<p id="scroll-bottom" data-testid="scroll-bottom">Bottom of the document</p>
+<p><a id="link-home" href="/">Back to fixture index</a></p>
+<script>
+  window.fixtureInfo = { loadId: "{{LOAD_ID}}", path: "{{PATH}}" };
+  window.updateScrollY = function () {
+    document.getElementById('scroll-y').textContent = String(Math.round(window.scrollY));
+  };
+  window.addEventListener('scroll', window.updateScrollY, { passive: true });
+</script>
+</body>
+</html>
