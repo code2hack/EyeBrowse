@@ -705,24 +705,33 @@ public class HostingInstrumentedTest {
         });
         recordDeviceState("backgrounded-before-capture");
 
-        // --- Never-leased idle: with no demand ever, capture resources are actually released by
-        // readiness + 30s. The anchor is the AUTHORITATIVE readiness/demand anchor read from the
-        // controller (set inside onServiceReady before it returns), so the deadline below is the
-        // exact plan deadline. Production initiates teardown one lead interval early and the
-        // never-leased path completes inline, so completion lands by the deadline; the assertion
-        // is evaluated AT the deadline with no acceptance margin.
+        // --- Never-leased idle: the authoritative readiness anchor is read from the controller
+        // (set inside onServiceReady before it returns); the plan deadline is anchor+30s EXACTLY.
+        // The 500ms early-initiation lead is production headroom, not a claimed guarantee:
+        // acceptance uses the AUTHORITATIVE completion timestamp recorded on the production
+        // completion path and asserts it <= the exact deadline. A longer diagnostic wait may
+        // expose a late completion but cannot make it pass.
         long readinessAnchor = runOnMainSync(hosting::lastDemandAnchorElapsedMs);
         long neverLeasedDeadline = readinessAnchor + HostingPolicy.IDLE_RELEASE_MS;
-        while (SystemClock.elapsedRealtime() < neverLeasedDeadline
-                && runOnMainSync(hosting::captureResourcesPresent)) {
+        long completion = 0;
+        long diagnosticLimit = neverLeasedDeadline + 10_000;
+        while (SystemClock.elapsedRealtime() < diagnosticLimit) {
+            completion = runOnMainSync(hosting::lastIdleReleaseCompletedElapsedMs);
+            if (completion > 0) {
+                break;
+            }
             SystemClock.sleep(50);
         }
-        assertEquals("never-leased capture resources released by readiness+30s (exact anchor)",
-                false, runOnMainSync(hosting::captureResourcesPresent));
+        assertTrue("idle-release completion was observed on the production path", completion > 0);
+        assertTrue("never-leased completion " + (completion - readinessAnchor)
+                        + "ms after the anchor is within the exact 30s deadline",
+                completion <= neverLeasedDeadline);
+        assertEquals("capture resources absent after the observed completion", false,
+                runOnMainSync(hosting::captureResourcesPresent));
         assertEquals("never-leased hosting session persists", HostingController.State.HOSTING,
                 runOnMainSync(hosting::status).state);
-        memoryMilestone("after-never-leased-idle observedAt="
-                + (SystemClock.elapsedRealtime() - readinessAnchor) + "msAfterExactAnchor");
+        memoryMilestone("after-never-leased-idle completedAt="
+                + (completion - readinessAnchor) + "msAfterExactAnchor");
 
         // --- Lease acquisition (recreates the surface on the surviving display) and first frame
         // measured at CONSUMER delivery, within 2s of eligibility.
@@ -839,23 +848,30 @@ public class HostingInstrumentedTest {
         assertEquals("no reload of the counter page on reacquisition", loadsHostingBeforeReturn + 1,
                 loadCount("/hosting.html"));
 
-        // --- Idle release anchored at the last successful demand: resources are released at
-        // voluntary release (immediately — earlier than the bound is always allowed) and in no
-        // case later than demand + 30s. The anchor is the synchronous final renewal's post-ack
-        // bound (R1/R4): strict, no scheduling margin; the 250ms window is observation
-        // granularity only.
+        // --- Idle release anchored at the last successful demand: voluntary release acts
+        // immediately (earlier than the bound is always allowed) and never later than
+        // demand + 30s. The anchor is the authoritative demand anchor; acceptance below uses the
+        // production completion timestamp against the exact deadline (R1/R4).
         renewal2.stopRenewing();
         runOnMain(lease2::renew); // Synchronous on main; the definitive last successful demand.
         long demandAnchor = runOnMainSync(hosting::lastDemandAnchorElapsedMs); // Authoritative.
         runOnMain(lease2::release);
         memoryMilestone("lease-released-idle-window-start");
         long idleDeadline = demandAnchor + HostingPolicy.IDLE_RELEASE_MS; // Exact plan deadline.
-        while (SystemClock.elapsedRealtime() < idleDeadline
-                && runOnMainSync(hosting::captureResourcesPresent)) {
+        long idleCompletion = 0;
+        long idleDiagnosticLimit = idleDeadline + 10_000;
+        while (SystemClock.elapsedRealtime() < idleDiagnosticLimit) {
+            idleCompletion = runOnMainSync(hosting::lastIdleReleaseCompletedElapsedMs);
+            if (idleCompletion > 0) {
+                break;
+            }
             SystemClock.sleep(50);
         }
-        assertEquals("capture resources released by demand+30s (exact anchor; release itself is"
-                + " immediate and never later than the deadline)", false,
+        assertTrue("idle-release completion was observed on the production path", idleCompletion > 0);
+        assertTrue("post-demand completion " + (idleCompletion - demandAnchor)
+                        + "ms after the anchor is within the exact 30s deadline",
+                idleCompletion <= idleDeadline);
+        assertEquals("capture resources absent after the observed completion", false,
                 runOnMainSync(hosting::captureResourcesPresent));
         assertEquals("display/presentation attachment survives idle release", true,
                 runOnMainSync(hosting::hasDisplayResources));
@@ -989,13 +1005,22 @@ public class HostingInstrumentedTest {
             return snapshot.status.attachment == HostingController.Attachment.PRIVATE_DISPLAY
                     && snapshot.viewAttached;
         });
-        // Wait out the never-leased idle release so the next acquisition must RECREATE the reader.
-        long readyUpperBound = SystemClock.elapsedRealtime();
-        while (runOnMainSync(hosting::captureResourcesPresent)
-                && SystemClock.elapsedRealtime() < readyUpperBound + 40_000) {
-            SystemClock.sleep(250);
+        // Wait out the never-leased idle release against the authoritative anchor/exact deadline
+        // so the next acquisition must RECREATE the reader.
+        long readinessAnchor = runOnMainSync(hosting::lastDemandAnchorElapsedMs);
+        long idleDeadline = readinessAnchor + HostingPolicy.IDLE_RELEASE_MS;
+        long r7Completion = 0;
+        while (SystemClock.elapsedRealtime() < idleDeadline + 10_000) {
+            r7Completion = runOnMainSync(hosting::lastIdleReleaseCompletedElapsedMs);
+            if (r7Completion > 0) {
+                break;
+            }
+            SystemClock.sleep(50);
         }
-        assertEquals("idle release completed before the injection", false,
+        assertTrue("idle release completed before the injection", r7Completion > 0);
+        assertTrue("idle release within the exact deadline before the injection",
+                r7Completion <= idleDeadline);
+        assertEquals("capture resources absent before the injection", false,
                 runOnMainSync(hosting::captureResourcesPresent));
         // Inject the recoverable allocation failure on the recreation path (R7).
         factory.throwOnNextReader = true;

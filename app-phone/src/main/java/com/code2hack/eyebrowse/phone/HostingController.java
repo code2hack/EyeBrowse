@@ -253,6 +253,7 @@ final class HostingController {
     private HostingController.FrameConsumer frameConsumer;
     private long lastLeaseRenewElapsedMs;
     private long lastDemandElapsedMs; // Last successful demand/readiness; anchors the idle deadline.
+    private long idleReleaseCompletedElapsedMs; // Authoritative idle-release completion observation.
     private boolean stopRequestedDuringStart;
     private int pendingStartGeneration = -1;
 
@@ -268,7 +269,7 @@ final class HostingController {
 
     private final Runnable startTimeout = this::onStartTimeout;
     private final Runnable idleRelease = this::runIdleRelease;
-    private boolean retirementRecheckQueued;
+    private final Runnable retirementRecheck = this::evaluateRetirements;
 
     private final Runnable watchdog = new Runnable() {
         @Override
@@ -477,6 +478,7 @@ final class HostingController {
         failureReason = reason;
         mainHandler.removeCallbacks(watchdog);
         mainHandler.removeCallbacks(idleRelease);
+        mainHandler.removeCallbacks(retirementRecheck);
         Log.i(TAG, "start failed gen=" + generation + " reason=" + reason);
         notifyHostingChanged();
     }
@@ -508,6 +510,7 @@ final class HostingController {
         mainHandler.removeCallbacks(watchdog);
         mainHandler.removeCallbacks(idleRelease);
         mainHandler.removeCallbacks(startTimeout);
+        mainHandler.removeCallbacks(retirementRecheck); // Stop ends the hosting recheck scope.
         pendingStartGeneration = -1;
         revokeLease();
         releaseWakeLock();
@@ -705,9 +708,18 @@ final class HostingController {
             // retirement recheck notifies listeners at that point).
             return null;
         }
-        WebViewMetric metric = WebViewMetric.measure(session);
-        if (metric.width <= 0 || metric.height <= 0) {
-            metric = lastViewport; // A hosted/parentless view falls back to the last measurement.
+        // Viewport authority: while the view is attached to the private presentation, its laid-out
+        // dimensions are the OLD private geometry (a layout pass can overwrite them before the
+        // first demand) — the last measured PHONE viewport/density is authoritative for this
+        // transition. On the Phone UI the live measurement is the current geometry.
+        WebViewMetric metric;
+        if (attachment == Attachment.PRIVATE_DISPLAY) {
+            metric = lastViewport;
+        } else {
+            metric = WebViewMetric.measure(session);
+            if (metric.width <= 0 || metric.height <= 0) {
+                metric = lastViewport; // A hosted/parentless view falls back to the last measurement.
+            }
         }
         String sizeError = HostingPolicy.viewportError(metric.width, metric.height);
         if (sizeError != null) {
@@ -803,8 +815,17 @@ final class HostingController {
         if (displayHost != null && displayHost.hasLiveCaptureResources()) {
             Log.i(TAG, "idle release gen=" + generation);
             displayHost.releaseCaptureResources();
+            if (displayHost.isQuiescent()) {
+                // Inline completion (no capture thread): the authoritative completion timestamp.
+                idleReleaseCompletedElapsedMs = android.os.SystemClock.elapsedRealtime();
+            }
         }
         notifyHostingChanged();
+    }
+
+    /** Authoritative idle-release completion observation (diagnostic/test seam); 0 until seen. */
+    synchronized long lastIdleReleaseCompletedElapsedMs() {
+        return idleReleaseCompletedElapsedMs;
     }
 
     /** The anchored deadline callback: initiates teardown early enough to complete by it. */
@@ -837,10 +858,12 @@ final class HostingController {
             boolean changed = false;
             if (displayHost != null && displayHost.evaluateRetirementCompletion()) {
                 changed = true;
+                idleReleaseCompletedElapsedMs = android.os.SystemClock.elapsedRealtime();
             }
             for (PrivateDisplayHost host : retiringHosts) {
                 if (host.evaluateRetirementCompletion()) {
                     changed = true;
+                    idleReleaseCompletedElapsedMs = android.os.SystemClock.elapsedRealtime();
                 }
             }
             int before = retiringHosts.size();
@@ -848,22 +871,21 @@ final class HostingController {
             if (changed || retiringHosts.size() != before) {
                 notifyHostingChanged(); // Start/acquisition may be retried explicitly now.
             }
-            if (!retiringHosts.isEmpty()
-                    || (displayHost != null && !displayHost.isQuiescent())) {
-                scheduleRetirementRecheckLocked();
+            // Follow-up polling only for actual RETIRING work: a healthy ACTIVE owner is never
+            // rechecked, so normal capture schedules nothing (R2/manager follow-up 2).
+            boolean retiringWork = displayHost != null && displayHost.isRetiring();
+            if (!retiringWork) {
+                for (PrivateDisplayHost host : retiringHosts) {
+                    if (host.isRetiring()) {
+                        retiringWork = true;
+                        break;
+                    }
+                }
+            }
+            if (retiringWork) {
+                mainHandler.postDelayed(retirementRecheck, RETIREMENT_RECHECK_MS);
             }
         }
-    }
-
-    private void scheduleRetirementRecheckLocked() {
-        if (retirementRecheckQueued) {
-            return;
-        }
-        retirementRecheckQueued = true;
-        mainHandler.postDelayed(() -> {
-            retirementRecheckQueued = false;
-            evaluateRetirements();
-        }, RETIREMENT_RECHECK_MS);
     }
 
     private boolean retiringHostsQuiescent() {
