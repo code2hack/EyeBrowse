@@ -95,6 +95,16 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "model": "GLM-5.3-Flash-EXL3",
     "name": "Worker-#5",
     "status": "active"
+  },
+  {
+    "role": "Reviewer",
+    "scope": "v0.0.1; issue #5; independent hosting-lifecycle review",
+    "host": "u4090",
+    "runtime": "pi",
+    "id": "01a0a0fc-eaea-77b3-a446-08df61bfc268",
+    "model": "gpt-6-astra",
+    "name": "Reviewer-#5",
+    "status": "active"
   }
 ]
 ```
