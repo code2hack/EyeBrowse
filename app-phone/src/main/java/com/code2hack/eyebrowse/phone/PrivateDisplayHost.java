@@ -15,8 +15,6 @@ import android.view.Display;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
-import androidx.annotation.Nullable;
-
 import java.nio.ByteBuffer;
 import java.util.zip.CRC32;
 
@@ -25,12 +23,28 @@ import java.util.zip.CRC32;
  * surface, showing the existing live WebView through a {@link android.app.Presentation}.
  *
  * <p>This is own-content-only private output on a virtual display, never physical-screen capture.
- * The host owns the capture thread and the latest-only frame production (ImageReader maxImages=2,
- * acquired images closed immediately, delivery throttled to the policy's frame interval). Idle
- * release drops the reader surface and thread while the display/presentation attachment survives;
- * a new surface can be attached later on the same display without any navigation.
  *
- * <p>All entry points run on the main thread; frame callbacks arrive on the capture thread.
+ * <p><b>Ownership model (correction round 2):</b>
+ * <ul>
+ * <li><b>Bound delivery.</b> Each lease hands the capture pipeline an immutable bound sink
+ * (lease token + hosting generation + consumer, created by the controller). Delivery is admitted
+ * once per frame through the controller's lock-free {@link FrameGate} against that token.
+ * Revocation prevents new admissions; an admitted frame may finish delivery to its own consumer
+ * (in-flight borrowed use). The capture path never takes the controller monitor.</li>
+ * <li><b>Native serialization.</b> Acquired Images are acquired, copied, hashed and closed inside
+ * one {@code nativeLock}-serialized section on the capture path; consumers receive only the copied
+ * borrowed bitmap, never a native image, and the image is closed before delivery. Reader
+ * creation, swap and close share the same lock, so no close can invalidate a buffer mid-use, and
+ * a superseded reader's stale callback is recognized and dropped. Main-thread rebuilds briefly
+ * take {@code nativeLock}; the controller monitor is never held while {@code nativeLock} is
+ * held, and delivery runs outside both.</li>
+ * <li><b>Observable teardown.</b> Native capture resources are released on the capture path (a
+ * posted teardown task, or inline when no capture thread exists) and the host object remains
+ * reachable for introspection until that completion marker is set. Nothing joins while holding
+ * the controller monitor.</li>
+ * </ul>
+ *
+ * <p>Entry points other than the capture callback run on the main thread.
  */
 final class PrivateDisplayHost {
 
@@ -40,11 +54,12 @@ final class PrivateDisplayHost {
     /** Test seam: creates the platform resources so failure injection can exercise rollback. */
     interface Factory {
         VirtualDisplay createVirtualDisplay(DisplayManager manager, String name, int width,
-                int height, int densityDpi, Object surface);
+                int height, int densityDpi, Object surface) throws RuntimeException;
 
-        ImageReader createImageReader(int width, int height);
+        ImageReader createImageReader(int width, int height) throws RuntimeException;
 
-        PresentationHost createPresentation(Context context, Display display);
+        PresentationHost createPresentation(Context context, Display display)
+                throws RuntimeException;
     }
 
     /** The shown presentation holding the container the WebView is attached to. */
@@ -56,38 +71,43 @@ final class PrivateDisplayHost {
         FrameLayout container();
     }
 
-    /** Receives frames on the capture thread while the lease is live. */
+    /** Immutable per-lease delivery sink; the capture pipeline invokes exactly this object. */
     interface FrameSink {
         void onFrame(HostingFrame frame);
     }
 
     private final Factory factory;
+    private final Object nativeLock = new Object();
 
-    private VirtualDisplay virtualDisplay;
-    private PresentationHost presentation;
-    private ImageReader imageReader;
-    private HandlerThread captureThread;
-    private Handler captureHandler;
-    private FrameSink frameSink;
+    private VirtualDisplay virtualDisplay;      // main-thread only
+    private PresentationHost presentation;      // main-thread only
+    private ImageReader imageReader;            // nativeLock-protected
+    private HandlerThread captureThread;        // main-thread lifecycle
+    private Handler captureHandler;             // main-thread lifecycle
+    private Thread retainedCaptureThread;       // latest capture thread, for isAlive() introspection
+    private FrameSink frameSink;                // volatile: swapped from main, read on capture path
     private int width;
     private int height;
+    private int densityDpi;
 
-    // Capture-side state, touched on the capture thread.
+    // Capture-path state.
     private long frameSequence;
     private long lastDeliveryElapsedMs;
     private boolean deliveredAny;
-    private volatile boolean captureThreadExited;
-    private volatile boolean capturing;
-    private volatile int generation;
-    private Bitmap frameBitmap;
+    private Bitmap frameBitmap;                 // nativeLock-protected
+    private volatile boolean captureActive;
+    private volatile boolean captureReleased;   // release requested; no further admissions/copying
+    private volatile boolean teardownComplete = true;
+    private volatile int captureGeneration;     // hosting generation stamped into produced frames
 
     PrivateDisplayHost(Factory factory) {
         this.factory = factory;
     }
 
     /**
-     * Creates the display, presentation and reader for the measured viewport. Throws {@link
-     * HostingException} with the failure reason; the caller rolls back partial resources.
+     * Creates the display, presentation and reader for the measured viewport. Recoverable
+     * platform failures are converted to {@link HostingException} after rolling back the partial
+     * allocations; the caller records the failure. Throws {@link HostingException} otherwise.
      */
     void create(Context serviceContext, int measuredWidth, int measuredHeight, int measuredDensityDpi)
             throws HostingException {
@@ -97,27 +117,54 @@ final class PrivateDisplayHost {
         }
         this.width = measuredWidth;
         this.height = measuredHeight;
-
-        imageReader = factory.createImageReader(width, height);
-        if (imageReader == null) {
-            throw new HostingException("image reader creation failed");
-        }
-
-        DisplayManager displayManager =
-                (DisplayManager) serviceContext.getSystemService(Context.DISPLAY_SERVICE);
-        int flags = DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY
-                | DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION;
-        virtualDisplay = factory.createVirtualDisplay(displayManager, DISPLAY_NAME, width, height,
-                measuredDensityDpi, imageReader.getSurface());
-        if (virtualDisplay == null || virtualDisplay.getDisplay() == null) {
-            throw new HostingException("virtual display creation failed");
-        }
-
+        this.densityDpi = measuredDensityDpi;
         try {
+            imageReader = factory.createImageReader(width, height);
+            if (imageReader == null) {
+                throw new HostingException("image reader creation failed");
+            }
+            DisplayManager displayManager =
+                    (DisplayManager) serviceContext.getSystemService(Context.DISPLAY_SERVICE);
+            virtualDisplay = factory.createVirtualDisplay(displayManager, DISPLAY_NAME, width,
+                    height, measuredDensityDpi, imageReader.getSurface());
+            if (virtualDisplay == null || virtualDisplay.getDisplay() == null) {
+                throw new HostingException("virtual display creation failed");
+            }
             presentation = factory.createPresentation(serviceContext, virtualDisplay.getDisplay());
             presentation.show();
+        } catch (HostingException error) {
+            rollbackDisplayAllocation();
+            throw error;
         } catch (RuntimeException error) {
-            throw new HostingException("presentation: " + error.getMessage());
+            rollbackDisplayAllocation();
+            throw new HostingException("platform allocation failed: " + error.getMessage());
+        }
+        HostingEvidence.log("display created " + width + "x" + height + "@" + measuredDensityDpi);
+    }
+
+    /** Rolls back whatever subset of display resources was already allocated. */
+    private void rollbackDisplayAllocation() {
+        synchronized (nativeLock) {
+            if (imageReader != null) {
+                try {
+                    imageReader.close();
+                } catch (RuntimeException ignored) {
+                    // Rollback best effort; no capture thread exists yet.
+                }
+                imageReader = null;
+            }
+        }
+        if (virtualDisplay != null) {
+            virtualDisplay.release();
+            virtualDisplay = null;
+        }
+        if (presentation != null) {
+            try {
+                presentation.dismiss();
+            } catch (RuntimeException ignored) {
+                // Rollback best effort.
+            }
+            presentation = null;
         }
     }
 
@@ -126,11 +173,7 @@ final class PrivateDisplayHost {
         if (presentation == null || session.view() == null) {
             return;
         }
-        session.attachExternal(presentation.container(), presentationContainerContext());
-    }
-
-    private Context presentationContainerContext() {
-        return presentation.container().getContext();
+        session.attachExternal(presentation.container(), presentation.container().getContext());
     }
 
     /** Moves the session WebView out of the presentation container (stays alive, parentless). */
@@ -140,29 +183,103 @@ final class PrivateDisplayHost {
         }
     }
 
-    /** Starts (or restarts) frame production for a live consumer; latest-only and throttled. */
-    void startCapture(int hostingGeneration, FrameSink sink) {
-        if (imageReader == null) {
+    /**
+     * Ensures a capture surface for {@code desiredWidth}×{@code desiredHeight}: a matching live
+     * reader is kept, a missing reader is created on the surviving display, and a differing
+     * geometry triggers a full display/presentation rebuild without navigation (the caller
+     * reattaches the session view afterwards). Throws {@link HostingException} on failure.
+     */
+    void ensureCaptureSurface(Context serviceContext, int desiredWidth, int desiredHeight,
+            int desiredDensityDpi, PhoneBrowserSession session) throws HostingException {
+        String sizeError = HostingPolicy.viewportError(desiredWidth, desiredHeight);
+        if (sizeError != null) {
+            throw new HostingException(sizeError);
+        }
+        synchronized (nativeLock) {
+            if (imageReader != null && width == desiredWidth && height == desiredHeight) {
+                return;
+            }
+        }
+        if (imageReader == null && width == desiredWidth && height == desiredHeight) {
+            // Same geometry, surface recreated after an idle release — no presentation change.
+            ImageReader reader = factory.createImageReader(width, height);
+            if (reader == null) {
+                throw new HostingException("image reader creation failed");
+            }
+            synchronized (nativeLock) {
+                try {
+                    virtualDisplay.setSurface(reader.getSurface());
+                } catch (RuntimeException error) {
+                    reader.close();
+                    throw new HostingException("surface reattach failed: " + error.getMessage());
+                }
+                imageReader = reader;
+            }
             return;
         }
-        generation = hostingGeneration;
-        frameSink = sink;
+        // Differing geometry: reconcile to the last measured Phone content viewport by rebuilding
+        // the private display/presentation/reader at the new size, without navigation.
+        rebuildAtSize(serviceContext, desiredWidth, desiredHeight, desiredDensityDpi, session);
+    }
+
+    /** Full rebuild of display, presentation and reader at a new measured geometry. */
+    private void rebuildAtSize(Context serviceContext, int newWidth, int newHeight,
+            int newDensityDpi, PhoneBrowserSession session) throws HostingException {
+        detachSessionView(session); // The live view leaves the old container; the document stays.
+        if (presentation != null) {
+            try {
+                presentation.dismiss();
+            } catch (RuntimeException ignored) {
+                // Teardown continues.
+            }
+            presentation = null;
+        }
+        if (virtualDisplay != null) {
+            virtualDisplay.release();
+            virtualDisplay = null;
+        }
+        synchronized (nativeLock) {
+            if (imageReader != null) {
+                try {
+                    imageReader.close();
+                } catch (RuntimeException ignored) {
+                    // Serialized with any in-flight capture-path use; safe to close here.
+                }
+                imageReader = null;
+            }
+        }
+        create(serviceContext, newWidth, newHeight, newDensityDpi);
+        HostingEvidence.log("display rebuilt " + newWidth + "x" + newHeight);
+    }
+
+    /**
+     * Starts (or restarts) frame production for a live consumer through the caller's bound sink;
+     * latest-only and throttled. The sink is retained as-is: delivery identity lives in the sink,
+     * not in a reassigned callback.
+     */
+    void startCapture(int hostingGeneration, FrameSink boundSink) {
+        if (imageReader == null || boundSink == null) {
+            return;
+        }
+        frameSink = boundSink;
         frameSequence = 0;
         deliveredAny = false;
+        captureGeneration = hostingGeneration;
+        captureActive = true;
+        captureReleased = false;
         Log.i(TAG, "startCapture gen=" + hostingGeneration + " reader=" + (imageReader != null)
                 + " threadAlive=" + (captureThread != null));
+        HostingEvidence.log("capture start gen=" + hostingGeneration);
         if (captureThread != null) {
             // Reacquisition after lease loss: the capture thread survived; rearm the listener.
-            capturing = true;
             imageReader.setOnImageAvailableListener(this::onImageAvailable, captureHandler);
             scheduleDrain();
             return;
         }
-        capturing = true;
-        captureThreadExited = false;
         captureThread = new HandlerThread("EyeBrowseHostingCapture");
         captureThread.start();
         captureHandler = new Handler(captureThread.getLooper());
+        retainedCaptureThread = captureThread;
         imageReader.setOnImageAvailableListener(this::onImageAvailable, captureHandler);
         scheduleDrain();
     }
@@ -170,8 +287,8 @@ final class PrivateDisplayHost {
     /**
      * Images queued before the listener was armed do not reliably fire the callback; acquire and
      * close them so the producer cannot stay blocked on a full (maxImages=2) queue and stale
-     * frames are dropped, latest-only. The drain runs on the capture handler, serialized with
-     * {@link #onImageAvailable} acquisitions, and is bounded.
+     * frames are dropped, latest-only. Runs on the capture handler, serialized with callback
+     * acquisitions, and is bounded.
      */
     private void scheduleDrain() {
         if (captureHandler != null) {
@@ -182,90 +299,78 @@ final class PrivateDisplayHost {
     private void drainPendingImages() {
         final int maxDrain = 8; // maxImages=2 plus settling headroom; bounded by construction.
         int drained = 0;
-        while (drained < maxDrain && imageReader != null) {
-            Image stale = imageReader.acquireLatestImage();
-            if (stale == null) {
-                break;
+        while (drained < maxDrain) {
+            Image stale;
+            synchronized (nativeLock) {
+                if (imageReader == null) {
+                    break;
+                }
+                stale = imageReader.acquireLatestImage();
+                if (stale == null) {
+                    break;
+                }
             }
-            stale.close();
-            drained++;
+            try {
+                drained++;
+            } finally {
+                stale.close();
+            }
         }
         if (drained > 0) {
             Log.i(TAG, "drained " + drained + " stale capture image(s)");
         }
     }
 
-    /**
-     * Recreates the capture reader/surface on the surviving display after an idle release, without
-     * any navigation or attachment change. Returns {@code false} when the platform refuses.
-     */
-    boolean recreateCaptureSurface(int recreateWidth, int recreateHeight) {
-        if (virtualDisplay == null || imageReader != null || captureThread != null) {
-            return imageReader != null;
-        }
-        if (recreateWidth != width || recreateHeight != height) {
-            return false; // The display geometry is fixed at creation; report, never resize.
-        }
-        ImageReader reader = factory.createImageReader(width, height);
-        if (reader == null) {
-            return false;
-        }
-        try {
-            virtualDisplay.setSurface(reader.getSurface());
-        } catch (RuntimeException error) {
-            Log.w(TAG, "surface reattach failed", error);
-            reader.close();
-            return false;
-        }
-        imageReader = reader;
-        return true;
-    }
-
-    /** Stops frame delivery; the reader stays until idle release or teardown. */
+    /** Stops frame delivery; native resources stay until the owning teardown path releases them. */
     void stopCapture() {
-        capturing = false;
+        captureActive = false;
         frameSink = null;
     }
 
     boolean isCapturing() {
-        return capturing && imageReader != null;
+        return captureActive && hasReader();
     }
 
     /**
-     * Idle release: closes the reader and its surface, quits the capture thread and drops cached
-     * frame buffers. The virtual display and presentation (the browser attachment) remain; a later
-     * {@link #startCapture} recreates the surface on the same display without navigation.
+     * Releases the capture reader/surface/thread. With a live capture thread the native close
+     * executes on that thread after all pending callbacks (serialized by nativeLock and the
+     * handler queue); without one it executes inline. The host object stays introspectable until
+     * {@link #isTeardownComplete()} confirms the marker; nothing joins under a controller monitor.
      */
     void releaseCaptureResources() {
-        capturing = false;
+        captureActive = false;
         frameSink = null;
-        // The reused frame bitmap may be borrowed by an in-flight consumer callback; dropping the
-        // reference (no recycle) leaves reclamation to GC, which is safe for borrowed bitmaps.
-        frameBitmap = null;
-        if (imageReader != null) {
-            try {
-                imageReader.close(); // An in-flight acquire sees a closed reader and is caught.
-            } catch (RuntimeException ignored) {
-                // Teardown must not be blocked by a racing acquire.
-            }
-            imageReader = null;
-        }
-        if (captureHandler != null) {
-            // Posted before quitSafely: it runs after any pending callback on the same thread and
-            // records actual thread completion without anyone blocking on a join.
-            captureHandler.post(() -> captureThreadExited = true);
-        }
-        if (captureThread != null) {
-            captureThread.quitSafely();
+        if (captureThread != null && captureHandler != null) {
+            captureHandler.post(this::teardownCaptureOnCapturePath);
+            captureThread.quitSafely(); // Pending callbacks and the teardown task run first.
             captureThread = null;
             captureHandler = null;
-            // Deliberately not joined here: joining while the controller monitor is held could
-            // deadlock a delivery callback waiting for that lock. Completion is observable via
-            // {@link #hasCaptureThread()}, which stays true until the marker confirms exit.
+        } else {
+            teardownCaptureOnCapturePath(); // No capture path exists; inline is race-free.
         }
+        HostingEvidence.log("capture release requested");
     }
 
-    /** Full teardown for Stop: detaches the session view, dismisses, releases everything. */
+    /** The owning teardown path: reader close, buffer drop and completion marker, in order. */
+    private void teardownCaptureOnCapturePath() {
+        synchronized (nativeLock) {
+            if (imageReader != null) {
+                try {
+                    imageReader.close();
+                } catch (RuntimeException ignored) {
+                    // Serialized with capture-path use; a platform refusal must not block teardown.
+                }
+                imageReader = null;
+            }
+            // The reused frame bitmap may be borrowed by a completed delivery; dropping the
+            // reference (no recycle) leaves reclamation to GC, which is safe for borrowed bitmaps.
+            frameBitmap = null;
+        }
+        teardownComplete = true;
+        HostingEvidence.log("capture teardown complete");
+    }
+
+    /** Full teardown for Stop: detaches the session view, dismisses, releases the display. */
     void release(PhoneBrowserSession session) {
         stopCapture();
         if (session != null) {
@@ -279,14 +384,15 @@ final class PrivateDisplayHost {
             }
             presentation = null;
         }
-        releaseCaptureResources();
         if (virtualDisplay != null) {
             virtualDisplay.release();
             virtualDisplay = null;
         }
+        releaseCaptureResources();
     }
 
     // Resource introspection used by tests and cleanup evidence.
+
     boolean hasDisplay() {
         return virtualDisplay != null;
     }
@@ -296,42 +402,70 @@ final class PrivateDisplayHost {
     }
 
     boolean hasReader() {
-        return imageReader != null;
+        synchronized (nativeLock) {
+            return imageReader != null;
+        }
     }
 
-    boolean hasCaptureThread() {
-        return captureThread != null || !captureThreadExited;
+    /**
+     * True while any live capture resource remains: an open reader, a still-running capture
+     * thread, or teardown that has been requested but has not yet completed. Never reports a
+     * phantom resource for capture that never started (thread liveness is observed, not inferred
+     * from flags).
+     */
+    boolean hasLiveCaptureResources() {
+        if (hasReader()) {
+            return true;
+        }
+        Thread thread = retainedCaptureThread;
+        if (thread != null && thread.isAlive()) {
+            return true;
+        }
+        return !teardownComplete;
+    }
+
+    /** Completion marker for the requested capture teardown. */
+    boolean isTeardownComplete() {
+        return teardownComplete;
     }
 
     private void onImageAvailable(ImageReader reader) {
-        Image image = null;
-        try {
-            image = reader.acquireLatestImage();
+        final FrameSink sink = frameSink; // Read once; swaps happen only from the main thread.
+        if (!captureActive || sink == null) {
+            return; // Latest-only: nothing is acquired while delivery is not live.
+        }
+        HostingFrame frame = null;
+        synchronized (nativeLock) {
+            if (captureReleased || reader != imageReader) {
+                return; // Stale callback for a closed or superseded reader.
+            }
+            Image image = reader.acquireLatestImage();
             if (image == null) {
                 return;
             }
             long nowElapsed = SystemClock.elapsedRealtime();
-            FrameSink sink = frameSink;
-            if (!capturing || sink == null) {
-                return; // Latest-only: stale buffers are dropped by closing the image.
+            try {
+                if (deliveredAny && HostingPolicy.frameThrottled(nowElapsed, lastDeliveryElapsedMs)) {
+                    return;
+                }
+                deliveredAny = true;
+                lastDeliveryElapsedMs = nowElapsed;
+                frame = copyFrame(image, nowElapsed);
+            } catch (RuntimeException error) {
+                Log.w(TAG, "hosting frame capture failed", error);
+            } finally {
+                image.close(); // The native image never escapes the copy scope.
             }
-            if (deliveredAny && HostingPolicy.frameThrottled(nowElapsed, lastDeliveryElapsedMs)) {
-                return;
-            }
-            deliveredAny = true;
-            lastDeliveryElapsedMs = nowElapsed;
-            deliverFrame(image, sink, nowElapsed);
-        } catch (RuntimeException error) {
-            Log.w(TAG, "hosting frame capture failed", error);
-        } finally {
-            if (image != null) {
-                image.close();
-            }
+        }
+        if (frame != null) {
+            // Admission and consumer invocation happen outside nativeLock; the sink's bound
+            // identity fences superseded leases without taking any monitor.
+            sink.onFrame(frame);
         }
     }
 
-    /** Copies the acquired image into the reused frame bitmap and hands it to the sink. */
-    private void deliverFrame(Image image, FrameSink sink, long captureElapsedMs) {
+    /** Copies the acquired image into the reused borrowed bitmap (nativeLock held by caller). */
+    private HostingFrame copyFrame(Image image, long captureElapsedMs) {
         Image.Plane plane = image.getPlanes()[0];
         int rowStride = plane.getRowStride();
         int rowBytes = width * plane.getPixelStride();
@@ -339,7 +473,7 @@ final class PrivateDisplayHost {
                 ? plane.getBuffer()
                 : packedRowCopy(plane, height, rowStride, rowBytes);
         if (packed == null) {
-            return;
+            return null;
         }
         if (frameBitmap == null || frameBitmap.getWidth() != width
                 || frameBitmap.getHeight() != height) {
@@ -350,8 +484,8 @@ final class PrivateDisplayHost {
         }
         packed.rewind();
         frameBitmap.copyPixelsFromBuffer(packed);
-        sink.onFrame(new HostingFrame(frameBitmap, width, height, generation, ++frameSequence,
-                captureElapsedMs, contentHash(plane)));
+        return new HostingFrame(frameBitmap, width, height, captureGeneration, ++frameSequence,
+                captureElapsedMs, contentHash(plane));
     }
 
     /** Packs a stride-padded image plane into tight rows for {@code copyPixelsFromBuffer}. */
@@ -387,8 +521,7 @@ final class PrivateDisplayHost {
         ByteBuffer source = plane.getBuffer().duplicate();
         int rowStride = plane.getRowStride();
         int rowBytes = width * plane.getPixelStride();
-        int rows = height;
-        for (int y = 0; y < rows; y++) {
+        for (int y = 0; y < height; y++) {
             int rowStart = y * rowStride;
             if (rowStart + rowBytes > source.limit()) {
                 break;

@@ -169,20 +169,10 @@ public final class MainActivity extends ComponentActivity {
     protected void onStart() {
         super.onStart();
         Log.i("EyeBrowseHost", "activity onStart " + identityHash());
-        HostingController.Status hostingStatus = hosting.status();
-        if (hostingStatus.state == HostingController.State.HOSTING
-                && hostingStatus.attachment == HostingController.Attachment.PRIVATE_DISPLAY) {
-            // A hosting presentation owns the view while backgrounded; returning Phone UI takes it
-            // back and receives the fresh ownership token.
-            PhoneBrowserSession.Attachment token = hosting.moveWebViewToPhoneUi(this, webContainer);
-            if (token != null) {
-                attachment = token;
-            }
-        } else if (session.view() != null && session.view().getParent() != webContainer) {
-            // The resuming Activity takes the view from wherever it lives (parentless after a
-            // backgrounded Stop, or held by a finishing Activity in transition ordering).
-            attachment = session.attach(this, webContainer);
-        }
+        // UI availability is tracked through STARTING so delayed service readiness reconciles;
+        // the controller decides between reattach-from-presentation, parentless reattach, and
+        // no-op, and returns the ownership token this Activity must keep.
+        attachment = hosting.onPhoneUiAvailable(this, webContainer, attachment);
     }
 
     @Override
@@ -190,15 +180,11 @@ public final class MainActivity extends ComponentActivity {
         super.onStop();
         Log.i("EyeBrowseHost", "activity onStop " + identityHash() + " finishing=" + isFinishing());
         session.flushCookies();
-        // While hosting, a backgrounding Activity hands the live WebView to the private
-        // presentation. A finishing Activity keeps its token: its onDestroy path decides, because
-        // system transition ordering can run another Activity's onStart before this onStop.
-        HostingController.Status hostingStatus = hosting.status();
-        if (!isFinishing() && hostingStatus.state == HostingController.State.HOSTING
-                && hostingStatus.attachment == HostingController.Attachment.PHONE_UI) {
-            hosting.moveWebViewToPrivateDisplay(attachment);
-            attachment = null;
-        }
+        // Hidden Phone UI: during HOSTING the live view moves offscreen with reconciled geometry;
+        // during STARTING the transition is deferred and service readiness reconciles. A finishing
+        // Activity keeps its token for the destroy path (system transition ordering can run
+        // another Activity's onStart before this onStop).
+        attachment = hosting.onPhoneUiHidden(attachment);
     }
 
     @Override

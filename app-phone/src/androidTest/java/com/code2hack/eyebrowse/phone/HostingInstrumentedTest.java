@@ -6,14 +6,16 @@ import static androidx.test.espresso.action.ViewActions.replaceText;
 import static androidx.test.espresso.matcher.ViewMatchers.withId;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import android.app.KeyguardManager;
 import android.content.Context;
+import android.graphics.Color;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
 import android.media.ImageReader;
+import android.os.PowerManager;
 import android.os.SystemClock;
 import android.view.View;
 import android.webkit.WebView;
@@ -21,25 +23,30 @@ import android.webkit.WebView;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
-import androidx.core.content.ContextCompat;
 
 import org.json.JSONObject;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 
 /**
- * Focused hosting-lifecycle instrumentation: the same live System WebView survives explicit
- * Start/Stop and the Phone UI ↔ private presentation attachment moves without reload, losing field
- * state or WebView identity.
+ * Focused hosting-lifecycle instrumentation (correction round 2).
  *
- * <p>Evidence boundaries: activation uses the real Start/Stop controls through the ordinary view
- * pipeline; page reads and fixture field setup use {@link WebView#evaluateJavascript} (fixture
+ * <p>Evidence boundaries: activation uses the real Start/Stop controls through single verified
+ * system-pipeline taps (bounded direct-callback activation is a separately labeled diagnostic);
+ * page reads and fixture field/storage setup use {@link WebView#evaluateJavascript} (fixture
  * setup, not typing evidence); backgrounding uses {@code moveTaskToBack}, which proves the
- * Activity lifecycle path but is not a physical Home press or secure-lock observation.
+ * Activity lifecycle path but is not a physical Home press or secure-lock observation. Delivered
+ * pixels are sampled per frame in the consumer callback so content correlation uses the actually
+ * delivered bitmap, and state/clock/resource milestones are persisted app-scoped while produced
+ * (not from a rotating logcat tail).
  */
 @RunWith(AndroidJUnit4.class)
 public class HostingInstrumentedTest {
@@ -50,6 +57,11 @@ public class HostingInstrumentedTest {
     private static final long START_BOUND_MS = 5_000;
     private static final long STOP_BOUND_MS = 5_000;
     private static final long TIMEOUT_MS = 20_000;
+
+    /** Fixture page background colors, used for delivered-pixel content correlation. */
+    private static final int CAPTURE_PAGE_COLOR = Color.parseColor("#f6f3ea");
+    private static final int SECOND_PAGE_COLOR = Color.parseColor("#2e5f8a");
+    private static final int PIXEL_CHANNEL_TOLERANCE = 24;
 
     private ActivityScenario<MainActivity> scenario;
     private PhoneBrowserSession session;
@@ -63,7 +75,8 @@ public class HostingInstrumentedTest {
         ensureNotificationPermissionSetupForTest();
         // Independent cases: hosting stopped and the session back to a clean, never-loaded state.
         runOnMain(hosting::stop);
-        waitUntilMain("hosting stopped", () -> hosting.status().state == HostingController.State.NOT_HOSTING);
+        waitUntilMain("hosting stopped",
+                () -> hosting.status().state == HostingController.State.NOT_HOSTING);
         scenario = ActivityScenario.launch(MainActivity.class);
         scenario.onActivity(activity -> session.resetForTest());
     }
@@ -82,7 +95,8 @@ public class HostingInstrumentedTest {
             System.out.println("NOTIF_PERM_BEFORE granted=" + granted);
         }
         if (!granted) {
-            runShellCommandForTest("pm grant com.code2hack.eyebrowse.phone android.permission.POST_NOTIFICATIONS");
+            runShellCommandForTest(
+                    "pm grant com.code2hack.eyebrowse.phone android.permission.POST_NOTIFICATIONS");
             if (!notificationPermissionGranted()) {
                 fail("POST_NOTIFICATIONS setup did not take effect; not proceeding as verified success");
             }
@@ -101,21 +115,23 @@ public class HostingInstrumentedTest {
     private boolean notificationPermissionGranted() {
         // In-process check of the target app's runtime permission state: deterministic
         // GRANTED/DENIED, no shell-output parsing that could misread failure as denial.
-        return ContextCompat.checkSelfPermission(InstrumentationRegistry.getInstrumentation()
-                .getTargetContext(), android.Manifest.permission.POST_NOTIFICATIONS)
+        return androidx.core.content.ContextCompat.checkSelfPermission(
+                InstrumentationRegistry.getInstrumentation().getTargetContext(),
+                android.Manifest.permission.POST_NOTIFICATIONS)
                 == android.content.pm.PackageManager.PERMISSION_GRANTED;
     }
 
-    /** Shell-launched return to the foreground reusing the existing instance (REORDER_TO_FRONT). */
+    /** Shell-launched return to the foreground reusing the existing instance (SINGLE_TOP). */
     private void bringMainActivityToFrontForTest() {
-        // 0x20000000 = FLAG_ACTIVITY_REORDER_TO_FRONT: no duplicate Activity is created.
-        runShellCommandForTest("am start -f 0x20000000 -n com.code2hack.eyebrowse.phone/.MainActivity");
+        runShellCommandForTest(
+                "am start -f 0x20000000 -n com.code2hack.eyebrowse.phone/.MainActivity");
     }
 
     private void runShellCommandForTest(String command) {
         try {
-            android.os.ParcelFileDescriptor descriptor = InstrumentationRegistry.getInstrumentation()
-                    .getUiAutomation().executeShellCommand(command);
+            android.os.ParcelFileDescriptor descriptor =
+                    InstrumentationRegistry.getInstrumentation().getUiAutomation()
+                            .executeShellCommand(command);
             descriptor.close();
         } catch (RuntimeException | java.io.IOException ignored) {
             // Proceed: callers verify the observable effect instead of the command result.
@@ -124,9 +140,11 @@ public class HostingInstrumentedTest {
 
     private String runShellCommandWithOutputForTest(String command) {
         try {
-            android.os.ParcelFileDescriptor descriptor = InstrumentationRegistry.getInstrumentation()
-                    .getUiAutomation().executeShellCommand(command);
-            try (java.io.InputStream in = new java.io.FileInputStream(descriptor.getFileDescriptor())) {
+            android.os.ParcelFileDescriptor descriptor =
+                    InstrumentationRegistry.getInstrumentation().getUiAutomation()
+                            .executeShellCommand(command);
+            try (java.io.InputStream in = new java.io.FileInputStream(
+                    descriptor.getFileDescriptor())) {
                 java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
                 byte[] buffer = new byte[8192];
                 int read;
@@ -161,18 +179,16 @@ public class HostingInstrumentedTest {
     }
 
     /**
-     * ONE actual tap on the real hosting control via the codebase's validated instrumentation input
-     * route (explicit screen coordinates, {@code sendPointerSync}, touchscreen source), after
-     * verified readiness: focused window, laid-out visible button inside the window on the default
-     * display, and a bounded post-transition settle. No retry — an unchanged state after the tap is
-     * uncertain delivery and fails with diagnosis. A test-only touch observer on the button records
+     * ONE actual tap on the real hosting control via the codebase's validated instrumentation
+     * input route (explicit screen coordinates, {@code sendPointerSync}, touchscreen source),
+     * after verified readiness: focused window, laid-out visible button inside the window on the
+     * default display, and a bounded post-transition settle. No retry — an unchanged state after
+     * the tap is uncertain delivery and fails with diagnosis. A test-only touch observer records
      * whether the window received the injected events at all.
      */
     private void tapHostingToggleOnce(HostingController.State expectedAfter, long boundMs) {
         awaitWindowFocusForTest();
-        // Bounded transition settle BEFORE readiness: coordinates and focus must be observed as of
-        // the tap moment, not across the settle delay. Nothing has been sent yet; this is not a retry.
-        SystemClock.sleep(800);
+        SystemClock.sleep(800); // Transition settle BEFORE readiness: coordinates as of the tap.
         AtomicReference<int[]> centerRef = new AtomicReference<>();
         AtomicReference<String> diagnosis = new AtomicReference<>();
         scenario.onActivity(activity -> {
@@ -242,8 +258,7 @@ public class HostingInstrumentedTest {
     /**
      * Labeled DIAGNOSTIC, not UI-journey evidence: the hosting toggle's own click listener is wired
      * and functional when invoked directly. This isolates product-listener defects from input-
-     * injection quirks; it never substitutes the actual Start/Stop tap journey, which lives in the
-     * {@code ...UiJourney} tests using single verified taps.
+     * injection quirks; it never substitutes the actual Start/Stop tap journey.
      */
     @Test
     public void hostingToggleListenerWiredDirectCallbackDiagnostic() throws Exception {
@@ -289,8 +304,6 @@ public class HostingInstrumentedTest {
         assertEquals(marker, domText("load-marker"));
         assertEquals("continuity-value", readFieldValue());
 
-        // Return the same Activity instance to the foreground; moveToState(RESUMED) cannot
-        // foreground a task that moveTaskToBack sent behind (verified on device).
         bringMainActivityToFrontForTest();
         waitUntil("webview back on phone ui", () -> {
             HostViewSnapshot snapshot = hostViewSnapshot();
@@ -329,8 +342,8 @@ public class HostingInstrumentedTest {
         // Finish is not Stop: the host keeps running and the page stays live. Where the view sits
         // (this Activity's successor may already have taken it) is transition-ordered; the host
         // state, generation and document are the invariants here.
-        waitUntilMain("host intact after activity finish", () ->
-                hosting.status().state == HostingController.State.HOSTING);
+        waitUntilMain("host intact after activity finish",
+                () -> hosting.status().state == HostingController.State.HOSTING);
         long generationAfterFinish = runOnMainSync(() -> (long) hosting.currentGeneration());
         assertEquals("hosting outlives the Activity", generationBefore + 1, generationAfterFinish);
         assertEquals("the hosted page is still the same live document", marker,
@@ -351,10 +364,27 @@ public class HostingInstrumentedTest {
         assertEquals(marker, domText("load-marker"));
     }
 
-    /** Repeated Start/Stop cycles keep the page; repeated and out-of-band Stops are idempotent. */
+    /**
+     * Repeated Start/Stop cycles keep the page, history and WebView identity; equivalent stopped
+     * states, deterministic Stop-during-STARTING, stale-callback fencing after bounded teardown.
+     */
     @Test
     public void startStopCyclesKeepPageAndRepeatedStopIsIdempotent() throws Exception {
         openFixture("/hosting.html", "Hosting capture page");
+        // Representative history before hosting: navigation the hosting lifecycle must preserve.
+        onView(withId(R.id.address_input)).perform(click(),
+                replaceText(FIXTURE_BASE + "/hosting-two.html"));
+        onView(withId(R.id.button_open)).perform(click());
+        waitUntil("second page for history", () ->
+                "Second hosting page".equals(domText("page-title")));
+        onView(withId(R.id.address_input)).perform(click(),
+                replaceText(FIXTURE_BASE + "/hosting.html"));
+        onView(withId(R.id.button_open)).perform(click());
+        waitUntil("back on the capture page", () ->
+                "Hosting capture page".equals(domText("page-title")));
+        final boolean historyBefore = runOnMainSync(session::canGoBack);
+        assertTrue("representative history exists before hosting", historyBefore);
+
         String marker = domText("load-marker");
         int loadsBefore = loadCount("/hosting.html");
         int webViewIdentity = webViewIdentityHash();
@@ -375,24 +405,23 @@ public class HostingInstrumentedTest {
                     + hosting.hasDisplayResources() + "|" + hosting.isWakeLockHeld()));
         }
         assertEquals("all cycles ended in the same stopped resource state", 1,
-                new java.util.HashSet<>(stoppedStates).size());
+                new HashSet<>(stoppedStates).size());
 
-        // Idempotent extra Stops, including one during a fresh startup.
-        runOnMain(hosting::stop);
+        // Deterministic Stop-during-STARTING: start() sets STARTING synchronously on the main
+        // thread; the assertion observes that exact state before Stop cancels it.
+        runOnMain(hosting::start);
+        assertEquals("stop-during-start exercises STARTING", HostingController.State.STARTING,
+                runOnMainSync(hosting::status).state);
         runOnMain(hosting::stop);
         awaitHostingState(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
 
-        onView(withId(R.id.button_hosting_toggle)).perform(click());
-        runOnMain(hosting::stop); // Stop while STARTING must still end bounded and clean.
+        // Idempotent extra Stops.
+        runOnMain(hosting::stop);
+        runOnMain(hosting::stop);
         awaitHostingState(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
-        assertEquals("no capture resources after stop-during-start", false,
-                runOnMainSync(hosting::captureResourcesPresent));
 
         // Stale-callback fencing across Stop: a consumer holding a lease when Stop lands receives
-        // no further frames once teardown is confirmed (reader closed, capture thread exited),
-        // and the teardown is bounded. The frame bitmap is deliberately not recycled while an
-        // in-flight callback may still borrow it. The app is backgrounded first so the live view
-        // is actually hosted: a foregrounded presentation is empty and produces no frames.
+        // no further frames once teardown is confirmed (reader closed, capture thread exited).
         onView(withId(R.id.button_hosting_toggle)).perform(click());
         awaitHostingState(HostingController.State.HOSTING, START_BOUND_MS);
         scenario.onActivity(activity -> activity.moveTaskToBack(true));
@@ -402,7 +431,8 @@ public class HostingInstrumentedTest {
                     && snapshot.viewAttached;
         });
         CollectingConsumer staleConsumer = new CollectingConsumer();
-        HostingController.Lease stoppedLease = runOnMainSync(() -> hosting.acquireLease(staleConsumer));
+        HostingController.Lease stoppedLease =
+                runOnMainSync(() -> hosting.acquireLease(staleConsumer));
         assertNotNull("lease before Stop", stoppedLease);
         waitUntil("frames flow before Stop", () -> staleConsumer.count() > 0);
         runOnMain(hosting::stop);
@@ -419,18 +449,20 @@ public class HostingInstrumentedTest {
         SystemClock.sleep(2_000);
         assertEquals("no stale frames delivered after Stop", staleCount, staleConsumer.count());
 
+        assertEquals("representative history survives the hosting lifecycle",
+                historyBefore, runOnMainSync(session::canGoBack));
         assertEquals("page survives every cycle", marker, domText("load-marker"));
         assertEquals("no page reload from hosting cycles", loadsBefore, loadCount("/hosting.html"));
         assertEquals("same live WebView instance", webViewIdentity, webViewIdentityHash());
     }
 
-    /** Injected resource-creation failures roll back partial state bounded and idempotently. */
+    /** Injected null and thrown platform allocation failures roll back bounded and idempotently. */
     @Test
     public void partialAllocationFailuresRollBackBounded() throws Exception {
         openFixture("/hosting.html", "Hosting capture page");
         PrivateDisplayHost.Factory platform = new PrivateDisplayHost.PlatformFactory();
 
-        // Failure 1: virtual display creation refuses; the already-created reader must be released.
+        // Failure 1: virtual display creation returns null; the created reader must be released.
         long generationBefore = runOnMainSync(() -> (long) hosting.currentGeneration());
         hosting.setResourceFactoryForTest(new PrivateDisplayHost.Factory() {
             @Override
@@ -457,7 +489,7 @@ public class HostingInstrumentedTest {
         assertEquals("display failure released display resources", false,
                 runOnMainSync(hosting::hasDisplayResources));
 
-        // Failure 2: image reader creation refuses.
+        // Failure 2: image reader creation THROWS a recoverable platform exception (F8).
         hosting.setResourceFactoryForTest(new PrivateDisplayHost.Factory() {
             @Override
             public VirtualDisplay createVirtualDisplay(DisplayManager manager, String name,
@@ -468,7 +500,7 @@ public class HostingInstrumentedTest {
 
             @Override
             public ImageReader createImageReader(int width, int height) {
-                return null; // Injected allocation failure.
+                throw new IllegalStateException("injected platform allocation failure");
             }
 
             @Override
@@ -479,9 +511,9 @@ public class HostingInstrumentedTest {
         });
         onView(withId(R.id.button_hosting_toggle)).perform(click());
         awaitStartupOutcome(generationBefore + 2);
-        assertEquals("reader failure rolled back capture resources", false,
+        assertEquals("thrown failure rolled back capture resources", false,
                 runOnMainSync(hosting::captureResourcesPresent));
-        assertEquals("reader failure released display resources", false,
+        assertEquals("thrown failure released display resources", false,
                 runOnMainSync(hosting::hasDisplayResources));
 
         // Restored factory: ordinary start/stop still works and the page never was disturbed.
@@ -510,15 +542,139 @@ public class HostingInstrumentedTest {
     }
 
     /**
-     * The bounded background-capture acceptance core: 120 seconds of active offscreen capture on
-     * the real Phone with a live in-process lease, content correlation through the autonomous
-     * fixture counter, in-process browser-action navigation while hosted, lease loss/reacquisition,
-     * the 30-second idle release and the final Stop — with device-state and memory milestones
-     * recorded at each boundary. Frame hashes cover every valid pixel (no sampling), so stale or
-     * repeated surfaces cannot masquerade as fresh output.
+     * Hosting-active recreation, renderer interruption and site persistence: recreation with the
+     * host live keeps generation/WebView/document; a renderer loss interrupts hosting and
+     * requires the explicit restart; persisted site data survives hosting start/stop.
+     */
+    @Test
+    public void hostingRecreationInterruptionAndPersistenceKeepSessionAndData() throws Exception {
+        // Site persistence across a hosting start/stop cycle (fixture storage page).
+        openFixture("/storage.html", "localStorage controls");
+        String storedValue = "persist-check-" + SystemClock.uptimeMillis();
+        evaluateJs("localStorage.setItem('fixture-key',"
+                + JSONObject.quote(storedValue) + ");localStorage.getItem('fixture-key')");
+        long generationBefore = runOnMainSync(() -> (long) hosting.currentGeneration());
+
+        // Hosting-active recreation: the same live WebView reattaches; hosting generation holds.
+        openFixture("/hosting.html", "Hosting capture page");
+        String marker = domText("load-marker");
+        int webViewIdentity = webViewIdentityHash();
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
+        scenario.recreate();
+        waitUntil("recreated activity reattached the hosted page", () -> {
+            HostViewSnapshot snapshot = hostViewSnapshot();
+            return snapshot.status.state == HostingController.State.HOSTING
+                    && snapshot.status.attachment == HostingController.Attachment.PHONE_UI
+                    && snapshot.viewAttached;
+        });
+        assertEquals("recreation keeps the hosting generation", generationBefore + 1,
+                (long) runOnMainSync(() -> (long) hosting.currentGeneration()));
+        assertEquals("same live WebView instance across recreation", webViewIdentity,
+                webViewIdentityHash());
+        assertEquals("document preserved across hosting-active recreation", marker,
+                domText("load-marker"));
+
+        // Renderer interruption while hosting: explicit interruption, no automatic replay.
+        runOnMain(session::simulateProcessRestartForTest);
+        waitUntil("hosting interrupted after renderer loss", () -> {
+            HostingController.Status status = hosting.status();
+            return status.state == HostingController.State.NOT_HOSTING
+                    && status.failureReason != null;
+        });
+        assertEquals("interruption reason recorded", HostingController.State.NOT_HOSTING,
+                runOnMainSync(hosting::status).state);
+
+        // The persisted site value survives the hosting start/stop cycle on the restored session.
+        scenario = ActivityScenario.launch(MainActivity.class);
+        openFixture("/storage.html", "localStorage controls");
+        assertEquals("site persistence before hosting cycle", storedValue,
+                evaluateJs("localStorage.getItem('fixture-key')"));
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
+        onView(withId(R.id.address_input)).perform(click(),
+                replaceText(FIXTURE_BASE + "/storage.html"));
+        onView(withId(R.id.button_open)).perform(click());
+        waitUntil("storage page reloaded after hosting cycle",
+                () -> "localStorage controls".equals(domText("page-title")));
+        assertEquals("site persistence across hosting start/stop", storedValue,
+                evaluateJs("localStorage.getItem('fixture-key')"));
+    }
+
+    /**
+     * A safe app-scoped window change while hosting reconciles the private geometry to the last
+     * measured Phone content viewport (frames at the new size, same document, no reload) and the
+     * exact page state is restored when the window returns.
+     */
+    @Test
+    public void hostingWindowChangeReconcilesGeometryWithExactRestoration() throws Exception {
+        openFixture("/hosting.html", "Hosting capture page");
+        String marker = domText("load-marker");
+        setFieldValue("geometry-value");
+        int loadsBefore = loadCount("/hosting.html");
+        int[] sizeBefore = currentWebViewSize();
+        long generationBefore = runOnMainSync(() -> (long) hosting.currentGeneration());
+
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
+        // App-scoped window change (reversible; no global display override): recreation applies it.
+        scenario.onActivity(activity -> activity.setRequestedOrientation(
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE));
+        waitUntil("window changed while hosting", () -> {
+            int[] size = currentWebViewSize();
+            return size[0] != sizeBefore[0] || size[1] != sizeBefore[1];
+        });
+        int[] sizeAfterChange = currentWebViewSize();
+
+        scenario.onActivity(activity -> activity.moveTaskToBack(true));
+        waitUntil("hosted offscreen at the reconciled geometry", () -> {
+            HostViewSnapshot snapshot = hostViewSnapshot();
+            return snapshot.status.attachment == HostingController.Attachment.PRIVATE_DISPLAY
+                    && snapshot.viewAttached;
+        });
+        CollectingConsumer consumer = new CollectingConsumer();
+        HostingController.Lease lease = runOnMainSync(() -> hosting.acquireLease(consumer));
+        assertNotNull("lease after geometry reconciliation", lease);
+        waitUntil("frames flow at the reconciled geometry", () -> consumer.count() > 0);
+        assertTrue("delivered frames carry the reconciled viewport "
+                        + sizeAfterChange[0] + "x" + sizeAfterChange[1],
+                consumer.allFramesMatchSize(sizeAfterChange[0], sizeAfterChange[1]));
+        assertTrue("delivered pixels show the same document after reconcile",
+                consumer.allFramesNearColor(CAPTURE_PAGE_COLOR));
+        assertEquals("no reload from geometry reconciliation", loadsBefore,
+                loadCount("/hosting.html"));
+        assertEquals(marker, domText("load-marker"));
+        runOnMain(lease::release);
+
+        // Exact restoration.
+        bringMainActivityToFrontForTest();
+        waitUntil("webview back on phone ui", () -> {
+            HostViewSnapshot snapshot = hostViewSnapshot();
+            return snapshot.status.attachment == HostingController.Attachment.PHONE_UI
+                    && snapshot.viewAttached;
+        });
+        scenario.onActivity(activity -> activity.setRequestedOrientation(
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED));
+        waitUntil("window restored", () -> {
+            int[] size = currentWebViewSize();
+            return size[0] == sizeBefore[0] && size[1] == sizeBefore[1];
+        });
+        assertEquals(marker, domText("load-marker"));
+        assertEquals("geometry-value", readFieldValue());
+        assertEquals("no reload across the window round trip", loadsBefore,
+                loadCount("/hosting.html"));
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
+    }
+
+    /**
+     * The bounded background-capture acceptance core (corrected round 2): never-leased idle
+     * anchored at readiness, first frame at CONSUMER delivery ≤2s from eligibility, delivered-
+     * pixel content correlation, ≥3 changing frames per 10s, 120s active offscreen capture,
+     * production stop ≤6s TOTAL after the last renewal, wake-lock release in the same bound,
+     * idle release by demand+30s, and final Stop — with device/lock facts and resource milestones
+     * persisted app-scoped while produced.
      */
     @Test
     public void backgroundCaptureMeetsLivenessContentIdleAndStopBounds() throws Exception {
+        recordLockRecoverabilityAssessment();
         openFixture("/hosting.html", "Hosting capture page");
         String marker = domText("load-marker");
         int loadsHosting = loadCount("/hosting.html");
@@ -529,32 +685,42 @@ public class HostingInstrumentedTest {
         tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
         assertEquals(generationBefore + 1,
                 (long) runOnMainSync(() -> (long) hosting.currentGeneration()));
+        long readyElapsed = SystemClock.elapsedRealtime();
         scenario.onActivity(activity -> activity.moveTaskToBack(true));
         waitUntil("webview hosted offscreen", () -> {
             HostViewSnapshot snapshot = hostViewSnapshot();
             return snapshot.status.attachment == HostingController.Attachment.PRIVATE_DISPLAY
                     && snapshot.viewAttached;
         });
-        assertEquals("no reload while hosting started", loadsHosting,
-                loadCount("/hosting.html"));
         recordDeviceState("backgrounded-before-capture");
 
-        // --- Lease acquisition, first-frame bound and frame metadata.
+        // --- Never-leased idle: with no demand ever, capture resources are actually released by
+        // readiness + 30s (scheduled one-shot; 1.5s scheduling margin is measurement, not target).
+        long neverLeasedDeadline = readyElapsed + HostingPolicy.IDLE_RELEASE_MS + 1_500;
+        while (SystemClock.elapsedRealtime() < neverLeasedDeadline
+                && runOnMainSync(hosting::captureResourcesPresent)) {
+            SystemClock.sleep(500);
+        }
+        assertEquals("never-leased capture resources released by readiness+30s", false,
+                runOnMainSync(hosting::captureResourcesPresent));
+        assertEquals("never-leased hosting session persists", HostingController.State.HOSTING,
+                runOnMainSync(hosting::status).state);
+        memoryMilestone("after-never-leased-idle");
+
+        // --- Lease acquisition (recreates the surface on the surviving display) and first frame
+        // measured at CONSUMER delivery, within 2s of eligibility.
         CollectingConsumer consumer = new CollectingConsumer();
-        long acquireElapsed = SystemClock.elapsedRealtime();
+        long eligibleUptime = SystemClock.uptimeMillis();
         HostingController.Lease lease = runOnMainSync(() -> hosting.acquireLease(consumer));
         assertNotNull("lease must be acquirable while hosting", lease);
         LeaseRenewal renewal = new LeaseRenewal(lease);
         renewal.start();
-        waitUntil("first offscreen frame", () -> consumer.count() > 0);
-        long firstFrameDelayMs = consumer.captureElapsedAt(0) - acquireElapsed;
-        assertTrue("first frame within 2s under ready page/live consumer: " + firstFrameDelayMs
-                + "ms", firstFrameDelayMs <= 2_000);
+        waitUntil("first delivered frame", () -> consumer.count() > 0);
+        long firstDeliveryMs = consumer.deliveryUptimeAt(0) - eligibleUptime;
+        assertTrue("first current-token frame at consumer delivery within 2s: " + firstDeliveryMs
+                + "ms", firstFrameDelayIsValid(firstDeliveryMs));
         int expectedGeneration = (int) (generationBefore + 1);
-        int[] expectedSize = runOnMainSync(() -> {
-            android.webkit.WebView view = session.view();
-            return new int[]{view.getWidth(), view.getHeight()};
-        });
+        int[] expectedSize = currentWebViewSize();
         assertTrue("frame carries the hosting generation",
                 consumer.allFramesMatchGeneration(expectedGeneration));
         assertTrue("frame dimensions match the measured viewport",
@@ -563,7 +729,8 @@ public class HostingInstrumentedTest {
         assertTrue("wake lock is held while the lease is live",
                 runOnMainSync(hosting::isWakeLockHeld));
 
-        // --- Content correlation: frozen+blurred page produces no frames; resuming the counter does.
+        // --- Content correlation: frozen+blurred page produces no frames; resuming the counter
+        // does; delivered pixels match the displayed page's own background color.
         evaluateJs("window.__eyebrowseFreeze(true)");
         SystemClock.sleep(3_000); // Let the render pipeline drain the last invalidations.
         int frozenCount = consumer.count();
@@ -579,33 +746,35 @@ public class HostingInstrumentedTest {
         assertTrue("at least 3 content-changing frames in a 10s window (got "
                 + (consumer.distinctHashes() - distinctBefore) + ")",
                 consumer.distinctHashes() - distinctBefore >= 3);
+        assertTrue("delivered pixels show the counter page",
+                consumer.latestFrameNearColor(CAPTURE_PAGE_COLOR));
 
-        // --- In-process browser-action navigation while hosted offscreen: to the static second
-        // page (proves the hosted view tracks navigation), then back to the counter page so active
-        // capture continues for the 120-second window. The correlation baseline is taken
-        // immediately before the navigation: the post-navigation frame must carry content hashes
-        // never seen before it, correlating the frame with the second page's new content.
+        // --- In-process browser-action navigation while hosted: delivered pixels must identify
+        // the deterministic second-page content, then the counter page again (stale-output
+        // negative case: no second-page pixels after the return settles).
         int loadsTwoBefore = loadCount("/hosting-two.html");
-        final java.util.Set<Long> hashesBeforeNavigation = consumer.distinctHashSet();
-        final int framesBeforeNavigation = consumer.count();
         runOnMain(() -> session.openAddress(FIXTURE_BASE + "/hosting-two.html"));
         waitUntil("second page loaded while hosted",
                 () -> "Second hosting page".equals(domText("page-title")));
         assertEquals("navigation load recorded once", loadsTwoBefore + 1,
                 loadCount("/hosting-two.html"));
         int loadsTwoAfter = loadsTwoBefore + 1;
-        waitUntil("frame with never-before-seen content after navigation", () ->
-                consumer.hasFrameOutside(hashesBeforeNavigation)
-                        && consumer.count() > framesBeforeNavigation);
+        waitUntil("delivered pixels show the second page", () ->
+                consumer.latestFrameNearColor(SECOND_PAGE_COLOR));
         int loadsHostingBeforeReturn = loadCount("/hosting.html");
         runOnMain(() -> session.openAddress(FIXTURE_BASE + "/hosting.html"));
         waitUntil("counter page restored while hosted",
                 () -> "Hosting capture page".equals(domText("page-title")));
+        waitUntil("delivered pixels return to the counter page", () ->
+                consumer.latestFrameNearColor(CAPTURE_PAGE_COLOR));
+        SystemClock.sleep(2_000); // Stale-output negative window.
+        assertTrue("no second-page pixels after returning (stale output not replayed)",
+                consumer.recentFramesNearColor(CAPTURE_PAGE_COLOR, 2_000));
 
         // --- Hold the live lease until 120 seconds of active capture have elapsed.
-        long firstFrameElapsed = consumer.captureElapsedAt(0);
+        long firstDeliveryElapsed = consumer.deliveryElapsedAt(0);
         waitUntil("120s of active offscreen capture",
-                () -> consumer.latestCaptureElapsed() - firstFrameElapsed >= 120_000,
+                () -> consumer.latestCaptureElapsed() - firstDeliveryElapsed >= 120_000,
                 140_000);
         distinctBefore = consumer.distinctHashes();
         windowStart = SystemClock.elapsedRealtime();
@@ -618,16 +787,20 @@ public class HostingInstrumentedTest {
         recordDeviceState("after-120s-active-capture");
         memoryMilestone("after-120s-active-capture");
 
-        // --- Lease loss: stop renewing; liveness expires 5s after the last renewal and production
-        // must stop within the 6s bound, with the wake lock released.
+        // --- Lease loss: production stops within 6s TOTAL of the last successful renewal (5s TTL
+        // + <=1s expiry detection), and the wake lock releases in the same bound.
         long lastRenewElapsed = renewal.stopRenewing();
-        waitUntil("capture stopped after lease expiry", () ->
-                SystemClock.elapsedRealtime() - consumer.latestCaptureElapsed() > 2_500);
-        assertTrue("no frame later than 6s after liveness loss",
-                consumer.latestCaptureElapsed()
-                        <= lastRenewElapsed + HostingPolicy.LEASE_TTL_MS + 6_000);
-        waitUntil("wake lock released after liveness loss",
-                () -> !runOnMainSync(hosting::isWakeLockHeld));
+        waitUntil("capture stopped after lease expiry",
+                () -> SystemClock.elapsedRealtime() - consumer.latestCaptureElapsed() > 1_000);
+        assertTrue("no frame later than 6s total after the last renewal",
+                consumer.latestCaptureElapsed() <= lastRenewElapsed + 6_000);
+        long wakeDeadline = lastRenewElapsed + 6_000;
+        while (SystemClock.elapsedRealtime() < wakeDeadline
+                && runOnMainSync(hosting::isWakeLockHeld)) {
+            SystemClock.sleep(100);
+        }
+        assertEquals("wake lock released within 6s of the last renewal", false,
+                runOnMainSync(hosting::isWakeLockHeld));
 
         // --- Reacquisition while the reader still exists: frames resume without new resources.
         CollectingConsumer reacquired = new CollectingConsumer();
@@ -643,18 +816,18 @@ public class HostingInstrumentedTest {
         assertEquals("no reload of the counter page on reacquisition", loadsHostingBeforeReturn + 1,
                 loadCount("/hosting.html"));
 
-        // --- Idle release: drop the lease; after 30s without demand the capture resources go while
-        // the display/presentation attachment and the hosting session remain.
+        // --- Idle release anchored at the last successful demand: resources actually released by
+        // demand + 30s (1.5s scheduling margin is measurement, not target).
         renewal2.stopRenewing();
         runOnMain(lease2::release);
+        long demandElapsed = SystemClock.elapsedRealtime();
         memoryMilestone("lease-released-idle-window-start");
-        long idleDeadline = SystemClock.uptimeMillis()
-                + HostingPolicy.IDLE_RELEASE_MS + 10_000;
-        while (SystemClock.uptimeMillis() < idleDeadline
+        long idleDeadline = demandElapsed + HostingPolicy.IDLE_RELEASE_MS + 1_500;
+        while (SystemClock.elapsedRealtime() < idleDeadline
                 && runOnMainSync(hosting::captureResourcesPresent)) {
-            SystemClock.sleep(1_000);
+            SystemClock.sleep(500);
         }
-        assertEquals("capture resources released after 30s idle", false,
+        assertEquals("capture resources released by demand+30s", false,
                 runOnMainSync(hosting::captureResourcesPresent));
         assertEquals("display/presentation attachment survives idle release", true,
                 runOnMainSync(hosting::hasDisplayResources));
@@ -691,9 +864,62 @@ public class HostingInstrumentedTest {
                 runOnMainSync(hosting::status).state);
         recordDeviceState("after-final-stop");
         memoryMilestone("after-final-stop");
+        dumpHostingEvidence("final capture session");
+    }
+
+    /** First-frame delivery bound: 2s from eligibility (uptime-based, consumer-side). */
+    private boolean firstFrameDelayIsValid(long deliveryDelayMs) {
+        return deliveryDelayMs >= 0 && deliveryDelayMs <= 2_000;
+    }
+
+    /**
+     * Records the contemporaneous interactive/keyguard/device-secure/recovery facts that ground
+     * the display-off/lock coverage decision, app-scoped, while produced.
+     */
+    private void recordLockRecoverabilityAssessment() {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        PowerManager power = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        KeyguardManager keyguard = (KeyguardManager) context.getSystemService(
+                Context.KEYGUARD_SERVICE);
+        String assessment = "LOCK_ASSESSMENT interactive=" + power.isInteractive()
+                + " deviceLocked=" + keyguard.isDeviceLocked()
+                + " keyguardRestricted=" + keyguard.inKeyguardRestrictedInputMode()
+                + " deviceSecure=" + keyguard.isDeviceSecure()
+                + " keyguardSecure=" + keyguard.isKeyguardSecure()
+                + " => displayOffLockExercise="
+                + (keyguard.isDeviceSecure()
+                        ? "NOT safely recoverable unattended (returning requires the Owner's "
+                                + "unlock credential, which is never requested or recorded)"
+                        : "safely recoverable");
+        System.out.println(assessment);
+        HostingEvidence.log(assessment);
+    }
+
+    /** Reads the app-scoped evidence sink into the instrumentation output (bounded). */
+    private void dumpHostingEvidence(String label) {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        java.io.File file = new java.io.File(context.getFilesDir(), "hosting-evidence.log");
+        System.out.println("EVIDENCE_LOG_BEGIN " + label);
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                new java.io.FileReader(file))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                System.out.println("EVIDENCE_LOG " + line);
+            }
+        } catch (java.io.IOException e) {
+            System.out.println("EVIDENCE_LOG_UNAVAILABLE " + e);
+        }
+        System.out.println("EVIDENCE_LOG_END");
     }
 
     // -------------------------------------------------------------- utilities
+
+    private int[] currentWebViewSize() {
+        return runOnMainSync(() -> {
+            WebView view = session.view();
+            return view == null ? new int[]{0, 0} : new int[]{view.getWidth(), view.getHeight()};
+        });
+    }
 
     private void openFixture(String path, String expectedTitle) throws Exception {
         String url = FIXTURE_BASE + path;
@@ -703,7 +929,6 @@ public class HostingInstrumentedTest {
         try {
             waitUntil("fixture page " + path, () -> expectedTitle.equals(domText("page-title")));
         } catch (AssertionError failure) {
-            // Rich one-line diagnosis: where the session thinks the browser is.
             HostingController.Status status = runOnMainSync(hosting::status);
             fail(failure.getMessage() + " (displayUrl=" + runOnMainSync(session::displayUrl)
                     + " loading=" + runOnMainSync(session::isLoading) + " error="
@@ -819,9 +1044,7 @@ public class HostingInstrumentedTest {
     }
 
     private String readFieldValue() {
-        String result = evaluateJs(
-                "document.getElementById('hosting-field').value");
-        return decode(result);
+        return decode(evaluateJs("document.getElementById('hosting-field').value"));
     }
 
     private void setFieldValue(String value) {
@@ -885,26 +1108,33 @@ public class HostingInstrumentedTest {
     }
 
     /**
-     * Collects frame metadata (never bitmaps) from the capture thread. Hashes are computed by the
-     * producer over every valid pixel; the consumer records sequence, hash, capture stamp,
-     * generation and dimensions for bounds assertions.
+     * Collects per-frame delivery metadata and one sampled delivered pixel (never bitmaps) from
+     * the capture thread. The pixel sample is read from the delivered borrowed bitmap during the
+     * callback, tying the oracle to actual delivered content.
      */
     private static final class CollectingConsumer implements HostingController.FrameConsumer {
 
         private final java.util.List<long[]> frames = new java.util.ArrayList<>();
+        private final List<Long> deliveryUptime = new ArrayList<>();
 
         @Override
         public synchronized void onFrame(HostingFrame frame) {
+            deliveryUptime.add(SystemClock.uptimeMillis());
             frames.add(new long[]{frame.sequence, frame.contentHash, frame.captureElapsedMs,
-                    frame.generation, frame.width, frame.height});
+                    frame.generation, frame.width, frame.height, frame.bitmap.getPixel(10, 10),
+                    SystemClock.elapsedRealtime()});
         }
 
         synchronized int count() {
             return frames.size();
         }
 
-        synchronized long captureElapsedAt(int index) {
-            return frames.get(index)[2];
+        synchronized long deliveryUptimeAt(int index) {
+            return deliveryUptime.get(index);
+        }
+
+        synchronized long deliveryElapsedAt(int index) {
+            return frames.get(index)[7];
         }
 
         synchronized long latestCaptureElapsed() {
@@ -913,23 +1143,6 @@ public class HostingInstrumentedTest {
 
         synchronized int distinctHashes() {
             return (int) frames.stream().mapToLong(f -> f[1]).distinct().count();
-        }
-
-        synchronized java.util.Set<Long> distinctHashSet() {
-            java.util.Set<Long> hashes = new java.util.HashSet<>();
-            for (long[] frame : frames) {
-                hashes.add(frame[1]);
-            }
-            return hashes;
-        }
-
-        synchronized boolean hasFrameOutside(java.util.Set<Long> knownHashes) {
-            for (long[] frame : frames) {
-                if (!knownHashes.contains(frame[1])) {
-                    return true;
-                }
-            }
-            return false;
         }
 
         synchronized boolean allFramesMatchGeneration(int generation) {
@@ -948,6 +1161,48 @@ public class HostingInstrumentedTest {
             }
             return true;
         }
+
+        /** True when the latest delivered frame's sampled pixel matches the expected color. */
+        synchronized boolean latestFrameNearColor(int expectedColor) {
+            if (frames.isEmpty()) {
+                return false;
+            }
+            return nearColor((int) frames.get(frames.size() - 1)[6], expectedColor);
+        }
+
+        /** True when every frame delivered in the last {@code windowMs} matches the color. */
+        synchronized boolean recentFramesNearColor(int expectedColor, long windowMs) {
+            long cutoff = SystemClock.elapsedRealtime() - windowMs;
+            boolean any = false;
+            for (long[] frame : frames) {
+                if (frame[7] >= cutoff) {
+                    any = true;
+                    if (!nearColor((int) frame[6], expectedColor)) {
+                        return false;
+                    }
+                }
+            }
+            return any;
+        }
+
+        synchronized boolean allFramesNearColor(int expectedColor) {
+            return frames.stream().allMatch(f -> nearColor((int) f[6], expectedColor));
+        }
+
+        synchronized java.util.Set<Long> distinctHashSet() {
+            java.util.Set<Long> hashes = new HashSet<>();
+            for (long[] frame : frames) {
+                hashes.add(frame[1]);
+            }
+            return hashes;
+        }
+    }
+
+    /** Channel-wise comparison with tolerance; robust to renderer color-management drift. */
+    private static boolean nearColor(int actual, int expected) {
+        return Math.abs(Color.red(actual) - Color.red(expected)) <= PIXEL_CHANNEL_TOLERANCE
+                && Math.abs(Color.green(actual) - Color.green(expected)) <= PIXEL_CHANNEL_TOLERANCE
+                && Math.abs(Color.blue(actual) - Color.blue(expected)) <= PIXEL_CHANNEL_TOLERANCE;
     }
 
     /** Renews the lease every second from a test thread; {@code renew()} posts to the main thread. */
@@ -985,13 +1240,14 @@ public class HostingInstrumentedTest {
     /** Records the actual interactive/lock state; screen-off is never claimed as secure lock. */
     private void recordDeviceState(String label) {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        android.os.PowerManager power = (android.os.PowerManager) context.getSystemService(
-                Context.POWER_SERVICE);
-        android.app.KeyguardManager keyguard = (android.app.KeyguardManager) context.getSystemService(
+        PowerManager power = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        KeyguardManager keyguard = (KeyguardManager) context.getSystemService(
                 Context.KEYGUARD_SERVICE);
-        System.out.println("DEVICE_STATE " + label + " interactive=" + power.isInteractive()
+        String line = "DEVICE_STATE " + label + " interactive=" + power.isInteractive()
                 + " deviceLocked=" + keyguard.isDeviceLocked()
-                + " keyguardRestricted=" + keyguard.inKeyguardRestrictedInputMode());
+                + " keyguardRestricted=" + keyguard.inKeyguardRestrictedInputMode();
+        System.out.println(line);
+        HostingEvidence.log(line);
     }
 
     /** Same-process memory milestone; no process reset occurs between milestones. */
@@ -999,7 +1255,9 @@ public class HostingInstrumentedTest {
         long nativeHeap = android.os.Debug.getNativeHeapAllocatedSize() / 1_048_576;
         Runtime runtime = Runtime.getRuntime();
         long javaUsed = (runtime.totalMemory() - runtime.freeMemory()) / 1_048_576;
-        System.out.println("MEMORY_MILESTONE " + label + " nativeHeapMB=" + nativeHeap
-                + " javaUsedMB=" + javaUsed);
+        String line = "MEMORY_MILESTONE " + label + " nativeHeapMB=" + nativeHeap
+                + " javaUsedMB=" + javaUsed;
+        System.out.println(line);
+        HostingEvidence.log(line);
     }
 }

@@ -32,8 +32,15 @@ public final class HostingService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
-        enterForeground();
-        HostingController.get(this).onServiceReady(this);
+        try {
+            enterForeground();
+            HostingController.get(this).onServiceReady(this);
+        } catch (RuntimeException error) {
+            // Recoverable foreground-entry/readiness failure at its owner rolls the start back
+            // explicitly instead of escaping service creation (F8); fatal VM failures rethrow.
+            HostingController.get(this).onServiceEntryFailed(error);
+            stopSelf();
+        }
     }
 
     @Override

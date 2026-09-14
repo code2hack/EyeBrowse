@@ -228,13 +228,22 @@ final class PhoneBrowserSession {
         attachToContainer(baseContext, container);
     }
 
-    /** Removes the WebView from the hosting presentation container before it is dismissed. */
+    /**
+     * Releases the attachment the hosting presentation owns: acts only when the WebView is
+     * actually hosted in {@code container}, releasing that container reference and the external
+     * base context. A view living in a Phone Activity attachment (successor or current) is left
+     * untouched, preserving its container and live Activity context (F5).
+     */
     void detachExternal(ViewGroup container) {
-        if (webView != null && webView.getParent() == container) {
-            container.removeView(webView);
+        if (webView == null || webView.getParent() != container) {
+            return; // Not hosted here: a Phone attachment's container/context stays untouched.
         }
+        container.removeView(webView);
         if (contextWrapper.getBaseContext() != appContext) {
             contextWrapper.setBaseContext(appContext);
+        }
+        if (attachedContainer == container) {
+            attachedContainer = null;
         }
         notifyListeners();
     }
