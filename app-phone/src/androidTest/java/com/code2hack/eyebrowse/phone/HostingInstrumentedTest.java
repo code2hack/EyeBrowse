@@ -392,6 +392,8 @@ public class HostingInstrumentedTest {
         // no further frames once teardown is confirmed (reader closed, capture thread exited),
         // and the teardown is bounded. The frame bitmap is deliberately not recycled while an
         // in-flight callback may still borrow it.
+        onView(withId(R.id.button_hosting_toggle)).perform(click());
+        awaitHostingState(HostingController.State.HOSTING, START_BOUND_MS);
         CollectingConsumer staleConsumer = new CollectingConsumer();
         HostingController.Lease stoppedLease = runOnMainSync(() -> hosting.acquireLease(staleConsumer));
         assertNotNull("lease before Stop", stoppedLease);
