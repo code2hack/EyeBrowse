@@ -414,10 +414,14 @@ public class HostingInstrumentedTest {
 
         // Deterministic Stop-during-STARTING: start() sets STARTING synchronously on the main
         // thread; the assertion observes that exact state before Stop cancels it.
-        runOnMain(hosting::start);
-        assertEquals("stop-during-start exercises STARTING", HostingController.State.STARTING,
-                runOnMainSync(hosting::status).state);
-        runOnMain(hosting::stop);
+        // One main-thread turn: start accepted -> observe STARTING -> Stop cancels it. Direct
+        // synchronized calls on this turn; no nested dispatch can interleave service readiness.
+        runOnMain(() -> {
+            assertTrue("stop-during-start start accepted", hosting.start());
+            assertEquals("stop-during-start exercises STARTING", HostingController.State.STARTING,
+                    hosting.status().state);
+            hosting.stop();
+        });
         awaitHostingState(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
 
         // Idempotent extra Stops.
