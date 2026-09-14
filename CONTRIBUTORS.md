@@ -72,7 +72,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "u4090",
     "runtime": "pi",
     "id": "01a08b62-cce3-77c8-91fa-d9d876b907b8",
-    "model": "GLM-5.3-Flash-EXL3",
+    "model": "deepseek-flash",
     "name": "Worker-#4",
     "status": "active"
   },
