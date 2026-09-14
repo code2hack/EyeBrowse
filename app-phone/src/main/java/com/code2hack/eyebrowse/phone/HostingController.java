@@ -104,6 +104,29 @@ final class HostingController {
         void onFrame(HostingFrame frame);
     }
 
+    /** Notified on the main thread after any hosting state transition. */
+    interface Listener {
+        void onHostingChanged();
+    }
+
+    private final java.util.List<Listener> listeners = new java.util.ArrayList<>();
+
+    void addListener(Listener listener) {
+        if (!listeners.contains(listener)) {
+            listeners.add(listener);
+        }
+    }
+
+    void removeListener(Listener listener) {
+        listeners.remove(listener);
+    }
+
+    private void notifyHostingChanged() {
+        for (Listener listener : new java.util.ArrayList<>(listeners)) {
+            listener.onHostingChanged();
+        }
+    }
+
     private static final String WAKE_LOCK_TAG = "EyeBrowse:HostingCapture";
     private static final long WATCHDOG_INTERVAL_MS = 1_000;
 
@@ -200,6 +223,7 @@ final class HostingController {
         stopRequestedDuringStart = false;
         state = State.STARTING;
         generation++;
+        notifyHostingChanged();
         Intent intent = new Intent(appContext, HostingService.class);
         intent.setAction(HostingService.ACTION_START);
         try {
@@ -242,6 +266,7 @@ final class HostingController {
                 ? Attachment.PRIVATE_DISPLAY
                 : Attachment.PHONE_UI;
         state = State.HOSTING;
+        notifyHostingChanged();
         Log.i(TAG, "hosting active gen=" + generation + " viewport=" + metric.width + "x"
                 + metric.height + "@" + metric.densityDpi + " attachment=" + attachment);
         lastDemandElapsedMs = android.os.SystemClock.elapsedRealtime();
@@ -258,6 +283,7 @@ final class HostingController {
 
     private void failStart(String reason) {
         Log.i(TAG, "start failed gen=" + generation + " reason=" + reason);
+        notifyHostingChanged();
         mainHandler.removeCallbacks(startTimeout);
         rollbackDisplayHost();
         releaseWakeLock();
@@ -286,6 +312,7 @@ final class HostingController {
                 return;
             case HOSTING:
                 state = State.STOPPING;
+                notifyHostingChanged();
                 revokeLease();
                 completeStop();
                 return;
@@ -294,6 +321,7 @@ final class HostingController {
 
     private void completeStop() {
         Log.i(TAG, "stop complete gen=" + generation);
+        notifyHostingChanged();
         mainHandler.removeCallbacks(watchdog);
         revokeLease();
         if (displayHost != null) {
@@ -422,10 +450,15 @@ final class HostingController {
                 // well inside the 6-second bound; the idle window starts now.
                 Log.i(TAG, "lease expired gen=" + generation);
                 revokeLease();
+                notifyHostingChanged();
             }
-            if (lease == null && HostingPolicy.idleExceeded(now, lastDemandElapsedMs)) {
+            if (lease == null && HostingPolicy.idleExceeded(now, lastDemandElapsedMs)
+                    && (displayHost.hasReader() || displayHost.hasCaptureThread())) {
+                // Bounded absent-client behavior: release once; the guard keeps idle ticks quiet
+                // while the display/presentation attachment and service deliberately remain.
                 Log.i(TAG, "idle release gen=" + generation);
                 displayHost.releaseCaptureResources();
+                notifyHostingChanged();
             }
         }
     }
@@ -459,6 +492,7 @@ final class HostingController {
                 revokeLease();
                 completeStop();
                 failureReason = appContext.getString(R.string.hosting_failure_browser_lost);
+                notifyHostingChanged();
             }
         }
     }
@@ -475,6 +509,7 @@ final class HostingController {
             revokeLease();
             completeStop();
             failureReason = appContext.getString(R.string.hosting_failure_service_lost);
+            notifyHostingChanged();
         }
     }
 

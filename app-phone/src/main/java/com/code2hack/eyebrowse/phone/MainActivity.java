@@ -64,6 +64,8 @@ public final class MainActivity extends ComponentActivity {
         render();
     };
 
+    private final HostingController.Listener hostingListener = () -> render();
+
     private final TextWatcher addressWatcher = new TextWatcher() {
         @Override
         public void beforeTextChanged(CharSequence s, int start, int count, int after) {
@@ -147,6 +149,7 @@ public final class MainActivity extends ComponentActivity {
         });
 
         session.addListener(sessionListener);
+        hosting.addListener(hostingListener);
         attachment = session.attach(this, webContainer);
         if (session.startupDecision() != StartupPolicy.Decision.REATTACH_LIVE_SESSION) {
             addressBar.syncTo(session.lastCommittedUrl());
@@ -201,6 +204,7 @@ public final class MainActivity extends ComponentActivity {
     @Override
     protected void onDestroy() {
         Log.i("EyeBrowseHost", "activity onDestroy " + identityHash());
+        hosting.removeListener(hostingListener);
         session.removeListener(sessionListener);
         // A destroyed Activity must not steal the view from a successor; only when this Activity
         // still owns the session does the host move the view offscreen and keep hosting alive.
