@@ -89,33 +89,54 @@ public class HostingInstrumentedTest {
 
     /**
      * App-scoped permission setup so the POST_NOTIFICATIONS dialog never interrupts the Start
-     * control. The pre-existing grant state is recorded once per class (reported as
-     * {@code NOTIF_PERM_BEFORE} in the instrumentation stream) so cleanup can restore it; a failed
-     * setup fails loudly instead of proceeding as if verified.
+     * control. Below API 33 that runtime permission is explicitly NOT_APPLICABLE: no check, no
+     * grant/revoke, no GRANTED claim and no restoration obligation. On API 33+ the pre-existing
+     * grant state is recorded once per class (reported as {@code NOTIF_PERM_BEFORE} in the
+     * instrumentation stream) so cleanup can restore it; a failed setup fails loudly instead of
+     * proceeding as if verified.
      */
     private void ensureNotificationPermissionSetupForTest() {
+        int sdkInt = android.os.Build.VERSION.SDK_INT;
+        if (!NotificationPermissionPolicy.applicable(sdkInt)) {
+            if (!notificationPermissionNotApplicableReported) {
+                notificationPermissionNotApplicableReported = true;
+                System.out.println("NOTIF_PERM_N/A sdk=" + sdkInt
+                        + " reason=no-runtime-permission-below-33");
+            }
+            return; // Only this permission helper is skipped; the rest of setup/tests/cleanup runs.
+        }
         boolean granted = notificationPermissionGranted();
         if (!notificationPermissionSetupRecorded) {
             notificationPermissionWasGrantedBeforeSetup = granted;
             notificationPermissionSetupRecorded = true;
             System.out.println("NOTIF_PERM_BEFORE granted=" + granted);
         }
-        if (!granted) {
+        if (NotificationPermissionPolicy.needsGrant(sdkInt, granted)) {
             runShellCommandForTest(
                     "pm grant com.code2hack.eyebrowse.phone android.permission.POST_NOTIFICATIONS");
-            if (!notificationPermissionGranted()) {
+            if (NotificationPermissionPolicy.setupFailed(sdkInt, true,
+                    notificationPermissionGranted())) {
                 fail("POST_NOTIFICATIONS setup did not take effect; not proceeding as verified success");
             }
         }
     }
+
+    /** Explicit NOT_APPLICABLE report guard for API<33 (once per class). */
+    private static boolean notificationPermissionNotApplicableReported;
 
     /** Recorded before-state for cleanup restoration; true when the permission was pre-granted. */
     private static boolean notificationPermissionWasGrantedBeforeSetup;
 
     private static boolean notificationPermissionSetupRecorded;
 
+    /**
+     * Cleanup applicability: below API 33 there is no runtime permission to restore (explicit
+     * no-op, even if the default false grant flag was never set), and on 33+ only a setup that
+     * actually changed a pre-existing not-granted state is restored.
+     */
     static boolean notificationPermissionNeedsCleanupRestore() {
-        return notificationPermissionSetupRecorded && !notificationPermissionWasGrantedBeforeSetup;
+        return NotificationPermissionPolicy.needsRestore(android.os.Build.VERSION.SDK_INT,
+                notificationPermissionSetupRecorded, notificationPermissionWasGrantedBeforeSetup);
     }
 
     private boolean notificationPermissionGranted() {
