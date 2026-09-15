@@ -64,7 +64,6 @@ public class HostingInstrumentedTest {
     /** Fixture page background colors, used for delivered-pixel content correlation. */
     private static final int CAPTURE_PAGE_COLOR = Color.parseColor("#f6f3ea");
     private static final int SECOND_PAGE_COLOR = Color.parseColor("#2e5f8a");
-    private static final int PIXEL_CHANNEL_TOLERANCE = 8;
 
     private ActivityScenario<MainActivity> scenario;
     private PhoneBrowserSession session;
@@ -647,12 +646,14 @@ public class HostingInstrumentedTest {
         // The privately re-laid-out view now measures the OLD presentation geometry (no lease
         // existed during the move, so nothing rebuilt): the first demand below must reconcile to
         // the SAVED Phone viewport (sizeAfterChange), not to this stale private layout.
-        // B: the first delivered bitmap after the rebuild must be the CURRENT document at the
-        // reconciled geometry, within the unchanged 2s eligibility-to-delivery bound. The
-        // epoch facts record the staged readiness (drawCompleted -> ready) and the ORIGINAL
-        // eligibility anchor used for the bound.
-        long eligibleUptime = SystemClock.uptimeMillis();
+        // A: raw capture callbacks may be non-qualifying initialization output (for example a
+        // white startup frame). The FIRST VALID current-document/current-geometry callback must
+        // arrive within the unchanged 2s bound of the ORIGINAL eligibility instant, never from
+        // the first raw callback. Every callback's sample is copied in the callback and earlier
+        // non-qualifying observations are retained and reported below, never hidden.
         CollectingConsumer consumer = new CollectingConsumer();
+        consumer.expectQualification(sizeAfterChange[0], sizeAfterChange[1], CAPTURE_PAGE_COLOR);
+        long eligibleUptime = SystemClock.uptimeMillis();
         HostingController.Lease lease = runOnMainSync(() -> hosting.acquireLease(consumer));
         assertNotNull("lease after geometry reconciliation", lease);
         HostViewSnapshot afterAcquisition = hostViewSnapshot();
@@ -660,17 +661,20 @@ public class HostingInstrumentedTest {
                 HostingController.Attachment.PRIVATE_DISPLAY, afterAcquisition.status.attachment);
         assertTrue("the actual WebView is attached AFTER acquisition/rebuild",
                 afterAcquisition.viewAttached);
-        waitUntil("frames flow at the reconciled geometry", () -> consumer.count() > 0);
-        long firstDeliveryMs = consumer.deliveryUptimeAt(0) - eligibleUptime;
-        assertTrue("first delivered frame after rebuild within 2s of eligibility: "
-                + firstDeliveryMs + "ms", firstFrameDelayIsValid(firstDeliveryMs));
-        milestones.record("rebuild epoch facts: " + runOnMainSync(hosting::outputEpochFacts)
-                + " firstDeliveryMs=" + firstDeliveryMs);
-        assertTrue("delivered frames carry the reconciled (saved Phone) viewport "
-                        + sizeAfterChange[0] + "x" + sizeAfterChange[1],
-                consumer.allFramesMatchSize(sizeAfterChange[0], sizeAfterChange[1]));
-        assertTrue("delivered pixels show the same document after reconcile",
-                consumer.allFramesNearColor(CAPTURE_PAGE_COLOR));
+        waitUntil("first VALID frame at the reconciled geometry",
+                () -> consumer.qualifyingCountFrom(0) > 0);
+        int firstValid = consumer.earliestQualifyingIndexFrom(0);
+        long firstValidDelayMs = consumer.earliestQualifyingDelayMsFrom(0, eligibleUptime);
+        milestones.record("window-rebuild first-raw/first-valid: "
+                + consumer.qualificationSummary(0, eligibleUptime));
+        assertTrue("earliest VALID current-document/current-geometry frame within 2s of ORIGINAL "
+                        + "eligibility: " + firstValidDelayMs + "ms",
+                OutputQualification.validWithinBound(firstValidDelayMs));
+        assertTrue("frames from the first VALID callback carry the reconciled (saved Phone) "
+                        + "viewport " + sizeAfterChange[0] + "x" + sizeAfterChange[1],
+                consumer.tailFramesMatchSize(firstValid, sizeAfterChange[0], sizeAfterChange[1]));
+        assertTrue("frames from the first VALID callback show the same document after reconcile",
+                consumer.tailFramesNearColor(firstValid, CAPTURE_PAGE_COLOR));
         assertEquals("no reload from geometry reconciliation", loadsBefore,
                 loadCount("/hosting.html"));
         assertEquals(marker, domText("load-marker"));
@@ -756,22 +760,30 @@ public class HostingInstrumentedTest {
 
         // --- Lease acquisition (recreates the surface on the surviving display) and first frame
         // measured at CONSUMER delivery, within 2s of eligibility.
+        int expectedGeneration = (int) (generationBefore + 1);
+        int[] expectedSize = currentWebViewSize();
+        // A: qualify the earliest VALID current-document/current-geometry callback; raw
+        // initialization callbacks are retained, and the 2s clock is the original eligibility.
         CollectingConsumer consumer = new CollectingConsumer();
+        consumer.expectQualification(expectedSize[0], expectedSize[1], CAPTURE_PAGE_COLOR);
         long eligibleUptime = SystemClock.uptimeMillis();
         HostingController.Lease lease = runOnMainSync(() -> hosting.acquireLease(consumer));
         assertNotNull("lease must be acquirable while hosting", lease);
         LeaseRenewal renewal = new LeaseRenewal(lease);
         renewal.start();
-        waitUntil("first delivered frame", () -> consumer.count() > 0);
-        long firstDeliveryMs = consumer.deliveryUptimeAt(0) - eligibleUptime;
-        assertTrue("first current-token frame at consumer delivery within 2s: " + firstDeliveryMs
-                + "ms", firstFrameDelayIsValid(firstDeliveryMs));
-        int expectedGeneration = (int) (generationBefore + 1);
-        int[] expectedSize = currentWebViewSize();
+        waitUntil("first VALID current-document/current-geometry frame",
+                () -> consumer.qualifyingCountFrom(0) > 0);
+        int firstValid = consumer.earliestQualifyingIndexFrom(0);
+        long firstValidDelayMs = consumer.earliestQualifyingDelayMsFrom(0, eligibleUptime);
+        milestones.record("background first-raw/first-valid: "
+                + consumer.qualificationSummary(0, eligibleUptime));
+        assertTrue("first VALID current-token frame at consumer delivery within 2s of ORIGINAL "
+                        + "eligibility: " + firstValidDelayMs + "ms",
+                OutputQualification.validWithinBound(firstValidDelayMs));
         assertTrue("frame carries the hosting generation",
                 consumer.allFramesMatchGeneration(expectedGeneration));
-        assertTrue("frame dimensions match the measured viewport",
-                consumer.allFramesMatchSize(expectedSize[0], expectedSize[1]));
+        assertTrue("frames from the first VALID frame match the measured viewport",
+                consumer.tailFramesMatchSize(firstValid, expectedSize[0], expectedSize[1]));
         assertTrue("capture stamps are monotonic", consumer.monotonicCaptureStamps());
         assertTrue("wake lock is held while the lease is live",
                 runOnMainSync(hosting::isWakeLockHeld));
@@ -984,13 +996,15 @@ public class HostingInstrumentedTest {
     }
 
     /**
-     * B: an intentionally ALL-WHITE document delivers after output readiness without any color
-     * dependence. The epoch facts (ready=true before admission) prove the delivered frame's
-     * origin as current rendered output; white pixels here are the EXPECTED document content, so
-     * this case also guards against white-heuristic shortcuts in either direction.
+     * A: an intentionally ALL-WHITE document delivers as valid current content within the
+     * original 2s eligibility bound. The expectation is white, so no color heuristic may reject a
+     * legitimate white page; the live document marker persists and there is no reload. Raw
+     * initialization callbacks are retained by the consumer, and validity is decided by the
+     * callback-time sample and geometry rather than by a readiness fact.
      */
     @Test
-    public void allWhiteDocumentDeliversAfterReadinessWithoutColorDependence() throws Exception {
+    public void allWhiteDocumentDeliversWithinEligibilityBoundWithoutColorDependence()
+            throws Exception {
         openFixture("/hosting-white.html", "White capture page");
         String marker = domText("load-marker");
         tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
@@ -1000,19 +1014,20 @@ public class HostingInstrumentedTest {
             return snapshot.status.attachment == HostingController.Attachment.PRIVATE_DISPLAY
                     && snapshot.viewAttached;
         });
+        int[] expectedSize = currentWebViewSize();
         CollectingConsumer consumer = new CollectingConsumer();
+        consumer.expectQualification(expectedSize[0], expectedSize[1], Color.WHITE);
         long eligibleUptime = SystemClock.uptimeMillis();
         HostingController.Lease lease = runOnMainSync(() -> hosting.acquireLease(consumer));
         assertNotNull("white-document lease", lease);
-        waitUntil("first frame of the all-white document", () -> consumer.count() > 0);
-        long firstDeliveryMs = consumer.deliveryUptimeAt(0) - eligibleUptime;
-        assertTrue("first delivered frame within 2s of eligibility: " + firstDeliveryMs + "ms",
-                firstFrameDelayIsValid(firstDeliveryMs));
-        String epochFacts = runOnMainSync(hosting::outputEpochFacts);
-        milestones.record("all-white epoch facts: " + epochFacts
-                + " firstDeliveryMs=" + firstDeliveryMs);
-        assertTrue("admission followed completed output readiness (epoch facts: " + epochFacts + ")",
-                epochFacts.contains("ready=true"));
+        waitUntil("first VALID frame of the all-white document",
+                () -> consumer.qualifyingCountFrom(0) > 0);
+        long firstValidDelayMs = consumer.earliestQualifyingDelayMsFrom(0, eligibleUptime);
+        milestones.record("all-white first-raw/first-valid: "
+                + consumer.qualificationSummary(0, eligibleUptime));
+        assertTrue("first VALID white-document frame within 2s of ORIGINAL eligibility: "
+                        + firstValidDelayMs + "ms",
+                OutputQualification.validWithinBound(firstValidDelayMs));
         assertTrue("delivered frames are the live white document",
                 consumer.allFramesNearColor(Color.WHITE));
         assertEquals("same document marker (no reload/substitution)", marker,
@@ -1048,14 +1063,22 @@ public class HostingInstrumentedTest {
         assertTrue("the window change actually changed the geometry",
                 sizeAfter[0] != sizeBefore[0] || sizeAfter[1] != sizeBefore[1]);
         int framesAtRebuild = consumer.count();
-        waitUntil("delivery rearmed after the rebuild", () -> consumer.count() > framesAtRebuild);
+        // A: a same-lease rearm may also emit a non-qualifying initialization callback, so
+        // select the earliest post-rebuild callback that carries the rebuilt viewport and the
+        // current document, retaining the raw callbacks before it.
+        consumer.expectQualification(sizeAfter[0], sizeAfter[1], CAPTURE_PAGE_COLOR);
+        waitUntil("a post-rebuild callback qualifies at the rebuilt geometry",
+                () -> consumer.qualifyingCountFrom(framesAtRebuild) > 0);
+        int firstRebuildValid = consumer.earliestQualifyingIndexFrom(framesAtRebuild);
+        milestones.record("live-lease rebuild first-raw/first-valid fromIndex=" + framesAtRebuild
+                + ": " + consumer.qualificationSummary(framesAtRebuild, 0));
         assertTrue("post-rebuild delivery carries the rebuilt viewport "
                         + sizeAfter[0] + "x" + sizeAfter[1],
-                consumer.tailFramesMatchSize(framesAtRebuild, sizeAfter[0], sizeAfter[1]));
+                consumer.tailFramesMatchSize(firstRebuildValid, sizeAfter[0], sizeAfter[1]));
         assertTrue("rearmed delivery keeps the same hosting generation",
                 consumer.allFramesMatchGeneration((int) (generationBefore + 1)));
         assertTrue("rearmed delivery shows the same document",
-                consumer.tailFramesNearColor(framesAtRebuild, CAPTURE_PAGE_COLOR));
+                consumer.tailFramesNearColor(firstRebuildValid, CAPTURE_PAGE_COLOR));
         scenario.onActivity(activity -> activity.setRequestedOrientation(
                 android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT));
         bringMainActivityToFrontForTest();
@@ -1339,11 +1362,6 @@ public class HostingInstrumentedTest {
         tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
     }
 
-    /** First-frame delivery bound: 2s from eligibility (uptime-based, consumer-side). */
-    private boolean firstFrameDelayIsValid(long deliveryDelayMs) {
-        return deliveryDelayMs >= 0 && deliveryDelayMs <= 2_000;
-    }
-
     /**
      * Records the contemporaneous interactive/keyguard/device-secure/recovery facts that ground
      * the display-off/lock coverage decision, app-scoped, while produced.
@@ -1572,27 +1590,66 @@ public class HostingInstrumentedTest {
     /**
      * Collects per-frame delivery metadata and one sampled delivered pixel (never bitmaps) from
      * the capture thread. The pixel sample is read from the delivered borrowed bitmap during the
-     * callback, tying the oracle to actual delivered content.
+     * callback, tying the oracle to actual delivered content, and each callback is classified
+     * through {@link OutputQualification} against the expected current document/geometry: raw
+     * initialization callbacks may be non-qualifying, and the earliest VALID callback is selected
+     * from the retained observations.
      */
     private static final class CollectingConsumer implements HostingController.FrameConsumer {
 
         private final java.util.List<long[]> frames = new java.util.ArrayList<>();
-        private final List<Long> deliveryUptime = new ArrayList<>();
+        private final List<OutputQualification.Observation> observations = new ArrayList<>();
+        private int expectedWidth;
+        private int expectedHeight;
+        private int expectedColor;
+
+        /**
+         * Sets the expected current document/geometry used to qualify each callback as it
+         * arrives; call before the callbacks that should be classified.
+         */
+        synchronized void expectQualification(int width, int height, int color) {
+            expectedWidth = width;
+            expectedHeight = height;
+            expectedColor = color;
+        }
 
         @Override
         public synchronized void onFrame(HostingFrame frame) {
-            deliveryUptime.add(SystemClock.uptimeMillis());
+            long deliveryUptimeMs = SystemClock.uptimeMillis();
+            long deliveryElapsedMs = SystemClock.elapsedRealtime();
+            int sampledColor = frame.bitmap.getPixel(10, 10);
             frames.add(new long[]{frame.sequence, frame.contentHash, frame.captureElapsedMs,
-                    frame.generation, frame.width, frame.height, frame.bitmap.getPixel(10, 10),
-                    SystemClock.elapsedRealtime()});
+                    frame.generation, frame.width, frame.height, sampledColor, deliveryElapsedMs});
+            observations.add(OutputQualification.observe(deliveryUptimeMs, deliveryElapsedMs,
+                    frame.width, frame.height, frame.generation, frame.sequence, frame.contentHash,
+                    sampledColor, expectedWidth, expectedHeight, expectedColor));
         }
 
         synchronized int count() {
             return frames.size();
         }
 
-        synchronized long deliveryUptimeAt(int index) {
-            return deliveryUptime.get(index);
+        synchronized int qualifyingCountFrom(int fromIndex) {
+            int count = 0;
+            for (int i = Math.max(0, fromIndex); i < observations.size(); i++) {
+                if (observations.get(i).qualified) {
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        synchronized int earliestQualifyingIndexFrom(int fromIndex) {
+            return OutputQualification.earliestQualifyingIndex(observations, fromIndex);
+        }
+
+        synchronized long earliestQualifyingDelayMsFrom(int fromIndex, long eligibleUptimeMs) {
+            return OutputQualification.earliestQualifyingDelayMs(observations, fromIndex,
+                    eligibleUptimeMs);
+        }
+
+        synchronized String qualificationSummary(int fromIndex, long eligibleUptimeMs) {
+            return OutputQualification.summary(observations, fromIndex, eligibleUptimeMs);
         }
 
         synchronized long deliveryElapsedAt(int index) {
@@ -1687,11 +1744,9 @@ public class HostingInstrumentedTest {
         }
     }
 
-    /** Channel-wise comparison with tolerance; robust to renderer color-management drift. */
+    /** Channel-wise comparison with tolerance (same helper used by callback qualification). */
     private static boolean nearColor(int actual, int expected) {
-        return Math.abs(Color.red(actual) - Color.red(expected)) <= PIXEL_CHANNEL_TOLERANCE
-                && Math.abs(Color.green(actual) - Color.green(expected)) <= PIXEL_CHANNEL_TOLERANCE
-                && Math.abs(Color.blue(actual) - Color.blue(expected)) <= PIXEL_CHANNEL_TOLERANCE;
+        return OutputQualification.nearColor(actual, expected);
     }
 
     /**

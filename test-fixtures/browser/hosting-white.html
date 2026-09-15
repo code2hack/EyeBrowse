@@ -6,9 +6,10 @@
 <title>White capture page</title>
 <style>
   /* Intentionally ALL-WHITE document with the same DOM contract and freeze hook as hosting.html:
-     delivered pixels are identical before and after output readiness, so the admission logic
-     cannot depend on color (B verification). Text uses near-white-on-white to keep the sampled
-     corner pixels white while the document stays a real, live page. */
+     the delivered pixels are white for both raw initialization callbacks and the live document,
+     so qualification must depend on the expected document rather than a white heuristic. Text
+     uses near-white-on-white to keep the sampled corner pixels white while the document stays a
+     real, live page. */
   body{font-family:sans-serif;background:#ffffff;color:#ffffff;margin:0;padding:16px}
   h1{font-size:30px;margin:8px 0}
   .counter{font-size:72px;font-weight:700;color:#fdfdfd}
