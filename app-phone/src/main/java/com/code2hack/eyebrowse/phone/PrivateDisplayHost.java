@@ -110,9 +110,81 @@ final class PrivateDisplayHost {
     private volatile boolean teardownComplete = true;
     private volatile int captureGeneration;     // hosting generation stamped into produced frames
 
+    /**
+     * The live output epoch (B): identity of the exact view/presentation/reader/geometry/
+     * generation whose composed output may be delivered, with its current-output readiness.
+     * Superseded on any resource/lease transition; images acquired before its readiness
+     * completion are initialization output and are discarded without delivery.
+     */
+    private volatile OutputEpoch currentEpoch;
+
     PrivateDisplayHost(Factory factory, Runnable onQuiesced) {
         this.factory = factory;
         this.onQuiesced = onQuiesced;
+    }
+
+    /**
+     * Begins a new output epoch on the main thread and links its current-output readiness to the
+     * delivered view: a one-shot pre-draw observation on the session view (plus one explicit
+     * invalidate so a static document still produces the draw pass) marks the epoch ready only
+     * while it remains the live epoch. Creation registers the observation; it never opens
+     * delivery by itself.
+     */
+    void beginOutputEpoch(OutputEpoch epoch, PhoneBrowserSession session) {
+        currentEpoch = epoch;
+        android.webkit.WebView view = session.view();
+        if (view == null || view != epoch.viewRef()) {
+            return; // No delivered view to link; the epoch stays unready (nothing is admitted).
+        }
+        final OutputEpoch observedEpoch = epoch;
+        android.view.ViewTreeObserver observer = view.getViewTreeObserver();
+        observer.addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
+            @Override
+            public boolean onPreDraw() {
+                // One-shot: this draw pass is the readiness evidence for the observed epoch.
+                if (view.getViewTreeObserver().isAlive()) {
+                    view.getViewTreeObserver().removeOnPreDrawListener(this);
+                }
+                if (currentEpoch == observedEpoch) {
+                    observedEpoch.markReady(android.os.SystemClock.elapsedRealtime());
+                    Log.i(TAG, "output epoch ready gen=" + observedEpoch.hostingGeneration()
+                            + " eligible=" + observedEpoch.eligibleElapsedMs());
+                }
+                return true;
+            }
+        });
+        view.invalidate(); // Force the draw pass even for a static document (ordinary, no reload).
+    }
+
+    /** Ends the live epoch: pending readiness never completes and its callbacks no-op. */
+    void supersedeOutputEpoch() {
+        currentEpoch = null;
+    }
+
+    /** Live presenting-container identity for epoch binding (main thread). */
+    Object currentPresentationRef() {
+        return presentation;
+    }
+
+    /** Live reader identity for epoch binding. */
+    Object currentReaderRef() {
+        synchronized (nativeLock) {
+            return imageReader;
+        }
+    }
+
+    /** Sparse diagnostic facts for test-owned milestones (no content, no wire format). */
+    String outputEpochFacts() {
+        OutputEpoch epoch = currentEpoch;
+        if (epoch == null) {
+            return "epoch=none";
+        }
+        return "epoch=" + System.identityHashCode(epoch)
+                + " gen=" + epoch.hostingGeneration()
+                + " ready=" + epoch.isReady()
+                + " eligible=" + epoch.eligibleElapsedMs()
+                + " readyAt=" + (epoch.isReady() ? epoch.readyElapsedMs() : -1)
+                + " " + epoch.width() + "x" + epoch.height();
     }
 
     /**
@@ -285,10 +357,13 @@ final class PrivateDisplayHost {
      * when the owner is not actively capturable — the caller must surface that, never display a
      * healthy capturing state over an unarmed reader.
      */
-    boolean rearmCapture(int hostingGeneration, FrameSink boundSink) {
+    boolean rearmCapture(int hostingGeneration, FrameSink boundSink, OutputEpoch epoch) {
         if (!ownerPhase.isActive() || imageReader == null || boundSink == null
                 || captureThread == null || captureHandler == null) {
             return false;
+        }
+        if (epoch == null || imageReader != epoch.readerRef()) {
+            return false; // The epoch must bind the exact reader being rearmed (B).
         }
         frameSink = boundSink;
         frameSequence = 0;
@@ -296,6 +371,7 @@ final class PrivateDisplayHost {
         captureGeneration = hostingGeneration;
         captureActive = true;
         captureReleased = false;
+        currentEpoch = epoch;
         imageReader.setOnImageAvailableListener(this::onImageAvailable, captureHandler);
         scheduleDrain();
         Log.i(TAG, "rearmCapture gen=" + hostingGeneration + " on rebuilt reader");
@@ -312,7 +388,7 @@ final class PrivateDisplayHost {
      * teardown. The caller retries explicitly after quiescence — a null acquisition has no
      * hidden side effects.
      */
-    boolean startCapture(int hostingGeneration, FrameSink boundSink) {
+    boolean startCapture(int hostingGeneration, FrameSink boundSink, OutputEpoch epoch) {
         if (imageReader == null || boundSink == null) {
             return false;
         }
@@ -320,12 +396,16 @@ final class PrivateDisplayHost {
             Log.i(TAG, "startCapture deferred: owner phase=" + ownerPhase.phase());
             return false;
         }
+        if (epoch == null || imageReader != epoch.readerRef()) {
+            return false; // The epoch must bind the exact reader being started (B).
+        }
         frameSink = boundSink;
         frameSequence = 0;
         deliveredAny = false;
         captureGeneration = hostingGeneration;
         captureActive = true;
         captureReleased = false;
+        currentEpoch = epoch;
         Log.i(TAG, "startCapture gen=" + hostingGeneration + " reader=" + (imageReader != null)
                 + " threadAlive=" + (captureThread != null));
         if (captureThread != null) {
@@ -356,12 +436,13 @@ final class PrivateDisplayHost {
     }
 
     private void drainPendingImages() {
+        final OutputEpoch epoch = currentEpoch; // Bound at entry: a superseded epoch drains nothing.
         final int maxDrain = 8; // maxImages=2 plus settling headroom; bounded by construction.
         int drained = 0;
         while (drained < maxDrain) {
             Image stale;
             synchronized (nativeLock) {
-                if (imageReader == null) {
+                if (imageReader == null || epoch == null || imageReader != epoch.readerRef()) {
                     break;
                 }
                 stale = imageReader.acquireLatestImage();
@@ -372,11 +453,11 @@ final class PrivateDisplayHost {
             try {
                 drained++;
             } finally {
-                stale.close();
+                stale.close(); // Initialization/preparation output: discarded, never delivered.
             }
         }
         if (drained > 0) {
-            Log.i(TAG, "drained " + drained + " stale capture image(s)");
+            Log.i(TAG, "drained " + drained + " pre-readiness capture image(s)");
         }
     }
 
@@ -386,6 +467,7 @@ final class PrivateDisplayHost {
      * only through the owning retirement path.
      */
     void stopCapture() {
+        supersedeOutputEpoch(); // Revocation ends the epoch: pending readiness never completes.
         captureActive = false;
         frameSink = null;
     }
@@ -404,6 +486,7 @@ final class PrivateDisplayHost {
      * quiescence is observable via {@link #isQuiescent()} and the quiescence callback.
      */
     void releaseCaptureResources() {
+        supersedeOutputEpoch(); // Pending readiness of this owner never completes (B).
         if (ownerPhase.isRetiring()) {
             return; // Retirement already requested and outstanding; do not re-post.
         }
@@ -564,14 +647,15 @@ final class PrivateDisplayHost {
     }
 
     private void onImageAvailable(ImageReader reader) {
+        final OutputEpoch epoch = currentEpoch; // Bound at entry; never inspect mutable fields only.
         final FrameSink sink = frameSink; // Read once; swaps happen only from the main thread.
-        if (!captureActive || sink == null) {
+        if (!captureActive || sink == null || epoch == null) {
             return; // Latest-only: nothing is acquired while delivery is not live.
         }
         HostingFrame frame = null;
         synchronized (nativeLock) {
-            if (captureReleased || reader != imageReader) {
-                return; // Stale callback for a closed or superseded reader.
+            if (captureReleased || reader != imageReader || reader != epoch.readerRef()) {
+                return; // Stale callback for a closed, superseded, or non-epoch reader (B).
             }
             Image image = reader.acquireLatestImage();
             if (image == null) {
@@ -579,6 +663,12 @@ final class PrivateDisplayHost {
             }
             long nowElapsed = SystemClock.elapsedRealtime();
             try {
+                if (!epoch.isReady()) {
+                    // Initialization/preparation output of the display surface: discarded without
+                    // delivery, without consuming the throttle budget, and without moving the
+                    // first-delivery clock (B).
+                    return;
+                }
                 if (deliveredAny && HostingPolicy.frameThrottled(nowElapsed, lastDeliveryElapsedMs)) {
                     return;
                 }
@@ -591,7 +681,9 @@ final class PrivateDisplayHost {
                 image.close(); // The native image never escapes the copy scope.
             }
         }
-        if (frame != null) {
+        // Recheck epoch currency immediately before delivery (B): a superseded epoch's copied
+        // frame is never retagged onto a successor's consumer.
+        if (frame != null && currentEpoch == epoch) {
             // Admission and consumer invocation happen outside nativeLock; the sink's bound
             // identity fences superseded leases without taking any monitor.
             sink.onFrame(frame);

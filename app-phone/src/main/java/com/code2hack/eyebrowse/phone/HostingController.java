@@ -254,6 +254,7 @@ final class HostingController {
     private HostingController.FrameConsumer frameConsumer;
     private long lastLeaseRenewElapsedMs;
     private long lastDemandElapsedMs; // Last successful demand/readiness; anchors the idle deadline.
+    private long leaseEligibleElapsedMs; // ORIGINAL eligibility of the live lease (B); never re-anchored.
     private long idleReleaseCompletedElapsedMs; // Idle-release completion, scoped to its cycle.
     private PrivateDisplayHost idleReleasePendingOwner; // The owner whose release is outstanding.
     private boolean stopRequestedDuringStart;
@@ -652,14 +653,19 @@ final class HostingController {
                 notifyHostingChanged();
                 return;
             }
+            OutputEpoch rebuiltEpoch = new OutputEpoch(session.view(),
+                    displayHost.currentPresentationRef(), displayHost.currentReaderRef(),
+                    metric.width, metric.height, metric.densityDpi, generation,
+                    leaseEligibleElapsedMs, android.os.SystemClock.elapsedRealtime());
             if (!displayHost.rearmCapture(generation,
-                    new BoundSink(lease, generation, frameConsumer))) {
+                    new BoundSink(lease, generation, frameConsumer), rebuiltEpoch)) {
                 // A checked rearm failure must not leave a healthy capturing label (R6).
                 failureReason = "capture rearm failed after geometry rebuild";
                 displayHost.stopCapture();
                 notifyHostingChanged();
                 return;
             }
+            displayHost.beginOutputEpoch(rebuiltEpoch, session); // New output requires new readiness.
             failureReason = null; // This successful rebuild/rearm resolved the capture failure.
         }
         // Without live demand: the private move attaches the surviving browser WITHOUT capture
@@ -751,18 +757,34 @@ final class HostingController {
         long now = android.os.SystemClock.elapsedRealtime();
         Lease newLease = new Lease();
         frameGate.open(newLease, generation, now + HostingPolicy.LEASE_TTL_MS);
+        // B: one output epoch per demand cycle. The ORIGINAL eligibility instant anchors the
+        // first-delivery bound; it is carried across same-lease rearms and never re-anchored by
+        // readiness. The host binds the epoch to the exact current reader/presentation/view and
+        // links current-output readiness (pre-draw on the delivered view) before any admission.
+        OutputEpoch epoch;
+        if (displayHost.isOwnerActive()) {
+            epoch = new OutputEpoch(session.view(), displayHost.currentPresentationRef(),
+                    displayHost.currentReaderRef(), metric.width, metric.height, metric.densityDpi,
+                    generation, leaseEligibleElapsedMs, now);
+        } else {
+            leaseEligibleElapsedMs = now; // Fresh demand cycle: the eligibility anchor starts here.
+            epoch = new OutputEpoch(session.view(), displayHost.currentPresentationRef(),
+                    displayHost.currentReaderRef(), metric.width, metric.height, metric.densityDpi,
+                    generation, leaseEligibleElapsedMs, now);
+        }
         // Same-owner rearm vs new-owner start: revocation retains the capture owner (thread and
         // reader stay for reacquisition), so a new lease after expiry/release rearms the SAME
         // active owner with the new bound sink; only a quiescent host starts a fresh owner (R2).
         boolean started = displayHost.isOwnerActive()
                 ? displayHost.rearmCapture(generation,
-                        new BoundSink(newLease, generation, consumer))
+                        new BoundSink(newLease, generation, consumer), epoch)
                 : displayHost.startCapture(generation,
-                        new BoundSink(newLease, generation, consumer));
+                        new BoundSink(newLease, generation, consumer), epoch);
         if (!started) {
             frameGate.close(); // Nothing retained; the caller retries after quiescence (R2).
             return null;
         }
+        displayHost.beginOutputEpoch(epoch, session); // Link current-output readiness (B).
         lease = newLease;
         frameConsumer = consumer;
         lastLeaseRenewElapsedMs = now;
@@ -783,7 +805,7 @@ final class HostingController {
         frameGate.close(); // No further admissions; an admitted frame finishes its own delivery.
         frameConsumer = null;
         if (displayHost != null) {
-            displayHost.stopCapture();
+            displayHost.stopCapture(); // Supersedes the output epoch (B).
         }
         releaseWakeLock();
     }
@@ -939,6 +961,16 @@ final class HostingController {
     /** Authoritative idle anchor (diagnostic/test seam): the last successful demand/readiness. */
     synchronized long lastDemandAnchorElapsedMs() {
         return lastDemandElapsedMs;
+    }
+
+    /** Sparse output-epoch facts (diagnostic/test seam; no content, no wire format). */
+    synchronized String outputEpochFacts() {
+        return displayHost != null ? displayHost.outputEpochFacts() : "epoch=none";
+    }
+
+    /** ORIGINAL eligibility instant of the live lease (diagnostic/test seam; 0 when none). */
+    synchronized long leaseEligibleElapsedMs() {
+        return lease != null ? leaseEligibleElapsedMs : 0L;
     }
 
     /** Whether a Phone Activity/container/token is retained as the current UI owner. */

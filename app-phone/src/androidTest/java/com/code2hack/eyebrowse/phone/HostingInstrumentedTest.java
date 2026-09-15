@@ -973,6 +973,46 @@ public class HostingInstrumentedTest {
                 runOnMainSync(hosting::status).state);
     }
 
+    /**
+     * B: an intentionally ALL-WHITE document delivers after output readiness without any color
+     * dependence. The epoch facts (ready=true before admission) prove the delivered frame's
+     * origin as current rendered output; white pixels here are the EXPECTED document content, so
+     * this case also guards against white-heuristic shortcuts in either direction.
+     */
+    @Test
+    public void allWhiteDocumentDeliversAfterReadinessWithoutColorDependence() throws Exception {
+        openFixture("/hosting-white.html", "White capture page");
+        String marker = domText("load-marker");
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
+        scenario.onActivity(activity -> activity.moveTaskToBack(true));
+        waitUntil("webview hosted offscreen", () -> {
+            HostViewSnapshot snapshot = hostViewSnapshot();
+            return snapshot.status.attachment == HostingController.Attachment.PRIVATE_DISPLAY
+                    && snapshot.viewAttached;
+        });
+        CollectingConsumer consumer = new CollectingConsumer();
+        long eligibleUptime = SystemClock.uptimeMillis();
+        HostingController.Lease lease = runOnMainSync(() -> hosting.acquireLease(consumer));
+        assertNotNull("white-document lease", lease);
+        waitUntil("first frame of the all-white document", () -> consumer.count() > 0);
+        long firstDeliveryMs = consumer.deliveryUptimeAt(0) - eligibleUptime;
+        assertTrue("first delivered frame within 2s of eligibility: " + firstDeliveryMs + "ms",
+                firstFrameDelayIsValid(firstDeliveryMs));
+        String epochFacts = runOnMainSync(hosting::outputEpochFacts);
+        milestones.record("all-white epoch facts: " + epochFacts
+                + " firstDeliveryMs=" + firstDeliveryMs);
+        assertTrue("admission followed completed output readiness (epoch facts: " + epochFacts + ")",
+                epochFacts.contains("ready=true"));
+        assertTrue("delivered frames are the live white document",
+                consumer.allFramesNearColor(Color.WHITE));
+        assertEquals("same document marker (no reload/substitution)", marker,
+                domText("load-marker"));
+        assertEquals("no reload of the white page", 1, loadCount("/hosting-white.html"));
+        runOnMain(lease::release);
+        bringMainActivityToFrontForTest();
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
+    }
+
     /** R6: a live lease survives a geometry rebuild; delivery rearms at the rebuilt viewport. */
     @Test
     public void liveLeaseSurvivesGeometryRebuildWithRearmedDelivery() throws Exception {
