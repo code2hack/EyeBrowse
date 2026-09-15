@@ -82,7 +82,6 @@ final class PhoneBrowserSession {
     private ViewGroup attachedContainer;
     private Attachment currentAttachment;
     private boolean rendererGone;
-    private long outputStateVersion; // Bumps on view/document/attachment change (epoch invalidation).
 
     private String displayUrl;
     private String lastCommittedUrl;
@@ -208,7 +207,6 @@ final class PhoneBrowserSession {
         }
         currentAttachment = null;
         attachedContainer = null;
-        bumpOutputStateVersion();
         if (webView != null) {
             ViewGroup parent = (ViewGroup) webView.getParent();
             if (parent != null) {
@@ -246,7 +244,6 @@ final class PhoneBrowserSession {
             }
             if (attachedContainer == container) {
                 attachedContainer = null;
-                bumpOutputStateVersion();
             }
             return;
         }
@@ -260,7 +257,6 @@ final class PhoneBrowserSession {
         if (attachedContainer == container) {
             attachedContainer = null;
         }
-        bumpOutputStateVersion();
         notifyListeners();
     }
 
@@ -274,24 +270,8 @@ final class PhoneBrowserSession {
         return attachment != null && attachment == currentAttachment;
     }
 
-    /** Monotonic output-state version: changes when the view, document or attachment changes. */
-    long outputStateVersion() {
-        return outputStateVersion;
-    }
-
-    /**
-     * S4: bumps the output-state version WITHOUT notifying - attachment mutations must not
-     * reentrantly notify (and reattach) observers mid-mutation. Change propagation flows through
-     * the terminal notification each mutating operation already issues; admission-time full
-     * live-identity revalidation closes any silent-change gap.
-     */
-    private void bumpOutputStateVersion() {
-        outputStateVersion++;
-    }
-
     private void attachToContainer(Context baseContext, ViewGroup container) {
         contextWrapper.setBaseContext(baseContext);
-        bumpOutputStateVersion();
         attachedContainer = container;
         container.removeAllViews();
         if (webView != null) {
@@ -402,9 +382,6 @@ final class PhoneBrowserSession {
     }
 
     private void persistLastCommitted(String url) {
-        // S3: a same-URL document replacement is still a document replacement - the epoch must
-        // be replaced, not preserved by URL equality.
-        bumpOutputStateVersion();
         lastCommittedUrl = url;
         preferences.edit().putString(KEY_LAST_COMMITTED_URL, url).apply();
     }
@@ -413,7 +390,6 @@ final class PhoneBrowserSession {
         if (webView == null) {
             return;
         }
-        bumpOutputStateVersion();
         ViewGroup parent = (ViewGroup) webView.getParent();
         if (parent != null) {
             parent.removeView(webView);

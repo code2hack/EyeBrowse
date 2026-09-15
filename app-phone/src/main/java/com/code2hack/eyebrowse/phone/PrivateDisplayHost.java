@@ -96,239 +96,23 @@ final class PrivateDisplayHost {
     private Handler captureHandler;             // main-thread lifecycle
     private Thread retainedCaptureThread;       // latest capture thread, for isAlive() introspection
     private FrameSink frameSink;                // volatile: swapped from main, read on capture path
-    private volatile int width;        // main-thread writes; capture-thread live-identity reads
-    private volatile int height;
-    private volatile int densityDpi;
+    private int width;
+    private int height;
+    private int densityDpi;
 
     // Capture-path state.
     private long frameSequence;
-    private long lastActualDeliveryElapsedMs; // Last ACTUAL delivery (S5); copy/candidate never advance it.
+    private long lastDeliveryElapsedMs;
     private boolean deliveredAny;
     private Bitmap frameBitmap;                 // nativeLock-protected
     private volatile boolean captureActive;
     private volatile boolean captureReleased;   // release requested; no further admissions/copying
     private volatile boolean teardownComplete = true;
     private volatile int captureGeneration;     // hosting generation stamped into produced frames
-                                                // and read for live-identity checks (B)
-
-    /**
-     * The live output epoch (B): full live identity of the output cycle with its supported
-     * visual-state -> window-submission stages. Superseded (REPLACED, not reset) on any relevant
-     * output-state change; while the step-5 reader-correspondence link is unresolved the
-     * consumer admission gate stays CLOSED and live-epoch images are consumed (acquire+close)
-     * on the owning path — an explicitly incomplete, non-delivering state.
-     */
-    private volatile OutputEpoch currentEpoch;
-
-    /** S5: guards the single bounded last-update continuation (no FIFO). */
-    private boolean lastUpdateContinuationPending;
-
-    /** S5: the single owned latest candidate (its bitmap is a dedicated copy, metadata-coherent). */
-    private HostingFrame latestCandidate;
-    private long latestCandidateElapsedMs;
-
-    /**
-     * Production consumer admission gate (B step 5): CLOSED while no supported
-     * window-submission -> reader-buffer correspondence rule exists. Opening it is a future,
-     * separately reviewed change; it is not toggled by this checkpoint.
-     */
-    private volatile boolean consumerAdmissionOpen = false;
-
-    /** One-shot visual-state request ids for {@code WebView.postVisualStateCallback}. */
-    private long visualStateRequestCounter;
-
-    /** The currently registered pending OnPreDraw observer (S1/S4 legal-lifetime tracking). */
-    private android.view.ViewTreeObserver.OnPreDrawListener activePreDrawObserver;
-
-    /** The view whose observer holds {@code activePreDrawObserver} (for legal detachment). */
-    private android.webkit.WebView lastObservedView;
 
     PrivateDisplayHost(Factory factory, Runnable onQuiesced) {
         this.factory = factory;
         this.onQuiesced = onQuiesced;
-    }
-
-    /**
-     * Begins (REPLACES) the live output epoch and starts the supported S2 chain on the main
-     * thread. The previous epoch is invalidated as a whole by replacement — its stages never
-     * complete retroactively (S3).
-     *
-     * <p>Chain: (1) {@code WebView.postVisualStateCallback} with full live-tuple revalidation on
-     * completion — official guarantee: the NEXT draw reflects DOM state through the request point
-     * (visibility/attachment conditions apply; video excluded); a document-readiness signal, not
-     * rendered output. (2) A guarded OnPreDraw observer (registered legally; never removed inside
-     * its own callback; inert after its single registration) registers
-     * {@code ViewTreeObserver.registerFrameCommitCallback} for the upcoming traversal and the
-     * view is invalidated to drive it. (3) The commit callback — hardware rendering rendered a
-     * frame and SUBMITTED it to the window swap chain (API 29+; the frame need not be visible) —
-     * revalidates the full live tuple and records WINDOW_SUBMITTED. Window submission is NOT
-     * output-ready: the consumer gate remains closed (step 5 unresolved).
-     */
-    void beginOutputEpoch(OutputEpoch epoch, PhoneBrowserSession session) {
-        detachPendingPreDrawObserver(); // S1/S4-legal: removal outside any observer callback.
-        currentEpoch = epoch;
-        android.webkit.WebView view = session.view();
-        if (view == null || view != epoch.viewRef()) {
-            return; // No delivered view to link; the epoch stays unchained (nothing is admitted).
-        }
-        rebindCaptureListener(epoch); // S3: the LIVE reader follows the replacement epoch (B).
-        final OutputEpoch observedEpoch = epoch;
-        visualStateRequestCounter++;
-        final long requestId = visualStateRequestCounter;
-        view.postVisualStateCallback(requestId, new android.webkit.WebView.VisualStateCallback() {
-            @Override
-            public void onComplete(long id) {
-                if (id != requestId || currentEpoch != observedEpoch) {
-                    return; // Superseded while pending: stages never complete retroactively (S3).
-                }
-                if (!observedEpoch.matchesLive(session.view(), currentPresentationRef(),
-                        currentReaderRef(), width, height, densityDpi, captureGeneration,
-                        session.outputStateVersion())) {
-                    return; // Full live identity changed: this epoch is superseded (S3).
-                }
-                observedEpoch.markVisualStateCompleted(android.os.SystemClock.elapsedRealtime());
-                Log.i(TAG, "visual state completed gen=" + observedEpoch.hostingGeneration()
-                        + " eligible=" + observedEpoch.eligibleElapsedMs());
-                registerWindowCommitObservation(observedEpoch, session);
-            }
-        });
-    }
-
-    /**
-     * Registers the window-commit observation for the upcoming traversal (S1-legal lifetime): a
-     * guarded OnPreDraw observer registers {@code registerFrameCommitCallback} for THAT pass and
-     * then stays attached as an inert pass-through (it is never removed inside its own callback;
-     * replacement happens at the next epoch begin). The traversal is driven by an ordinary
-     * invalidate.
-     */
-    private void registerWindowCommitObservation(OutputEpoch epoch, PhoneBrowserSession session) {
-        android.webkit.WebView view = session.view();
-        if (view == null || view != epoch.viewRef() || currentEpoch != epoch) {
-            return;
-        }
-        final OutputEpoch observedEpoch = epoch;
-        final boolean[] commitRegistered = {false};
-        android.view.ViewTreeObserver.OnPreDrawListener preDraw =
-                new android.view.ViewTreeObserver.OnPreDrawListener() {
-                    @Override
-                    public boolean onPreDraw() {
-                        if (currentEpoch != observedEpoch || commitRegistered[0]) {
-                            return true; // Inert pass-through after its single registration (S1).
-                        }
-                        if (!observedEpoch.isVisualStateCompleted()) {
-                            return true; // Stage 1 must precede stage 2 registration.
-                        }
-                        commitRegistered[0] = true;
-                        android.view.ViewTreeObserver observer = view.getViewTreeObserver();
-                        if (!observer.isAlive()) {
-                            return true;
-                        }
-                        observer.registerFrameCommitCallback(() -> {
-                            // Hardware rendering submitted the frame to the window swap chain.
-                            if (currentEpoch != observedEpoch
-                                    || !observedEpoch.matchesLive(session.view(),
-                                    currentPresentationRef(), currentReaderRef(),
-                                    width, height, densityDpi, captureGeneration,
-                                    session.outputStateVersion())) {
-                                return; // Superseded/live identity changed (S3).
-                            }
-                            observedEpoch.markWindowSubmitted(
-                                    android.os.SystemClock.elapsedRealtime());
-                            Log.i(TAG, "window frame submitted gen="
-                                    + observedEpoch.hostingGeneration() + " eligible="
-                                    + observedEpoch.eligibleElapsedMs()
-                                    + " (WINDOW_SUBMITTED; consumer gate closed, step5 open)");
-                        });
-                        return true;
-                    }
-                };
-        activePreDrawObserver = preDraw;
-        lastObservedView = view;
-        view.getViewTreeObserver().addOnPreDrawListener(preDraw);
-        view.invalidate(); // Drive the traversal (ordinary; no content change, no reload).
-    }
-
-    /**
-     * S1/S4: removes the pending OnPreDraw observer at a LEGAL point (main thread, outside any
-     * observer callback). OnPreDraw removal inside its own callback is not the prohibited case
-     * (that is OnDrawListener), but replacement-time cleanup is still explicit and bounded.
-     */
-    private void detachPendingPreDrawObserver() {
-        final Object observer = activePreDrawObserver;
-        activePreDrawObserver = null;
-        if (!(observer instanceof android.view.ViewTreeObserver.OnPreDrawListener)) {
-            return;
-        }
-        android.webkit.WebView view = lastObservedView;
-        if (view == null) {
-            return;
-        }
-        android.view.ViewTreeObserver o = view.getViewTreeObserver();
-        if (o.isAlive()) {
-            o.removeOnPreDrawListener(
-                    (android.view.ViewTreeObserver.OnPreDrawListener) observer);
-        }
-    }
-
-    /**
-     * S3: rebinds the LIVE reader's capture listener to the replacement epoch so closed-gate
-     * bounded consumption continues after replacement (an old registration-bound listener would
-     * otherwise see DISCARD_STALE forever and stall queue progress).
-     */
-    private void rebindCaptureListener(OutputEpoch epoch) {
-        synchronized (nativeLock) {
-            if (!captureActive || captureHandler == null || imageReader == null
-                    || imageReader != epoch.readerRef()) {
-                return; // Not armed, or the epoch binds a different (rebuilt) reader.
-            }
-            final FrameSink sink = frameSink; // The live lease's sink (main-thread read).
-            imageReader.setOnImageAvailableListener(
-                    (reader) -> onImageAvailableForEpoch(epoch, sink, reader), captureHandler);
-            Log.i(TAG, "capture listener rebound to replacement epoch gen="
-                    + epoch.hostingGeneration());
-        }
-    }
-
-    /** Ends the live epoch: pending chain stages never complete and its callbacks no-op. */
-    void supersedeOutputEpoch() {
-        detachPendingPreDrawObserver(); // S1/S4: legal removal outside any observer callback.
-        latestCandidate = null; // S5 transition cleanup: no stale candidate survives the epoch.
-        currentEpoch = null;
-    }
-
-    OutputEpoch currentEpoch() {
-        return currentEpoch;
-    }
-
-    /** Live presenting-container identity for epoch binding (main thread). */
-    Object currentPresentationRef() {
-        return presentation;
-    }
-
-    /** Live reader identity for epoch binding. */
-    Object currentReaderRef() {
-        synchronized (nativeLock) {
-            return imageReader;
-        }
-    }
-
-    private int currentDensityDpi() {
-        return densityDpi;
-    }
-
-    /** Sparse diagnostic facts for test-owned milestones (no content, no wire format). */
-    String outputEpochFacts() {
-        OutputEpoch epoch = currentEpoch;
-        if (epoch == null) {
-            return "epoch=none consumerGate=" + (consumerAdmissionOpen ? "open" : "closed");
-        }
-        return "epoch=" + System.identityHashCode(epoch)
-                + " gen=" + epoch.hostingGeneration()
-                + " visualState=" + epoch.isVisualStateCompleted()
-                + " windowSubmitted=" + epoch.isWindowSubmitted()
-                + " eligible=" + epoch.eligibleElapsedMs()
-                + " consumerGate=" + (consumerAdmissionOpen ? "open" : "closed")
-                + " " + epoch.width() + "x" + epoch.height();
     }
 
     /**
@@ -501,13 +285,10 @@ final class PrivateDisplayHost {
      * when the owner is not actively capturable — the caller must surface that, never display a
      * healthy capturing state over an unarmed reader.
      */
-    boolean rearmCapture(int hostingGeneration, FrameSink boundSink, OutputEpoch epoch) {
+    boolean rearmCapture(int hostingGeneration, FrameSink boundSink) {
         if (!ownerPhase.isActive() || imageReader == null || boundSink == null
                 || captureThread == null || captureHandler == null) {
             return false;
-        }
-        if (epoch == null || imageReader != epoch.readerRef()) {
-            return false; // The epoch must bind the exact reader being rearmed (B).
         }
         frameSink = boundSink;
         frameSequence = 0;
@@ -515,12 +296,8 @@ final class PrivateDisplayHost {
         captureGeneration = hostingGeneration;
         captureActive = true;
         captureReleased = false;
-        currentEpoch = epoch;
-        // Listener identity bound at REGISTRATION to this epoch+sink (B): a stale callback can
-        // never select a successor's epoch/sink, whatever executes later.
-        imageReader.setOnImageAvailableListener(
-                (reader) -> onImageAvailableForEpoch(epoch, boundSink, reader), captureHandler);
-        scheduleDrain(epoch);
+        imageReader.setOnImageAvailableListener(this::onImageAvailable, captureHandler);
+        scheduleDrain();
         Log.i(TAG, "rearmCapture gen=" + hostingGeneration + " on rebuilt reader");
         return true;
     }
@@ -535,7 +312,7 @@ final class PrivateDisplayHost {
      * teardown. The caller retries explicitly after quiescence — a null acquisition has no
      * hidden side effects.
      */
-    boolean startCapture(int hostingGeneration, FrameSink boundSink, OutputEpoch epoch) {
+    boolean startCapture(int hostingGeneration, FrameSink boundSink) {
         if (imageReader == null || boundSink == null) {
             return false;
         }
@@ -543,35 +320,26 @@ final class PrivateDisplayHost {
             Log.i(TAG, "startCapture deferred: owner phase=" + ownerPhase.phase());
             return false;
         }
-        if (epoch == null || imageReader != epoch.readerRef()) {
-            return false; // The epoch must bind the exact reader being started (B).
-        }
         frameSink = boundSink;
         frameSequence = 0;
         deliveredAny = false;
         captureGeneration = hostingGeneration;
         captureActive = true;
         captureReleased = false;
-        // NOTE: currentEpoch is bound by beginOutputEpoch (the S2 chain start), not here (S3).
         Log.i(TAG, "startCapture gen=" + hostingGeneration + " reader=" + (imageReader != null)
                 + " threadAlive=" + (captureThread != null));
-        // Listener identity bound at REGISTRATION to this epoch+sink (B).
-        java.util.function.BiConsumer<OutputEpoch, ImageReader> boundListener =
-                (boundEpoch, reader) -> onImageAvailableForEpoch(boundEpoch, boundSink, reader);
         if (captureThread != null) {
             // Reacquisition after lease loss: the capture thread survived; rearm the listener.
-            imageReader.setOnImageAvailableListener(
-                    (reader) -> onImageAvailableForEpoch(epoch, boundSink, reader), captureHandler);
-            scheduleDrain(epoch);
+            imageReader.setOnImageAvailableListener(this::onImageAvailable, captureHandler);
+            scheduleDrain();
             return true;
         }
         captureThread = new HandlerThread("EyeBrowseHostingCapture");
         captureThread.start();
         captureHandler = new Handler(captureThread.getLooper());
         retainedCaptureThread = captureThread;
-        imageReader.setOnImageAvailableListener(
-                (reader) -> onImageAvailableForEpoch(epoch, boundSink, reader), captureHandler);
-        scheduleDrain(epoch);
+        imageReader.setOnImageAvailableListener(this::onImageAvailable, captureHandler);
+        scheduleDrain();
         return true;
     }
 
@@ -581,24 +349,20 @@ final class PrivateDisplayHost {
      * frames are dropped, latest-only. Runs on the capture handler, serialized with callback
      * acquisitions, and is bounded.
      */
-    /** Posts an epoch-BOUND drain: the task validates its originating epoch, not entry-time state. */
-    private void scheduleDrain(OutputEpoch epoch) {
-        if (captureHandler != null && epoch != null) {
-            captureHandler.post(() -> drainPendingImages(epoch));
+    private void scheduleDrain() {
+        if (captureHandler != null) {
+            captureHandler.post(this::drainPendingImages);
         }
     }
 
-    /** Drains queued initialization images for the ORIGINATING epoch only (bounded). */
-    private void drainPendingImages(OutputEpoch boundEpoch) {
+    private void drainPendingImages() {
         final int maxDrain = 8; // maxImages=2 plus settling headroom; bounded by construction.
         int drained = 0;
         while (drained < maxDrain) {
             Image stale;
             synchronized (nativeLock) {
-                if (imageReader == null || boundEpoch == null
-                        || imageReader != boundEpoch.readerRef()
-                        || currentEpoch != boundEpoch) {
-                    break; // Superseded: never select/drain a successor's reader (B).
+                if (imageReader == null) {
+                    break;
                 }
                 stale = imageReader.acquireLatestImage();
                 if (stale == null) {
@@ -608,11 +372,11 @@ final class PrivateDisplayHost {
             try {
                 drained++;
             } finally {
-                stale.close(); // Initialization/preparation output: discarded, never delivered.
+                stale.close();
             }
         }
         if (drained > 0) {
-            Log.i(TAG, "drained " + drained + " pre-readiness capture image(s)");
+            Log.i(TAG, "drained " + drained + " stale capture image(s)");
         }
     }
 
@@ -622,7 +386,6 @@ final class PrivateDisplayHost {
      * only through the owning retirement path.
      */
     void stopCapture() {
-        supersedeOutputEpoch(); // Revocation ends the epoch: pending readiness never completes.
         captureActive = false;
         frameSink = null;
     }
@@ -641,7 +404,6 @@ final class PrivateDisplayHost {
      * quiescence is observable via {@link #isQuiescent()} and the quiescence callback.
      */
     void releaseCaptureResources() {
-        supersedeOutputEpoch(); // Pending readiness of this owner never completes (B).
         if (ownerPhase.isRetiring()) {
             return; // Retirement already requested and outstanding; do not re-post.
         }
@@ -801,40 +563,15 @@ final class PrivateDisplayHost {
         return ownerPhase.isActive();
     }
 
-    /**
-     * Epoch-bound capture callback (B): the epoch and sink were bound at listener REGISTRATION;
-     * admission goes through the pure {@link EpochAdmission} decision against the host's live
-     * state, and the epoch is rechecked immediately before delivery.
-     */
-    private void onImageAvailableForEpoch(OutputEpoch boundEpoch, FrameSink boundSink,
-            ImageReader reader) {
-        final FrameSink sink = boundSink; // Registration identity, not entry-time mutable state.
-        final OutputEpoch epoch = boundEpoch;
-        OutputEpoch liveEpoch;
-        Object liveReader;
-        boolean active;
-        boolean released;
-        synchronized (nativeLock) {
-            liveEpoch = currentEpoch;
-            liveReader = imageReader;
-            active = captureActive;
-            released = captureReleased;
+    private void onImageAvailable(ImageReader reader) {
+        final FrameSink sink = frameSink; // Read once; swaps happen only from the main thread.
+        if (!captureActive || sink == null) {
+            return; // Latest-only: nothing is acquired while delivery is not live.
         }
-        EpochAdmission.Decision decision = EpochAdmission.evaluate(active, released, liveReader,
-                liveEpoch, epoch, reader, consumerAdmissionOpen, deliveredAny,
-                lastActualDeliveryElapsedMs, SystemClock.elapsedRealtime());
-        if (decision == EpochAdmission.Decision.DISCARD_STALE) {
-            return; // Orphaned output of a retired cycle: the reader may belong to a successor.
-        }
-        // CONSUME_UNREADY / RECORD_CANDIDATE / DELIVER all acquire the newest image on the
-        // owning path: bounded queue progress (the producer is never left to fill maxImages).
         HostingFrame frame = null;
-        boolean consumeOnly = decision == EpochAdmission.Decision.CONSUME_UNREADY;
-        boolean candidate = decision == EpochAdmission.Decision.RECORD_CANDIDATE;
         synchronized (nativeLock) {
-            if (captureReleased || reader != imageReader || reader != epoch.readerRef()
-                    || currentEpoch != epoch) {
-                return; // Recheck under the lock: state moved between decision and acquire.
+            if (captureReleased || reader != imageReader) {
+                return; // Stale callback for a closed or superseded reader.
             }
             Image image = reader.acquireLatestImage();
             if (image == null) {
@@ -842,85 +579,22 @@ final class PrivateDisplayHost {
             }
             long nowElapsed = SystemClock.elapsedRealtime();
             try {
-                if (consumeOnly) {
-                    // S2 chain incomplete: preparation output stays internal (acquire+close).
+                if (deliveredAny && HostingPolicy.frameThrottled(nowElapsed, lastDeliveryElapsedMs)) {
                     return;
                 }
+                deliveredAny = true;
+                lastDeliveryElapsedMs = nowElapsed;
                 frame = copyFrame(image, nowElapsed);
-                if (candidate) {
-                    // S5: the candidate owns a DEDICATED bitmap copy so later shared-bitmap
-                    // copies cannot mutate its pixels under its captured metadata.
-                    frame = new HostingFrame(
-                            frame.bitmap.copy(android.graphics.Bitmap.Config.ARGB_8888, false),
-                            frame.width, frame.height, frame.generation, frame.sequence,
-                            frame.captureElapsedMs, frame.contentHash);
-                }
             } catch (RuntimeException error) {
                 Log.w(TAG, "hosting frame capture failed", error);
             } finally {
                 image.close(); // The native image never escapes the copy scope.
             }
         }
-        if (frame == null || currentEpoch != epoch) {
-            return; // Superseded between copy and delivery: never retag onto a successor (B).
-        }
-        if (candidate) {
-            // S5: replace the single latest candidate; the continuation (if idle) is scheduled
-            // by the delivery bookkeeping below. The delivery clock is NOT touched here.
-            synchronized (nativeLock) {
-                latestCandidate = frame;
-                latestCandidateElapsedMs = frame.captureElapsedMs;
-            }
-            scheduleLastUpdateContinuation(epoch, sink);
-            return;
-        }
-        // DELIVER: the last-ACTUAL-delivery clock advances only on real deliveries (S5).
-        deliveredAny = true;
-        lastActualDeliveryElapsedMs = SystemClock.elapsedRealtime();
-        // Admission and consumer invocation happen outside nativeLock; the sink's bound
-        // identity fences superseded leases without taking any monitor.
-        sink.onFrame(frame);
-    }
-
-    /**
-     * S5: one bounded scheduled continuation that delivers the LAST copied candidate when the
-     * throttle window expires — the final update is eventually delivered without a FIFO. The
-     * continuation revalidates epoch currency, capture liveness and the consumer gate, and is
-     * skipped when a newer frame was already delivered after the candidate was copied.
-     */
-    private void scheduleLastUpdateContinuation(OutputEpoch epoch, FrameSink sink) {
-        if (lastUpdateContinuationPending) {
-            return; // One bounded continuation at a time; it always reads the LATEST slot (S5).
-        }
-        long now = SystemClock.elapsedRealtime();
-        long delay = Math.max(1, HostingPolicy.MIN_FRAME_INTERVAL_MS
-                - (now - lastActualDeliveryElapsedMs));
-        lastUpdateContinuationPending = true;
-        if (captureHandler != null) {
-            captureHandler.postDelayed(() -> {
-                lastUpdateContinuationPending = false;
-                FrameSink currentSink;
-                boolean active;
-                synchronized (nativeLock) {
-                    currentSink = frameSink;
-                    active = captureActive;
-                }
-                HostingFrame dueCandidate;
-                synchronized (nativeLock) {
-                    dueCandidate = latestCandidate;
-                    latestCandidate = null; // Transition cleanup: the slot is consumed.
-                }
-                if (!active || currentSink != sink || currentEpoch != epoch
-                        || !consumerAdmissionOpen || dueCandidate == null
-                        || lastActualDeliveryElapsedMs > dueCandidate.captureElapsedMs) {
-                    return; // Superseded / newer frame already delivered: the candidate is stale.
-                }
-                deliveredAny = true;
-                lastActualDeliveryElapsedMs = SystemClock.elapsedRealtime();
-                sink.onFrame(dueCandidate); // Eventual delivery of the LAST update (S5).
-            }, delay);
-        } else {
-            lastUpdateContinuationPending = false;
+        if (frame != null) {
+            // Admission and consumer invocation happen outside nativeLock; the sink's bound
+            // identity fences superseded leases without taking any monitor.
+            sink.onFrame(frame);
         }
     }
 
