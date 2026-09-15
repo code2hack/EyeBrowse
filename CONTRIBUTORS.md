@@ -94,7 +94,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "id": "01a0a004-df1e-76e1-bd18-9e974724b78a",
     "model": "GLM-5.3-Flash-EXL3",
     "name": "Worker-#5",
-    "status": "active"
+    "status": "retired"
   },
   {
     "role": "Reviewer",
@@ -104,6 +104,16 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "id": "01a0a0fc-eaea-77b3-a446-08df61bfc268",
     "model": "gpt-6-astra",
     "name": "Reviewer-#5",
+    "status": "active"
+  },
+  {
+    "role": "Worker",
+    "scope": "v0.0.1; issue #5; Option A replacement; Phone/shared-core",
+    "host": "u4090",
+    "runtime": "pi",
+    "id": "01a0a441-925d-7484-81cf-23dd56f1ead4",
+    "model": "deepseek-flash",
+    "name": "Worker-#5-r2",
     "status": "active"
   }
 ]
