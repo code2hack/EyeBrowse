@@ -90,14 +90,16 @@ public class HostingInstrumentedTest {
     /**
      * App-scoped permission setup so the POST_NOTIFICATIONS dialog never interrupts the Start
      * control. Below API 33 that runtime permission is explicitly NOT_APPLICABLE: no check, no
-     * grant/revoke, no GRANTED claim and no restoration obligation. On API 33+ the pre-existing
-     * grant state is recorded once per class (reported as {@code NOTIF_PERM_BEFORE} in the
-     * instrumentation stream) so cleanup can restore it; a failed setup fails loudly instead of
-     * proceeding as if verified.
+     * grant/revoke, no GRANTED claim and no restoration obligation. On API 33+ the known original
+     * state is recorded once per class (reported as {@code NOTIF_PERM_BEFORE} in the
+     * instrumentation stream) and a not-granted state is changed only through a verified grant;
+     * an attempted but unverified change is reported as uncertain, never silently treated as
+     * unchanged or as success, and fails the setup.
      */
     private void ensureNotificationPermissionSetupForTest() {
         int sdkInt = android.os.Build.VERSION.SDK_INT;
         if (!NotificationPermissionPolicy.applicable(sdkInt)) {
+            notificationPermissionOutcome = NotificationPermissionPolicy.SetupOutcome.NOT_APPLICABLE;
             if (!notificationPermissionNotApplicableReported) {
                 notificationPermissionNotApplicableReported = true;
                 System.out.println("NOTIF_PERM_N/A sdk=" + sdkInt
@@ -105,38 +107,64 @@ public class HostingInstrumentedTest {
             }
             return; // Only this permission helper is skipped; the rest of setup/tests/cleanup runs.
         }
-        boolean granted = notificationPermissionGranted();
-        if (!notificationPermissionSetupRecorded) {
-            notificationPermissionWasGrantedBeforeSetup = granted;
-            notificationPermissionSetupRecorded = true;
-            System.out.println("NOTIF_PERM_BEFORE granted=" + granted);
+        if (notificationPermissionOutcome == NotificationPermissionPolicy.SetupOutcome.PRE_GRANTED
+                || notificationPermissionOutcome
+                        == NotificationPermissionPolicy.SetupOutcome.GRANT_VERIFIED) {
+            return; // Known original state already established for this class.
         }
+        boolean granted = notificationPermissionGranted();
+        if (notificationPermissionOutcome == NotificationPermissionPolicy.SetupOutcome.NOT_RUN) {
+            System.out.println("NOTIF_PERM_BEFORE granted=" + granted);
+            if (granted) {
+                notificationPermissionOutcome =
+                        NotificationPermissionPolicy.SetupOutcome.PRE_GRANTED;
+                return;
+            }
+            // Known denied-before state: only a verified grant may count as this test's mutation.
+        }
+        boolean grantAttempted = false;
         if (NotificationPermissionPolicy.needsGrant(sdkInt, granted)) {
+            grantAttempted = true;
             runShellCommandForTest(
                     "pm grant com.code2hack.eyebrowse.phone android.permission.POST_NOTIFICATIONS");
-            if (NotificationPermissionPolicy.setupFailed(sdkInt, true,
-                    notificationPermissionGranted())) {
-                fail("POST_NOTIFICATIONS setup did not take effect; not proceeding as verified success");
-            }
+            granted = notificationPermissionGranted();
+        }
+        if (NotificationPermissionPolicy.setupFailed(sdkInt, grantAttempted, granted)) {
+            notificationPermissionOutcome =
+                    NotificationPermissionPolicy.SetupOutcome.GRANT_FAILED_OR_UNCERTAIN;
+            System.out.println("NOTIF_PERM_CHANGED verified=false uncertain=true"
+                    + " (no verified mutation; cleanup must not claim restoration)");
+            fail("POST_NOTIFICATIONS setup did not take effect; not proceeding as verified success");
+        }
+        if (granted) {
+            // Denied-before state changed by this class and the change is verified.
+            notificationPermissionOutcome =
+                    NotificationPermissionPolicy.SetupOutcome.GRANT_VERIFIED;
+            System.out.println("NOTIF_PERM_CHANGED verified=true (restoration owed)");
         }
     }
 
     /** Explicit NOT_APPLICABLE report guard for API<33 (once per class). */
     private static boolean notificationPermissionNotApplicableReported;
 
-    /** Recorded before-state for cleanup restoration; true when the permission was pre-granted. */
-    private static boolean notificationPermissionWasGrantedBeforeSetup;
-
-    private static boolean notificationPermissionSetupRecorded;
+    /** Recorded setup outcome for this class: applicability/original-state/changed/uncertain. */
+    private static NotificationPermissionPolicy.SetupOutcome notificationPermissionOutcome =
+            NotificationPermissionPolicy.SetupOutcome.NOT_RUN;
 
     /**
-     * Cleanup applicability: below API 33 there is no runtime permission to restore (explicit
-     * no-op, even if the default false grant flag was never set), and on 33+ only a setup that
-     * actually changed a pre-existing not-granted state is restored.
+     * Cleanup applicability: only a verified grant mutation made by this class is restored.
+     * Below API 33 there is no runtime permission to restore; a failed/uncertain change is
+     * reported through {@link #notificationPermissionSetupUncertain()} but is never claimed as a
+     * verified mutation.
      */
     static boolean notificationPermissionNeedsCleanupRestore() {
         return NotificationPermissionPolicy.needsRestore(android.os.Build.VERSION.SDK_INT,
-                notificationPermissionSetupRecorded, notificationPermissionWasGrantedBeforeSetup);
+                notificationPermissionOutcome);
+    }
+
+    /** True when a setup attempt could not be verified; callers must report, never assume. */
+    static boolean notificationPermissionSetupUncertain() {
+        return NotificationPermissionPolicy.isUncertain(notificationPermissionOutcome);
     }
 
     private boolean notificationPermissionGranted() {
