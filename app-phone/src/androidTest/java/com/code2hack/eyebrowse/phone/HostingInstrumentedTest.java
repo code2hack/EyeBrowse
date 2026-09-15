@@ -1052,6 +1052,12 @@ public class HostingInstrumentedTest {
     public void lateRenewalAfterExpiryCannotReviveDelivery() throws Exception {
         openFixture("/hosting.html", "Hosting capture page");
         tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
+        scenario.onActivity(activity -> activity.moveTaskToBack(true));
+        waitUntil("page attached offscreen before lease", () -> {
+            HostViewSnapshot snapshot = hostViewSnapshot();
+            return snapshot.status.attachment == HostingController.Attachment.PRIVATE_DISPLAY
+                    && snapshot.viewAttached;
+        });
         CollectingConsumer consumer = new CollectingConsumer();
         HostingController.Lease lease = runOnMainSync(() -> hosting.acquireLease(consumer));
         assertNotNull(lease);
@@ -1062,7 +1068,8 @@ public class HostingInstrumentedTest {
         // revokes within its tick. This device case proves the observable no-revival endpoint.
         SystemClock.sleep(HostingPolicy.LEASE_TTL_MS + 1_500);
         int framesAtExpiry = consumer.count();
-        // The late renewal arrives between TTL expiry and any later tick: it must move nothing.
+        // This device case renews after expiry; it must move nothing. The exact pre-watchdog
+        // deadline interval is exercised with controlled time by FrameGateTest, not this sleep.
         runOnMain(lease::renew);
         SystemClock.sleep(2_000); // A revived pipeline would deliver within this window.
         assertEquals("no delivery revived by the late renewal", framesAtExpiry, consumer.count());
