@@ -5,6 +5,7 @@ import static androidx.test.espresso.action.ViewActions.click;
 import static androidx.test.espresso.action.ViewActions.replaceText;
 import static androidx.test.espresso.matcher.ViewMatchers.withId;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -1084,35 +1085,52 @@ public class HostingInstrumentedTest {
             return snapshot.status.attachment == HostingController.Attachment.PRIVATE_DISPLAY
                     && snapshot.viewAttached;
         });
-        DelayedConsumer first = new DelayedConsumer(400);
+        DelayedConsumer first = new DelayedConsumer();
         HostingController.Lease lease1 = runOnMainSync(() -> hosting.acquireLease(first));
         assertNotNull(lease1);
-        waitUntil("first consumer receiving", () -> first.collector().count() > 0);
-        // Controlled barrier: release+reacquire while the consumer is inside its callback
-        // (entered latch), not on a maybe-sleep.
-        assertTrue("consumer entered its callback", first.awaitEntered(5_000));
-        runOnMain(lease1::release);
         CollectingConsumer second = new CollectingConsumer();
-        HostingController.Lease lease2 = runOnMainSync(() -> hosting.acquireLease(second));
-        if (lease2 == null) {
-            // Declared ownership semantics of a null return: no lease and no hidden acquisition.
-            SystemClock.sleep(1_000);
-            assertEquals("no anonymous delivery after a null acquisition", 0, second.count());
+        HostingController.Lease prematureLease = null;
+        try {
+            // Entry precedes collection. The test, not a sleep, owns the callback's release.
+            assertTrue("consumer entered its callback", first.awaitEntered(5_000));
+            milestones.record("delayed-consumer callback held before revocation");
+            runOnMain(lease1::release);
+            assertTrue("borrowed callback keeps the retiring owner observable",
+                    runOnMainSync(hosting::captureResourcesPresent));
+            prematureLease = runOnMainSync(() -> hosting.acquireLease(second));
+            assertNull("no replacement lease while the old callback is held", prematureLease);
+            assertEquals("no anonymous delivery after rejected acquisition", 0, second.count());
+            milestones.record("replacement rejected while old callback held");
+        } finally {
+            first.releaseHold();
+            // If the invariant failed, release only the unexpected lease this test acquired.
+            if (prematureLease != null) {
+                runOnMain(prematureLease::release);
+            }
+            runOnMain(lease1::release); // Idempotent test cleanup, not a replayed UI action.
         }
-        // Explicit acquisition after quiescence succeeds (no callback-only hidden lease, R2).
-        HostingController.Lease lease3 = null;
-        long explicitDeadline = SystemClock.elapsedRealtime() + 15_000;
-        while (lease3 == null && SystemClock.elapsedRealtime() < explicitDeadline) {
-            SystemClock.sleep(200);
-            lease3 = runOnMainSync(() -> hosting.acquireLease(second));
+        waitUntil("old capture owner actually quiescent",
+                () -> !runOnMainSync(hosting::captureResourcesPresent), STOP_BOUND_MS);
+        assertFalse("test-controlled callback hold expired or was interrupted", first.holdFailed());
+        assertTrue("held callback completed its own borrowed use", first.collector().count() > 0);
+        assertEquals("rejected acquisition created no hidden lease or delivery", 0, second.count());
+        milestones.record("old owner quiescent before explicit replacement acquisition");
+
+        // One explicit acquisition after observed quiescence; never wait for an abandoned lease
+        // to expire and never acquire a third lease while a successful second lease is held.
+        HostingController.Lease replacement = runOnMainSync(() -> hosting.acquireLease(second));
+        assertNotNull("explicit acquisition succeeds after quiescence", replacement);
+        try {
+            waitUntil("replacement consumer receiving", () -> second.count() > 0);
+            assertTrue("the retiring consumer's borrowed frame retained the original document",
+                    first.collector().allFramesNearColor(CAPTURE_PAGE_COLOR));
+            assertTrue("replacement frames show the same document",
+                    second.allFramesNearColor(CAPTURE_PAGE_COLOR));
+            milestones.record("explicit replacement lease delivered");
+        } finally {
+            runOnMain(replacement::release);
         }
-        assertNotNull("explicit acquisition succeeds once retirement is quiescent", lease3);
-        waitUntil("replacement consumer receiving", () -> second.count() > 0);
-        assertTrue("the retiring consumer's borrowed frames were not rewritten by the replacement",
-                first.collector().allFramesNearColor(CAPTURE_PAGE_COLOR));
-        assertTrue("the replacement consumer's frames show the same document",
-                second.allFramesNearColor(CAPTURE_PAGE_COLOR));
-        runOnMain(lease3::release);
+        assertEquals("test milestone writes succeeded", 0, milestones.failureCount());
         bringMainActivityToFrontForTest();
         tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
     }
@@ -1548,19 +1566,27 @@ public class HostingInstrumentedTest {
      */
     private static final class DelayedConsumer implements HostingController.FrameConsumer {
 
-        private final long holdMs;
         private final CollectingConsumer collector = new CollectingConsumer();
         private final java.util.concurrent.CountDownLatch entered =
                 new java.util.concurrent.CountDownLatch(1);
-
-        DelayedConsumer(long holdMs) {
-            this.holdMs = holdMs;
-        }
+        private final java.util.concurrent.CountDownLatch released =
+                new java.util.concurrent.CountDownLatch(1);
+        private volatile boolean holdFailed;
 
         @Override
         public void onFrame(HostingFrame frame) {
-            entered.countDown(); // Barrier: the borrowed use is (about to be) in flight.
-            SystemClock.sleep(holdMs); // Hold the borrowed bitmap across the ownership transition.
+            entered.countDown();
+            try {
+                // Below the lease TTL; a broken test must not strand the capture thread.
+                if (!released.await(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                    holdFailed = true;
+                    return;
+                }
+            } catch (InterruptedException interrupted) {
+                holdFailed = true;
+                Thread.currentThread().interrupt();
+                return;
+            }
             collector.onFrame(frame);
         }
 
@@ -1570,6 +1596,14 @@ public class HostingInstrumentedTest {
 
         boolean awaitEntered(long timeoutMs) throws InterruptedException {
             return entered.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+        }
+
+        void releaseHold() {
+            released.countDown();
+        }
+
+        boolean holdFailed() {
+            return holdFailed;
         }
     }
 
