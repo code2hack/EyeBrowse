@@ -138,4 +138,45 @@ final class HarnessProtocol {
             if (captureFailure != original) original.addSuppressed(captureFailure);
         }
     }
+
+    /**
+     * One absolute diagnostic deadline shared by every failure-time capture step (main dispatch,
+     * JavaScript observation and waiting). Results that arrive after the deadline are discarded
+     * rather than recorded. Pure logic so the budget/expiry paths have JVM regressions.
+     */
+    static final class FailureBudget {
+        /** The plan's bounded failure-capture budget. */
+        static final long DEFAULT_BUDGET_MS = 2_000;
+
+        private final LongSupplier clock;
+        private final long startedMs;
+        private final long deadlineMs;
+
+        FailureBudget(LongSupplier clock, long budgetMs) {
+            this.clock = clock;
+            this.startedMs = clock.getAsLong();
+            this.deadlineMs = startedMs + Math.max(1, budgetMs);
+        }
+
+        long startedMs() {
+            return startedMs;
+        }
+
+        long elapsedMs() {
+            return Math.max(0, clock.getAsLong() - startedMs);
+        }
+
+        long stepBudgetMs() {
+            return Math.max(0, deadlineMs - clock.getAsLong());
+        }
+
+        boolean expired() {
+            return clock.getAsLong() >= deadlineMs;
+        }
+
+        /** True when a result that arrived at {@code arrivalMs} is too late to be evidence. */
+        boolean late(long arrivalMs) {
+            return arrivalMs > deadlineMs;
+        }
+    }
 }

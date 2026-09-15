@@ -1318,19 +1318,25 @@ public class HostingInstrumentedTest {
         }
         waitUntil("old capture owner actually quiescent",
                 () -> !runOnMainSync(hosting::captureResourcesPresent), STOP_BOUND_MS);
-        assertFalse("test-controlled callback hold expired or was interrupted", first.holdFailed());
-        assertNull("held callback integrity failure: " + first.integrityFailure(),
-                first.integrityFailure());
+        // Persist the available entry/post-hold facts and the distinct outcome BEFORE any assertion
+        // can abort, so a sample/content/hold failure cannot lose or mislabel its own evidence.
         CallbackIntegrity.Snapshot entryIntegrity = first.entrySnapshot();
         CallbackIntegrity.Snapshot postHoldIntegrity = first.postHoldSnapshot();
+        milestones.record("delayed-consumer outcome holdFailed=" + first.holdFailed()
+                + " integrityFailure=" + first.integrityFailure()
+                + " collected=" + first.collector().count()
+                + " entry=" + (entryIntegrity == null ? "missing" : entryIntegrity.summary())
+                + " postHold=" + (postHoldIntegrity == null ? "missing"
+                        : postHoldIntegrity.summary()));
+        assertNull("held callback integrity failure: " + first.integrityFailure(),
+                first.integrityFailure());
+        assertFalse("test-controlled callback hold expired or was interrupted", first.holdFailed());
         assertNotNull("entry integrity snapshot captured before the hold", entryIntegrity);
         assertNotNull("post-hold integrity snapshot captured in the same callback", postHoldIntegrity);
         assertTrue("borrowed contents are stable across the hold (whole-bitmap fingerprint)",
                 entryIntegrity.sameContent(postHoldIntegrity));
         assertTrue("held callback completed its own borrowed use", first.collector().count() > 0);
         assertEquals("rejected acquisition created no hidden lease or delivery", 0, second.count());
-        milestones.record("delayed-consumer integrity entry=" + entryIntegrity.summary()
-                + " postHold=" + postHoldIntegrity.summary() + " changed=false");
         milestones.record("old owner quiescent before explicit replacement acquisition");
 
         // One explicit acquisition after observed quiescence; never wait for an abandoned lease
@@ -1886,10 +1892,12 @@ public class HostingInstrumentedTest {
                 // Below the lease TTL; a broken test must not strand the capture thread.
                 if (!released.await(2, java.util.concurrent.TimeUnit.SECONDS)) {
                     holdFailed = true;
+                    integrityFailure = "hold timeout after 2000ms (post-hold sample not taken)";
                     return;
                 }
             } catch (InterruptedException interrupted) {
                 holdFailed = true;
+                integrityFailure = "hold interrupted before the post-hold sample";
                 Thread.currentThread().interrupt();
                 return;
             }

@@ -408,41 +408,48 @@ public class BrowserInstrumentedTest {
 
     @Test
     public void realSwipeScrollsLongDocument() throws Exception {
-        openAddress(fixtureUrl("/scroll.html"));
+        String expectedLocation = fixtureUrl("/scroll.html");
+        openAddress(expectedLocation);
         waitForMarker();
         dismissIme();
-        // Bounded at-event evidence only: exact DOM scroll/document metrics before the gesture,
-        // a small input-context record, and a coherent post-gesture observation. The DOM reads do
-        // not perform the scroll being claimed; the assertion still requires real input-driven
-        // scrolling and distinguishes "no scroll observed" from "DOM unavailable".
-        ScrollFacts before = readScrollFacts("before-swipe", fixtureUrl("/scroll.html"));
+        // Bounded at-event evidence only: exact DOM scroll/document metrics before the gesture, a
+        // small input-context record with the intended extent, and a coherent post-gesture
+        // observation. The DOM reads do not perform the scroll being claimed; the assertion still
+        // requires real input-driven scrolling and distinguishes "no scroll observed" from "DOM
+        // unavailable".
+        ScrollFacts before = readScrollFacts("before-swipe", expectedLocation);
         recordInputEvidence("scroll " + before.describe());
-        float[] center = webViewCenterOnScreen();
-        InputContext pre = captureInputContext(
-                "espresso swipeUp on browser_web_view (view-center gesture; Espresso derives exact "
-                        + "start/end points)", center[0], center[1]);
+        float[] extent = webViewGestureExtent();
+        InputContext pre = captureInputContext("espresso swipeUp browser_web_view (intended extent "
+                + "bottom-center->top-center of recorded bounds: " + extent[0] + "," + extent[1]
+                + " -> " + extent[2] + "," + extent[3] + "; Espresso derives exact points)",
+                extent[0], extent[1]);
         recordInputEvidence("swipe pre-dispatch " + pre.describe());
-        if (!pre.windowFocus || !pre.attached) {
-            fail("input ownership uncertain before swipe: " + pre.describe());
+        String unsafe = pre.unsafeReason();
+        if (unsafe != null) {
+            recordInputEvidence("swipe-refused " + unsafe + " " + pre.describe());
+            fail("swipe not dispatched (" + unsafe + "): " + pre.describe());
         }
-        onView(withId(R.id.browser_web_view)).perform(swipeUp());
+        awaitWindowFocus(); // Recheck after the pre-action observation, not a stale snapshot.
+        try {
+            onView(withId(R.id.browser_web_view)).perform(swipeUp());
+        } catch (RuntimeException | AssertionError dispatchFailure) {
+            recordFailureEvidence("swipe.perform", dispatchFailure, expectedLocation);
+            throw dispatchFailure; // Original throwable, never a wrapper.
+        }
         try {
             waitUntil("document scrolled", () -> {
                 String scrollY = jsOrNull("String(Math.round(window.scrollY))");
                 return scrollY != null && Double.parseDouble(scrollY) > 0;
             });
-        } catch (AssertionError failure) {
-            ScrollFacts afterFailure = readScrollFacts("after-swipe-failure",
-                    fixtureUrl("/scroll.html"));
-            recordInputEvidence("scroll-failure " + afterFailure.describe());
-            throw new AssertionError(failure.getMessage() + " | scroll before ["
-                    + before.describe() + "] after [" + afterFailure.describe() + "] input ["
-                    + pre.describe() + "]", failure);
+        } catch (AssertionError timeout) {
+            recordFailureEvidence("scroll-timeout", timeout, expectedLocation);
+            throw timeout; // Original assertion, never a wrapper.
         }
-        ScrollFacts after = readScrollFacts("after-swipe", fixtureUrl("/scroll.html"));
+        ScrollFacts after = readScrollFacts("after-swipe", expectedLocation);
         recordInputEvidence("scroll " + after.describe());
         assertTrue("actual input-driven scroll observed: before [" + before.describe()
-                + "] after [" + after.describe() + "]", after.scrollY > 0);
+                + "] after [" + after.describe() + "]", after.error == null && after.scrollY > 0);
     }
 
     @Test
@@ -765,17 +772,17 @@ public class BrowserInstrumentedTest {
 
     private void sendTap(float screenX, float screenY, HarnessProtocol.Dispatch dispatch) {
         // Recheck ownership after coordinate preparation, then retain the bounded at-event record
-        // immediately before the single DOWN/UP attempt. Uncertain ownership or an IME that would
-        // receive the point stops BEFORE dispatch; a rejected/uncertain attempt is never replayed.
+        // immediately before the single DOWN/UP attempt. Unknown/unsafe ownership, geometry or IME
+        // stops BEFORE dispatch; a rejected/uncertain attempt is never replayed.
         awaitWindowFocus();
         InputContext pre = captureInputContext("pointer DOWN/UP", screenX, screenY);
         recordInputEvidence("pre-dispatch " + pre.describe());
-        if (!pre.windowFocus || !pre.attached) {
-            fail("input ownership uncertain before dispatch: " + pre.describe());
+        String unsafe = pre.unsafeReason();
+        if (unsafe != null) {
+            recordInputEvidence("dispatch-refused " + unsafe + " " + pre.describe());
+            fail("input not dispatched (" + unsafe + "): " + pre.describe());
         }
-        if (pre.imeOverlapsPoint()) {
-            fail("IME overlaps the intended input point; not dispatching: " + pre.describe());
-        }
+        awaitWindowFocus(); // Recheck after the pre-action observation, not a stale snapshot.
         long now = SystemClock.uptimeMillis();
         MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, screenX, screenY, 0);
         MotionEvent up = MotionEvent.obtain(now, now + 60, MotionEvent.ACTION_UP, screenX, screenY, 0);
@@ -787,11 +794,8 @@ public class BrowserInstrumentedTest {
                     () -> InstrumentationRegistry.getInstrumentation().sendPointerSync(up),
                     SystemClock::uptimeMillis);
         } catch (RuntimeException | AssertionError failure) {
-            // Best-effort <=2s snapshot that supplements the primary failure, never replaces it.
-            HarnessProtocol.preserveFailure(failure,
-                    () -> recordInputEvidence("dispatch-failure stage=" + dispatch.stage + " "
-                            + captureInputContext("pointer DOWN/UP failure", screenX, screenY)
-                            .describe()));
+            // Bounded supplementary evidence; the ORIGINAL throwable is rethrown unchanged.
+            recordFailureEvidence("tap-dispatch stage=" + dispatch.stage, failure, null);
             throw failure;
         } finally {
             down.recycle();
@@ -806,16 +810,74 @@ public class BrowserInstrumentedTest {
         }
     }
 
+    /**
+     * Best-effort failure-time evidence under ONE absolute budget (main-thread dispatch, JS
+     * observation and waiting all share it). The capture runs away from the test thread, is
+     * abandoned at the deadline, and any late result is discarded instead of being recorded. The
+     * caller rethrows the original throwable; this only supplements it.
+     */
+    private void recordFailureEvidence(String stage, Throwable primary, String expectedLocation) {
+        HarnessProtocol.FailureBudget budget = new HarnessProtocol.FailureBudget(
+                SystemClock::uptimeMillis, HarnessProtocol.FailureBudget.DEFAULT_BUDGET_MS);
+        String context = boundedCapture(budget,
+                () -> captureInputContext("failure@" + stage, -1, -1).describe());
+        String dom = expectedLocation == null ? "not-applicable"
+                : boundedCapture(budget, () -> readScrollFactsOnce(expectedLocation, budget));
+        recordInputEvidence("FAILURE_EVIDENCE stage=" + stage
+                + " elapsedMs=" + budget.elapsedMs() + " budgetMs="
+                + HarnessProtocol.FailureBudget.DEFAULT_BUDGET_MS
+                + " context=" + (context == null ? "unavailable(deadline/main-wedged)" : context)
+                + " dom=" + (dom == null ? "unavailable(deadline)" : dom)
+                + " primary=" + (primary == null ? "none" : primary.getClass().getSimpleName()
+                        + ":" + primary.getMessage()));
+    }
+
+    /** Runs one capture on a daemon worker under the shared budget; a late result is discarded. */
+    private String boundedCapture(HarnessProtocol.FailureBudget budget,
+            java.util.function.Supplier<String> capture) {
+        long slice = budget.stepBudgetMs();
+        if (slice <= 0) {
+            return null;
+        }
+        java.util.concurrent.atomic.AtomicReference<String> result =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        Thread worker = new Thread(() -> {
+            try {
+                result.set(capture.get());
+            } catch (RuntimeException | AssertionError ignored) {
+                // An unavailable capture is reported by the caller as unavailable.
+            }
+        }, "eyebrowse-failure-capture");
+        worker.setDaemon(true);
+        worker.start();
+        try {
+            worker.join(slice);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return null;
+        }
+        if (worker.isAlive() || budget.expired()) {
+            return null; // Deadline reached: the abandoned worker's late result is ignored.
+        }
+        return result.get();
+    }
+
     /** Bounded at-event input metadata; a record, never a recipient-identity claim. */
     private final class InputContext {
         final long uptimeMs;
         final String activity;
         final boolean windowFocus;
-        final boolean attached;
+        final boolean decorAttached;
+        final boolean targetAttached;
+        final boolean targetShown;
+        final boolean visibleBoundsNonEmpty;
+        final boolean pointInsideVisibleBounds;
+        final boolean displayKnown;
+        final boolean insetStateKnown;
         final int displayId;
         final String rootBounds;
         final String webViewBounds;
-        final boolean imeVisible;
+        final InputSafety.ImeState imeState;
         final int imeBottomInset;
         final int displayHeight;
         final float screenX;
@@ -823,18 +885,26 @@ public class BrowserInstrumentedTest {
         final String intended;
         final String note;
 
-        InputContext(long uptimeMs, String activity, boolean windowFocus, boolean attached,
-                int displayId, String rootBounds, String webViewBounds, boolean imeVisible,
+        InputContext(long uptimeMs, String activity, boolean windowFocus, boolean decorAttached,
+                boolean targetAttached, boolean targetShown, boolean visibleBoundsNonEmpty,
+                boolean pointInsideVisibleBounds, boolean displayKnown, boolean insetStateKnown,
+                int displayId, String rootBounds, String webViewBounds, InputSafety.ImeState imeState,
                 int imeBottomInset, int displayHeight, float screenX, float screenY, String intended,
                 String note) {
             this.uptimeMs = uptimeMs;
             this.activity = activity;
             this.windowFocus = windowFocus;
-            this.attached = attached;
+            this.decorAttached = decorAttached;
+            this.targetAttached = targetAttached;
+            this.targetShown = targetShown;
+            this.visibleBoundsNonEmpty = visibleBoundsNonEmpty;
+            this.pointInsideVisibleBounds = pointInsideVisibleBounds;
+            this.displayKnown = displayKnown;
+            this.insetStateKnown = insetStateKnown;
             this.displayId = displayId;
             this.rootBounds = rootBounds;
             this.webViewBounds = webViewBounds;
-            this.imeVisible = imeVisible;
+            this.imeState = imeState;
             this.imeBottomInset = imeBottomInset;
             this.displayHeight = displayHeight;
             this.screenX = screenX;
@@ -844,17 +914,27 @@ public class BrowserInstrumentedTest {
         }
 
         boolean imeOverlapsPoint() {
-            return imeVisible && imeBottomInset > 0 && displayHeight > 0
-                    && screenY >= (displayHeight - imeBottomInset);
+            return imeState == InputSafety.ImeState.VISIBLE && imeBottomInset > 0
+                    && displayHeight > 0 && screenY >= (displayHeight - imeBottomInset);
+        }
+
+        String unsafeReason() {
+            return InputSafety.unsafeReason(windowFocus, targetAttached, targetShown,
+                    visibleBoundsNonEmpty, pointInsideVisibleBounds, displayKnown, imeState,
+                    imeOverlapsPoint());
         }
 
         String describe() {
             return "t=" + uptimeMs + " intended=" + intended + " at=" + screenX + "," + screenY
-                    + " activity=" + activity + " windowFocus=" + windowFocus + " attached="
-                    + attached + " display=" + displayId + " root=[" + rootBounds + "] webView=["
-                    + webViewBounds + "] ime=" + (imeVisible ? "visible(bottom=" + imeBottomInset
-                    + ")" : "hidden") + " displayHeight=" + displayHeight
-                    + (note.isEmpty() ? "" : " note=" + note);
+                    + " activity=" + activity + " windowFocus=" + windowFocus + " decorAttached="
+                    + decorAttached + " targetAttached=" + targetAttached + " targetShown="
+                    + targetShown + " visibleBoundsNonEmpty=" + visibleBoundsNonEmpty
+                    + " pointInsideVisibleBounds=" + pointInsideVisibleBounds + " display="
+                    + (displayKnown ? displayId : "unknown") + " root=[" + rootBounds
+                    + "] webView=[" + webViewBounds + "] ime=" + imeState.name().toLowerCase()
+                    + (imeState == InputSafety.ImeState.VISIBLE ? "(bottom=" + imeBottomInset + ")"
+                            : "")
+                    + " displayHeight=" + displayHeight + (note.isEmpty() ? "" : " note=" + note);
         }
     }
 
@@ -867,45 +947,75 @@ public class BrowserInstrumentedTest {
                 Rect rootBounds = new Rect();
                 Rect webBounds = new Rect();
                 decor.getGlobalVisibleRect(rootBounds);
-                view.getGlobalVisibleRect(webBounds);
+                boolean visibleBoundsNonEmpty = view.getGlobalVisibleRect(webBounds)
+                        && !webBounds.isEmpty();
                 WindowInsets insets = view.getRootWindowInsets();
-                boolean imeVisible = insets != null
-                        && insets.isVisible(WindowInsets.Type.ime());
+                boolean insetStateKnown = insets != null;
+                boolean imeVisible = insets != null && insets.isVisible(WindowInsets.Type.ime());
                 int imeBottom = insets == null ? -1
                         : insets.getInsets(WindowInsets.Type.ime()).bottom;
                 Display display = view.getDisplay();
-                int displayId = display == null ? -1 : display.getDisplayId();
+                boolean displayKnown = display != null;
+                int displayId = displayKnown ? display.getDisplayId() : -1;
                 int displayHeight = -1;
-                if (display != null) {
+                if (displayKnown) {
                     DisplayMetrics metrics = new DisplayMetrics();
                     display.getRealMetrics(metrics);
                     displayHeight = metrics.heightPixels;
                 }
                 captured[0] = new InputContext(SystemClock.uptimeMillis(),
                         activity.getPackageName() + "/" + activity.getClass().getSimpleName(),
-                        activity.hasWindowFocus(), decor.isAttachedToWindow(), displayId,
-                        rootBounds.toShortString(), webBounds.toShortString(), imeVisible, imeBottom,
-                        displayHeight, screenX, screenY, intended, "");
+                        activity.hasWindowFocus(), decor.isAttachedToWindow(),
+                        view.isAttachedToWindow(),
+                        view.isShown() && view.getVisibility() == View.VISIBLE,
+                        visibleBoundsNonEmpty,
+                        visibleBoundsNonEmpty && webBounds.contains((int) screenX, (int) screenY),
+                        displayKnown, insetStateKnown, displayId, rootBounds.toShortString(),
+                        webBounds.toShortString(), InputSafety.imeState(insetStateKnown, imeVisible),
+                        imeBottom, displayHeight, screenX, screenY, intended, "");
             });
         } catch (RuntimeException | AssertionError unavailable) {
-            return new InputContext(SystemClock.uptimeMillis(), "unavailable", false, false, -1,
-                    "unavailable", "unavailable", false, -1, -1, screenX, screenY, intended,
+            return new InputContext(SystemClock.uptimeMillis(), "unavailable", false, false, false,
+                    false, false, false, false, false, -1, "unavailable", "unavailable",
+                    InputSafety.ImeState.UNKNOWN, -1, -1, screenX, screenY, intended,
                     "context capture failed: " + unavailable);
         }
         return captured[0];
     }
 
-    private float[] webViewCenterOnScreen() {
-        float[] center = new float[2];
+    /**
+     * Intended screen extent of Espresso's {@code swipeUp()} on the WebView: a FAST vertical
+     * gesture between the bottom-center and top-center of the recorded visible bounds. These are
+     * the intended extent; Espresso derives its exact dispatch points and they are not
+     * independently observed here.
+     */
+    private float[] webViewGestureExtent() {
+        float[] extent = new float[4];
         scenario.onActivity(activity -> {
             WebView view = activity.findViewById(R.id.browser_web_view);
-            int[] location = new int[2];
-            view.getLocationOnScreen(location);
-            center[0] = location[0] + view.getWidth() / 2f;
-            center[1] = location[1] + view.getHeight() / 2f;
+            Rect bounds = new Rect();
+            if (!view.getGlobalVisibleRect(bounds) || bounds.isEmpty()) {
+                int[] location = new int[2];
+                view.getLocationOnScreen(location);
+                bounds.set(location[0], location[1], location[0] + view.getWidth(),
+                        location[1] + view.getHeight());
+            }
+            float centerX = (bounds.left + bounds.right) / 2f;
+            extent[0] = centerX;
+            extent[1] = bounds.bottom;
+            extent[2] = centerX;
+            extent[3] = bounds.top;
         });
-        return center;
+        return extent;
     }
+
+    private static final String SCROLL_FACTS_JS = "(function(){var d=document.documentElement;"
+            + "var m=document.getElementById('load-marker');"
+            + "return JSON.stringify({marker:m?m.textContent:null,"
+            + "location:String(document.location.href),"
+            + "scrollTop:Math.round(d.scrollTop),scrollY:Math.round(window.scrollY),"
+            + "scrollHeight:d.scrollHeight,clientHeight:d.clientHeight,"
+            + "innerWidth:window.innerWidth,innerHeight:window.innerHeight});})()";
 
     /** Coherent bounded scroll/document observation; a failure to observe is not a scroll claim. */
     private final class ScrollFacts {
@@ -954,13 +1064,7 @@ public class BrowserInstrumentedTest {
     private ScrollFacts readScrollFacts(String phase, String expectedLocation) {
         long start = SystemClock.uptimeMillis();
         try {
-            String json = jsRead("(function(){var d=document.documentElement;"
-                    + "var m=document.getElementById('load-marker');"
-                    + "return JSON.stringify({marker:m?m.textContent:null,"
-                    + "location:String(document.location.href),"
-                    + "scrollTop:Math.round(d.scrollTop),scrollY:Math.round(window.scrollY),"
-                    + "scrollHeight:d.scrollHeight,clientHeight:d.clientHeight,"
-                    + "innerWidth:window.innerWidth,innerHeight:window.innerHeight});})()");
+            String json = jsRead(SCROLL_FACTS_JS);
             long end = SystemClock.uptimeMillis();
             JSONObject value = new JSONObject(json);
             return new ScrollFacts(phase, start, end,
@@ -972,6 +1076,28 @@ public class BrowserInstrumentedTest {
         } catch (RuntimeException | AssertionError | JSONException unavailable) {
             return new ScrollFacts(phase, start, SystemClock.uptimeMillis(), "(other)", null, -1, -1,
                     -1, -1, -1, -1, "DOM observation unavailable: " + unavailable);
+        }
+    }
+
+    /** Single bounded DOM observation inside the shared failure budget; late results are dropped. */
+    private String readScrollFactsOnce(String expectedLocation, HarnessProtocol.FailureBudget budget) {
+        long start = SystemClock.uptimeMillis();
+        try {
+            String json = jsOnce(SCROLL_FACTS_JS,
+                    Math.max(1, Math.min(2_000, budget.stepBudgetMs())));
+            long arrival = SystemClock.uptimeMillis();
+            if (budget.late(arrival)) {
+                return "DOM observation unavailable: late result after the diagnostic deadline";
+            }
+            JSONObject value = new JSONObject(json);
+            return new ScrollFacts("failure", start, arrival,
+                    HarnessProtocol.traceLocation(value.getString("location"), expectedLocation),
+                    value.optString("marker", null), value.getInt("scrollTop"),
+                    value.getInt("scrollY"), value.getInt("scrollHeight"),
+                    value.getInt("clientHeight"), value.getInt("innerWidth"),
+                    value.getInt("innerHeight"), null).describe();
+        } catch (RuntimeException | AssertionError | JSONException unavailable) {
+            return "DOM observation unavailable: " + unavailable;
         }
     }
 
