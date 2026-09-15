@@ -64,7 +64,7 @@ public class HostingInstrumentedTest {
     /** Fixture page background colors, used for delivered-pixel content correlation. */
     private static final int CAPTURE_PAGE_COLOR = Color.parseColor("#f6f3ea");
     private static final int SECOND_PAGE_COLOR = Color.parseColor("#2e5f8a");
-    private static final int PIXEL_CHANNEL_TOLERANCE = 24;
+    private static final int PIXEL_CHANNEL_TOLERANCE = 8;
 
     private ActivityScenario<MainActivity> scenario;
     private PhoneBrowserSession session;
@@ -619,6 +619,8 @@ public class HostingInstrumentedTest {
      */
     @Test
     public void hostingWindowChangeReconcilesGeometryWithExactRestoration() throws Exception {
+        assertFalse("blank white presentation must not qualify as the fixture page",
+                nearColor(Color.WHITE, CAPTURE_PAGE_COLOR));
         openFixture("/hosting.html", "Hosting capture page");
         String marker = domText("load-marker");
         setFieldValue("geometry-value");
@@ -648,6 +650,11 @@ public class HostingInstrumentedTest {
         CollectingConsumer consumer = new CollectingConsumer();
         HostingController.Lease lease = runOnMainSync(() -> hosting.acquireLease(consumer));
         assertNotNull("lease after geometry reconciliation", lease);
+        HostViewSnapshot afterAcquisition = hostViewSnapshot();
+        assertEquals("first demand remains privately attached",
+                HostingController.Attachment.PRIVATE_DISPLAY, afterAcquisition.status.attachment);
+        assertTrue("the actual WebView is attached AFTER acquisition/rebuild",
+                afterAcquisition.viewAttached);
         waitUntil("frames flow at the reconciled geometry", () -> consumer.count() > 0);
         assertTrue("delivered frames carry the reconciled (saved Phone) viewport "
                         + sizeAfterChange[0] + "x" + sizeAfterChange[1],
@@ -819,24 +826,34 @@ public class HostingInstrumentedTest {
 
         // --- Lease loss: production stops within 6s TOTAL of the last successful renewal (5s TTL
         // + <=1s expiry detection), and the wake lock releases in the same bound.
-        renewal.stopRenewing();
-        // R4 oracle: the anchor must be a successful MAIN-THREAD renewal, not a producer-thread
-        // enqueue timestamp. One synchronous renewal is the definitive last successful demand:
-        // runOnMainSync returns only after the renewal executed on main, so the sampled time is a
-        // true post-ack upper bound (ack <= sample) and the 6s bound below is strict.
-        runOnMain(lease::renew); // Synchronous on main; returns after the renewal executed.
-        long lastRenewElapsed = SystemClock.elapsedRealtime();
-        waitUntil("capture stopped after lease expiry",
-                () -> SystemClock.elapsedRealtime() - consumer.latestCaptureElapsed() > 1_000);
-        assertTrue("no frame later than 6s total after the last successful renewal",
-                consumer.latestCaptureElapsed() <= lastRenewElapsed + 6_000);
-        long wakeDeadline = lastRenewElapsed + 6_000;
-        while (SystemClock.elapsedRealtime() < wakeDeadline
-                && runOnMainSync(hosting::isWakeLockHeld)) {
-            SystemClock.sleep(100);
-        }
-        assertEquals("wake lock released within 6s of the last renewal", false,
-                runOnMainSync(hosting::isWakeLockHeld));
+        renewal.stopRenewing(); // Joins the producer; it cannot enqueue a later renewal.
+        runOnMain(lease::renew);
+        long lastRenewElapsed = runOnMainSync(hosting::lastDemandAnchorElapsedMs);
+        long stopDeadline = lastRenewElapsed + 6_000;
+        long stoppedObservedAt = 0;
+        HostingController.Status endpointStatus;
+        do {
+            endpointStatus = runOnMainSync(hosting::status);
+            long observedAt = SystemClock.elapsedRealtime();
+            if (!endpointStatus.captureActive && !endpointStatus.wakeLockHeld
+                    && stoppedObservedAt == 0) {
+                stoppedObservedAt = observedAt; // Conservative observed-completion bound.
+            }
+            if (observedAt >= stopDeadline) {
+                break;
+            }
+            SystemClock.sleep(Math.min(50, stopDeadline - observedAt));
+        } while (true);
+        assertTrue("capture and wake lock stopped by last successful renewal +6s",
+                stoppedObservedAt > 0 && stoppedObservedAt <= stopDeadline);
+        assertFalse("capture remains inactive at the six-second endpoint", endpointStatus.captureActive);
+        assertFalse("wake lock remains released at the endpoint", endpointStatus.wakeLockHeld);
+        // Check after observations cover the endpoint, not before a separate wake-lock wait.
+        long lastDelivery = consumer.latestDeliveryElapsed();
+        assertTrue("no late consumer delivery beyond the six-second endpoint",
+                lastDelivery <= stopDeadline);
+        milestones.record("liveness anchor=" + lastRenewElapsed + " deadline=" + stopDeadline
+                + " stoppedObserved=" + stoppedObservedAt + " lastDelivery=" + lastDelivery);
 
         // --- Reacquisition while the reader still exists: frames resume without new resources.
         CollectingConsumer reacquired = new CollectingConsumer();
@@ -1001,6 +1018,51 @@ public class HostingInstrumentedTest {
         tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
     }
 
+    /** Real owned renderer loss, explicit recovery in the SAME Activity, then hosting ownership. */
+    @Test
+    public void rendererLossRecoveryInSameActivityRegistersNewUiOwner() throws Exception {
+        openFixture("/hosting.html", "Hosting capture page");
+        AtomicReference<MainActivity> originalActivity = new AtomicReference<>();
+        scenario.onActivity(originalActivity::set);
+        WebView originalView = runOnMainSync(session::view);
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
+        boolean terminated = runOnMainSync(() -> {
+            android.webkit.WebViewRenderProcess process = originalView.getWebViewRenderProcess();
+            assertNotNull("the owned WebView has a renderer process", process);
+            return process.terminate();
+        });
+        assertTrue("owned renderer termination request accepted", terminated);
+        waitUntil("production renderer-loss callback cleared the old attachment",
+                () -> runOnMainSync(() -> session.view() == null && !session.isLive()));
+        awaitHostingState(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
+        milestones.record("actual owned renderer loss observed; explicit same-Activity recovery follows");
+
+        openFixture("/hosting.html", "Hosting capture page"); // Actual native recovery/Open path.
+        scenario.onActivity(activity -> assertTrue("recovery did not replace the Activity",
+                activity == originalActivity.get()));
+        assertTrue("recovery creates a new WebView after real renderer loss",
+                runOnMainSync(session::view) != originalView);
+        String recoveredMarker = domText("load-marker");
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
+        scenario.onActivity(activity -> activity.moveTaskToBack(true));
+        waitUntil("new UI token permits offscreen transfer after renderer recovery", () -> {
+            HostViewSnapshot snapshot = hostViewSnapshot();
+            return snapshot.status.attachment == HostingController.Attachment.PRIVATE_DISPLAY
+                    && snapshot.viewAttached;
+        });
+        assertEquals("recovered document survives transfer", recoveredMarker, domText("load-marker"));
+        scenario.onActivity(android.app.Activity::finish);
+        waitUntil("destroyed recovered Activity is no longer retained as UI owner",
+                () -> !runOnMainSync(hosting::hasPhoneUiOwner));
+        assertEquals("Activity finish is not hosting Stop", HostingController.State.HOSTING,
+                runOnMainSync(hosting::status).state);
+        scenario = ActivityScenario.launch(MainActivity.class);
+        waitUntil("live recovered page reattaches to the successor Phone UI",
+                () -> hostViewSnapshot().status.attachment == HostingController.Attachment.PHONE_UI);
+        assertEquals(recoveredMarker, domText("load-marker"));
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
+    }
+
     /** R7: a thrown reader recreation after idle rolls back and surfaces in actual status. */
     @Test
     public void thrownReaderRecreationSurfacesFailureAndRollsBack() throws Exception {
@@ -1047,8 +1109,16 @@ public class HostingInstrumentedTest {
         lease = runOnMainSync(() -> hosting.acquireLease(consumer));
         assertNotNull("recovery after failed recreation", lease);
         waitUntil("frames flow after recovery", () -> consumer.count() > 0);
+        assertNull("successful capture clears its resolved failure",
+                runOnMainSync(hosting::status).failureReason);
         runOnMain(lease::release);
         bringMainActivityToFrontForTest();
+        scenario.onActivity(activity -> {
+            String label = ((android.widget.TextView) activity.findViewById(R.id.hosting_status))
+                    .getText().toString();
+            assertTrue("recovered native UI reports active hosting: " + label,
+                    label.startsWith("Hosting ·"));
+        });
         tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
     }
 
@@ -1483,6 +1553,10 @@ public class HostingInstrumentedTest {
             return frames.isEmpty() ? Long.MIN_VALUE : frames.get(frames.size() - 1)[2];
         }
 
+        synchronized long latestDeliveryElapsed() {
+            return frames.isEmpty() ? Long.MIN_VALUE : frames.get(frames.size() - 1)[7];
+        }
+
         synchronized int distinctHashes() {
             return (int) frames.stream().mapToLong(f -> f[1]).distinct().count();
         }
@@ -1654,7 +1728,6 @@ public class HostingInstrumentedTest {
 
         private final HostingController.Lease lease;
         private volatile boolean running = true;
-        private volatile long lastRenewElapsed;
 
         LeaseRenewal(HostingController.Lease lease) {
             this.lease = lease;
@@ -1665,7 +1738,6 @@ public class HostingInstrumentedTest {
         public void run() {
             while (running) {
                 lease.renew();
-                lastRenewElapsed = android.os.SystemClock.elapsedRealtime();
                 try {
                     Thread.sleep(1_000);
                 } catch (InterruptedException e) {
@@ -1674,10 +1746,11 @@ public class HostingInstrumentedTest {
             }
         }
 
-        long stopRenewing() {
+        void stopRenewing() throws InterruptedException {
             running = false;
             interrupt();
-            return lastRenewElapsed;
+            join(2_000); // Called by the test thread, never under the controller monitor.
+            assertFalse("renewal producer terminated before the final anchor", isAlive());
         }
     }
 

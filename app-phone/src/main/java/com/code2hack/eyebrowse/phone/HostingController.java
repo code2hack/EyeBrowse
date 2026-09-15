@@ -437,11 +437,9 @@ final class HostingController {
         if (!phoneUiAvailable) {
             displayHost.attachSessionView(session);
             attachment = Attachment.PRIVATE_DISPLAY;
-        } else if (session.view() != null && session.view().getParent() == null
-                && phoneUiActivity != null && phoneUiContainer != null) {
-            attachment = Attachment.PHONE_UI;
-            session.attach(phoneUiActivity, phoneUiContainer);
         } else {
+            // The settled hosting notification asks the started Activity to ensure attachment
+            // through onPhoneUiAvailable. Never mint a UI token behind that owner's back.
             attachment = Attachment.PHONE_UI;
         }
     }
@@ -552,6 +550,16 @@ final class HostingController {
         phoneUiAvailable = true;
         phoneUiActivity = activity;
         phoneUiContainer = container;
+        return ensurePhoneUiAttachment(activity, container, currentToken);
+    }
+
+    /** Reattachment does not itself declare a background/stale Activity to be visible. */
+    synchronized @Nullable PhoneBrowserSession.Attachment ensurePhoneUiAttachment(
+            android.app.Activity activity, ViewGroup container,
+            @Nullable PhoneBrowserSession.Attachment currentToken) {
+        if (!phoneUiAvailable || phoneUiActivity != activity || phoneUiContainer != container) {
+            return currentToken;
+        }
         if (state == State.HOSTING && displayHost != null
                 && attachment == Attachment.PRIVATE_DISPLAY) {
             PhoneBrowserSession.Attachment token = moveWebViewToPhoneUi(activity, container);
@@ -652,11 +660,13 @@ final class HostingController {
                 notifyHostingChanged();
                 return;
             }
+            failureReason = null; // This successful rebuild/rearm resolved the capture failure.
         }
         // Without live demand: the private move attaches the surviving browser WITHOUT capture
         // allocation or deadline changes — post-idle moves recreate nothing (R1 corrected).
         displayHost.attachSessionView(session);
         attachment = Attachment.PRIVATE_DISPLAY;
+        notifyHostingChanged();
     }
 
     /**
@@ -760,6 +770,8 @@ final class HostingController {
         idleReleaseCompletedElapsedMs = 0; // New demand cycle: prior completion evidence is stale.
         wakeLockKeeper.refresh();
         scheduleIdleReleaseLocked();
+        failureReason = null; // Allocation, attachment and capture are now usable again.
+        notifyHostingChanged();
         return lease;
     }
 
@@ -927,6 +939,11 @@ final class HostingController {
     /** Authoritative idle anchor (diagnostic/test seam): the last successful demand/readiness. */
     synchronized long lastDemandAnchorElapsedMs() {
         return lastDemandElapsedMs;
+    }
+
+    /** Whether a Phone Activity/container/token is retained as the current UI owner. */
+    synchronized boolean hasPhoneUiOwner() {
+        return phoneUiActivity != null || phoneUiContainer != null || uiOwnerToken != null;
     }
 
     private void releaseWakeLock() {

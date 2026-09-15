@@ -64,7 +64,10 @@ public final class MainActivity extends ComponentActivity {
         render();
     };
 
-    private final HostingController.Listener hostingListener = () -> render();
+    private final HostingController.Listener hostingListener = () -> {
+        ensureAttached();
+        render();
+    };
 
     private final TextWatcher addressWatcher = new TextWatcher() {
         @Override
@@ -240,7 +243,9 @@ public final class MainActivity extends ComponentActivity {
             return; // Never steal the hosted view while this Activity is backgrounded.
         }
         if (session.view() != null && session.view().getParent() == null) {
-            attachment = session.attach(this, webContainer);
+            // Renderer recovery creates a new token too; register it without making a hidden
+            // or stale Activity visible merely because a session callback arrived.
+            attachment = hosting.ensurePhoneUiAttachment(this, webContainer, attachment);
         }
     }
 

@@ -197,8 +197,9 @@ final class PrivateDisplayHost {
      * Ensures a capture surface for {@code desiredWidth}×{@code desiredHeight}×
      * {@code desiredDensityDpi}: a matching live reader is kept, a missing reader is created on
      * the surviving display, and any differing geometry (including density) triggers a full
-     * display/presentation rebuild without navigation (the caller rearms a live lease and
-     * reattaches the session view afterwards). Throws {@link HostingException} on failure.
+     * display/presentation rebuild without navigation. A previously private view is restored to
+     * the new container before return; a Phone-owned view is not stolen. The caller rearms its
+     * live lease and explicitly attaches when transitioning from Phone UI. Throws on failure.
      */
     void ensureCaptureSurface(Context serviceContext, int desiredWidth, int desiredHeight,
             int desiredDensityDpi, PhoneBrowserSession session) throws HostingException {
@@ -244,6 +245,8 @@ final class PrivateDisplayHost {
     /** Full rebuild of display, presentation and reader at a new measured geometry. */
     private void rebuildAtSize(Context serviceContext, int newWidth, int newHeight,
             int newDensityDpi, PhoneBrowserSession session) throws HostingException {
+        boolean restorePrivateAttachment = presentation != null && session.view() != null
+                && session.view().getParent() == presentation.container();
         detachSessionView(session); // The live view leaves the old container; the document stays.
         if (presentation != null) {
             try {
@@ -268,6 +271,11 @@ final class PrivateDisplayHost {
             }
         }
         create(serviceContext, newWidth, newHeight, newDensityDpi);
+        if (restorePrivateAttachment) {
+            // First demand may rebuild after a demand-free window change. Capture must see the
+            // same live view in the NEW presentation, not merely a correctly sized blank reader.
+            attachSessionView(session);
+        }
     }
 
     /**
