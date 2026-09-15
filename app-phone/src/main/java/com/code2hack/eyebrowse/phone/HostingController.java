@@ -988,12 +988,23 @@ final class HostingController {
         synchronized (this) {
             if (state == State.HOSTING && lease != null && displayHost != null
                     && changed.isLive()) {
-                // B: a live same-WebView document/attachment change invalidates PENDING output
-                // readiness so the first delivered frame reflects the CURRENT output state.
+                // B/S3: a live document/attachment change (including same-URL replacement)
+                // REPLACES the epoch - a pending or window-submitted-but-never-delivered epoch
+                // is invalidated as a whole; the ORIGINAL eligibility anchor is carried (same
+                // lease) and the first-delivery bound never moves. The replacement also covers
+                // ready-but-never-delivered epochs.
                 OutputEpoch epoch = displayHost.currentEpoch();
-                if (epoch != null && !epoch.isReady()
-                        && epoch.outputStateVersion() != changed.outputStateVersion()) {
-                    displayHost.restartOutputReadiness(epoch, changed);
+                WebViewMetric metric = WebViewMetric.measure(changed);
+                if (metric.width <= 0 || metric.height <= 0) {
+                    metric = lastViewport;
+                }
+                if (epoch != null && epoch.outputStateVersion() != changed.outputStateVersion()) {
+                    OutputEpoch replacement = new OutputEpoch(changed.view(),
+                            displayHost.currentPresentationRef(), displayHost.currentReaderRef(),
+                            metric.width, metric.height, metric.densityDpi, generation,
+                            changed.outputStateVersion(), leaseEligibleElapsedMs,
+                            android.os.SystemClock.elapsedRealtime());
+                    displayHost.beginOutputEpoch(replacement, changed);
                 }
             }
             if (state == State.HOSTING && !changed.isLive()) {

@@ -1,61 +1,54 @@
 package com.code2hack.eyebrowse.phone;
 
 /**
- * Pure admission decision for one captured image against its bound output epoch (B, JVM-testable).
+ * Pure admission/consumption decision for one captured-image callback against its bound output
+ * epoch (B, JVM-testable). No decision input is pixel color: identical-white data before and
+ * after any valid authority follows the same path.
  *
- * <p>{@code PrivateDisplayHost.onImageAvailableForEpoch} evaluates this BEFORE any throttle or
- * copy work. Decisions:
  * <ul>
- * <li>{@code DISCARD_STALE} — the callback's reader/epoch no longer matches the host's live
- * epoch/reader (superseded lease, replaced reader, retired owner): initialization or orphaned
- * output, never delivered.</li>
- * <li>{@code DISCARD_UNREADY} — the epoch's two-stage current-output readiness has not
- * completed: initialization/preparation output of the display surface, discarded without
- * consuming the throttle budget and without moving the first-delivery clock.</li>
- * <li>{@code THROTTLED} — ready output inside the 5 fps cap window: kept queued (latest-only),
- * not delivered.</li>
- * <li>{@code ADMIT} — ready, current, outside the throttle window: copy and deliver.</li>
+ * <li>{@code DISCARD_STALE} — the callback's bound epoch/reader no longer matches the host's
+ * live epoch/reader, or capture is inactive/released: orphaned output of a retired cycle. The
+ * reader is NOT touched by this decision (it may already belong to a successor).</li>
+ * <li>{@code CONSUME_UNREADY} — the epoch is live/current but the supported output-readiness
+ * chain has not reached its recorded state: acquire and close the newest image on the owning
+ * path (bounded queue progress; initialization/preparation output stays internal). Delivery is
+ * NOT opened by consumption.</li>
+ * <li>{@code RECORD_CANDIDATE} — live, recorded chain complete, consumer gate OPEN, inside the
+ * 5 fps throttle window: acquire/copy the newest image as the single bounded latest candidate
+ * and schedule one continuation so the LAST update is eventually delivered (no FIFO).</li>
+ * <li>{@code DELIVER} — live, recorded chain complete, consumer gate OPEN, outside the throttle
+ * window: copy and deliver now.</li>
  * </ul>
- * No decision input is pixel color: a white document and a colored document follow the same
- * path (the identical-white negative requirement).
+ * The consumer gate is a production input: while the step-5 window-submission ->
+ * ImageReader-buffer correspondence is unresolved, production keeps it CLOSED, so the decision
+ * can only be CONSUME_UNREADY for live epochs — an explicitly incomplete, non-delivering state.
  */
 final class EpochAdmission {
 
     enum Decision {
         DISCARD_STALE,
-        DISCARD_UNREADY,
-        THROTTLED,
-        ADMIT
+        CONSUME_UNREADY,
+        RECORD_CANDIDATE,
+        DELIVER
     }
 
     private EpochAdmission() {
     }
 
-    /**
-     * @param captureActive    host capture flag (lease live and armed)
-     * @param captureReleased  host release flag (teardown requested)
-     * @param liveReader       the host's CURRENT reader identity (may differ from the callback's)
-     * @param currentEpoch     the host's CURRENT epoch (null when superseded)
-     * @param boundEpoch       the epoch bound at listener registration
-     * @param callbackReader   the reader this callback fired for
-     * @param deliveredAny     whether an admitted frame was delivered since arm/rearm
-     * @param lastDeliveryMs   last admitted delivery time (compatible monotonic clock)
-     * @param nowMs            now on the same clock
-     */
     static Decision evaluate(boolean captureActive, boolean captureReleased, Object liveReader,
             OutputEpoch currentEpoch, OutputEpoch boundEpoch, Object callbackReader,
-            boolean deliveredAny, long lastDeliveryMs, long nowMs) {
+            boolean consumerGateOpen, boolean deliveredAny, long lastDeliveryMs, long nowMs) {
         if (!captureActive || captureReleased || currentEpoch == null || boundEpoch == null
                 || currentEpoch != boundEpoch || callbackReader != liveReader
                 || callbackReader != boundEpoch.readerRef()) {
             return Decision.DISCARD_STALE;
         }
-        if (!boundEpoch.isReady()) {
-            return Decision.DISCARD_UNREADY;
+        if (!consumerGateOpen) {
+            return Decision.CONSUME_UNREADY;
         }
         if (deliveredAny && HostingPolicy.frameThrottled(nowMs, lastDeliveryMs)) {
-            return Decision.THROTTLED;
+            return Decision.RECORD_CANDIDATE;
         }
-        return Decision.ADMIT;
+        return Decision.DELIVER;
     }
 }

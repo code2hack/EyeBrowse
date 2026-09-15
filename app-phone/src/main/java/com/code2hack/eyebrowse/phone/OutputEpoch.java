@@ -1,38 +1,34 @@
 package com.code2hack.eyebrowse.phone;
 
 /**
- * Immutable identity of one hosting output cycle (B correction, JVM-testable) plus its staged
- * current-output readiness.
+ * Immutable identity of one hosting output cycle (B, JVM-testable) with its supported
+ * visual-state -> window-submission stages, plus replacement semantics.
  *
  * <p>Identity: the exact WebView, presenting container, ImageReader, geometry, hosting
  * generation, the PhoneBrowserSession output-state version at creation (document/attachment
- * epoch), and the ORIGINAL eligibility instant of the demand that created it.
+ * epoch), and the ORIGINAL eligibility instant of the demand that created it. The full live
+ * tuple is revalidated (not mere object identity) at every production callback/admission.
  *
- * <p>Readiness is a TWO-STAGE, production-only sequence; neither stage alone admits delivery
- * (addendum step 4: a draw/visual callback alone does not prove ImageReader buffer content):
+ * <p>Stages (production-only completion, package-private mutators):
  * <ol>
- * <li>{@code drawCompleted} — a COMPLETED draw pass of the delivered view tree into the
- * presenting surface, observed via {@code ViewTreeObserver.OnDrawListener} (fired during the
- * draw pass after the hierarchy draw, before surface commit). {@code OnPreDraw} is NOT used: it
- * fires before drawing occurs and proves nothing about any buffer.</li>
- * <li>{@code frameRenderedAfterDraw} — a frame-rendered event on the ImageReader's own surface
- * ({@code Surface.setOnFrameRenderedListener}, API 29+), observed strictly after the completed
- * draw. This reports the compositor WROTE a frame into the capture buffer queue after the draw
- * committed; virtual-display compositions are input-driven, so with no input change between the
- * show-time composition and the draw commit, the first composition rendered after the completed
- * draw carries the drawn document.</li>
+ * <li>{@code visualStateCompleted} — the WebView's {@code postVisualStateCallback} completed
+ * with the full live tuple revalidated: the next draw reflects DOM state through the request
+ * point (official guarantee; visibility/attachment conditions apply; video excluded). This is a
+ * document-readiness signal, NOT rendered output.</li>
+ * <li>{@code windowSubmitted} — {@code ViewTreeObserver.registerFrameCommitCallback} (API 29+)
+ * fired for a traversal of the same live hardware-rendered hierarchy registered after stage 1:
+ * hardware rendering has rendered a frame and SUBMITTED it to the window swap chain. The frame
+ * need not yet be visible, and this says NOTHING about any ImageReader buffer's content.</li>
  * </ol>
- * {@code markReady()} is package-private and reachable only from that production sequence, so a
- * "fake ready" epoch cannot be constructed by callers/tests. Images acquired before readiness
- * are initialization/preparation output: discarded without delivery, without consuming the
- * throttle budget, and without moving the first-delivery clock, which stays anchored to the
- * ORIGINAL eligibility instant.
+ * The recorded terminal state is therefore WINDOW_SUBMITTED, explicitly NOT output-ready: the
+ * window-submission -> VirtualDisplay/ImageReader buffer correspondence (step 5) is unresolved,
+ * and the production consumer admission gate stays CLOSED while it is unresolved.
  *
- * <p>Pending (not-yet-ready) readiness is invalidated by a session output-state change
- * (document commit, attachment change, view replacement): {@code resetReadiness()} returns the
- * epoch to the unready state for re-observation, so a stale draw of a replaced document cannot
- * complete readiness. Already-delivering (ready) epochs are unaffected — B governs the FIRST
- * delivered frame.
+ * <p>Replacement, not reset: a relevant output-state change (document commit — including a
+ * same-URL replacement — attachment change, view replacement) supersedes the epoch with a NEW
+ * one. A pending or window-submitted-but-never-delivered epoch is thereby invalidated as a
+ * whole; its stages never complete retroactively for the replacement. The ORIGINAL eligibility
+ * anchor is carried across same-lease replacements and is never re-anchored by any stage.
  */
 final class OutputEpoch {
 
@@ -47,10 +43,10 @@ final class OutputEpoch {
     private final long eligibleElapsedMs; // ORIGINAL eligibility anchor; carried across rearms.
     private final long createdElapsedMs;
 
-    private volatile boolean drawCompleted;
-    private volatile long drawCompletedElapsedMs;
-    private volatile boolean ready; // drawCompleted && frameRenderedAfterDraw.
-    private volatile long readyElapsedMs;
+    private volatile boolean visualStateCompleted;
+    private volatile long visualStateElapsedMs;
+    private volatile boolean windowSubmitted;
+    private volatile long windowSubmittedElapsedMs;
 
     OutputEpoch(Object viewRef, Object presentationRef, Object readerRef,
             int width, int height, int densityDpi, int hostingGeneration, long outputStateVersion,
@@ -67,8 +63,8 @@ final class OutputEpoch {
         this.createdElapsedMs = createdElapsedMs;
     }
 
-    /** True when every identity dimension of the epoch still matches the live output cycle. */
-    boolean matches(Object view, Object presentation, Object reader,
+    /** Full live-identity revalidation: every dimension must match the CURRENT output cycle. */
+    boolean matchesLive(Object view, Object presentation, Object reader,
             int w, int h, int dpi, int generation, long sessionOutputVersion) {
         return viewRef == view && presentationRef == presentation && readerRef == reader
                 && width == w && height == h && densityDpi == dpi
@@ -91,6 +87,10 @@ final class OutputEpoch {
         return hostingGeneration;
     }
 
+    long outputStateVersion() {
+        return outputStateVersion;
+    }
+
     int width() {
         return width;
     }
@@ -99,11 +99,7 @@ final class OutputEpoch {
         return height;
     }
 
-    long outputStateVersion() {
-        return outputStateVersion;
-    }
-
-    /** The ORIGINAL eligibility instant; never re-anchored by readiness or rearm. */
+    /** The ORIGINAL eligibility instant; never re-anchored by any stage or replacement. */
     long eligibleElapsedMs() {
         return eligibleElapsedMs;
     }
@@ -112,49 +108,39 @@ final class OutputEpoch {
         return createdElapsedMs;
     }
 
-    /** Stage 1: a completed draw pass of the delivered view tree (main-thread caller). */
-    void markDrawCompleted(long nowElapsedMs) {
-        if (!drawCompleted) {
-            drawCompleted = true;
-            drawCompletedElapsedMs = nowElapsedMs;
+    /** Stage 1 completion (production path only, main thread, full tuple pre-validated). */
+    void markVisualStateCompleted(long nowElapsedMs) {
+        if (!visualStateCompleted) {
+            visualStateCompleted = true;
+            visualStateElapsedMs = nowElapsedMs;
         }
     }
 
-    boolean isDrawCompleted() {
-        return drawCompleted;
+    boolean isVisualStateCompleted() {
+        return visualStateCompleted;
     }
 
-    long drawCompletedElapsedMs() {
-        return drawCompletedElapsedMs;
+    long visualStateElapsedMs() {
+        return visualStateElapsedMs;
     }
 
     /**
-     * Stage 2 completion, production-only: a frame rendered into the capture buffer surface
-     * strictly after the completed draw. Package-private by design.
+     * Stage 2 completion (production path only, main thread): requires stage 1; records
+     * WINDOW_SUBMITTED — the frame was submitted to the window swap chain, not delivered to any
+     * reader, and not output-ready.
      */
-    void markReady(long nowElapsedMs) {
-        if (drawCompleted && !ready) {
-            ready = true;
-            readyElapsedMs = nowElapsedMs;
+    void markWindowSubmitted(long nowElapsedMs) {
+        if (visualStateCompleted && !windowSubmitted) {
+            windowSubmitted = true;
+            windowSubmittedElapsedMs = nowElapsedMs;
         }
     }
 
-    boolean isReady() {
-        return ready;
+    boolean isWindowSubmitted() {
+        return windowSubmitted;
     }
 
-    long readyElapsedMs() {
-        return readyElapsedMs;
-    }
-
-    /**
-     * Invalidates PENDING readiness after a session output-state change (document/attachment):
-     * the observation re-runs against the new output. Never called on a ready epoch.
-     */
-    void resetReadiness() {
-        if (!ready) {
-            drawCompleted = false;
-            drawCompletedElapsedMs = 0;
-        }
+    long windowSubmittedElapsedMs() {
+        return windowSubmittedElapsedMs;
     }
 }

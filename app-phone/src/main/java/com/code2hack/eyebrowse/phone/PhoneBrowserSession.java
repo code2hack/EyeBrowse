@@ -397,9 +397,9 @@ final class PhoneBrowserSession {
     }
 
     private void persistLastCommitted(String url) {
-        if (!url.equals(lastCommittedUrl)) {
-            bumpOutputStateVersion(); // Document change invalidates pending output readiness (B).
-        }
+        // S3: a same-URL document replacement is still a document replacement - the epoch must
+        // be replaced, not preserved by URL equality.
+        bumpOutputStateVersion();
         lastCommittedUrl = url;
         preferences.edit().putString(KEY_LAST_COMMITTED_URL, url).apply();
     }
