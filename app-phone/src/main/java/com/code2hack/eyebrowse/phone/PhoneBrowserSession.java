@@ -46,6 +46,16 @@ final class PhoneBrowserSession {
         void onSessionChanged(PhoneBrowserSession session);
     }
 
+    /**
+     * Opaque attachment ownership token. Only the owner of the current token may detach the
+     * WebView, so an old Activity's {@code onDestroy()} can never detach a newly attached Activity
+     * or the offscreen hosting presentation.
+     */
+    static final class Attachment {
+        Attachment() {
+        }
+    }
+
     private static final String PREFS_NAME = "phone_browser";
     private static final String KEY_LAST_COMMITTED_URL = "last_committed_url";
 
@@ -70,6 +80,7 @@ final class PhoneBrowserSession {
 
     private WebView webView;
     private ViewGroup attachedContainer;
+    private Attachment currentAttachment;
     private boolean rendererGone;
 
     private String displayUrl;
@@ -177,8 +188,90 @@ final class PhoneBrowserSession {
 
     // ------------------------------------------------------- attach/detach
 
-    void attach(Activity activity, ViewGroup container) {
-        contextWrapper.setBaseContext(activity);
+    /** Takes attachment ownership for {@code activity} and returns its token. */
+    Attachment attach(Activity activity, ViewGroup container) {
+        Attachment attachment = new Attachment();
+        currentAttachment = attachment;
+        attachToContainer(activity, container);
+        return attachment;
+    }
+
+    /**
+     * Detaches only when {@code attachment} is still the current owner; a stale token (a destroyed
+     * Activity whose view was since reattached elsewhere) is a no-op that must not steal the
+     * WebView from the current owner.
+     */
+    void detach(Attachment attachment) {
+        if (attachment == null || attachment != currentAttachment) {
+            return;
+        }
+        currentAttachment = null;
+        attachedContainer = null;
+        if (webView != null) {
+            ViewGroup parent = (ViewGroup) webView.getParent();
+            if (parent != null) {
+                parent.removeView(webView);
+            }
+            // Size the released view from the application context, not the destroyed Activity.
+            contextWrapper.setBaseContext(appContext);
+        }
+        notifyListeners();
+    }
+
+    /**
+     * Moves the live WebView into the hosting presentation's container. The base context becomes
+     * {@code baseContext} (the alive hosting service), releasing any Activity reference so a
+     * backgrounded or destroyed Activity cannot leak through the wrapper.
+     */
+    void attachExternal(ViewGroup container, Context baseContext) {
+        currentAttachment = null;
+        attachToContainer(baseContext, container);
+    }
+
+    /**
+     * Releases the attachment the hosting presentation owns: acts only when the WebView is
+     * actually hosted in {@code container}, releasing that container reference and the external
+     * base context. A view living in a Phone Activity attachment (successor or current) is left
+     * untouched, preserving its container and live Activity context (F5).
+     */
+    void detachExternal(ViewGroup container) {
+        if (webView == null) {
+            // The view is already gone (e.g. renderer loss disposed it): still release the
+            // external context ownership so the hosting service context does not stay rooted
+            // through the wrapper when cleanup relies on this path (R7).
+            if (contextWrapper.getBaseContext() != appContext) {
+                contextWrapper.setBaseContext(appContext);
+            }
+            if (attachedContainer == container) {
+                attachedContainer = null;
+            }
+            return;
+        }
+        if (webView.getParent() != container) {
+            return; // Not hosted here: a Phone attachment's container/context stays untouched.
+        }
+        container.removeView(webView);
+        if (contextWrapper.getBaseContext() != appContext) {
+            contextWrapper.setBaseContext(appContext);
+        }
+        if (attachedContainer == container) {
+            attachedContainer = null;
+        }
+        notifyListeners();
+    }
+
+    /** The one live WebView, or {@code null}; same-package access for the hosting seam. */
+    WebView view() {
+        return webView;
+    }
+
+    /** True when {@code attachment} is still the current owner of the WebView. */
+    boolean isCurrentAttachment(Attachment attachment) {
+        return attachment != null && attachment == currentAttachment;
+    }
+
+    private void attachToContainer(Context baseContext, ViewGroup container) {
+        contextWrapper.setBaseContext(baseContext);
         attachedContainer = container;
         container.removeAllViews();
         if (webView != null) {
@@ -192,18 +285,6 @@ final class PhoneBrowserSession {
             webView.invalidate();
         }
         notifyListeners();
-    }
-
-    void detach() {
-        attachedContainer = null;
-        if (webView != null) {
-            ViewGroup parent = (ViewGroup) webView.getParent();
-            if (parent != null) {
-                parent.removeView(webView);
-            }
-            // Size the released view from the application context, not the destroyed Activity.
-            contextWrapper.setBaseContext(appContext);
-        }
     }
 
     // ------------------------------------------------------- test-only seams
@@ -386,6 +467,8 @@ final class PhoneBrowserSession {
         public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
             disposeWebView();
             rendererGone = true;
+            currentAttachment = null;
+            attachedContainer = null;
             loading = false;
             progress = 0;
             errorMessage = appContext.getString(R.string.status_renderer_gone);
