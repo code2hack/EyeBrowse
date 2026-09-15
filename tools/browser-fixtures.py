@@ -63,6 +63,7 @@ PAGE_ROUTES: dict[str, tuple[str, str]] = {
     "/submitted.html": ("submitted.html", "/submitted.html"),
     "/hosting.html": ("hosting.html", "/hosting.html"),
     "/hosting-two.html": ("hosting-two.html", "/hosting-two.html"),
+    "/hosting-white.html": ("hosting-white.html", "/hosting-white.html"),
     "/secure-ok.html": ("secure-ok.html", "/secure-ok.html"),
     "/fail": ("fail.html", "/fail"),
     "/submit": ("form.html", "/submit"),  # GET on the POST endpoint stays a readable page

@@ -82,6 +82,7 @@ final class PhoneBrowserSession {
     private ViewGroup attachedContainer;
     private Attachment currentAttachment;
     private boolean rendererGone;
+    private long outputStateVersion; // Bumps on view/document/attachment change (epoch invalidation).
 
     private String displayUrl;
     private String lastCommittedUrl;
@@ -207,6 +208,7 @@ final class PhoneBrowserSession {
         }
         currentAttachment = null;
         attachedContainer = null;
+        bumpOutputStateVersion();
         if (webView != null) {
             ViewGroup parent = (ViewGroup) webView.getParent();
             if (parent != null) {
@@ -244,6 +246,7 @@ final class PhoneBrowserSession {
             }
             if (attachedContainer == container) {
                 attachedContainer = null;
+                bumpOutputStateVersion();
             }
             return;
         }
@@ -257,6 +260,7 @@ final class PhoneBrowserSession {
         if (attachedContainer == container) {
             attachedContainer = null;
         }
+        bumpOutputStateVersion();
         notifyListeners();
     }
 
@@ -270,8 +274,19 @@ final class PhoneBrowserSession {
         return attachment != null && attachment == currentAttachment;
     }
 
+    /** Monotonic output-state version: changes when the view, document or attachment changes. */
+    long outputStateVersion() {
+        return outputStateVersion;
+    }
+
+    private void bumpOutputStateVersion() {
+        outputStateVersion++;
+        notifyListeners();
+    }
+
     private void attachToContainer(Context baseContext, ViewGroup container) {
         contextWrapper.setBaseContext(baseContext);
+        bumpOutputStateVersion();
         attachedContainer = container;
         container.removeAllViews();
         if (webView != null) {
@@ -382,6 +397,9 @@ final class PhoneBrowserSession {
     }
 
     private void persistLastCommitted(String url) {
+        if (!url.equals(lastCommittedUrl)) {
+            bumpOutputStateVersion(); // Document change invalidates pending output readiness (B).
+        }
         lastCommittedUrl = url;
         preferences.edit().putString(KEY_LAST_COMMITTED_URL, url).apply();
     }
@@ -390,6 +408,7 @@ final class PhoneBrowserSession {
         if (webView == null) {
             return;
         }
+        bumpOutputStateVersion();
         ViewGroup parent = (ViewGroup) webView.getParent();
         if (parent != null) {
             parent.removeView(webView);

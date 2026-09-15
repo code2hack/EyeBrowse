@@ -647,6 +647,11 @@ public class HostingInstrumentedTest {
         // The privately re-laid-out view now measures the OLD presentation geometry (no lease
         // existed during the move, so nothing rebuilt): the first demand below must reconcile to
         // the SAVED Phone viewport (sizeAfterChange), not to this stale private layout.
+        // B: the first delivered bitmap after the rebuild must be the CURRENT document at the
+        // reconciled geometry, within the unchanged 2s eligibility-to-delivery bound. The
+        // epoch facts record the staged readiness (drawCompleted -> ready) and the ORIGINAL
+        // eligibility anchor used for the bound.
+        long eligibleUptime = SystemClock.uptimeMillis();
         CollectingConsumer consumer = new CollectingConsumer();
         HostingController.Lease lease = runOnMainSync(() -> hosting.acquireLease(consumer));
         assertNotNull("lease after geometry reconciliation", lease);
@@ -656,6 +661,11 @@ public class HostingInstrumentedTest {
         assertTrue("the actual WebView is attached AFTER acquisition/rebuild",
                 afterAcquisition.viewAttached);
         waitUntil("frames flow at the reconciled geometry", () -> consumer.count() > 0);
+        long firstDeliveryMs = consumer.deliveryUptimeAt(0) - eligibleUptime;
+        assertTrue("first delivered frame after rebuild within 2s of eligibility: "
+                + firstDeliveryMs + "ms", firstFrameDelayIsValid(firstDeliveryMs));
+        milestones.record("rebuild epoch facts: " + runOnMainSync(hosting::outputEpochFacts)
+                + " firstDeliveryMs=" + firstDeliveryMs);
         assertTrue("delivered frames carry the reconciled (saved Phone) viewport "
                         + sizeAfterChange[0] + "x" + sizeAfterChange[1],
                 consumer.allFramesMatchSize(sizeAfterChange[0], sizeAfterChange[1]));

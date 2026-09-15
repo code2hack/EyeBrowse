@@ -112,9 +112,9 @@ final class PrivateDisplayHost {
 
     /**
      * The live output epoch (B): identity of the exact view/presentation/reader/geometry/
-     * generation whose composed output may be delivered, with its current-output readiness.
-     * Superseded on any resource/lease transition; images acquired before its readiness
-     * completion are initialization output and are discarded without delivery.
+     * generation/session-output-state whose composed output may be delivered, with its staged
+     * current-output readiness. Superseded on any resource/lease transition; images acquired
+     * before readiness completion are initialization output and are discarded without delivery.
      */
     private volatile OutputEpoch currentEpoch;
 
@@ -124,11 +124,30 @@ final class PrivateDisplayHost {
     }
 
     /**
-     * Begins a new output epoch on the main thread and links its current-output readiness to the
-     * delivered view: a one-shot pre-draw observation on the session view (plus one explicit
-     * invalidate so a static document still produces the draw pass) marks the epoch ready only
-     * while it remains the live epoch. Creation registers the observation; it never opens
-     * delivery by itself.
+     * Begins a new output epoch on the main thread and establishes the rendering-to-capture
+     * readiness link (B; addendum step 4) using only public APIs:
+     *
+     * <p>Stage 1 — {@code ViewTreeObserver.OnDrawListener} on the delivered view: a COMPLETED
+     * draw pass of the view tree into the presenting surface (fired during the draw pass, after
+     * the hierarchy draw, before surface commit). OnPreDraw is deliberately NOT used: it fires
+     * before drawing occurs and proves nothing about any buffer. One explicit invalidate makes a
+     * static document produce the draw pass (ordinary, no reload).
+     *
+     * <p>Stage 2 — on stage 1, the initialization queue is purged SYNCHRONOUSLY under the same
+     * native lock that serializes capture-path acquisitions (bounded; every queued buffer at
+     * that instant was composed before the completed draw, i.e. initialization/preparation
+     * output), and readiness is marked. A forced recomposition ({@code invalidate}) then
+     * guarantees at least one post-ready composition: virtual-display compositions are
+     * input-driven, so the first image enqueued after the purge carries the committed post-draw
+     * window content (the current document at current geometry).
+     *
+     * <p>Documented guarantee boundary: no public API reports per-buffer content provenance, so
+     * the guarantee is structural — every buffer composed before the completed draw is purged
+     * before readiness, and post-readiness enqueues are compositions of post-draw window state.
+     * The device oracle observes the ACTUAL first delivered bitmap; compositor ordering beyond
+     * input-driven composition remains an implementation question, not a claimed guarantee.
+     * markReady is package-private and reachable only from this production sequence, so a
+     * fake-ready epoch cannot be constructed.
      */
     void beginOutputEpoch(OutputEpoch epoch, PhoneBrowserSession session) {
         currentEpoch = epoch;
@@ -138,27 +157,77 @@ final class PrivateDisplayHost {
         }
         final OutputEpoch observedEpoch = epoch;
         android.view.ViewTreeObserver observer = view.getViewTreeObserver();
-        observer.addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
+        observer.addOnDrawListener(new android.view.ViewTreeObserver.OnDrawListener() {
             @Override
-            public boolean onPreDraw() {
-                // One-shot: this draw pass is the readiness evidence for the observed epoch.
+            public void onDraw() {
+                // One-shot: this COMPLETED draw pass is stage 1 for the observed epoch.
                 if (view.getViewTreeObserver().isAlive()) {
-                    view.getViewTreeObserver().removeOnPreDrawListener(this);
+                    view.getViewTreeObserver().removeOnDrawListener(this);
                 }
-                if (currentEpoch == observedEpoch) {
-                    observedEpoch.markReady(android.os.SystemClock.elapsedRealtime());
-                    Log.i(TAG, "output epoch ready gen=" + observedEpoch.hostingGeneration()
-                            + " eligible=" + observedEpoch.eligibleElapsedMs());
+                if (currentEpoch != observedEpoch) {
+                    return; // Superseded while pending: never completes retroactively.
                 }
-                return true;
+                observedEpoch.markDrawCompleted(android.os.SystemClock.elapsedRealtime());
+                // Stage 2: purge every queued buffer composed before the completed draw, then
+                // open readiness and force the post-ready composition. The purge takes the same
+                // native lock as capture-path acquisitions (bounded; the queued depth is at
+                // most maxImages), so no pre-draw buffer can be acquired afterwards.
+                purgeQueuedBuffers(observedEpoch);
+                observedEpoch.markReady(android.os.SystemClock.elapsedRealtime());
+                Log.i(TAG, "output epoch ready gen=" + observedEpoch.hostingGeneration()
+                        + " eligible=" + observedEpoch.eligibleElapsedMs());
+                view.post(view::invalidate); // Force the post-ready composition (no content change).
+                scheduleDrain(observedEpoch); // Belt: epoch-bound drain of any straggler.
             }
         });
-        view.invalidate(); // Force the draw pass even for a static document (ordinary, no reload).
+        view.invalidate(); // Force the first draw pass even for a static document.
+    }
+
+    /** Purges queued initialization buffers for the bound epoch (nativeLock held by caller). */
+    private void purgeQueuedBuffers(OutputEpoch boundEpoch) {
+        synchronized (nativeLock) {
+            int purged = 0;
+            while (purged < 8) { // maxImages=2 plus settling headroom; bounded by construction.
+                if (imageReader == null || imageReader != boundEpoch.readerRef()
+                        || currentEpoch != boundEpoch) {
+                    break; // Superseded: never touch a successor's reader (B).
+                }
+                Image stale = imageReader.acquireLatestImage();
+                if (stale == null) {
+                    break;
+                }
+                try {
+                    purged++;
+                } finally {
+                    stale.close(); // Initialization/preparation output: discarded, never delivered.
+                }
+            }
+            if (purged > 0) {
+                Log.i(TAG, "purged " + purged + " pre-draw capture image(s)");
+            }
+        }
     }
 
     /** Ends the live epoch: pending readiness never completes and its callbacks no-op. */
     void supersedeOutputEpoch() {
         currentEpoch = null;
+    }
+
+    /**
+     * Re-arms PENDING readiness after a session output-state change (document commit,
+     * attachment change): the stale observation is reset and the two-stage link re-runs against
+     * the new output. A ready epoch is untouched (B governs the first delivered frame).
+     */
+    void restartOutputReadiness(OutputEpoch epoch, PhoneBrowserSession session) {
+        if (currentEpoch != epoch || epoch.isReady()) {
+            return;
+        }
+        epoch.resetReadiness();
+        beginOutputEpoch(epoch, session);
+    }
+
+    OutputEpoch currentEpoch() {
+        return currentEpoch;
     }
 
     /** Live presenting-container identity for epoch binding (main thread). */
@@ -181,6 +250,7 @@ final class PrivateDisplayHost {
         }
         return "epoch=" + System.identityHashCode(epoch)
                 + " gen=" + epoch.hostingGeneration()
+                + " drawCompleted=" + epoch.isDrawCompleted()
                 + " ready=" + epoch.isReady()
                 + " eligible=" + epoch.eligibleElapsedMs()
                 + " readyAt=" + (epoch.isReady() ? epoch.readyElapsedMs() : -1)
@@ -372,8 +442,11 @@ final class PrivateDisplayHost {
         captureActive = true;
         captureReleased = false;
         currentEpoch = epoch;
-        imageReader.setOnImageAvailableListener(this::onImageAvailable, captureHandler);
-        scheduleDrain();
+        // Listener identity bound at REGISTRATION to this epoch+sink (B): a stale callback can
+        // never select a successor's epoch/sink, whatever executes later.
+        imageReader.setOnImageAvailableListener(
+                (reader) -> onImageAvailableForEpoch(epoch, boundSink, reader), captureHandler);
+        scheduleDrain(epoch);
         Log.i(TAG, "rearmCapture gen=" + hostingGeneration + " on rebuilt reader");
         return true;
     }
@@ -408,18 +481,23 @@ final class PrivateDisplayHost {
         currentEpoch = epoch;
         Log.i(TAG, "startCapture gen=" + hostingGeneration + " reader=" + (imageReader != null)
                 + " threadAlive=" + (captureThread != null));
+        // Listener identity bound at REGISTRATION to this epoch+sink (B).
+        java.util.function.BiConsumer<OutputEpoch, ImageReader> boundListener =
+                (boundEpoch, reader) -> onImageAvailableForEpoch(boundEpoch, boundSink, reader);
         if (captureThread != null) {
             // Reacquisition after lease loss: the capture thread survived; rearm the listener.
-            imageReader.setOnImageAvailableListener(this::onImageAvailable, captureHandler);
-            scheduleDrain();
+            imageReader.setOnImageAvailableListener(
+                    (reader) -> onImageAvailableForEpoch(epoch, boundSink, reader), captureHandler);
+            scheduleDrain(epoch);
             return true;
         }
         captureThread = new HandlerThread("EyeBrowseHostingCapture");
         captureThread.start();
         captureHandler = new Handler(captureThread.getLooper());
         retainedCaptureThread = captureThread;
-        imageReader.setOnImageAvailableListener(this::onImageAvailable, captureHandler);
-        scheduleDrain();
+        imageReader.setOnImageAvailableListener(
+                (reader) -> onImageAvailableForEpoch(epoch, boundSink, reader), captureHandler);
+        scheduleDrain(epoch);
         return true;
     }
 
@@ -429,21 +507,24 @@ final class PrivateDisplayHost {
      * frames are dropped, latest-only. Runs on the capture handler, serialized with callback
      * acquisitions, and is bounded.
      */
-    private void scheduleDrain() {
-        if (captureHandler != null) {
-            captureHandler.post(this::drainPendingImages);
+    /** Posts an epoch-BOUND drain: the task validates its originating epoch, not entry-time state. */
+    private void scheduleDrain(OutputEpoch epoch) {
+        if (captureHandler != null && epoch != null) {
+            captureHandler.post(() -> drainPendingImages(epoch));
         }
     }
 
-    private void drainPendingImages() {
-        final OutputEpoch epoch = currentEpoch; // Bound at entry: a superseded epoch drains nothing.
+    /** Drains queued initialization images for the ORIGINATING epoch only (bounded). */
+    private void drainPendingImages(OutputEpoch boundEpoch) {
         final int maxDrain = 8; // maxImages=2 plus settling headroom; bounded by construction.
         int drained = 0;
         while (drained < maxDrain) {
             Image stale;
             synchronized (nativeLock) {
-                if (imageReader == null || epoch == null || imageReader != epoch.readerRef()) {
-                    break;
+                if (imageReader == null || boundEpoch == null
+                        || imageReader != boundEpoch.readerRef()
+                        || currentEpoch != boundEpoch) {
+                    break; // Superseded: never select/drain a successor's reader (B).
                 }
                 stale = imageReader.acquireLatestImage();
                 if (stale == null) {
@@ -646,16 +727,36 @@ final class PrivateDisplayHost {
         return ownerPhase.isActive();
     }
 
-    private void onImageAvailable(ImageReader reader) {
-        final OutputEpoch epoch = currentEpoch; // Bound at entry; never inspect mutable fields only.
-        final FrameSink sink = frameSink; // Read once; swaps happen only from the main thread.
-        if (!captureActive || sink == null || epoch == null) {
-            return; // Latest-only: nothing is acquired while delivery is not live.
+    /**
+     * Epoch-bound capture callback (B): the epoch and sink were bound at listener REGISTRATION;
+     * admission goes through the pure {@link EpochAdmission} decision against the host's live
+     * state, and the epoch is rechecked immediately before delivery.
+     */
+    private void onImageAvailableForEpoch(OutputEpoch boundEpoch, FrameSink boundSink,
+            ImageReader reader) {
+        final FrameSink sink = boundSink; // Registration identity, not entry-time mutable state.
+        final OutputEpoch epoch = boundEpoch;
+        OutputEpoch liveEpoch;
+        Object liveReader;
+        boolean active;
+        boolean released;
+        synchronized (nativeLock) {
+            liveEpoch = currentEpoch;
+            liveReader = imageReader;
+            active = captureActive;
+            released = captureReleased;
+        }
+        EpochAdmission.Decision decision = EpochAdmission.evaluate(active, released, liveReader,
+                liveEpoch, epoch, reader, deliveredAny, lastDeliveryElapsedMs,
+                SystemClock.elapsedRealtime());
+        if (decision != EpochAdmission.Decision.ADMIT) {
+            return; // Stale / unready initialization output / throttled: nothing delivered.
         }
         HostingFrame frame = null;
         synchronized (nativeLock) {
-            if (captureReleased || reader != imageReader || reader != epoch.readerRef()) {
-                return; // Stale callback for a closed, superseded, or non-epoch reader (B).
+            if (captureReleased || reader != imageReader || reader != epoch.readerRef()
+                    || currentEpoch != epoch) {
+                return; // Recheck under the lock: state moved between decision and acquire.
             }
             Image image = reader.acquireLatestImage();
             if (image == null) {
@@ -663,15 +764,6 @@ final class PrivateDisplayHost {
             }
             long nowElapsed = SystemClock.elapsedRealtime();
             try {
-                if (!epoch.isReady()) {
-                    // Initialization/preparation output of the display surface: discarded without
-                    // delivery, without consuming the throttle budget, and without moving the
-                    // first-delivery clock (B).
-                    return;
-                }
-                if (deliveredAny && HostingPolicy.frameThrottled(nowElapsed, lastDeliveryElapsedMs)) {
-                    return;
-                }
                 deliveredAny = true;
                 lastDeliveryElapsedMs = nowElapsed;
                 frame = copyFrame(image, nowElapsed);

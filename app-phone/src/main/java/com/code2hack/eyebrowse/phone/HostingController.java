@@ -656,7 +656,8 @@ final class HostingController {
             OutputEpoch rebuiltEpoch = new OutputEpoch(session.view(),
                     displayHost.currentPresentationRef(), displayHost.currentReaderRef(),
                     metric.width, metric.height, metric.densityDpi, generation,
-                    leaseEligibleElapsedMs, android.os.SystemClock.elapsedRealtime());
+                    session.outputStateVersion(), leaseEligibleElapsedMs,
+                    android.os.SystemClock.elapsedRealtime());
             if (!displayHost.rearmCapture(generation,
                     new BoundSink(lease, generation, frameConsumer), rebuiltEpoch)) {
                 // A checked rearm failure must not leave a healthy capturing label (R6).
@@ -721,6 +722,7 @@ final class HostingController {
         if (state != State.HOSTING || lease != null || displayHost == null) {
             return null;
         }
+        long demandElapsedMs = android.os.SystemClock.elapsedRealtime(); // Fresh-demand anchor (B).
         if (displayHost.isRetiring()) {
             // R2: the current capture owner is still retiring. Null means NO lease and NO hidden
             // side effect; the caller retries explicitly once retirement is quiescent (the
@@ -757,21 +759,16 @@ final class HostingController {
         long now = android.os.SystemClock.elapsedRealtime();
         Lease newLease = new Lease();
         frameGate.open(newLease, generation, now + HostingPolicy.LEASE_TTL_MS);
-        // B: one output epoch per demand cycle. The ORIGINAL eligibility instant anchors the
-        // first-delivery bound; it is carried across same-lease rearms and never re-anchored by
-        // readiness. The host binds the epoch to the exact current reader/presentation/view and
-        // links current-output readiness (pre-draw on the delivered view) before any admission.
-        OutputEpoch epoch;
-        if (displayHost.isOwnerActive()) {
-            epoch = new OutputEpoch(session.view(), displayHost.currentPresentationRef(),
-                    displayHost.currentReaderRef(), metric.width, metric.height, metric.densityDpi,
-                    generation, leaseEligibleElapsedMs, now);
-        } else {
-            leaseEligibleElapsedMs = now; // Fresh demand cycle: the eligibility anchor starts here.
-            epoch = new OutputEpoch(session.view(), displayHost.currentPresentationRef(),
-                    displayHost.currentReaderRef(), metric.width, metric.height, metric.densityDpi,
-                    generation, leaseEligibleElapsedMs, now);
-        }
+        // B: one output epoch per demand cycle. EVERY new lease is a NEW demand with its own
+        // fresh eligibility anchor (owner retention is not lease reuse); the anchor is sampled
+        // before allocation and never re-anchored by readiness. Same-LEASE rearms (geometry
+        // rebuild under the live lease) carry the original anchor. The host binds the epoch to
+        // the exact current reader/presentation/view/session-output-state and links the staged
+        // current-output readiness before any admission.
+        leaseEligibleElapsedMs = demandElapsedMs;
+        OutputEpoch epoch = new OutputEpoch(session.view(), displayHost.currentPresentationRef(),
+                displayHost.currentReaderRef(), metric.width, metric.height, metric.densityDpi,
+                generation, session.outputStateVersion(), leaseEligibleElapsedMs, now);
         // Same-owner rearm vs new-owner start: revocation retains the capture owner (thread and
         // reader stay for reacquisition), so a new lease after expiry/release rearms the SAME
         // active owner with the new bound sink; only a quiescent host starts a fresh owner (R2).
@@ -965,7 +962,8 @@ final class HostingController {
 
     /** Sparse output-epoch facts (diagnostic/test seam; no content, no wire format). */
     synchronized String outputEpochFacts() {
-        return displayHost != null ? displayHost.outputEpochFacts() : "epoch=none";
+        String facts = displayHost != null ? displayHost.outputEpochFacts() : "epoch=none";
+        return facts + " sessionOutputStateVersion=" + session.outputStateVersion();
     }
 
     /** ORIGINAL eligibility instant of the live lease (diagnostic/test seam; 0 when none). */
@@ -988,6 +986,16 @@ final class HostingController {
 
     private void onSessionChanged(PhoneBrowserSession changed) {
         synchronized (this) {
+            if (state == State.HOSTING && lease != null && displayHost != null
+                    && changed.isLive()) {
+                // B: a live same-WebView document/attachment change invalidates PENDING output
+                // readiness so the first delivered frame reflects the CURRENT output state.
+                OutputEpoch epoch = displayHost.currentEpoch();
+                if (epoch != null && !epoch.isReady()
+                        && epoch.outputStateVersion() != changed.outputStateVersion()) {
+                    displayHost.restartOutputReadiness(epoch, changed);
+                }
+            }
             if (state == State.HOSTING && !changed.isLive()) {
                 // The renderer is gone: hosting is interrupted and needs an explicit restart.
                 Log.i(TAG, "browser lost while hosting gen=" + generation);
