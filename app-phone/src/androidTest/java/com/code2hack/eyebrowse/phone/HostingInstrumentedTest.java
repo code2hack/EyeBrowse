@@ -918,16 +918,16 @@ public class HostingInstrumentedTest {
 
     // ------------------------------------------------- correction3 controlled cases (R1–R7)
 
-    // Added with the attempt-3 source checkpoint to cover the ownership/deadline/attachment paths
-    // the renewed review found unproved. They are part of the declared test identities for the
-    // NEXT device phase and are UNEXECUTED at this host-only checkpoint: no device pass is
-    // claimed here, and the next combined invocation must reconcile the new count explicitly.
+    // Controlled ownership/deadline/attachment regressions. Execution results belong in the
+    // source- and APK-bound run records, not in a static source-code status claim.
 
     /** R3: Stop while backgrounded, then return: the surviving live page reattaches, no reload. */
     @Test
     public void backgroundStopThenReturnReattachesLivePageWithoutReload() throws Exception {
         openFixture("/hosting.html", "Hosting capture page");
         int loadsBefore = loadCount("/hosting.html");
+        String markerBefore = domText("load-marker");
+        int identityBefore = webViewIdentityHash();
         setFieldValue("bgstop-value");
         tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
         scenario.onActivity(activity -> activity.moveTaskToBack(true));
@@ -943,8 +943,13 @@ public class HostingInstrumentedTest {
         bringMainActivityToFrontForTest();
         waitUntil("live page reattached on return after background Stop",
                 () -> hostViewSnapshot().viewAttached);
-        assertEquals("no reload across background Stop and return", loadsBefore + 1,
+        // The baseline was sampled AFTER opening; Stop/return must add zero page loads.
+        assertEquals("no reload across background Stop and return", loadsBefore,
                 loadCount("/hosting.html"));
+        assertEquals("same document across background Stop and return", markerBefore,
+                domText("load-marker"));
+        assertEquals("same WebView across background Stop and return", identityBefore,
+                webViewIdentityHash());
         assertEquals("field value survived background Stop and return", "bgstop-value",
                 readFieldValue());
         assertEquals("hosting remains stopped after return", HostingController.State.NOT_HOSTING,
