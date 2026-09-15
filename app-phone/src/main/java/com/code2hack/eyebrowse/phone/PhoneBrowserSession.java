@@ -279,9 +279,14 @@ final class PhoneBrowserSession {
         return outputStateVersion;
     }
 
+    /**
+     * S4: bumps the output-state version WITHOUT notifying - attachment mutations must not
+     * reentrantly notify (and reattach) observers mid-mutation. Change propagation flows through
+     * the terminal notification each mutating operation already issues; admission-time full
+     * live-identity revalidation closes any silent-change gap.
+     */
     private void bumpOutputStateVersion() {
         outputStateVersion++;
-        notifyListeners();
     }
 
     private void attachToContainer(Context baseContext, ViewGroup container) {
