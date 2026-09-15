@@ -1,231 +1,246 @@
-# Development and local agent operations
+# Development and agent operations
 
-Approved development procedures and runtime configuration for EyeBrowse. Governance and authority remain in `AGENTS.md`; product requirements remain in `SPEC.md`. Actual run choices, assignments, addresses, and test outcomes belong in runtime/issue/evidence records, not this file.
+Operational procedures for EyeBrowse. `AGENTS.md` is the authority for roles, approvals, acceptance, failure accounting, communication semantics and lifecycle. `SPEC.md` defines the product. This document implements those rules; it does not redefine them.
 
-## Workspace
+## Workspace, records and consumers
 
-- Repository: `git@github.com:code2hack/EyeBrowse.git`
-- Local checkout: `/home/code2hack/Projects/EyeBrowse`
-- Canonical branch: remote `main`.
-- Local runtime root: `/home/code2hack/.local/state/eyebrowse`; keep credentials out of runtime records.
-- Per-version runtime settings: `<runtime-root>/<version>/runtime.json`; per-run records: `<runtime-root>/<version>/runs/<run-id>/run.json`.
-- Runtime records are consumed by Manager procedures, not automatically loaded by Pi. Provider configuration remains in `~/.pi/agent/models.json`.
-- Production build tasks are established by the approved ticket plans and implementation; the existing experiment has its own wrapper and commands below.
+- Repository: `git@github.com:code2hack/EyeBrowse.git`; canonical articles are on remote `main`.
+- Manager checkout: `/home/code2hack/Projects/EyeBrowse`.
+- Runtime root: `/home/code2hack/.local/state/eyebrowse`.
+- Per-version settings: `<runtime-root>/<version>/runtime.json`.
+- Per-run record: `<runtime-root>/<version>/runs/<run-id>/run.json`; ticket evidence and assignments remain under that run.
+- Private credentials belong in an owner-only secret store, not repository files or runtime/evidence records. Runtime may contain a private reference consumed internally by a trusted helper. Do not read the referenced secret into model context.
 
-## Owner-approved agent settings
+Refresh remote refs and identify the actual baseline before planning, dispatch or verification. Supply current canonical articles separately to old implementation/review worktrees; do not merge protected-article changes into a product PR merely to refresh instructions. Keep protected-article candidates outside `main` and use the editor/request/publication gates in `AGENTS.md` §3.
 
-| Role/profile | Runtime | Provider | Model | Thinking | Name and lifecycle |
-| --- | --- | --- | --- | --- | --- |
-| v0.0.1 Planner | `pi` | `openai-codex` | `gpt-6-astra` | `max` | Reuse the registered `v0.0.1 Planner` session through v0.0.1 closeout |
-| Worker | `pi` | `deepseek` | `deepseek-flash` | `max` | `Worker-#<issue>`; ticket mission through verified cleanup |
-| Worker availability fallback | `pi` | `spark` | `qwen3.8-flash-next` | `max` | Same mission; record the actual model/session change |
-| Reviewer | `pi` | `openai-codex` | `gpt-6-astra` | `max` | `Reviewer-#<issue>`; independent ticket-scoped session, reused for renewed reviews |
+### One authoritative record, explicit consumers
 
-Use `--thinking max` for every assigned profile. Refresh current model metadata and verify the effective level at startup; do not silently accept clamping or substitute a lower level. Pi's display label and upstream parameter can differ: current mappings send DeepSeek `reasoning_effort=max` and Spark/Qwen `reasoning.effort=xhigh`. Declare `"input": ["text", "image"]` for `deepseek-flash` in `models.json` to expose its vision capability in Pi.
+| Information | Home / actual consumer |
+| --- | --- |
+| Governance and canonical agent-message semantics | `AGENTS.md`; agents and operational procedures follow its current revision |
+| Verified operational recipes | This file and the installed skills/scripts; agents load the relevant skill before use |
+| Provider catalog and executable model settings | `~/.pi/agent/models.json` and approved runtime configuration; Pi/provider loaders consume their own settings |
+| Session identity/lifecycle | `CONTRIBUTORS.md` under `AGENTS.md` §15.1; Manager/Planner resolve it before routing |
+| Run approvals, resources, canonical todo metadata and pending requests | Existing run/mission/runtime records; **Manager procedures consume these explicitly** |
+| Local todo checklist | Installed `todo` extension's tool-result details in the selected native Pi session branch; its `session_start`/`session_tree` handlers reconstruct the checklist |
+| Browser profile and tab ownership | pi-browser-harness's own configuration/session state, consumed by that extension |
+| Device-screen policy and credential reference | Runtime `screenAccessPolicy`, read by the configured `pi-phone-use` helper |
+| Feishu connection/configuration/routes/outbox | pi-feishu-link's own files, consumed by its daemon; not the project's run records or contributor registry |
 
-A replacement session receives a new native ID and a unique name suffix such as `Worker-#42-r2`; retain the prior registry record. Replacement does not reset ticket-level attempt counts. Resolve the persistent Planner through `CONTRIBUTORS.md` and current runtime routing rather than starting another Planner for each ticket.
+General project runtime JSON is **not automatically loaded or executed by Pi**. Naming a field does not implement dispatch, deduplication, approval admission or migration. Record the actual procedure/adapter that reads and writes each field. Keep configuration, declared intent, executed results and unqualified capability distinct.
 
-Use the Spark fallback only when the requested DeepSeek model is unavailable, not to conceal reasoning or implementation failures. Record and report fallback use. Do not silently substitute other providers, models, or thinking levels.
+The Manager is the coordinated writer for shared dispatch, ownership, failure-history and pending-request decisions. Workers, Experts and helpers report changes through the canonical communication path rather than concurrently overwriting those decisions. For a record update, verify the expected prior revision, write a same-filesystem temporary file, validate it, and atomically replace the destination; preserve the preceding evidence/history. Re-read and reconcile after interruption before making another decision. This is a record-update procedure, not a new distributed todo engine or a guarantee about untested adapters.
 
-On any low weekly quota/limit warning or quota wall, notify the Owner immediately and await direction before continuing affected work or changing providers to evade that limit. No numeric warning threshold has been specified.
+## Runtime and capability preflight
 
-Configuration is local to `~/.pi/agent/models.json`. Never copy credentials into repository files, prompts, or logs.
+Use the current Owner-approved profile, model, effort, concurrency and alarm settings from runtime and their decision references. Do not restore obsolete defaults from an old worktree, package configuration or conversation summary. Current local profile assignments require `max`; verify the effective setting rather than accepting silent clamping. An Expert or remote/helper assignment needs its own actual capability/resource check, not a guessed default model.
 
-### Model preflight
+Model catalogs/authentication live in the configured harness/provider stores. A same-session model change is metadata, not a replacement identity or a fresh attempt budget. Availability fallback is allowed only under the applicable current Owner policy; distinguish it from implementation failure. Never silently substitute a provider, model or lower effort. A low quota warning or required-runtime outage is handled through the existing Owner gate, not provider hopping.
 
-Use `pi --list-models <model-id>` and inspect only non-secret model metadata. A missing model/auth configuration is a startup blocker, not a successful fallback. Before relying on a newly configured mapping, make a bounded no-tool request through the configured Pi provider and record the outbound effort field, HTTP result, and whether a normal response completed; never record credentials or reasoning content. A successful request proves that route accepted the parameter, not a quantitative guarantee about internal reasoning or future availability.
+For a local Pi profile, inspect `pi --list-models <model-id>` and non-secret runtime metadata. Where a route/mapping is newly configured, make a bounded no-tool preflight and retain the effective effort field, HTTP/result outcome and limitations—never credentials or private reasoning. In prior checks, Pi display labels and upstream fields differed; record the actual mapping rather than inferring it from a label. Vision capability likewise requires an actual supported input declaration/check.
 
-The listed DeepSeek and Spark routes have passed this basic `max` request check; the Planner's Pi startup and receipt verified `openai-codex/gpt-6-astra` at `max`. Preserve detailed preflight results in the version runtime directory and repeat availability checks when dispatching or recovering a failed route. Each real mission still requires its own startup/receipt verification.
+### Prepared integrations and their limits
 
-## Implementation operations
+Record installed versions/hashes and current results in the run/evidence record rather than copying mutable inventories into every article. The current preparation has established:
 
-This section implements the lifecycle in `AGENTS.md` using the current local harness; it does not redefine its authorization, batching, retry, or acceptance rules.
+- **pi-chatgpt-use / pi-browser-harness:** selected agent profile; project-specific create/rename/archive; exact conversation URL IDs; correlated messages/replies; effort selection/restoration; and a real Manager → registered Planner → Manager request/return/ACK. Delayed/duplicate and restart behavior still need their stated qualification before automated reliance.
+- **pi-phone-use:** one real guarded S20 normal PIN-unlock/relock cycle and further bounded setup use. This does not qualify every catastrophic-loss condition or make Wi-Fi continuously reachable.
+- **Feishu:** verified private Owner identity/route, daemon replies, and direct installed-SDK text send/readback with Owner receipt. Owner subsequently reported fixing the notification problem. Do not reopen that resolved notification issue merely because its exact setting change was not supplied; do not claim an agent retest or infer unrelated capabilities from it.
+- **Todo tool:** actual checklist operations and session-branch storage are available. Shared governance metadata, transition decisions and request routing are not supplied by the checklist tool itself.
 
-### Run preparation and records
+Skill-loader success is not end-to-end orchestration acceptance. Keep the qualification status of notifier, inbound Owner control, exact-candidate local verification, Expert handback and restart recovery explicit. An unqualified capability blocks operations that depend on it; it is not permission to invent a replacement framework or resume an Owner-paused ticket.
 
-Keep `implementationHold=true` in the version runtime settings until configuration and required version/run authorization are complete. A ready label alone does not lift the hold.
+## Canonical todos and the installed checklist
 
-For each authorized run, record the version/specification baseline, approved ticket set and version-plan reference, dependency DAG, Owner concurrency limit, gate inventory/alarm choice, current batch, resource claims, and links to durable issue/PR records. Store mutable details in `run.json`; record approvals and meaningful transitions in attributed comments linked from participating issues. An Owner limit of `unlimited` means no fixed count cap, not unlimited hardware/model capacity or exemption from exclusive device ownership and batch boundaries.
+The installed tool is `todo`, with actions `list`, `add`, `toggle`, `clear`; `/todos` displays the current session branch in the TUI. Its source is currently `~/.pi/agent/extensions/todo.ts`. Inspect the actual installed implementation before depending on changed behavior.
 
-For each ticket record its Planner-authored plan reference, current code baseline, assigned registry tuples, live routing, branch/worktree/scratch paths, resource reservation, attempt stage/count, candidate/evidence references, and cleanup state. Do not put these changing assignments or test results in `DEV.md`.
+It stores `{ id, text, done }`, the next numeric ID and action/error details in native session tool-result details. IDs and state are local to that session branch; `clear` resets IDs. `toggle` is not idempotent. The tool has no shared assignment, failure-history, candidate, helper, approval or request-correlation fields.
 
-### Planner requests and plan delivery
+Use it as a **local checklist projection** where suitable. Put a stable canonical todo reference in its text and retain the owning session/item reference in the existing mission record. Reconcile with the canonical record on resume/branch changes. Do not treat a local numeric ID, cleared list, checkbox, renamed item, or old branch snapshot as the objective identity or a new failure allowance. Before repeating an uncertain toggle, list/reconcile state instead of toggling blindly.
 
-Use the registered v0.0.1 Planner for that version's requested plans. Owner requests version planning; Manager requests each approved ticket's detailed plan before Worker dispatch. Send the issue, exact reference commit, constraints, available environment/evidence, and required reply path. Planner publishes the plan as an attributed issue comment or linked artifact and directly sends its reference to Manager. Verify receipt and current-code/dependency compatibility before assigning a Worker. Existing document ownership and protected-article gates remain unchanged.
+For each approved objective, the Manager's existing run/mission record carries or references:
 
-### Workspaces and visible launch
+- stable todo ID, parent ticket/plan, objective, completion condition and dependencies;
+- current implementer and write owner, helper pairing, reserved resources, and the **return Worker recorded at escalation**;
+- round identity, approach, concluded outcome, attributable failure history and candidate/evidence references;
+- current execution state and pending handoff/verification obligations;
+- request IDs, recipient tuples, send/receipt/reply verification, processed result IDs and any request-bound approval.
 
-All agents run in separate visible windows of the **same tmux session as Manager**, including human waits. Workers use `Worker-<issue>` window labels; Reviewers use `Reviewer-<issue>`. Window labels are for people, not authenticated routing.
+Apply `AGENTS.md` §14 to these records. A helper report and review confirming the same round are correlated evidence, not separate failures. Do not spread a ticket-wide verdict across unrelated objectives or reset history through tool operations. Preserve uncertain attribution explicitly. Maintain one canonical record for an objective; the checklist projection is not a competing decision store.
 
-Resolve the session from Manager's current pane, create the exact assigned worktree and a unique scratch directory, and keep session/evidence files in a persistent per-ticket runtime directory. Set the child process's `TMPDIR` to its scratch directory. Existing branches/worktrees are inspected and reused only for their assigned mission; do not overwrite another assignment or clear predictable shared temporary paths.
+No automatic escalation consumer is assumed. Until a specific adapter is qualified, the Manager reads the canonical history, applies the governance rule, records the decision and dispatches explicitly. Qualify any automation against the same records before enabling it.
 
-Shell templates below require Manager-resolved, safely quoted values for `issue`, `branch`, `worktree`, `base`, `window`, `provider`, `model`, `name`, and `session_file`. Run TUI launch commands through `interactive_shell` in dispatch mode; the agent itself stays in the created tmux window.
+## Planning, assignments and visible sessions
+
+Use `AGENTS.md` §§5–6 for version/ticket/todo planning and batch authority. Before dispatch, refresh the DAG, claims, actual prerequisite outcomes, current canonical articles and ticket plan. Resolve stale/contradictory scope with the responsible Planner. Do not backfill a completed slot or treat Expert/helper activity as a new batch contrary to the approved scheduling policy.
+
+Include the ticket/plan/todo, exact code baseline, actual recipient tuple, write ownership, worktree/scratch or verified remote capabilities, resources, current history, evidence location and reporting/Owner-contact paths in the assignment. Account for helper and Expert resource needs within the approved limit; serialize or obtain a necessary exception rather than bypassing the limit by renaming a role.
+
+### Local launch
+
+Keep local agents in separate visible windows in Manager's tmux session. Resolve explicit pane IDs and record them against registry tuples; labels alone are not routing/authentication. Use the installed interactive-shell tool for supervised/dispatch launches, not a hidden nested agent.
+
+Manager-resolved template; quote all assigned values safely:
 
 ```bash
 session=$(tmux display-message -p -t "$TMUX_PANE" '#{session_id}')
-scratch=$(mktemp -d "/tmp/eyebrowse-issue-${issue}.XXXXXXXX")
+scratch=$(mktemp -d "/tmp/eyebrowse-${mission}.XXXXXXXX")
 git worktree add -b "$branch" "$worktree" "$base"
-
+printf -v launch '%q ' env "TMPDIR=$scratch" pi --provider "$provider" \
+  --model "$model" --thinking max --session "$session_file" --name "$name"
 tmux new-window -d -P -F '#{pane_id}' -t "$session" -n "$window" -c "$worktree" \
-  "exec env TMPDIR='$scratch' pi --provider '$provider' --model '$model' --thinking max --session '$session_file' --name '$name'"
+  "exec $launch"
 ```
 
-Start a new session idle, obtain its real native ID with `/session`, and register it before sending project work. Update the local tuple-to-session/pane routing record; do not invent session IDs or pre-register hypothetical agents. Supply the full mission and confirm its receipt plus actual `PI_SESSION_ID`, `PI_PROVIDER`, `PI_MODEL`, and `PI_REASONING_LEVEL`. A successful tmux-launch helper only confirms window creation, not mission startup or completion.
+Start a new session idle, obtain its native ID, and register the actual participant before project work. Supply the complete assignment only after registration and verify receipt plus actual `PI_SESSION_ID`, `PI_PROVIDER`, `PI_MODEL` and `PI_REASONING_LEVEL`. A created window is not startup confirmation. Do not fork/revive/replace sessions or reset work history implicitly.
 
-Resolve current `main` articles separately from the implementation baseline: an older issue branch may contain obsolete governance. Supply canonical read-only article paths/commit references without merging unrelated protected articles into the implementation branch.
+### Remote implementer and local helper
 
-### Direct communication and recovery
+Use `pi-chatgpt-use` for the intended authenticated project and exact registered conversation. Verify the selected session's actual editing, cloud-test, commit/push and return-message capabilities. Register its observed full conversation URL before assignment; do not infer a new session from a title or send bubble.
 
-Match the recipient's active registry tuple to its current live pane before sending. Use captured pane IDs, not window-name parsing: names containing dots can be mistaken for pane selectors. Messages carry exact From/To tuples, a concise purpose/state, and issue/evidence references.
+When `AGENTS.md` §5.4 requires a local helper, assign/register it explicitly and keep it visible. A suitable existing ticket Worker may take the helper assignment within approved resources. The remote implementer and helper refer to the same todo, round and candidate; supporting checklists do not create independent budgets.
+
+On `CANDIDATE_READY`, verify the remote SHA before local verification. Record exact source/APK/device bindings and executed checks. Route findings to the current implementer. Before any helper-authored correction, explicitly transfer source ownership; never allow two writers on the same implementation assignment.
+
+## Communication and handback
+
+**Use the sole canonical envelope in `AGENTS.md` §15.3.** DEV, skills and adapters implement it by reference, not with an independently maintained normative format. Preserve visible registered identity, authoritative tuples and request/reply correlation through every transport. Check registry status and resolve contradictory identity before acting.
+
+For tmux, send the complete prepared message literally, then submit Enter as a separate delivery action:
 
 ```bash
 tmux send-keys -t "$recipient_pane" -l "$message"
+# Separate submission after the literal text has reached the editor:
 tmux send-keys -t "$recipient_pane" Enter
 ```
 
-Planner plan delivery, Worker/Reviewer receipts, results and blockers use this direct path in addition to required GitHub records. End the dispatch turn after startup is confirmed; do not poll other panes for routine progress. A queued message may wait behind an active long-running tool: if urgent cancellation is required, explicitly stop the owned operation and verify its safe state rather than assuming a queued message was acted on.
+For ChatGPT, use the verified skill's DOM/AX path. Check the exact conversation, existing draft and in-flight generation before mutation. Submit once and verify the corresponding new turn. A long response can use bounded read-only observation/event notification; do not repeatedly ask an agent for progress. Preserve pending request and last verified message IDs across restart and reconcile possible success before resending. A local watcher, browser response, or GitHub post is not by itself acceptance of the requested work.
 
-Removing an extension file does not unload it from an existing Pi process. Use `/reload` while idle, or resume the same saved session in its owned window when recovery requires a restart. Verify native identity/model, reconcile any interrupted command before retrying, and update routing. Never treat a restart as a fresh attempt budget.
+For each handoff, record send, receipt, returned evidence and verification separately. Retry the same logical request with its existing correlation identity. Reject duplicate/stale results as new dispatch, failure, approval or ownership changes. End the Manager dispatch turn after startup/receipt and actionable reports are handled; use meaningful reports/events to resume coordination.
 
-### Sudo pane procedure
+### Expert handoff and Worker return
 
-For an approved sudo escalation under `AGENTS.md` Section 9.3, open a separate pane in Manager's current window through the interactive execution tool:
+When the canonical record reaches the condition in `AGENTS.md` §14, resolve a capable Expert, its required helper/resources and the intended return Worker. Record the scoped assignment and source handoff, and notify the Owner using the informational channel. Do not invent an Owner approval gate for an otherwise authorized Expert handoff.
 
-```bash
-manager_window=$(tmux display-message -p -t "$TMUX_PANE" '#{window_id}')
-tmux split-window -h -P -F '#{pane_id}' -t "$manager_window" -c "$worktree"
-```
+The Manager coordinates product findings; Worker/Expert owns diagnosis and correction. Manager may perform authorized operational setup/recovery, but does not become the product-code or failing-acceptance-test troubleshooter.
 
-Explain the exact command and purpose, run it in that pane, and let the Owner enter the password directly there. Never request the password in chat or capture it in logs. Record the non-secret result and close only that operation's pane when finished; do not use a different tmux session or close Manager's pane.
+Verify the Expert's exact pushed candidate, todo-specific evidence, required local-helper result and continuation notes. Resolve required review findings under `AGENTS.md` §13. Reconcile workspace state without discarding uncommitted work, relinquish Expert write ownership, and explicitly return the later todos to the recorded Worker. Confirm receipt before resuming it. Retire only assignments that actually end; a ticket Worker returning from helper duty is not retired. This handback is not ticket closure or an extra whole-ticket review ceremony.
 
-### Verification, review, and closeout
+## Android connection and screen workflow
 
-Finish implementation and simplification before freezing the candidate used for final evidence. Record source SHA, APK hash, install output, target/software identity, commands, raw results, and limitations together. Keep raw captures immutable; corrections to summaries are explicitly attributed. Historical runs remain tied to their original builds, and partial/timed runs state their actual intervals and interruptions.
+### Toolchain
 
-Supply the Reviewer the approved ticket/plan, exact base/head, diff and evidence in a separate worktree. Verify the final remote SHA and renewed verdict before a guarded merge; for GitHub's merge API supply the expected `sha`. Use non-closing issue references so merge does not bypass closeout. Debug-only build policy below applies to every role and helper.
+Verified host references include SDK `/home/code2hack/Android/Sdk` (platforms 35/36 and corresponding build tools), JDK17, Node24, and approved ADB `/home/code2hack/.local/bin/adb`. Verify the current binaries/profile rather than assuming an old PATH still applies. Emulator executable: `$ANDROID_HOME/emulator/emulator`; the existing `dealer-api36` AVD is not disposable shared state.
 
-Record failure-stage/attempt accounting in the ticket/run record using `AGENTS.md` Section 14. Manager-directed recovery gets explicit source/resource ownership and the same independent-review/evidence workflow; model/session replacements do not reset counts.
+Use the assigned project's wrapper and explicit **debug** tasks, with the ticket's verified JDK/Gradle/AGP settings and resource limits. The current implementation procedure uses `--no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g`. Do not invoke aggregate/release helpers or add release acceptance gates without the applicable Owner request. An untracked `local.properties` or explicit SDK environment may configure the local SDK; no machine path or credential goes into product source.
 
-After merge, request Worker cleanup. Preserve required APK/log/report provenance outside disposable scratch, approve exact worktree/shared-resource removals, verify the cleanup report and released resources, then retire the Worker/Reviewer and update the registry before closing the issue. Close only their verified tmux windows; keep the version Planner alive until version closeout. Retained artifacts and any cleanup limitation must have explicit locations/state, not an unverified 'done' claim.
-
-## Android toolchain and device workflow
-
-**Build policy:** Use debug builds by default. Do not build release APKs or treat release-build/test success as a hard acceptance gate unless the Project Owner explicitly requests the corresponding release build or gate. This restriction also applies to helper scripts and aggregate tasks that invoke release builds.
-
-Sources: local `/home/code2hack/Projects/Glasseo/DEV.md` (checkout HEAD `5f9d23512359aaaef7d5e1ba203ea7322cae433b`) and fresh read-only host/device inspection. Glasseo architecture, package IDs, toolchain pins, unattended-only policy, concurrency limits, and alarm policy are **not** EyeBrowse policy. Its prior tests are environment references, not EyeBrowse acceptance evidence.
-
-### Verified host inventory
-
-- SDK: `/home/code2hack/Android/Sdk`; platforms 35/36 and Build Tools 35.0.0/36.0.0/36.1.0 are present.
-- Java: OpenJDK `17.0.20`; Node: `v24.20.0`.
-- ADB: `/home/code2hack/.local/bin/adb`.
-- Emulator executable: `/home/code2hack/Android/Sdk/emulator/emulator`; AVD `dealer-api36` has been exercised with the isolated spike. Verify its actual configuration and serial for each mission; it has no secure lockscreen by default in the tested setup.
-- Set an explicit SDK environment or an untracked `local.properties` for builds; never commit a machine-specific SDK path.
-- The isolated `experiments/locked-webview-spike/` uses its verified Gradle 8.11.1 wrapper, AGP 8.7.3 and JDK 17. From that directory, the debug-only verification commands are:
+The isolated `experiments/locked-webview-spike` has its own verified Gradle8.11.1/AGP8.7.3/JDK17 debug commands:
 
 ```bash
 ANDROID_HOME=/home/code2hack/Android/Sdk ./gradlew --no-daemon \
   :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
 ```
 
-These are experiment commands, not an automatic dependency choice for production v0.0.1. Its approved ticket plans establish the applicable production tasks. Do not run the experiment's release-building `verify-variants.sh` unless explicitly requested by the Owner.
+These are experiment commands, not a replacement for production ticket plans. Do not use that experiment's release-building `verify-variants.sh` unless explicitly authorized. Earlier Glasseo/environment evidence is a reference only, not EyeBrowse acceptance or architecture authority.
 
-### Real-device ADB connection order (Phone and RG)
+### TCP5555 first, physical identity always
 
-Apply this procedure to the mission's reserved physical device. Prefer **USB → local LAN TCP → Tailscale TCP → human gate**. An emulator or another connected device is not a substitute.
+For the mission's reserved device, prefer an **already authorized, identity-verified TCP/IP5555** route on the current trusted LAN, then an identified tailnet route where available. Keep USB as fallback/bootstrap. Android's paired Wireless Debugging/random-port mode is a separate recovery option, not proof that the legacy5555 listener is on/off.
 
-1. **USB first.** Check `adb devices -l` for the intended device in authorized `device` state. Verify its identity, then enable legacy TCP ADB on port **5555** through that USB transport. Record its current LAN/Tailscale addresses and verify a TCP connection before a planned USB disconnect. If the listener is already enabled and verified, do not restart it unnecessarily.
-2. **Without USB, try LAN, then Tailscale.**
-   - **LAN:** discover the device’s current address using bounded local-network discovery. Cached addresses are hints, not authoritative. If an old address fails, continue discovery rather than declaring the device unavailable. Distinguish “address not found” from “device found but no authorized ADB connection.” Try port **5555** and run `adb mdns services` to discover Wireless ADB's current random port. Use the target's `_adb-tls-connect._tcp` endpoint, not its `_adb-tls-pairing._tcp` port. An already trusted host can reconnect without new human pairing; discovery alone does not grant authorization.
-   - **Tailscale:** if LAN attempts fail, identify the device with `tailscale status --json`. Try its tailnet address on **5555**, then any known current Wireless ADB connection port. Do not assume LAN mDNS advertisements cross Tailscale.
-   - If necessary, use bounded port discovery only against identified target-device addresses on the trusted LAN/tailnet. Use short timeouts and bounded retries. An open port is not success: require authorized ADB `device` state and matching physical-device identity.
-3. **Human gate only when no authorized route works.** Inform Manager and ask the Owner to connect USB, or enable the device's Tailscale and Android Wireless debugging where supported. Complete any required pairing/authorization interactively. Respect the Owner's current availability and no-alarm instructions.
+1. Inspect `adb devices -l` and current authorized discovery. Cached addresses/MAC-IP bindings are hints; verify the physical serial and model before mutation.
+2. Try an identified current5555 endpoint with a bounded connection attempt. Fresh LAN/mDNS/tailnet evidence distinguishes an unknown address, an unreachable host, a closed port and failed authorization. Do not declare physical absence from one stale address or assume mDNS crosses the tailnet.
+3. If necessary, use verified USB or an already-authorized Wireless Debugging endpoint. Do not scan broad unrelated ports, change trust or silently pair a new host. Physical pairing/connection remains an Owner gate when required.
+4. Inspect the current listener/address after recovery. Only when needed and coordinated, enable5555 through the verified fallback, then verify a real connection. Do not restart a working `adbd`/ADB server merely to switch route, and do not run `adb usb` during routine cleanup.
+5. Prefer the verified5555 route again when available. Preserve USB/power where useful; network-changing work must have a verified recovery route before it begins.
 
-After recovering through **any** authorized transport, verify the device identity, enable legacy TCP ADB on **5555**, and verify reconnection. If the device rejects this mode, report the limitation rather than bypassing authentication or using root.
-
-Command templates (`ADB_TARGET` is a verified authorized USB or network transport; `TCP_ENDPOINT` is the selected `HOST:PORT`, either 5555 or a discovered Wireless ADB connection port):
+Templates, with values resolved for the reserved physical device:
 
 ```bash
 adb devices -l
 adb mdns services
 timeout 10s adb connect "$TCP_ENDPOINT"
-timeout 10s adb -s "$TCP_ENDPOINT" get-state
 adb -s "$TCP_ENDPOINT" shell getprop ro.serialno
 adb -s "$TCP_ENDPOINT" shell getprop ro.product.model
-# Enable the legacy listener through the verified authorized transport:
+# Only if the listener actually needs enabling, using an authorized fallback:
 adb -s "$ADB_TARGET" tcpip 5555
 ```
 
-- Use explicit `adb -s` targeting for every device operation. IP addresses can change or be reassigned; verify identity against the assigned device before mutation. Re-enabling TCP can restart `adbd`, so coordinate it with any active test.
-- Keep legacy TCP 5555 available as the reconnection path. Do not routinely run `adb usb` during cleanup; disable TCP only when explicitly requested by the Owner. Still stop test apps and restore other temporary test settings.
-- Retain ADB host authorization. Legacy TCP ADB is unencrypted on the LAN; use only trusted LANs and authorized tailnet access. Do not disable authentication or expose port 5555 through public forwarding.
+A stable address does not guarantee sleeping Wi-Fi reachability or TCP persistence across a phone reboot. In the verified S20 setup, a router restart required wake-only USB recovery before Wi-Fi/5555 became reachable again; normal screen lock was retained. Do not use an always-on screen, root/persistent-property trick, disabled authentication, or unapproved battery/network changes as a workaround. Legacy TCP ADB is unencrypted; keep it on trusted LAN/tailnet routes without public forwarding.
 
-### Rokid Glasses: available now
+### Screen access and UI work
 
-Known RG identity and inspected platform values; recheck them before device-sensitive verification:
+Use `pi-phone-use` and the recorded device-specific Owner grant under `AGENTS.md` §9.5. The present helper is S20-specific; do not apply its credential or PIN-entry assumptions to other phones, RG or a desktop. The grant applies to authorized included local agents with necessary reserved work, not just Manager.
 
-| Property | Observed value |
-| --- | --- |
-| Serial / ADB state | `1906092617103125` / authorized `device` |
-| Model | `RG-glasses` |
-| Android / API | 12 / 32 |
-| ABIs | `arm64-v8a,armeabi-v7a,armeabi` |
-| Display | 480×640; physical density 240, override 204 |
-| Active WebView | `com.android.webview` `95.0.4638.74` |
+Use the skill's **guarded bounded run** for normal PIN unlock/work/immediate relock. The helper consumes `screenAccessPolicy` and reads its private reference internally; do not fetch the secret into a prompt or command line. Verify actual keyguard state and the final-lock result, not merely a dark screen. Its child timeout is not a bound on every connection/unlock/cleanup operation; give the calling tool finite headroom and preserve mission limits.
 
-Always target the serial explicitly, especially once an emulator is running:
+Keep dependent transient UI operations in one guarded session when they require an open menu/dialog. After relocking, reconstruct the expected UI rather than assuming a popup survived. Use fresh resource IDs/package/bounds, not remembered screen coordinates. Keep raw hierarchy/notification/browser contents out of model/public evidence; retain only task-relevant, redacted derivatives and remove exact owned temporary captures.
 
-```bash
-adb -s 1906092617103125 get-state
-adb -s 1906092617103125 shell getprop ro.product.model
-adb -s 1906092617103125 shell getprop ro.build.version.sdk
-adb -s 1906092617103125 shell dumpsys webviewupdate
-```
+If a network-changing input loses its transport, inspect through the verified fallback before any replay. If cleanup cannot verify the lock after interruption/total access loss, report the last state and obtain Owner assistance. Do not intentionally strand an unlocked device to test catastrophic loss; use clearly labeled safe simulations for that case.
 
-Reserve RG for one mission at a time before mutating device state. Preflight identity, authorization, app commit/build, foreground state, and mission prerequisites. Do not overwrite or manipulate Glasseo or unrelated installed applications.
+### Target-specific verification and cleanup
 
-Once EyeBrowse has an approved build, package ID, and launch component, use its committed wrapper to build and its exact APK to install (`adb -s SERIAL install -r APK`), launch with `shell am start -n COMPONENT`, and collect bounded logs (`logcat -d -t 500`), package/lifecycle state, and instrumentation results. These are procedural templates, not tested EyeBrowse commands. Do not clear shared logcat or reset device settings without coordinating resource ownership.
+`SPEC.md`, the approved plan and current Owner acceptance profile identify the required targets/evidence. Label an authorized S20 run as S20 evidence, not Fold6 cover/inner/hinge qualification. Record explicitly permitted unexercised conditions as limitations—not fabricated passes or reinstated hidden gates. Shared-core changes still assess Phone and RG consumers. Record actual Android/One UI/YodaOS/WebView, app commit/build, display conditions and limitations for the evidence being claimed.
 
-Prefer correlated native/WebView logs, test output, `dumpsys`, and input/sensor traces for behavioral claims. Screenshots support layout evidence, not timing, event identity, or physical optical readability. Redact secrets and browsing content. Record device/software identity, commit, command, exit status, and limitations with acceptance evidence.
+Use exact expected test identities and terminal results. Shell/ADB exit0, compiled instrumentation, an incomplete stream, screenshots, or an observed callback are not interchangeable with JUnit/device acceptance. Preserve source/APK/device bindings and distinguish executed results, Owner observations and inference. If a client disconnects, device-side instrumentation may continue; inspect and stop the owned operation safely before cleanup or another attempt. No automatic test/input replay.
 
-WebView 95 requires real-RG feature qualification: exercise the APIs EyeBrowse actually uses rather than assuming modern browser compatibility. Glasseo's historical HTTPS asset-origin, encoding, Promise, IndexedDB, secure randomness, WSS, and bridge-origin tests suggest useful probe areas; rerun applicable checks for EyeBrowse. Do not weaken TLS or privileged bridge restrictions to make tests pass.
+Keep logs scoped to the assigned application/process and required milestones. Do not clear shared logcat or capture broad private browsing/notification/UI data. Preserve app/site data and authentication; no uninstall/`pm clear`, OS/WebView upgrade, unrelated package manipulation or device-setting change without the applicable authorization. Preserve retained evidence before removing only explicitly owned fixtures, mappings and temporary files. Verify actual processes/listeners/services and final lock state; do not infer cleanup from a shell's exit alone.
 
-Synthetic input and emulator runs do not qualify real head motion, peripheral behavior, comfort, or optical readability. Follow EyeBrowse `AGENTS.md` for physical gates and independent acceptance.
+Use the existing approved ADB/harness procedures. `agent-device` was evaluated as an option, not installed/qualified by that evaluation; do not adopt it, a new AVD or another package implicitly.
 
-### Phone and emulator procedures
+## Owner contact, alarms and sudo
 
-The Fold6 target is `SM-F956N` / serial `R3CX70NHTHK`. Reserve only the targets authorized by the mission; a connected RG is not a substitute for a phone test. Identify cover/inner display conditions and current Android/One UI/WebView versions where relevant. Emulator results remain separate from real Fold6 acceptance.
+Use `AGENTS.md` §7 for the distinction between information, action gates and request-bound approval. A human Owner does not need a fabricated agent tuple. The current authenticated Owner channel and permitted destination must be recorded and checked before accepting instructions or applying approvals.
 
-Never request or record the Owner's unlock secret; the Owner operates secure lock/unlock directly. Coordinate physical unplugged-testing steps with the Owner and follow the real-device ADB connection order above. Preserve existing device/AVD state, avoid unrelated apps/data, and restore temporary test settings without disabling the configured TCP reconnection path.
+### Feishu: notification is not automatic Manager control
 
-Before emulator use, verify the intended AVD's configuration and reserve it; do not wipe or repurpose the existing `dealer-api36` AVD without approval. Launch long-running emulator processes visibly through the interactive execution tooling. Record the actual emulator serial and always target it explicitly.
+Keep credentials and exact private destination outside repository/public evidence. Reuse the verified Owner route only after matching it to the authorized Owner identity/destination; never fall back to an arbitrary first session/chat or broadcast registered routes.
 
-### agent-device evaluation
+The prepared direct SDK send/readback and Owner receipt establish that narrow text path. The exposed `feishu_send_local_file` tool is daemon-session-only and is not a generic TUI Owner notifier; direct SDK sends did not traverse its persistent outbox. A reusable notifier must name its real consumer and qualify destination checks, request identity, send/result recording, bounded recovery and uncertain-send reconciliation before unattended reliance. Record API acceptance, stored-message readback and human receipt separately.
 
-Primary source reviewed: https://github.com/callstack/agent-device (upstream README on `main`; moving documentation, not a pinned installed version).
+Owner reported fixing Feishu notifications. That observation does not qualify voice calling, urgency permissions, the TUI tool, inbound routing, or permanent reconnect behavior. Do not add phone-urgency permission or consume its allowance merely to obtain a notification. Discord is not part of the current adopted route.
 
-Upstream documents Android emulator/physical-device automation via ADB and a snapshot helper, with:
+Automated project Owner-control admission is **not qualified or activated** by the current preparation. Until it is, use the established authenticated Manager channel for decisions; a Feishu-created model session is not this registered Manager. Before enabling that path, validate sender AND permitted destination, duplicate/stale request handling, approval binding to the actual operation/candidate, routing to the current Manager tuple, and confirmed receipt. An Owner binding is not an access-control allowlist; inspect the actual bridge configuration/consumers rather than assuming it is.
 
-- accessibility snapshots, selectors/refs, taps, text input, scrolling, and assertions;
-- screenshots/video plus target-dependent logs, traces, and diagnostic evidence;
-- replayable `.ad` workflows;
-- CLI, MCP, and typed Node.js API entry points;
-- worktree-scoped sessions and host-local device claims for concurrent agents.
+Do not treat a cached `connected` status as live proof. The developer console previously showed a failed persistent connection while local status said connected; one controlled idle-daemon restart recovered it. No permanent reconnect/status fix was established. A narrowly scoped restart requires checking gateway ownership, active sessions and pending outbox, preserving configuration, and verifying recovery; no broad process kills or repeated restarts. The earlier inference from the API callback list to missing message events was retracted—verify actual event configuration before changing it.
 
-The CLI requires Node 22.12+ according to upstream; this host's Node meets that requirement. `agent-device` is not installed on the current PATH, and its helper/runtime compatibility has not been qualified. Existing ADB procedures do not require it.
+### Audible alarm
 
-Before adopting it, select and record an exact version, install deliberately, then run `agent-device doctor`, `agent-device help workflow`, and `agent-device capabilities --platform android`. Consult that installed version's help for exact device/session selection. Check `agent-device device status` before acquisition; never release a live mission's claim. Built-in claims supplement Manager ownership and do not protect against unrelated direct ADB commands.
-
-Use fresh accessibility refs after state changes. Validate WebView accessibility coverage rather than assuming snapshots expose all browser content; use screenshots and appropriately scoped WebView diagnostics when needed. RG snapshot/helper compatibility remains unverified. Agent-device automation supplements, rather than replaces, build/unit/instrumentation tests and real-hardware evidence.
-
-## Contacting the Owner
-
-Always send a written gate report. Read the current run's Owner-approved alarm setting before sounding audio; later Owner instructions override it. When that setting is enabled and Owner attention is required, run:
+Read the current run's explicit Owner alarm choice before use; prior-run permission is not reusable. The existing local mechanism is:
 
 ```bash
 ~/Music/play-super-mario-alarm-hdmi.sh
 ```
 
-Also send a concise written message explaining the gate, evidence, and required action. The alarm supplements communication; it does not replace it. Workers should contact the Owner directly for physical/interactive gates while informing the Manager.
+The script was checked with `bash -n`; it defaults to six seconds, reads `~/Music/super-mario-alarm.mp3`, and uses FFmpeg plus `aplay -D plughw:0,3`. Physical audibility needs Owner confirmation. Report alarm failure in writing without unbounded retries. Do not sound it for routine informational Expert handoff or use notification receipt as approval.
 
-The discovered executable script defaults to six seconds, reads `~/Music/super-mario-alarm.mp3`, and pipes FFmpeg output into `aplay -D plughw:0,3` (HDMI). Both executables are installed and the script passes `bash -n`. Physical audibility requires Owner confirmation. If playback fails, report the failure and the original gate in writing; do not enter an unbounded retry loop.
+### Sudo pane
+
+For an approved sudo escalation, use a separate pane in Manager's current tmux window, explain the exact command/purpose, and let Owner enter the password directly. Do not capture or request it in chat/logs.
+
+```bash
+manager_window=$(tmux display-message -p -t "$TMUX_PANE" '#{window_id}')
+tmux split-window -h -P -F '#{pane_id}' -t "$manager_window" -c "$worktree"
+```
+
+Use interactive execution for the prompt. Record only the non-secret outcome and close only that operation's pane afterward. Resource approval does not waive other Owner gates.
+
+## Qualification, document review and cutover
+
+Keep an explicit matrix of verified facts, labeled simulations, proposed procedures and remaining gaps. Do not repeat browser creation/archive, screen unlock, or router setup ceremonially when existing evidence covers the unchanged capability.
+
+Before activating the affected workflow, exercise small disposable setup cases—not product retries or fake production contributors:
+
+- canonical todo identity/history and exactly one escalation at the governance condition;
+- duplicate helper/reviewer results, recurring objectives versus distinct later todos, and identity mismatch rejection;
+- exact-candidate cloud/local-helper handoff and verified return to the recorded Worker;
+- pending reply, Expert assignment, local-verification wait and unacknowledged handback across restart;
+- no duplicate dispatch, simultaneous writers, lost counters or stale approval consumption;
+- scoped Owner notifier/admission failures and safe screen-cleanup failure reporting.
+
+State the boundary of each check. Fresh-process record reconstruction is not a live multi-agent restart test; a tabletop/data simulation is not an actual Expert/device mission. New tracked harness functionality follows Planner ticketing and independent review; small operational preparation does not authorize a framework rewrite.
+
+Stage legacy-history mapping without activating it. Preserve the exact candidate, current replacement participants, genuine access/security gates and explicit Owner pause. Ambiguous failure attribution stays explicit. Do not revive retired sessions, reassign source writes, clear labels, reset counts or resume an Owner-paused ticket as a side effect of document publication or successful smoke tests.
+
+Present the exact DEV candidate/diff, Owner edit-request reference, changed operational files/consumers, qualification results/gaps and migration/activation preview. After the respective article approvals and applicable activation authorization, use a short scoped dispatch hold, preserve in-flight work, activate qualified procedures, reload only affected idle sessions, verify identities/routes, and deliver current canonical article references. Owner-paused work still needs explicit resumption.
+
+For final ticket review/merge/closeout, use `AGENTS.md` §13. Verify the exact reviewed remote head, checks/device evidence and resolved gates before merge, then verify the remote result. Coordinate cleanup, retained evidence, resource release, retirement and registry updates before issue closure. Todo handback, implementation completion, article publication, runtime activation and release publication remain separate events.
