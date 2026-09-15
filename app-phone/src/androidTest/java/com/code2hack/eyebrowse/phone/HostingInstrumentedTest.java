@@ -686,6 +686,106 @@ public class HostingInstrumentedTest {
         tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS);
     }
 
+    /** Owner-authorized diagnostic ONLY. Baseline product and original test remain unchanged. */
+    @Test
+    public void diagnoseHostingWindowRebuildDeliveredPixels() throws Exception {
+        String runId = InstrumentationRegistry.getArguments().getString("diagRunId");
+        assertTrue("explicit diagnostic run ID required", runId != null && runId.matches("[a-zA-Z0-9-]{1,80}"));
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        java.io.File directory = new java.io.File(context.getFilesDir(), "viewport-diagnostic-" + runId);
+        ViewportFrameDiagnostic diag = new ViewportFrameDiagnostic(directory, hosting, session,
+                FIXTURE_BASE + "/hosting.html");
+        AtomicReference<Integer> orientation = new AtomicReference<>();
+        scenario.onActivity(activity -> orientation.set(activity.getRequestedOrientation()));
+        HostingController.Lease lease = null;
+        LeaseRenewal renewal = null;
+        boolean originalPixelsMatched = false;
+        try {
+            openFixture("/hosting.html", "Hosting capture page");
+            String marker = domText("load-marker");
+            setFieldValue("geometry-value"); // Same synthetic setup as the failing baseline case.
+            int loadsBefore = loadCount("/hosting.html");
+            int[] before = currentWebViewSize();
+            runOnMain(() -> diag.snapshot("phone-before-start", 0));
+            diag.emit(ViewportFrameDiagnostic.json("type","document","phase","before-transition",
+                    "sample", viewportDiagnosticDocument()));
+            tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
+            scenario.onActivity(activity -> activity.setRequestedOrientation(
+                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE));
+            waitUntil("diagnostic window changed", () -> {
+                int[] size=currentWebViewSize();return size[0]!=before[0] || size[1]!=before[1];
+            });
+            int[] expectedSize = currentWebViewSize();
+            runOnMain(() -> diag.snapshot("phone-after-window-change", 0));
+            scenario.onActivity(activity -> activity.moveTaskToBack(true));
+            waitUntil("diagnostic view privately attached", () -> {
+                HostViewSnapshot snapshot=hostViewSnapshot();
+                return snapshot.status.attachment==HostingController.Attachment.PRIVATE_DISPLAY && snapshot.viewAttached;
+            });
+            CollectingConsumer original = new CollectingConsumer();
+            lease = runOnMainSync(() -> {
+                diag.snapshot("private-before-first-demand", 0);
+                return hosting.acquireLease(frame -> {
+                    long deliveredAt=SystemClock.elapsedRealtime();
+                    original.onFrame(frame); // Preserve the original oracle's observation first.
+                    diag.onFrame(frame,deliveredAt);
+                });
+            });
+            assertNotNull("diagnostic lease",lease);
+            runOnMain(() -> diag.snapshot("private-after-first-demand",0));
+            waitUntil("first diagnostic delivered frame", () -> original.count()>0);
+            originalPixelsMatched=original.allFramesNearColor(CAPTURE_PAGE_COLOR);
+            diag.emit(ViewportFrameDiagnostic.json("type","original-oracle-point",
+                    "elapsedMs",SystemClock.elapsedRealtime(),"observedFrames",original.count(),
+                    "dimensionsMatch",original.allFramesMatchSize(expectedSize[0],expectedSize[1]),
+                    "expectedWidth",expectedSize[0],"expectedHeight",expectedSize[1],
+                    "originalAllPixelsMatch",originalPixelsMatched,"expectedArgb","#fff6f3ea",
+                    "unchangedTolerance",PIXEL_CHANNEL_TOLERANCE,"marker",marker));
+            // Continue this SAME transition to distinguish early vs persistent output. Do not
+            // replace the original result with later frames or send another input/navigation.
+            renewal=new LeaseRenewal(lease);renewal.start();
+            diag.emit(ViewportFrameDiagnostic.json("type","document","phase","after-original-oracle",
+                    "sample",viewportDiagnosticDocument()));
+            long observeUntil=SystemClock.elapsedRealtime()+10_000;
+            while(SystemClock.elapsedRealtime()<observeUntil) SystemClock.sleep(100);
+            diag.emit(ViewportFrameDiagnostic.json("type","document","phase","after-observation",
+                    "sample",viewportDiagnosticDocument()));
+            runOnMain(() -> diag.snapshot("private-end-observation",0));
+            diag.emit(ViewportFrameDiagnostic.json("type","observation-complete","frames",original.count(),
+                    "originalResultUnchanged",originalPixelsMatched,"loadsBefore",loadsBefore,
+                    "loadsAfter",loadCount("/hosting.html"),"markerAfter",domText("load-marker")));
+        } finally {
+            if(renewal!=null) renewal.stopRenewing();
+            if(lease!=null) runOnMain(lease::release);
+            runOnMain(hosting::stop);
+            awaitHostingState(HostingController.State.NOT_HOSTING,STOP_BOUND_MS);
+            waitUntil("diagnostic capture cleanup", () -> !runOnMainSync(hosting::captureResourcesPresent));
+            bringMainActivityToFrontForTest();
+            scenario.onActivity(activity -> activity.setRequestedOrientation(orientation.get()));
+            runOnMain(diag::close);
+            System.out.println("VIEWPORT_DIAGNOSTIC_DIRECTORY " + diag.path());
+        }
+        assertNull("diagnostic collection complete",diag.error());
+        assertTrue("original delivered-pixel assertion (diagnosis did not relax or replace it)",originalPixelsMatched);
+    }
+
+    /** Read-only metadata, only if the current URL is exactly the known synthetic fixture. */
+    private JSONObject viewportDiagnosticDocument() throws Exception {
+        long start=SystemClock.elapsedRealtime();
+        String script="(function(){if(String(location.href)!=="+JSONObject.quote(FIXTURE_BASE+"/hosting.html")
+                +"){return JSON.stringify({fixture:false});}var b=document.body,r=b.getBoundingClientRect();"
+                +"var c=getComputedStyle(b);return JSON.stringify({fixture:true,url:String(location.href),"
+                +"marker:document.getElementById('load-marker').textContent,"
+                +"counter:document.getElementById('live-counter').textContent,ready:document.readyState,"
+                +"dpr:devicePixelRatio,innerWidth:innerWidth,innerHeight:innerHeight,scrollX:scrollX,scrollY:scrollY,"
+                +"bodyBg:c.backgroundColor,documentBg:getComputedStyle(document.documentElement).backgroundColor,"
+                +"bodyRect:[r.x,r.y,r.width,r.height],padding:c.padding,margin:c.margin,"
+                +"visualViewport:window.visualViewport?{width:visualViewport.width,height:visualViewport.height,"
+                +"scale:visualViewport.scale,offsetLeft:visualViewport.offsetLeft,offsetTop:visualViewport.offsetTop}:null});})()";
+        return ViewportFrameDiagnostic.json("sampleStartElapsedMs",start,
+                "dom",new JSONObject(decode(evaluateJs(script))),"sampleEndElapsedMs",SystemClock.elapsedRealtime());
+    }
+
     /**
      * The bounded background-capture acceptance core (corrected round 2): never-leased idle
      * anchored at readiness, first frame at CONSUMER delivery ≤2s from eligibility, delivered-
