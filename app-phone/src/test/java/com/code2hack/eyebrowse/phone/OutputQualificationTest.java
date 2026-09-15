@@ -118,4 +118,19 @@ public class OutputQualificationTest {
         assertFalse("the expectation decides validity, not a white heuristic",
                 creamAsWhite.qualified);
     }
+
+    @Test
+    public void whiteDocumentWithEarlyNonQualifyingInitializationQualifiesOnTheEarliestValid() {
+        List<OutputQualification.Observation> observations = new ArrayList<>();
+        observations.add(OutputQualification.observe(100, 100, WIDTH, HEIGHT, 1, 1, 0L, CREAM,
+                WIDTH, HEIGHT, WHITE)); // pre-qualification initialization, not white
+        observations.add(OutputQualification.observe(600, 600, WIDTH, HEIGHT, 1, 2, 0L, WHITE,
+                WIDTH, HEIGHT, WHITE)); // live white document
+        assertEquals(1, OutputQualification.earliestQualifyingIndex(observations, 0));
+        long delay = OutputQualification.earliestQualifyingDelayMs(observations, 0, 100);
+        assertEquals(500, delay);
+        assertTrue(OutputQualification.validWithinBound(delay));
+        assertEquals("the earlier raw initialization frame is retained, not hidden", 1,
+                OutputQualification.nonQualifyingBefore(observations, 0, 1));
+    }
 }

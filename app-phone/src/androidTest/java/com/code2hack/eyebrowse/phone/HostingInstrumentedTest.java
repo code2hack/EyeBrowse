@@ -1071,14 +1071,17 @@ public class HostingInstrumentedTest {
         assertNotNull("white-document lease", lease);
         waitUntil("first VALID frame of the all-white document",
                 () -> consumer.qualifyingCountFrom(0) > 0);
+        int firstValid = consumer.earliestQualifyingIndexFrom(0);
         long firstValidDelayMs = consumer.earliestQualifyingDelayMsFrom(0, eligibleUptime);
         milestones.record("all-white first-raw/first-valid: "
                 + consumer.qualificationSummary(0, eligibleUptime));
         assertTrue("first VALID white-document frame within 2s of ORIGINAL eligibility: "
                         + firstValidDelayMs + "ms",
                 OutputQualification.validWithinBound(firstValidDelayMs));
-        assertTrue("delivered frames are the live white document",
-                consumer.allFramesNearColor(Color.WHITE));
+        assertTrue("white frames from the first VALID callback are the live document",
+                consumer.tailFramesNearColor(firstValid, Color.WHITE));
+        assertTrue("white frames from the first VALID callback match the viewport",
+                consumer.tailFramesMatchSize(firstValid, expectedSize[0], expectedSize[1]));
         assertEquals("same document marker (no reload/substitution)", marker,
                 domText("load-marker"));
         assertEquals("no reload of the white page", 1, loadCount("/hosting-white.html"));
@@ -1316,20 +1319,46 @@ public class HostingInstrumentedTest {
         waitUntil("old capture owner actually quiescent",
                 () -> !runOnMainSync(hosting::captureResourcesPresent), STOP_BOUND_MS);
         assertFalse("test-controlled callback hold expired or was interrupted", first.holdFailed());
+        assertNull("held callback integrity failure: " + first.integrityFailure(),
+                first.integrityFailure());
+        CallbackIntegrity.Snapshot entryIntegrity = first.entrySnapshot();
+        CallbackIntegrity.Snapshot postHoldIntegrity = first.postHoldSnapshot();
+        assertNotNull("entry integrity snapshot captured before the hold", entryIntegrity);
+        assertNotNull("post-hold integrity snapshot captured in the same callback", postHoldIntegrity);
+        assertTrue("borrowed contents are stable across the hold (whole-bitmap fingerprint)",
+                entryIntegrity.sameContent(postHoldIntegrity));
         assertTrue("held callback completed its own borrowed use", first.collector().count() > 0);
         assertEquals("rejected acquisition created no hidden lease or delivery", 0, second.count());
+        milestones.record("delayed-consumer integrity entry=" + entryIntegrity.summary()
+                + " postHold=" + postHoldIntegrity.summary() + " changed=false");
         milestones.record("old owner quiescent before explicit replacement acquisition");
 
         // One explicit acquisition after observed quiescence; never wait for an abandoned lease
         // to expire and never acquire a third lease while a successful second lease is held.
+        // A: expectations are configured BEFORE acquisition, eligibility is latched first, and the
+        // replacement must deliver its earliest VALID frame within the original 2s bound.
+        int[] replacementSize = currentWebViewSize();
+        second.expectQualification(replacementSize[0], replacementSize[1], CAPTURE_PAGE_COLOR);
+        long replacementEligibleUptime = SystemClock.uptimeMillis();
         HostingController.Lease replacement = runOnMainSync(() -> hosting.acquireLease(second));
         assertNotNull("explicit acquisition succeeds after quiescence", replacement);
         try {
-            waitUntil("replacement consumer receiving", () -> second.count() > 0);
-            assertTrue("the retiring consumer's borrowed frame retained the original document",
-                    first.collector().allFramesNearColor(CAPTURE_PAGE_COLOR));
-            assertTrue("replacement frames show the same document",
-                    second.allFramesNearColor(CAPTURE_PAGE_COLOR));
+            waitUntil("replacement consumer first VALID frame",
+                    () -> second.qualifyingCountFrom(0) > 0);
+            int replacementFirstValid = second.earliestQualifyingIndexFrom(0);
+            long replacementDelayMs = second.earliestQualifyingDelayMsFrom(0,
+                    replacementEligibleUptime);
+            milestones.record("replacement first-raw/first-valid: "
+                    + second.qualificationSummary(0, replacementEligibleUptime));
+            assertTrue("replacement earliest VALID frame within 2s of original acquisition: "
+                            + replacementDelayMs + "ms",
+                    OutputQualification.validWithinBound(replacementDelayMs));
+            assertTrue("replacement frames from the first VALID callback match the viewport "
+                            + replacementSize[0] + "x" + replacementSize[1],
+                    second.tailFramesMatchSize(replacementFirstValid, replacementSize[0],
+                            replacementSize[1]));
+            assertTrue("replacement frames from the first VALID callback show the same document",
+                    second.tailFramesNearColor(replacementFirstValid, CAPTURE_PAGE_COLOR));
             milestones.record("explicit replacement lease delivered");
         } finally {
             runOnMain(replacement::release);
@@ -1663,9 +1692,17 @@ public class HostingInstrumentedTest {
         }
 
         @Override
-        public synchronized void onFrame(HostingFrame frame) {
-            long deliveryUptimeMs = SystemClock.uptimeMillis();
-            long deliveryElapsedMs = SystemClock.elapsedRealtime();
+        public void onFrame(HostingFrame frame) {
+            onFrameAt(frame, SystemClock.uptimeMillis(), SystemClock.elapsedRealtime());
+        }
+
+        /**
+         * Records one delivered callback with an explicit delivery time. The delayed consumer
+         * passes the actual callback ENTRY time so a test-controlled hold never restamps delivery
+         * after the fact.
+         */
+        synchronized void onFrameAt(HostingFrame frame, long deliveryUptimeMs,
+                long deliveryElapsedMs) {
             int sampledColor = frame.bitmap.getPixel(10, 10);
             frames.add(new long[]{frame.sequence, frame.contentHash, frame.captureElapsedMs,
                     frame.generation, frame.width, frame.height, sampledColor, deliveryElapsedMs});
@@ -1811,10 +1848,39 @@ public class HostingInstrumentedTest {
                 new java.util.concurrent.CountDownLatch(1);
         private final java.util.concurrent.CountDownLatch released =
                 new java.util.concurrent.CountDownLatch(1);
+        private final java.util.concurrent.atomic.AtomicReference<CallbackIntegrity.Snapshot>
+                entrySnapshot =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        private final java.util.concurrent.atomic.AtomicReference<CallbackIntegrity.Snapshot>
+                postHoldSnapshot =
+                new java.util.concurrent.atomic.AtomicReference<>();
         private volatile boolean holdFailed;
+        private volatile String integrityFailure;
 
         @Override
         public void onFrame(HostingFrame frame) {
+            // Entry-time facts are captured BEFORE the entered latch is signalled, and the raw
+            // callback's delivery time stays this entry time even though collection happens later.
+            long entryUptimeMs = SystemClock.uptimeMillis();
+            long entryElapsedMs = SystemClock.elapsedRealtime();
+            CallbackIntegrity.Snapshot entry;
+            try {
+                entry = sample(frame, entryUptimeMs, entryElapsedMs);
+            } catch (RuntimeException sampleError) {
+                integrityFailure = "entry sample failed: " + sampleError;
+                holdFailed = true;
+                entered.countDown();
+                released.countDown(); // Never strand a waiter on an explicit sample failure.
+                return;
+            }
+            if (entry == null) {
+                integrityFailure = "entry sample unavailable (missing/zero-size/recycled bitmap)";
+                holdFailed = true;
+                entered.countDown();
+                released.countDown();
+                return;
+            }
+            entrySnapshot.set(entry);
             entered.countDown();
             try {
                 // Below the lease TTL; a broken test must not strand the capture thread.
@@ -1827,11 +1893,61 @@ public class HostingInstrumentedTest {
                 Thread.currentThread().interrupt();
                 return;
             }
-            collector.onFrame(frame);
+            // Resample and compare INSIDE the same callback, before returning the borrowed bitmap.
+            CallbackIntegrity.Snapshot postHold;
+            try {
+                postHold = sample(frame, entryUptimeMs, entryElapsedMs);
+            } catch (RuntimeException sampleError) {
+                integrityFailure = "post-hold sample failed: " + sampleError;
+                holdFailed = true;
+                return;
+            }
+            if (postHold == null) {
+                integrityFailure = "post-hold sample unavailable";
+                holdFailed = true;
+                return;
+            }
+            postHoldSnapshot.set(postHold);
+            if (!entry.sameContent(postHold)) {
+                integrityFailure = "borrowed bitmap changed while held: entry [" + entry.summary()
+                        + "] vs post-hold [" + postHold.summary() + "]";
+                holdFailed = true;
+                return;
+            }
+            collector.onFrameAt(frame, entryUptimeMs, entryElapsedMs);
+        }
+
+        /** Copies whole-valid-bitmap facts from the actual borrowed bitmap; never retains it. */
+        private static CallbackIntegrity.Snapshot sample(HostingFrame frame, long entryUptimeMs,
+                long entryElapsedMs) {
+            android.graphics.Bitmap bitmap = frame.bitmap;
+            if (bitmap == null || bitmap.isRecycled() || bitmap.getWidth() <= 0
+                    || bitmap.getHeight() <= 0) {
+                return null;
+            }
+            int width = bitmap.getWidth();
+            int height = bitmap.getHeight();
+            int[] pixels = new int[width * height];
+            bitmap.getPixels(pixels, 0, width, 0, 0, width, height);
+            return CallbackIntegrity.of(entryUptimeMs, entryElapsedMs, frame.generation,
+                    frame.sequence, frame.width, frame.height, width, height,
+                    String.valueOf(bitmap.getConfig()), pixels, pixels.length);
         }
 
         CollectingConsumer collector() {
             return collector;
+        }
+
+        CallbackIntegrity.Snapshot entrySnapshot() {
+            return entrySnapshot.get();
+        }
+
+        CallbackIntegrity.Snapshot postHoldSnapshot() {
+            return postHoldSnapshot.get();
+        }
+
+        String integrityFailure() {
+            return integrityFailure;
         }
 
         boolean awaitEntered(long timeoutMs) throws InterruptedException {
