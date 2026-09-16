@@ -118,7 +118,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Worker",
-    "scope": "v0.0.1; issue #5; GLM primary and designated return Worker; retire/archive after #5 closeout",
+    "scope": "v0.0.1; issue #5; GLM primary, ChatGPT Expert local-verification helper and designated return Worker; retire/archive after #5 closeout",
     "host": "u4090",
     "runtime": "pi",
     "id": "01a0a81d-2502-7084-92bd-ef29f9f2e4fd",
@@ -134,7 +134,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "id": "01a0a81d-2515-762f-9c88-02e751c04cad",
     "model": "gpt-6-astra Max",
     "name": "Expert-#5",
-    "status": "active"
+    "status": "paused"
   },
   {
     "role": "Planner",
@@ -154,6 +154,16 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70-eyebrowse/c/6aaa1b2a-6628-83ea-b1a3-2296c513bd85",
     "model": "gpt-6-Pro",
     "name": "v0.0.1 Reviewer",
+    "status": "active"
+  },
+  {
+    "role": "Expert",
+    "scope": "issue #5; I5-T01 replacement Expert; paired local verification before handback",
+    "host": "chatgpt.com",
+    "runtime": "chatgpt",
+    "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70-eyebrowse/c/6aaa3ed7-f170-83e9-b793-000f0e2065f2",
+    "model": "GPT-5.6 Sol / gpt-5-6-thinking / Extra High",
+    "name": "Expert",
     "status": "active"
   }
 ]
