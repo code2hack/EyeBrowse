@@ -456,8 +456,9 @@ public class BrowserInstrumentedTest {
         ScrollFacts ready = readScrollFacts("ready-after-focus", expectedLocation);
         recordInputEvidence("scroll " + ready.describe());
         assertTrue("coherent fixture observation before swipe", before.error == null && ready.error == null);
-        assertEquals(expectedLocation, ready.location);
+        assertEquals(expectedLocation, ready.rawLocation);
         assertEquals("same document after readiness wait", before.marker, ready.marker);
+        DispatchReadiness.DomState preparedDom = swipeDomState(ready);
         InputContext prepared = captureInputContext();
         HarnessProtocol.Dispatch dispatch = new HarnessProtocol.Dispatch();
         ViewAction swipe = swipeUp(); // Reuse constraints/description, not its three-try wrapper.
@@ -473,18 +474,24 @@ public class BrowserInstrumentedTest {
                             0, -0.083f).calculateCoordinates(view);
                     float[] end = GeneralLocation.TOP_CENTER.calculateCoordinates(view);
                     InputSafety.Path path = new InputSafety.Path(start[0], start[1], end[0], end[1]);
-                    recordInputEvidence("swipe intended-provider-path=" + path + " " + prepared.describe());
+                    // This is the final blocking evidence write. The DOM/native admission below is
+                    // sampled after Espresso's pre-action idle boundary and after this write.
+                    recordInputEvidence("swipe intended-provider-path=" + path + " "
+                            + prepared.describe() + " dom=" + preparedDom.describe());
+                    String finalDomJson = jsFromEspresso(controller, (WebView) view, SCROLL_FACTS_JS);
+                    DispatchReadiness.DomState currentDom = swipeDomState(finalDomJson);
                     InputContext current = readInputContext((MainActivity) prepared.state.activity,
                             (WebView) view);
-                    requireFreshInput(prepared, current, path);
-                    // No focus wait, DOM read or slow evidence write after the complete refresh.
-                    dispatch.actionOnce(() -> {
-                        // Same Espresso FAST gesture/precision, but never GeneralSwipeAction's
-                        // retry loop after a FAILURE status (including uncertain injection).
-                        Swiper.Status result = Swipe.FAST.sendSwipe(controller, start, end,
-                                Press.FINGER.describePrecision());
-                        assertEquals("single Espresso swipe failed; no replay", Swiper.Status.SUCCESS, result);
-                    }, SystemClock::uptimeMillis);
+                    DispatchReadiness.actionOnceIfReady(prepared.state, current.state, path,
+                            preparedDom, currentDom, dispatch, () -> {
+                                // Same Espresso FAST gesture/precision, but never
+                                // GeneralSwipeAction's retry loop after a FAILURE status (including
+                                // uncertain injection).
+                                Swiper.Status result = Swipe.FAST.sendSwipe(controller, start, end,
+                                        Press.FINGER.describePrecision());
+                                assertEquals("single Espresso swipe failed; no replay",
+                                        Swiper.Status.SUCCESS, result);
+                            }, SystemClock::uptimeMillis);
                 }
             });
         } catch (RuntimeException | AssertionError dispatchFailure) {
@@ -506,7 +513,7 @@ public class BrowserInstrumentedTest {
                 + "] after [" + after.describe() + "]", after.error == null && after.scrollY > 0
                 && after.scrollY > ready.scrollY);
         assertEquals("scroll stayed in the intended document", ready.marker, after.marker);
-        assertEquals(expectedLocation, after.location);
+        assertEquals(expectedLocation, after.rawLocation);
     }
 
     @Test
@@ -677,6 +684,24 @@ public class BrowserInstrumentedTest {
         return decodeJsValue(raw.get());
     }
 
+    /** Single final JavaScript sample from inside an Espresso action; no retry/readiness loop. */
+    private static String jsFromEspresso(UiController controller, WebView view, String expression) {
+        AtomicReference<String> raw = new AtomicReference<>();
+        AtomicInteger completed = new AtomicInteger();
+        view.evaluateJavascript(expression, value -> {
+            raw.set(value);
+            completed.set(1);
+        });
+        long deadline = SystemClock.uptimeMillis() + 10_000;
+        while (completed.get() == 0 && SystemClock.uptimeMillis() < deadline) {
+            controller.loopMainThreadForAtLeast(1);
+        }
+        if (completed.get() == 0) {
+            throw new IllegalStateException("final JavaScript evaluation timed out");
+        }
+        return decodeJsValue(raw.get());
+    }
+
     private String jsOrNull(String expression) {
         try {
             return jsRead(expression);
@@ -807,6 +832,7 @@ public class BrowserInstrumentedTest {
         if (cssWidth <= 0 || cssHeight <= 0) {
             fail("no CSS viewport reported for " + elementId);
         }
+        DispatchReadiness.DomState preparedDom = tapDomState(elementId, rect);
         InputContext mapped = captureInputContext();
         // Mapping is tied to the exact Activity/view/viewport, not a remembered screen point.
         float x = (float) (rect.getDouble("x") * mapped.state.width / cssWidth);
@@ -814,34 +840,33 @@ public class BrowserInstrumentedTest {
         if (x < 1 || y < 1 || x > mapped.state.width - 1 || y > mapped.state.height - 1) {
             fail("computed touch point outside the WebView for " + elementId);
         }
-        awaitWindowFocus();
-        // Read-only remeasurement after the potentially slow wait. Never scroll/replay setup
-        // here; stop if this document/element/viewport no longer owns the prepared coordinates.
-        JSONObject fresh = new JSONObject(js("(function(){var el=document.getElementById("
-                + JSONObject.quote(elementId) + ");if(!el)return null;var r=el.getBoundingClientRect();"
-                + "return JSON.stringify({x:r.left+r.width/2,y:r.top+r.height/2,"
-                + "w:window.innerWidth,h:window.innerHeight,"
-                + "marker:document.getElementById('load-marker')?.textContent,"
-                + "location:String(document.location.href)});})()"));
-        for (String key : new String[]{"x", "y", "w", "h", "marker", "location"}) {
-            assertEquals("touch target changed during preparation: " + key, rect.get(key), fresh.get(key));
-        }
         InputSafety.Path point = new InputSafety.Path(mapped.state.x + x, mapped.state.y + y,
                 mapped.state.x + x, mapped.state.y + y);
-        sendTap(mapped, point, dispatch);
+        sendTap(mapped, preparedDom, elementId, point, dispatch);
     }
 
-    private void sendTap(InputContext prepared, InputSafety.Path point, HarnessProtocol.Dispatch dispatch) {
-        recordInputEvidence("tap intended=" + point + " " + prepared.describe());
-        requireFreshInput(prepared, captureInputContext(), point);
-        // No focus wait or observation after the complete refresh. Single attempt only.
+    private void sendTap(InputContext prepared, DispatchReadiness.DomState preparedDom,
+            String elementId, InputSafety.Path point, HarnessProtocol.Dispatch dispatch) {
+        // Last blocking evidence write before the final DOM/native admission sample.
+        recordInputEvidence("tap intended=" + point + " " + prepared.describe()
+                + " dom=" + preparedDom.describe());
+        awaitWindowFocus();
+        String finalDomJson = js(tapFactsJs(elementId));
+        if (finalDomJson == null) {
+            throw new IllegalStateException("final tap target unavailable");
+        }
+        DispatchReadiness.DomState currentDom = tapDomState(elementId, json(finalDomJson));
+        InputContext current = captureInputContext();
         long now = SystemClock.uptimeMillis();
-        MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, point.startX, point.startY, 0);
-        MotionEvent up = MotionEvent.obtain(now, now + 60, MotionEvent.ACTION_UP, point.endX, point.endY, 0);
+        MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN,
+                point.startX, point.startY, 0);
+        MotionEvent up = MotionEvent.obtain(now, now + 60, MotionEvent.ACTION_UP,
+                point.endX, point.endY, 0);
         down.setSource(InputDevice.SOURCE_TOUCHSCREEN);
         up.setSource(InputDevice.SOURCE_TOUCHSCREEN);
         try {
-            dispatch.tapOnce(
+            DispatchReadiness.tapOnceIfReady(prepared.state, current.state, point,
+                    preparedDom, currentDom, dispatch,
                     () -> InstrumentationRegistry.getInstrumentation().sendPointerSync(down),
                     () -> InstrumentationRegistry.getInstrumentation().sendPointerSync(up),
                     SystemClock::uptimeMillis);
@@ -852,6 +877,68 @@ public class BrowserInstrumentedTest {
         } finally {
             down.recycle();
             up.recycle();
+        }
+    }
+
+    private static String tapFactsJs(String elementId) {
+        return "(function(){var el=document.getElementById(" + JSONObject.quote(elementId)
+                + ");if(!el)return null;var r=el.getBoundingClientRect();"
+                + "return JSON.stringify({x:r.left+r.width/2,y:r.top+r.height/2,"
+                + "w:window.innerWidth,h:window.innerHeight,"
+                + "marker:document.getElementById('load-marker')?.textContent,"
+                + "location:String(document.location.href)});})()";
+    }
+
+    private static DispatchReadiness.DomState tapDomState(String elementId, JSONObject value) {
+        try {
+            return new DispatchReadiness.DomState(value.optString("marker", null),
+                    value.getString("location"), elementId,
+                    "x=" + Double.toString(value.getDouble("x"))
+                            + ";y=" + Double.toString(value.getDouble("y"))
+                            + ";w=" + Double.toString(value.getDouble("w"))
+                            + ";h=" + Double.toString(value.getDouble("h")));
+        } catch (JSONException invalid) {
+            throw new IllegalStateException("tap DOM readiness was not valid JSON", invalid);
+        }
+    }
+
+    private static DispatchReadiness.DomState swipeDomState(ScrollFacts facts) {
+        if (facts.error != null) {
+            throw new IllegalStateException("swipe DOM readiness unavailable: " + facts.error);
+        }
+        return new DispatchReadiness.DomState(facts.marker, facts.rawLocation, "document-scroll",
+                swipeGeometry(facts.scrollTop, facts.scrollY, facts.scrollHeight,
+                        facts.clientHeight, facts.innerWidth, facts.innerHeight));
+    }
+
+    private static DispatchReadiness.DomState swipeDomState(String json) {
+        JSONObject value = json(json);
+        try {
+            return new DispatchReadiness.DomState(value.optString("marker", null),
+                    value.getString("location"), "document-scroll",
+                    swipeGeometry(value.getInt("scrollTop"), value.getInt("scrollY"),
+                            value.getInt("scrollHeight"), value.getInt("clientHeight"),
+                            value.getInt("innerWidth"), value.getInt("innerHeight")));
+        } catch (JSONException invalid) {
+            throw new IllegalStateException("swipe DOM readiness was not valid JSON", invalid);
+        }
+    }
+
+    private static String swipeGeometry(int scrollTop, int scrollY, int scrollHeight,
+            int clientHeight, int innerWidth, int innerHeight) {
+        return "scrollTop=" + scrollTop + ";scrollY=" + scrollY + ";scrollHeight=" + scrollHeight
+                + ";clientHeight=" + clientHeight + ";innerWidth=" + innerWidth
+                + ";innerHeight=" + innerHeight;
+    }
+
+    private static JSONObject json(String value) {
+        if (value == null) {
+            throw new IllegalStateException("DOM readiness unavailable");
+        }
+        try {
+            return new JSONObject(value);
+        } catch (JSONException invalid) {
+            throw new IllegalStateException("DOM readiness was not valid JSON", invalid);
         }
     }
 
@@ -951,12 +1038,6 @@ public class BrowserInstrumentedTest {
         String describe() { return "t=" + uptimeMs + " activity=" + activityName + " " + state.mapping(); }
     }
 
-    private static void requireFreshInput(InputContext prepared, InputContext current,
-            InputSafety.Path path) {
-        String unsafe = prepared.state.revalidationReason(current.state, path);
-        assertTrue("input not dispatched: " + unsafe + " current=" + current.describe(), unsafe == null);
-    }
-
     private InputContext captureInputContext() {
         InputContext[] captured = new InputContext[1];
         scenario.onActivity(activity -> {
@@ -1018,6 +1099,7 @@ public class BrowserInstrumentedTest {
         final String phase;
         final long sampleStartMs;
         final long sampleEndMs;
+        final String rawLocation;
         final String location;
         final String marker;
         final int scrollTop;
@@ -1028,12 +1110,13 @@ public class BrowserInstrumentedTest {
         final int innerHeight;
         final String error;
 
-        ScrollFacts(String phase, long sampleStartMs, long sampleEndMs, String location,
-                String marker, int scrollTop, int scrollY, int scrollHeight, int clientHeight,
-                int innerWidth, int innerHeight, String error) {
+        ScrollFacts(String phase, long sampleStartMs, long sampleEndMs, String rawLocation,
+                String location, String marker, int scrollTop, int scrollY, int scrollHeight,
+                int clientHeight, int innerWidth, int innerHeight, String error) {
             this.phase = phase;
             this.sampleStartMs = sampleStartMs;
             this.sampleEndMs = sampleEndMs;
+            this.rawLocation = rawLocation;
             this.location = location;
             this.marker = marker;
             this.scrollTop = scrollTop;
@@ -1062,21 +1145,23 @@ public class BrowserInstrumentedTest {
         try {
             return parseScrollFacts(phase, expectedLocation, jsRead(SCROLL_FACTS_JS), start);
         } catch (RuntimeException | AssertionError unavailable) {
-            return new ScrollFacts(phase, start, SystemClock.uptimeMillis(), "(other)", null, -1, -1,
-                    -1, -1, -1, -1, "DOM observation unavailable: " + unavailable);
+            return new ScrollFacts(phase, start, SystemClock.uptimeMillis(), null, "(other)", null,
+                    -1, -1, -1, -1, -1, -1,
+                    "DOM observation unavailable: " + unavailable);
         }
     }
 
     private ScrollFacts parseScrollFacts(String phase, String expectedLocation, String json, long start) {
         try {
             JSONObject value = new JSONObject(json);
-            return new ScrollFacts(phase, start, SystemClock.uptimeMillis(),
-                    HarnessProtocol.traceLocation(value.getString("location"), expectedLocation),
+            String rawLocation = value.getString("location");
+            return new ScrollFacts(phase, start, SystemClock.uptimeMillis(), rawLocation,
+                    HarnessProtocol.traceLocation(rawLocation, expectedLocation),
                     value.optString("marker", null), value.getInt("scrollTop"), value.getInt("scrollY"),
                     value.getInt("scrollHeight"), value.getInt("clientHeight"),
                     value.getInt("innerWidth"), value.getInt("innerHeight"), null);
         } catch (RuntimeException | JSONException unavailable) {
-            return new ScrollFacts(phase, start, SystemClock.uptimeMillis(), "(other)", null,
+            return new ScrollFacts(phase, start, SystemClock.uptimeMillis(), null, "(other)", null,
                     -1, -1, -1, -1, -1, -1,
                     "DOM observation unavailable: " + unavailable.getClass().getSimpleName());
         }
