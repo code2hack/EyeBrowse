@@ -135,6 +135,16 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "model": "gpt-6-astra Max",
     "name": "Expert-#5",
     "status": "active"
+  },
+  {
+    "role": "Planner",
+    "scope": "v0.0.1",
+    "host": "chatgpt.com",
+    "runtime": "chatgpt",
+    "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70-eyebrowse/c/6aaa09e0-af24-83ea-8105-2b56e638f94b",
+    "model": "gpt-6-Pro",
+    "name": "v0.0.1 Planner",
+    "status": "active"
   }
 ]
 ```
