@@ -152,9 +152,9 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "chatgpt.com",
     "runtime": "chatgpt",
     "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70-eyebrowse/c/6aaa1b2a-6628-83ea-b1a3-2296c513bd85",
-    "model": "gpt-6 Extra High",
+    "model": "GPT-5.6 Sol / Extra High",
     "name": "v0.0.1 Reviewer",
-    "status": "active"
+    "status": "paused"
   }
 ]
 ```
