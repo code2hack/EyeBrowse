@@ -11,8 +11,9 @@ of this correction. It is not host/device clearance, an I5-T01 handback, or tick
 
 The correction keeps all preparation and evidence before the final admission sample. After the
 last known focus/evidence/Espresso pre-action boundary, the used tap/swipe paths obtain one final
-read-only DOM sample from the intended WebView and capture the current native Activity/view mapping
-with that sample. The shared test-only `DispatchReadiness` helper then requires both:
+read-only DOM sample from the intended WebView, immediately revalidate the current native
+Activity/view mapping, and then apply the shared test-only `DispatchReadiness` decision. That
+decision requires both:
 
 - unchanged Activity/WebView ownership, focus, attachment, display, visible geometry, scroll and
   IME/inset mapping through the existing `InputSafety.State.revalidationReason` path; and
