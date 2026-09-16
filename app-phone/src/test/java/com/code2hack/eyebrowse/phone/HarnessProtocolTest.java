@@ -110,6 +110,40 @@ public class HarnessProtocolTest {
         assertThrows(IllegalStateException.class, () -> HarnessProtocol.requireRecorded(false));
     }
 
+    @Test public void quiescenceFailureStillRetainsAvailableIntegrityAndMissingPostHold() {
+        AssertionError quiescence = new AssertionError("old owner did not quiesce");
+        String[] evidence = {null};
+        assertSame(quiescence, assertThrows(AssertionError.class, () ->
+                HarnessProtocol.withFinalEvidence(() -> { throw quiescence; },
+                        () -> evidence[0] = "entry=immutable postHold=missing quiescence=not-observed")));
+        assertEquals("entry=immutable postHold=missing quiescence=not-observed", evidence[0]);
+    }
+
+    @Test public void earlierAssertionCleanupAndEvidenceFailureKeepTheFirstThrowable() {
+        AssertionError primary = new AssertionError("premature replacement");
+        IllegalStateException cleanup = new IllegalStateException("cleanup failed");
+        IllegalStateException logging = new IllegalStateException("log failed");
+        AtomicInteger released = new AtomicInteger();
+        AtomicInteger retained = new AtomicInteger();
+        assertSame(primary, assertThrows(AssertionError.class, () -> HarnessProtocol.withFinalEvidence(
+                () -> HarnessProtocol.withFinalEvidence(() -> { throw primary; }, () -> {
+                    released.incrementAndGet();
+                    throw cleanup;
+                }), () -> {
+                    retained.incrementAndGet();
+                    throw logging;
+                })));
+        assertEquals(1, released.get());
+        assertEquals(1, retained.get());
+        assertArrayEquals(new Throwable[]{cleanup, logging}, primary.getSuppressed());
+    }
+
+    @Test public void successfulBodyCannotTurnEvidenceFailureIntoSuccess() {
+        IllegalStateException logging = new IllegalStateException("missing evidence");
+        assertSame(logging, assertThrows(IllegalStateException.class, () ->
+                HarnessProtocol.withFinalEvidence(() -> {}, () -> { throw logging; })));
+    }
+
     @Test public void captureFailureDoesNotMaskOriginalFailure() {
         AssertionError original = new AssertionError("original assertion");
         IllegalStateException capture = new IllegalStateException("missing capture");

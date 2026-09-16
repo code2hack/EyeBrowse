@@ -50,6 +50,17 @@ public class CallbackIntegrityTest {
     }
 
     @Test
+    public void missingPostHoldOrChangedMetadataNeverComparesAsEqual() {
+        int[] borrowed = pixels(0xff000000);
+        CallbackIntegrity.Snapshot entry = snapshot(borrowed, 1_234);
+        assertFalse(entry.sameContent(null));
+        assertFalse(entry.sameContent(CallbackIntegrity.of(1_234, 1_234, 4, 7L, WIDTH, HEIGHT,
+                WIDTH, HEIGHT, "ARGB_8888", borrowed, borrowed.length)));
+        assertFalse(entry.sameContent(CallbackIntegrity.of(1_234, 1_234, 3, 7L, WIDTH, HEIGHT,
+                WIDTH, HEIGHT, "RGB_565", borrowed, borrowed.length)));
+    }
+
+    @Test
     public void immutableEntryFactsSurviveLaterSourceMutation() {
         int[] borrowed = pixels(0xff000000);
         CallbackIntegrity.Snapshot entry = snapshot(borrowed, 1_234);

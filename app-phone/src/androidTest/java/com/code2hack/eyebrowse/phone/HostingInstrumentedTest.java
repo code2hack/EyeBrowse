@@ -1296,47 +1296,49 @@ public class HostingInstrumentedTest {
         HostingController.Lease lease1 = runOnMainSync(() -> hosting.acquireLease(first));
         assertNotNull(lease1);
         CollectingConsumer second = new CollectingConsumer();
-        HostingController.Lease prematureLease = null;
-        try {
-            // Entry precedes collection. The test, not a sleep, owns the callback's release.
-            assertTrue("consumer entered its callback", first.awaitEntered(5_000));
-            milestones.record("delayed-consumer callback held before revocation");
-            runOnMain(lease1::release);
-            assertTrue("borrowed callback keeps the retiring owner observable",
-                    runOnMainSync(hosting::captureResourcesPresent));
-            prematureLease = runOnMainSync(() -> hosting.acquireLease(second));
-            assertNull("no replacement lease while the old callback is held", prematureLease);
-            assertEquals("no anonymous delivery after rejected acquisition", 0, second.count());
-            milestones.record("replacement rejected while old callback held");
-        } finally {
-            first.releaseHold();
-            // If the invariant failed, release only the unexpected lease this test acquired.
-            if (prematureLease != null) {
-                runOnMain(prematureLease::release);
-            }
-            runOnMain(lease1::release); // Idempotent test cleanup, not a replayed UI action.
-        }
-        waitUntil("old capture owner actually quiescent",
-                () -> !runOnMainSync(hosting::captureResourcesPresent), STOP_BOUND_MS);
-        // Persist the available entry/post-hold facts and the distinct outcome BEFORE any assertion
-        // can abort, so a sample/content/hold failure cannot lose or mislabel its own evidence.
-        CallbackIntegrity.Snapshot entryIntegrity = first.entrySnapshot();
-        CallbackIntegrity.Snapshot postHoldIntegrity = first.postHoldSnapshot();
-        milestones.record("delayed-consumer outcome holdFailed=" + first.holdFailed()
-                + " integrityFailure=" + first.integrityFailure()
-                + " collected=" + first.collector().count()
-                + " entry=" + (entryIntegrity == null ? "missing" : entryIntegrity.summary())
-                + " postHold=" + (postHoldIntegrity == null ? "missing"
-                        : postHoldIntegrity.summary()));
-        assertNull("held callback integrity failure: " + first.integrityFailure(),
-                first.integrityFailure());
-        assertFalse("test-controlled callback hold expired or was interrupted", first.holdFailed());
-        assertNotNull("entry integrity snapshot captured before the hold", entryIntegrity);
-        assertNotNull("post-hold integrity snapshot captured in the same callback", postHoldIntegrity);
-        assertTrue("borrowed contents are stable across the hold (whole-bitmap fingerprint)",
-                entryIntegrity.sameContent(postHoldIntegrity));
-        assertTrue("held callback completed its own borrowed use", first.collector().count() > 0);
-        assertEquals("rejected acquisition created no hidden lease or delivery", 0, second.count());
+        HostingController.Lease[] prematureLease = {null};
+        String[] quiescence = {"not-reached"};
+        HarnessProtocol.withFinalEvidence(() -> {
+            HarnessProtocol.withFinalEvidence(() -> {
+                // Entry precedes collection. The test, not a sleep, owns the callback's release.
+                assertTrue("consumer entered its callback", first.awaitEntered(5_000));
+                milestones.record("delayed-consumer callback held before revocation");
+                runOnMain(lease1::release);
+                assertTrue("borrowed callback keeps the retiring owner observable",
+                        runOnMainSync(hosting::captureResourcesPresent));
+                prematureLease[0] = runOnMainSync(() -> hosting.acquireLease(second));
+                assertNull("no replacement lease while the old callback is held", prematureLease[0]);
+                assertEquals("no anonymous delivery after rejected acquisition", 0, second.count());
+                milestones.record("replacement rejected while old callback held");
+            }, () -> {
+                first.releaseHold(); // Always release, including an earlier assertion/log failure.
+                if (prematureLease[0] != null) runOnMain(prematureLease[0]::release);
+                runOnMain(lease1::release); // Idempotent owned cleanup, never a UI replay.
+            });
+            quiescence[0] = "waiting/not-yet-observed";
+            waitUntil("old capture owner actually quiescent",
+                    () -> !runOnMainSync(hosting::captureResourcesPresent), STOP_BOUND_MS);
+            quiescence[0] = "observed";
+            CallbackIntegrity.Snapshot entry = first.entrySnapshot();
+            CallbackIntegrity.Snapshot postHold = first.postHoldSnapshot();
+            assertNull("held callback integrity failure: " + first.integrityFailure(), first.integrityFailure());
+            assertFalse("test-controlled callback hold expired or was interrupted", first.holdFailed());
+            assertNotNull("entry integrity snapshot captured before the hold", entry);
+            assertNotNull("post-hold integrity snapshot captured in the same callback", postHold);
+            assertTrue("borrowed contents stable across hold (whole-bitmap fingerprint)", entry.sameContent(postHold));
+            assertTrue("held callback completed its own borrowed use", first.collector().count() > 0);
+            assertEquals("rejected acquisition created no hidden lease or delivery", 0, second.count());
+        }, () -> {
+            // Runs even if the quiescence wait or any preceding assertion/cleanup throws. Never
+            // label a missing post-hold sample equal, or replace the first failure with logging.
+            CallbackIntegrity.Snapshot entry = first.entrySnapshot();
+            CallbackIntegrity.Snapshot postHold = first.postHoldSnapshot();
+            milestones.record("delayed-consumer outcome quiescence=" + quiescence[0]
+                    + " holdFailed=" + first.holdFailed() + " integrityFailure=" + first.integrityFailure()
+                    + " collected=" + first.collector().count()
+                    + " entry=" + (entry == null ? "missing" : entry.summary())
+                    + " postHold=" + (postHold == null ? "missing" : postHold.summary()));
+        });
         milestones.record("old owner quiescent before explicit replacement acquisition");
 
         // One explicit acquisition after observed quiescence; never wait for an abandoned lease
@@ -1460,11 +1462,11 @@ public class HostingInstrumentedTest {
                 + " keyguardRestricted=" + keyguard.inKeyguardRestrictedInputMode()
                 + " deviceSecure=" + keyguard.isDeviceSecure()
                 + " keyguardSecure=" + keyguard.isKeyguardSecure()
-                + " => displayOffLockExercise="
-                + (keyguard.isDeviceSecure()
-                        ? "NOT safely recoverable unattended (returning requires the Owner's "
-                                + "unlock credential, which is never requested or recorded)"
-                        : "safely recoverable");
+                + " externalGuardedHelperRecovery=not-attested-in-process; see current phase record"
+                + " displayOffSecureLockExercise=NOT EXERCISED — unattended profile: "
+                + "no qualified mid-invocation guard recovery handshake; "
+                + "deviceSecure is a lock fact, not a recovery-availability decision. "
+                + "Guarded entry/final relock alone is not locked-capture evidence.";
         System.out.println(assessment);
         milestones.record(assessment);
     }

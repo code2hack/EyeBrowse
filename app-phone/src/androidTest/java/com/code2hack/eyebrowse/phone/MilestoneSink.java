@@ -46,6 +46,11 @@ final class MilestoneSink {
         }
     }
 
+    /** Failure observers use memory-only retention: no file/network wait inside their deadline. */
+    synchronized void recordDeferred(String line) {
+        milestones.add(SystemClock.elapsedRealtime() + " deferred " + line);
+    }
+
     /** Flushes every retained milestone into the instrumentation results stream. */
     synchronized void flushToStream(String label) {
         System.out.println("MILESTONE_SINK_BEGIN " + label + " entries=" + milestones.size()

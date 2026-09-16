@@ -139,6 +139,143 @@ final class HarnessProtocol {
         }
     }
 
+    /** Retain whatever evidence exists even when the body/cleanup fails; keep the first failure. */
+    static void withFinalEvidence(Capture body, Capture evidence) throws Exception {
+        Throwable primary = null;
+        try {
+            body.run();
+        } catch (Exception | AssertionError failure) {
+            primary = failure;
+            throw failure;
+        } finally {
+            if (primary == null) evidence.run();
+            else preserveFailure(primary, evidence);
+        }
+    }
+
+    /** The existing Android main Handler supplies this queue; JVM tests control that same path. */
+    interface MainQueue {
+        void post(Runnable work);
+        void remove(Runnable work);
+    }
+
+    interface DiagnosticWork { void start(Diagnostic operation); }
+
+    /** One test instance owns its queued observations, never a static/later test owner. */
+    static final class DiagnosticOwner {
+        private boolean open = true;
+        private final java.util.Set<Diagnostic> pending = new java.util.HashSet<>();
+
+        synchronized boolean attach(Diagnostic operation) {
+            if (!open) return false;
+            pending.add(operation);
+            return true;
+        }
+
+        synchronized boolean isOpen() { return open; }
+        synchronized void detach(Diagnostic operation) { pending.remove(operation); }
+        synchronized int pendingCount() { return pending.size(); }
+
+        void close() {
+            Diagnostic[] operations;
+            synchronized (this) {
+                open = false;
+                operations = pending.toArray(new Diagnostic[0]);
+            }
+            for (Diagnostic operation : operations) operation.cancel();
+        }
+    }
+
+    /**
+     * Small test-owned asynchronous observation, not a worker/executor. The queued runnable holds
+     * only this token; cancellation clears its work closure (and hence any intended references).
+     * Platform JS already dispatched cannot be recalled, but its callback holds only this token
+     * and cannot publish after expiry/teardown. Every UI/JS access also checks active() at the call
+     * site. No scenario lookup, blocking main dispatch or per-capture thread is involved.
+     */
+    static final class Diagnostic implements Runnable {
+        private final DiagnosticOwner owner;
+        private final FailureBudget budget;
+        private final MainQueue queue;
+        private final java.util.concurrent.CountDownLatch done =
+                new java.util.concurrent.CountDownLatch(1);
+        private volatile DiagnosticWork work;
+        private volatile boolean cancelled;
+        private volatile String result;
+
+        Diagnostic(DiagnosticOwner owner, FailureBudget budget, MainQueue queue,
+                DiagnosticWork work) {
+            this.owner = owner;
+            this.budget = budget;
+            this.queue = queue;
+            this.work = work;
+        }
+
+        void schedule() {
+            if (!owner.attach(this) || !active()) {
+                cancel();
+                return;
+            }
+            try {
+                queue.post(this);
+                if (!active()) cancel();
+            } catch (RuntimeException | AssertionError failure) {
+                cancel();
+                throw failure;
+            }
+        }
+
+        boolean active() {
+            return !cancelled && owner.isOpen() && !budget.expired();
+        }
+
+        @Override public void run() {
+            DiagnosticWork current = work;
+            work = null;
+            if (current == null || !active()) return;
+            try {
+                current.start(this);
+            } catch (RuntimeException | AssertionError unavailable) {
+                complete("unavailable(" + unavailable.getClass().getSimpleName() + ")");
+            }
+        }
+
+        synchronized void complete(String value) {
+            if (!active() || done.getCount() == 0) return;
+            result = value;
+            done.countDown();
+        }
+
+        String await() {
+            try {
+                long remaining = budget.stepBudgetMs();
+                if (remaining <= 0 || !done.await(remaining,
+                        java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                    budget.cancel();
+                    return null;
+                }
+                return active() ? result : null;
+            } catch (InterruptedException interrupted) {
+                budget.cancel();
+                Thread.currentThread().interrupt();
+                return null;
+            } finally {
+                cancel();
+            }
+        }
+
+        void cancel() {
+            synchronized (this) {
+                cancelled = true;
+                work = null;
+                result = null;
+                done.countDown();
+            }
+            owner.detach(this);
+            queue.remove(this);
+        }
+    }
+
     /**
      * One absolute diagnostic deadline shared by every failure-time capture step (main dispatch,
      * JavaScript observation and waiting). Results that arrive after the deadline are discarded
@@ -151,6 +288,7 @@ final class HarnessProtocol {
         private final LongSupplier clock;
         private final long startedMs;
         private final long deadlineMs;
+        private volatile boolean cancelled;
 
         FailureBudget(LongSupplier clock, long budgetMs) {
             this.clock = clock;
@@ -158,25 +296,19 @@ final class HarnessProtocol {
             this.deadlineMs = startedMs + Math.max(1, budgetMs);
         }
 
-        long startedMs() {
-            return startedMs;
-        }
-
         long elapsedMs() {
             return Math.max(0, clock.getAsLong() - startedMs);
         }
 
         long stepBudgetMs() {
-            return Math.max(0, deadlineMs - clock.getAsLong());
+            return cancelled ? 0 : Math.max(0, deadlineMs - clock.getAsLong());
         }
+
+        void cancel() { cancelled = true; }
 
         boolean expired() {
-            return clock.getAsLong() >= deadlineMs;
+            return cancelled || clock.getAsLong() >= deadlineMs;
         }
 
-        /** True when a result that arrived at {@code arrivalMs} is too late to be evidence. */
-        boolean late(long arrivalMs) {
-            return arrivalMs > deadlineMs;
-        }
     }
 }
