@@ -118,7 +118,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Worker",
-    "scope": "v0.0.1; issue #5; GLM primary; HOLD pending assignment; retire/archive after #5 closeout",
+    "scope": "v0.0.1; issue #5; GLM primary and designated return Worker; retire/archive after #5 closeout",
     "host": "u4090",
     "runtime": "pi",
     "id": "01a0a81d-2502-7084-92bd-ef29f9f2e4fd",
@@ -128,7 +128,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Expert",
-    "scope": "issue #5; HOLD pending scoped escalated-todo assignment",
+    "scope": "issue #5; I5-T01 escalated corrections and separately released focused verification",
     "host": "u4090",
     "runtime": "pi",
     "id": "01a0a81d-2515-762f-9c88-02e751c04cad",
