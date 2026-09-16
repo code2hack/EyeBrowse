@@ -231,6 +231,14 @@ metadata is retained in memory and flushed to the instrumentation stream at clas
 sent through blocking HTTP/file I/O inside the deadline; process loss before flush may lose those
 explicitly deferred rows. Successful case trace HTTP connect/read still has a 5 s timeout.
 
+**Open scoped review finding (I5-T01 correction checkpoint):** the native refresh described below
+is not yet complete DOM/target revalidation. The DOM observation still precedes milestone I/O and,
+for swipe, Espresso's pre-action idle boundary. A DOM-only replacement/moved target with native
+facts unchanged can therefore reach dispatch. R1 remains unresolved; this checkpoint is not
+pre-device clearance. Diagnostic JS completion now additionally rechecks the weak intended
+Activity/WebView ownership at callback admission, including replacement within an open test;
+already-dispatched JS still cannot be recalled.
+
 The swipe uses Espresso 3.6.1's same `Swipe.FAST`, `Press.FINGER`, and `swipeUp` coordinate
 providers: bottom-center translated by -0.083 of height to top-center. Invoke the underlying swipe
 once, not `GeneralSwipeAction`'s three-try wrapper on FAILURE. A returned failure is an explicit

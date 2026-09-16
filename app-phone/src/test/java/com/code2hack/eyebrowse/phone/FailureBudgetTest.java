@@ -170,6 +170,37 @@ public class FailureBudgetTest {
         assertEquals(0, owner.pendingCount());
     }
 
+    @Test public void actualUiReplacementAfterDispatchRejectsCompletionBeforeTestTeardown() {
+        Queue queue = new Queue();
+        HarnessProtocol.DiagnosticOwner testOwner = new HarnessProtocol.DiagnosticOwner();
+        Object intended = new Object();
+        java.lang.ref.WeakReference<Object> intendedRef = new java.lang.ref.WeakReference<>(intended);
+        java.util.concurrent.atomic.AtomicReference<Object> currentUi =
+                new java.util.concurrent.atomic.AtomicReference<>(intended);
+        HarnessProtocol.Diagnostic[] callback = {null};
+        HarnessProtocol.Diagnostic operation = new HarnessProtocol.Diagnostic(testOwner,
+                new HarnessProtocol.FailureBudget(() -> 0L, 2_000), queue,
+                token -> callback[0] = token);
+        operation.schedule();
+        queue.runNext(); // JS dispatched while the intended owner is current.
+        currentUi.set(new Object()); // Same test remains open; Activity/view ownership changes.
+        callback[0].completeIfOwned("obsolete document", () -> currentUi.get() == intendedRef.get());
+        assertTrue("test lifetime is deliberately still open", testOwner.isOpen());
+        assertNull(operation.await());
+        assertFalse(operation.active());
+        assertEquals(0, testOwner.pendingCount());
+    }
+
+    @Test public void unchangedActualUiOwnerAdmitsCompletion() {
+        Queue queue = new Queue();
+        HarnessProtocol.Diagnostic operation = new HarnessProtocol.Diagnostic(
+                new HarnessProtocol.DiagnosticOwner(), new HarnessProtocol.FailureBudget(() -> 0L, 2_000),
+                queue, token -> token.completeIfOwned("current", () -> true));
+        operation.schedule();
+        queue.runNext();
+        assertEquals("current", operation.await());
+    }
+
     @Test public void completionBeforeDeadlineIsCollectedOnlyOnce() {
         Queue queue = new Queue();
         HarnessProtocol.Diagnostic operation = new HarnessProtocol.Diagnostic(

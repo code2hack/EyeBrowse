@@ -890,8 +890,20 @@ public class BrowserInstrumentedTest {
                 return;
             }
             if (!operation.active()) return; // Immediately before JS dispatch.
-            view.evaluateJavascript(expression, operation::complete);
+            // The callback captures weak references only. A still-open test token does not
+            // authorize publication after Activity recreation or WebView replacement/reparenting.
+            view.evaluateJavascript(expression, value -> operation.completeIfOwned(value,
+                    () -> intendedOwnerStillCurrent(owner, target)));
         };
+    }
+
+    private static boolean intendedOwnerStillCurrent(WeakReference<MainActivity> owner,
+            WeakReference<WebView> target) {
+        MainActivity activity = owner.get();
+        WebView view = target.get();
+        return activity != null && !activity.isDestroyed() && !activity.isFinishing()
+                && view != null && view.isAttachedToWindow()
+                && activity.findViewById(R.id.browser_web_view) == view;
     }
 
     private void recordFailureEvidence(String stage, Throwable primary, String expectedLocation) {

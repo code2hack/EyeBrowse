@@ -240,6 +240,21 @@ final class HarnessProtocol {
             }
         }
 
+        /** Admission rechecks the actual weak UI owner at callback time, not only test lifetime. */
+        void completeIfOwned(String value, java.util.function.BooleanSupplier stillOwned) {
+            if (!active()) return;
+            try {
+                if (!stillOwned.getAsBoolean()) {
+                    cancel();
+                    return;
+                }
+            } catch (RuntimeException | AssertionError unavailable) {
+                cancel();
+                return;
+            }
+            complete(value);
+        }
+
         synchronized void complete(String value) {
             if (!active() || done.getCount() == 0) return;
             result = value;
