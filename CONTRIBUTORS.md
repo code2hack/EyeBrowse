@@ -58,13 +58,13 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Planner",
-    "scope": "v0.0.1",
+    "scope": "v0.0.1; local Ticket Planner fallback",
     "host": "u4090",
     "runtime": "pi",
     "id": "01a08b0d-75a8-7529-a345-e1857f506419",
     "model": "gpt-6-astra",
-    "name": "v0.0.1 Planner",
-    "status": "active"
+    "name": "v0.0.1 Planner-fallback",
+    "status": "paused"
   },
   {
     "role": "Worker",
@@ -104,16 +104,36 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "id": "01a0a0fc-eaea-77b3-a446-08df61bfc268",
     "model": "gpt-6-astra",
     "name": "Reviewer-#5",
-    "status": "active"
+    "status": "retired"
   },
   {
     "role": "Worker",
-    "scope": "v0.0.1; issue #5; Option A replacement; Phone/shared-core",
+    "scope": "v0.0.1; issue #5; DeepSeek fallback standby; retire/archive after #5 closeout",
     "host": "u4090",
     "runtime": "pi",
     "id": "01a0a441-925d-7484-81cf-23dd56f1ead4",
     "model": "deepseek-flash",
     "name": "Worker-#5-r2",
+    "status": "paused"
+  },
+  {
+    "role": "Worker",
+    "scope": "v0.0.1; issue #5; GLM primary; HOLD pending assignment; retire/archive after #5 closeout",
+    "host": "u4090",
+    "runtime": "pi",
+    "id": "01a0a81d-2502-7084-92bd-ef29f9f2e4fd",
+    "model": "GLM-5.3-Flash-EXL3",
+    "name": "Worker-#5-r3",
+    "status": "active"
+  },
+  {
+    "role": "Expert",
+    "scope": "issue #5; HOLD pending scoped escalated-todo assignment",
+    "host": "u4090",
+    "runtime": "pi",
+    "id": "01a0a81d-2515-762f-9c88-02e751c04cad",
+    "model": "gpt-6-astra Max",
+    "name": "Expert-#5",
     "status": "active"
   }
 ]
