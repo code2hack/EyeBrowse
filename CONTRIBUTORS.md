@@ -174,7 +174,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "id": "01a0adea-daa5-76bc-838a-c7eb0083814b",
     "model": "GLM-5.3-Flash-EXL3 / max",
     "name": "Paseo-Create-Setup-1",
-    "status": "active"
+    "status": "retired"
   }
 ]
 ```
