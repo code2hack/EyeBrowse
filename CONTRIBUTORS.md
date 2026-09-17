@@ -175,6 +175,16 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "model": "GLM-5.3-Flash-EXL3 / max",
     "name": "Paseo-Create-Setup-1",
     "status": "retired"
+  },
+  {
+    "role": "Manager",
+    "scope": "project-wide successor; read-only handoff standby until explicit cutover",
+    "host": "u4090",
+    "runtime": "pi",
+    "id": "01a0b008-4721-73da-b70e-2870ec36f8ab",
+    "model": "GLM-5.3-Flash-EXL3 / max",
+    "name": "EyeBrowse-Manager-GLM",
+    "status": "paused"
   }
 ]
 ```
