@@ -2,6 +2,7 @@ package com.code2hack.eyebrowse.phone;
 
 import android.view.MotionEvent;
 
+import androidx.test.espresso.InjectEventSecurityException;
 import androidx.test.espresso.UiController;
 import androidx.test.espresso.action.Press;
 import androidx.test.espresso.action.Swipe;
@@ -34,8 +35,18 @@ final class SingleShotSwipe {
         if (controller == null) {
             throw new IllegalStateException("captured Espresso UiController unavailable");
         }
-        if (!controller.injectMotionEvent(event)) {
-            throw new IllegalStateException("Espresso pointer injection returned false");
+        try {
+            if (!controller.injectMotionEvent(event)) {
+                throw new IllegalStateException("Espresso pointer injection returned false");
+            }
+        } catch (InjectEventSecurityException original) {
+            SingleShotSwipe.<RuntimeException>sneakyThrow(original);
         }
+    }
+
+    /** Preserve the exact checked Espresso injection throwable through Runnable-based dispatch. */
+    @SuppressWarnings("unchecked")
+    private static <T extends Throwable> void sneakyThrow(Throwable original) throws T {
+        throw (T) original;
     }
 }
