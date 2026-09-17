@@ -3,6 +3,7 @@ package com.code2hack.eyebrowse.phone;
 import static androidx.test.espresso.Espresso.onView;
 import static androidx.test.espresso.action.ViewActions.click;
 import static androidx.test.espresso.action.ViewActions.replaceText;
+import static androidx.test.espresso.action.ViewActions.swipeUp;
 import static androidx.test.espresso.assertion.ViewAssertions.matches;
 import static androidx.test.espresso.matcher.ViewMatchers.isEnabled;
 import static androidx.test.espresso.matcher.ViewMatchers.withId;
@@ -29,6 +30,8 @@ import android.webkit.WebView;
 import android.widget.EditText;
 import android.widget.TextView;
 
+import androidx.test.espresso.UiController;
+import androidx.test.espresso.ViewAction;
 import androidx.test.espresso.action.GeneralLocation;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.rules.ActivityScenarioRule;
@@ -76,9 +79,9 @@ import java.util.function.BooleanSupplier;
  * have defaults for the reserved ports, and the runner passes them explicitly. Revision 1 of the
  * ticket plan showed {@code untrustedHttpsUrl}; that name is not consumed here.
  *
- * <p>Evidence boundaries: page reads use {@link WebView#evaluateJavascript}; activation uses
- * synthetic instrumented pointer events ({@code sendPointerSync}) which prove ordinary activation in
- * the focused EyeBrowse window but are <em>not</em> human touch or IME evidence; field values and
+ * <p>Evidence boundaries: page reads use {@link WebView#evaluateJavascript}; activation uses the
+ * already-pinned Espresso controller with synthetic pointer events which prove ordinary activation
+ * in the focused EyeBrowse window but are <em>not</em> human touch or IME evidence; field values and
  * sentinels are set through page JavaScript as fixture setup, not typing; and
  * {@code simulateProcessRestartForTest()} is a simulation, not real process-death evidence. Bounded
  * waits: 20&nbsp;s for a condition, 10&nbsp;s for one JavaScript evaluation, 15&nbsp;s for window
@@ -221,7 +224,6 @@ public class BrowserInstrumentedTest {
             String input = testCase[0];
             String expectedFeedback = testCase[1];
 
-            // Capture the outgoing document BEFORE requesting the reload, including the first case.
             HarnessProtocol.Snapshot baseline = reloadFreshFixture("/basic.html", "Basic page");
             waitUntil("baseline status for " + input, () -> !statusText().contains("http://")
                     && !statusText().contains("cannot contain"));
@@ -253,13 +255,11 @@ public class BrowserInstrumentedTest {
             }
         }
 
-        // A valid address still works after the refusals.
         int loadsBeforeCorrection = loadCount("/basic.html");
         openFreshFixture("/basic.html", "Basic page");
         assertEquals(loadsBeforeCorrection + 1, loadCount("/basic.html"));
     }
 
-    /** The same page-script payload is refused when typed into the native address bar. */
     @Test
     public void nativeAddressBarRefusesTheScriptProbePayloadWithoutRunningIt() throws Exception {
         String url = fixtureUrl("/destinations.html");
@@ -281,13 +281,11 @@ public class BrowserInstrumentedTest {
     public void activatedTargetBlankLinkStaysInCurrentTabAndBackReturns() throws Exception {
         openAddress(fixtureUrl("/target-blank.html"));
         waitUntil("target=_blank page", () -> "New-window link page".equals(domText("page-title")));
-
         realClickElement("blank-link");
         waitUntil("activated target=_blank link loads in this tab",
                 () -> "Opened page".equals(domText("page-title")));
         assertEquals(1, attachedWebViews());
         assertEquals(fixtureUrl("/opened.html"), sessionDisplayUrl());
-
         waitUntil("Back becomes enabled", () -> viewEnabled(R.id.button_back));
         onView(withId(R.id.button_back)).perform(click());
         waitUntil("Back returns to the previous page",
@@ -303,7 +301,6 @@ public class BrowserInstrumentedTest {
             return status != null && status.contains("unsolicited");
         });
         SystemClock.sleep(1500);
-
         assertEquals(marker, domText("load-marker"));
         assertEquals(fixtureUrl("/popup.html"), sessionDisplayUrl());
         assertEquals(1, attachedWebViews());
@@ -325,9 +322,7 @@ public class BrowserInstrumentedTest {
         String marker = waitForMarker();
         setElementValue("text-field", "draft-value");
         int loadsBefore = loadCount("/form.html");
-
         scenario.recreate();
-
         assertEquals(marker, domText("load-marker"));
         assertEquals("draft-value", jsRead("document.getElementById('text-field').value"));
         assertEquals(loadsBefore, loadCount("/form.html"));
@@ -337,20 +332,16 @@ public class BrowserInstrumentedTest {
 
     @Test
     public void simulatedProcessRestartOffersSavedUrlWithoutAutoLoading() throws Exception {
-        // A simulated new browser-process lifetime; real process death remains a device row.
         String url = fixtureUrl("/basic.html");
         openAddress(url);
         waitForMarker();
         int loadsBefore = loadCount("/basic.html");
-
         scenario.onActivity(activity -> session.simulateProcessRestartForTest());
         scenario.recreate();
-
         onView(withId(R.id.status_text)).check(matches(withText(containsString("no longer live"))));
         onView(withId(R.id.address_input)).check(matches(withText(url)));
         assertEquals("no automatic reload on recovery", loadsBefore, loadCount("/basic.html"));
         assertEquals(0, attachedWebViews());
-
         onView(withId(R.id.button_open)).perform(click());
         waitUntil("explicit recovery load", () -> "Basic page".equals(domText("page-title")));
         assertEquals(loadsBefore + 1, loadCount("/basic.html"));
@@ -376,13 +367,6 @@ public class BrowserInstrumentedTest {
         assertEquals(fixtureUrl("/fail"), sessionDisplayUrl());
     }
 
-    /**
-     * Page-origin destinations must never leave the session. The page's own sentinel proves the tap
-     * activated the link; the document, real location and single-engine state must not change; with a
-     * clean baseline any status change can only be this action's refusal. Schemes the engine refuses
-     * on its own stay a no-op with no app notice - that outcome is recorded rather than asserted away
-     * - and at least one scheme must reach the app as a genuine refusal.
-     */
     @Test
     public void pageOriginDestinationsNeverLeaveTheSession() throws Exception {
         int freshRefusals = 0;
@@ -441,9 +425,7 @@ public class BrowserInstrumentedTest {
         String marker = domText("load-marker");
         String location = jsRead("String(document.location.href)");
         assertEquals("idle", domText("script-probe"));
-
         realClickElement("dest-script-probe");
-
         waitUntil("page script runs", () -> "ran".equals(domText("script-probe")));
         assertEquals(marker, domText("load-marker"));
         assertEquals(location, jsRead("String(document.location.href)"));
@@ -476,8 +458,6 @@ public class BrowserInstrumentedTest {
         openAddress(expectedLocation);
         waitForMarker();
         dismissIme();
-        // The DOM reads do not perform the scroll being claimed; the assertion still requires
-        // one real input-driven swipe and distinguishes unavailable DOM from no scroll.
         ScrollFacts before = readScrollFacts("before-swipe", expectedLocation);
         recordInputEvidence("scroll " + before.describe());
         awaitWindowFocus();
@@ -488,28 +468,27 @@ public class BrowserInstrumentedTest {
         assertEquals("same document after readiness wait", before.marker, ready.marker);
         DispatchReadiness.DomState preparedDom = swipeDomState(ready);
         SwipePreparation prepared = captureSwipePreparation();
-        InputSafety.Path path = new InputSafety.Path(prepared.start[0], prepared.start[1],
-                prepared.end[0], prepared.end[1]);
-        // This is the last blocking evidence write. Every deliberate main/DOM wait below occurs
-        // before the decisive final callback sample.
-        recordInputEvidence("swipe intended-provider-path=" + path + " "
+        recordInputEvidence("swipe intended-provider-path=" + prepared.path + " "
                 + prepared.input.describe() + " dom=" + preparedDom.describe());
         try {
             DispatchReadiness.DomState preBoundaryDom = swipeDomState(js(SCROLL_FACTS_JS));
             requireDomUnchanged(preparedDom, preBoundaryDom);
             if (seamHook != null) seamHook.run((WebView) prepared.input.state.target);
-            // Explicitly drain the boundary that made cc1eb56 stale. The decisive DOM/native sample
-            // is taken only AFTER this idle turn; no Espresso/ActivityScenario main turn follows it.
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
-            FinalReadiness current = captureFinalReadiness(prepared.input, SCROLL_FACTS_JS);
-            DispatchReadiness.DomState currentDom = swipeDomState(current.domJson);
-            DispatchReadiness.actionOnceIfReady(prepared.input.state, current.input.state, path,
-                    preparedDom, currentDom, dispatch,
-                    () -> SingleShotSwipe.send(prepared.start, prepared.end),
-                    SystemClock::uptimeMillis);
+            FinalReadiness current = captureFinalReadiness(prepared.input, SCROLL_FACTS_JS,
+                    (view, input, domJson) -> swipeProviderPath(view),
+                    (domJson, input, path) -> {
+                        DispatchReadiness.DomState currentDom = swipeDomState(domJson);
+                        DispatchReadiness.actionOnceIfRecomputedReady(
+                                prepared.input.state, input.state, path, preparedDom, currentDom,
+                                dispatch, () -> SingleShotSwipe.send(prepared.controller, path),
+                                SystemClock::uptimeMillis);
+                    });
+            recordInputEvidence("swipe final-sample intended=" + current.path + " "
+                    + current.input.describe());
         } catch (RuntimeException | AssertionError dispatchFailure) {
             recordFailureEvidence("swipe.perform stage=" + dispatch.stage, dispatchFailure, expectedLocation);
-            throw dispatchFailure; // Original throwable, never a wrapper; no replay.
+            throw dispatchFailure;
         }
         try {
             waitUntil("document scrolled", () -> {
@@ -518,7 +497,7 @@ public class BrowserInstrumentedTest {
             });
         } catch (AssertionError timeout) {
             recordFailureEvidence("scroll-timeout", timeout, expectedLocation);
-            throw timeout; // Original assertion, never a wrapper.
+            throw timeout;
         }
         ScrollFacts after = readScrollFacts("after-swipe", expectedLocation);
         recordInputEvidence("scroll " + after.describe());
@@ -531,8 +510,6 @@ public class BrowserInstrumentedTest {
 
     @Test
     public void harmlessPostIsRecordedOnceWithoutTypedValues() throws Exception {
-        // Field values are filled by page JavaScript as fixture setup (not typing); activation and
-        // submission use the ordinary touch path.
         openAddress(fixtureUrl("/form.html"));
         waitForMarker();
         setElementValue("text-field", "automation-text");
@@ -541,12 +518,9 @@ public class BrowserInstrumentedTest {
         setElementText("editable-field", "automation-editable");
         assertEquals("automation-text", jsRead("document.getElementById('text-field').value"));
         assertEquals("automation-editable", domText("editable-field"));
-
         int postsBefore = countPosts(SYNTHETIC_TEST_ID);
-
         realClickElement("submit-button");
         waitUntil("submission page", () -> "Submission recorded".equals(domText("page-title")));
-
         assertEquals("exactly one submission for this test id", postsBefore + 1,
                 countPosts(SYNTHETIC_TEST_ID));
         String fields = lastPost(SYNTHETIC_TEST_ID).getJSONArray("fields").toString();
@@ -554,7 +528,6 @@ public class BrowserInstrumentedTest {
         assertTrue(fields, fields.contains("message"));
         assertTrue(fields, fields.contains("secret"));
         assertTrue(fields, fields.contains("notes"));
-
         String raw = observationsRaw();
         assertFalse("typed text must never reach the fixture record", raw.contains("automation-text"));
         assertFalse("password text must never reach the fixture record", raw.contains("automation-secret"));
@@ -566,10 +539,6 @@ public class BrowserInstrumentedTest {
         submitAddress(url);
     }
 
-    /**
-     * Types into the native address control and presses the native Open button. The text arrives as
-     * an instrumentation edit of the toolbar field, so it proves the address pipeline, not IME use.
-     */
     private void submitAddress(String text) {
         onView(withId(R.id.address_input)).perform(click(), replaceText(text));
         onView(withId(R.id.button_open)).perform(click());
@@ -597,7 +566,6 @@ public class BrowserInstrumentedTest {
         try {
             androidx.test.espresso.Espresso.closeSoftKeyboard();
         } catch (RuntimeException | AssertionError ignored) {
-            // No IME window to close; nothing to dismiss.
         }
     }
 
@@ -633,9 +601,7 @@ public class BrowserInstrumentedTest {
         Throwable last = null;
         while (SystemClock.uptimeMillis() < deadline) {
             try {
-                if (condition.getAsBoolean()) {
-                    return;
-                }
+                if (condition.getAsBoolean()) return;
             } catch (RuntimeException | AssertionError e) {
                 last = e;
             }
@@ -646,11 +612,6 @@ public class BrowserInstrumentedTest {
 
     // ---------------------------------------------------- page interaction
 
-    /**
-     * Read-only observation with one bounded retry after an evaluation error/timeout. Earlier runs
-     * recorded callback timeouts; their cause was not established. Mutations use single-shot js(),
-     * and fixture identity snapshots are evaluated coherently rather than assembled from these reads.
-     */
     private String jsRead(String expression) {
         IllegalStateException last = null;
         for (int attempt = 0; attempt < 2; attempt++) {
@@ -669,16 +630,13 @@ public class BrowserInstrumentedTest {
         throw last;
     }
 
-    /** Single-attempt evaluation for expressions that mutate or scroll the document. */
     private String js(String expression) {
         return jsOnce(expression);
     }
 
     private String jsOnce(String expression) {
         WebView view = attachedWebView();
-        if (view == null) {
-            throw new IllegalStateException("no WebView is attached");
-        }
+        if (view == null) throw new IllegalStateException("no WebView is attached");
         AtomicReference<String> raw = new AtomicReference<>();
         CountDownLatch latch = new CountDownLatch(1);
         InstrumentationRegistry.getInstrumentation().runOnMainSync(() ->
@@ -706,9 +664,7 @@ public class BrowserInstrumentedTest {
     }
 
     private static String decodeJsValue(String raw) {
-        if (raw == null || "null".equals(raw)) {
-            return null;
-        }
+        if (raw == null || "null".equals(raw)) return null;
         try {
             Object value = new JSONObject("{\"v\":" + raw + "}").get("v");
             return value == JSONObject.NULL ? null : String.valueOf(value);
@@ -723,7 +679,6 @@ public class BrowserInstrumentedTest {
     }
 
     private void setElementValue(String elementId, String value) {
-        // Fixture setup through page JavaScript: this is not typing, IME or input-path evidence.
         js("(function(){var el=document.getElementById('" + elementId + "');"
                 + "el.focus();el.value=" + JSONObject.quote(value) + ";"
                 + "el.dispatchEvent(new Event('input',{bubbles:true}));"
@@ -732,7 +687,6 @@ public class BrowserInstrumentedTest {
     }
 
     private void setElementText(String elementId, String value) {
-        // Fixture setup through page JavaScript: this is not typing, IME or input-path evidence.
         js("(function(){var el=document.getElementById('" + elementId + "');"
                 + "el.focus();el.textContent=" + JSONObject.quote(value) + ";"
                 + "el.dispatchEvent(new Event('input',{bubbles:true}));"
@@ -789,12 +743,14 @@ public class BrowserInstrumentedTest {
         void run(WebView view);
     }
 
-    /**
-     * Injects synthetic instrumented touch through the system input pipeline. It establishes ordinary
-     * activation in the foreground EyeBrowse window; it is not human touch and not IME evidence. The
-     * {@code scrollIntoView} call is setup only - the dedicated swipe test proves input-driven
-     * scrolling - and the geometry is measured after it, before this single tap attempt.
-     */
+    private interface FinalPathSampler {
+        InputSafety.Path sample(WebView view, InputContext input, String domJson);
+    }
+
+    private interface FinalAction {
+        void run(String domJson, InputContext input, InputSafety.Path path);
+    }
+
     private void realClickElement(String elementId) throws Exception {
         realClickElement(elementId, new HarnessProtocol.Dispatch(), null, null);
     }
@@ -821,9 +777,7 @@ public class BrowserInstrumentedTest {
                 + "w:window.innerWidth,h:window.innerHeight,"
                 + "marker:document.getElementById('load-marker')?.textContent,"
                 + "location:String(document.location.href)});})()");
-        if (rectJson == null) {
-            fail("fixture element not found: " + elementId);
-        }
+        if (rectJson == null) fail("fixture element not found: " + elementId);
         JSONObject rect = new JSONObject(rectJson);
         if (expectedDocument != null) {
             assertEquals("document changed during touch preparation", expectedDocument.marker,
@@ -831,28 +785,16 @@ public class BrowserInstrumentedTest {
             assertEquals("location changed during touch preparation", expectedDocument.location,
                     rect.getString("location"));
         }
-        double cssWidth = rect.getDouble("w");
-        double cssHeight = rect.getDouble("h");
-        if (cssWidth <= 0 || cssHeight <= 0) {
-            fail("no CSS viewport reported for " + elementId);
-        }
         DispatchReadiness.DomState preparedDom = tapDomState(elementId, rect);
         InputContext mapped = captureInputContext();
-        // Mapping is tied to the exact Activity/view/viewport, not a remembered screen point.
-        float x = (float) (rect.getDouble("x") * mapped.state.width / cssWidth);
-        float y = (float) (rect.getDouble("y") * mapped.state.height / cssHeight);
-        if (x < 1 || y < 1 || x > mapped.state.width - 1 || y > mapped.state.height - 1) {
-            fail("computed touch point outside the WebView for " + elementId);
-        }
-        InputSafety.Path point = new InputSafety.Path(mapped.state.x + x, mapped.state.y + y,
-                mapped.state.x + x, mapped.state.y + y);
+        InputSafety.Path point = tapPath(mapped, rect);
         sendTap(mapped, preparedDom, elementId, point, dispatch, seamHook);
     }
 
     private void sendTap(InputContext prepared, DispatchReadiness.DomState preparedDom,
             String elementId, InputSafety.Path point, HarnessProtocol.Dispatch dispatch,
             InputSeamHook seamHook) {
-        // Last blocking evidence write before all remaining readiness work.
+        UiController controller = captureUiController(prepared);
         recordInputEvidence("tap intended=" + point + " " + prepared.describe()
                 + " dom=" + preparedDom.describe());
         awaitWindowFocus();
@@ -865,34 +807,34 @@ public class BrowserInstrumentedTest {
                     tapDomState(elementId, json(preBoundaryJson));
             requireDomUnchanged(preparedDom, preBoundaryDom);
             if (seamHook != null) seamHook.run((WebView) prepared.state.target);
-            // This is the last deliberate main-loop boundary. Final DOM and native state are then
-            // captured together in the WebView callback; no ActivityScenario/main-idle turn follows.
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
-            FinalReadiness current = captureFinalReadiness(prepared, tapFactsJs(elementId));
-            if (current.domJson == null) {
-                throw new IllegalStateException("final tap target unavailable");
-            }
-            DispatchReadiness.DomState currentDom =
-                    tapDomState(elementId, json(current.domJson));
-            long now = SystemClock.uptimeMillis();
-            MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN,
-                    point.startX, point.startY, 0);
-            MotionEvent up = MotionEvent.obtain(now, now + 60, MotionEvent.ACTION_UP,
-                    point.endX, point.endY, 0);
-            down.setSource(InputDevice.SOURCE_TOUCHSCREEN);
-            up.setSource(InputDevice.SOURCE_TOUCHSCREEN);
-            try {
-                DispatchReadiness.tapOnceIfReady(prepared.state, current.input.state, point,
-                        preparedDom, currentDom, dispatch,
-                        () -> InstrumentationRegistry.getInstrumentation().sendPointerSync(down),
-                        () -> InstrumentationRegistry.getInstrumentation().sendPointerSync(up),
-                        SystemClock::uptimeMillis);
-            } finally {
-                down.recycle();
-                up.recycle();
-            }
+            FinalReadiness current = captureFinalReadiness(prepared, tapFactsJs(elementId),
+                    (view, input, domJson) -> tapPath(input, domJson),
+                    (domJson, input, currentPoint) -> {
+                        DispatchReadiness.DomState currentDom =
+                                tapDomState(elementId, json(domJson));
+                        long now = SystemClock.uptimeMillis();
+                        MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN,
+                                currentPoint.startX, currentPoint.startY, 0);
+                        MotionEvent up = MotionEvent.obtain(now, now + 60, MotionEvent.ACTION_UP,
+                                currentPoint.endX, currentPoint.endY, 0);
+                        down.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+                        up.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+                        try {
+                            DispatchReadiness.tapOnceIfRecomputedReady(
+                                    prepared.state, input.state, currentPoint,
+                                    preparedDom, currentDom, dispatch,
+                                    () -> SingleShotSwipe.inject(controller, down),
+                                    () -> SingleShotSwipe.inject(controller, up),
+                                    SystemClock::uptimeMillis);
+                        } finally {
+                            down.recycle();
+                            up.recycle();
+                        }
+                    });
+            recordInputEvidence("tap final-sample intended=" + current.path + " "
+                    + current.input.describe());
         } catch (RuntimeException | AssertionError failure) {
-            // Bounded supplementary evidence; the ORIGINAL throwable is rethrown unchanged.
             recordFailureEvidence("tap-dispatch stage=" + dispatch.stage, failure, null);
             throw failure;
         }
@@ -917,6 +859,30 @@ public class BrowserInstrumentedTest {
                             + ";h=" + Double.toString(value.getDouble("h")));
         } catch (JSONException invalid) {
             throw new IllegalStateException("tap DOM readiness was not valid JSON", invalid);
+        }
+    }
+
+    private static InputSafety.Path tapPath(InputContext input, String domJson) {
+        return tapPath(input, json(domJson));
+    }
+
+    private static InputSafety.Path tapPath(InputContext input, JSONObject value) {
+        try {
+            double cssWidth = value.getDouble("w");
+            double cssHeight = value.getDouble("h");
+            if (cssWidth <= 0 || cssHeight <= 0) {
+                throw new IllegalStateException("tap CSS viewport unavailable");
+            }
+            float localX = (float) (value.getDouble("x") * input.state.width / cssWidth);
+            float localY = (float) (value.getDouble("y") * input.state.height / cssHeight);
+            if (localX < 1 || localY < 1 || localX > input.state.width - 1
+                    || localY > input.state.height - 1) {
+                throw new IllegalStateException("computed touch point outside the WebView");
+            }
+            return new InputSafety.Path(input.state.x + localX, input.state.y + localY,
+                    input.state.x + localX, input.state.y + localY);
+        } catch (JSONException invalid) {
+            throw new IllegalStateException("tap path DOM readiness was not valid JSON", invalid);
         }
     }
 
@@ -950,9 +916,7 @@ public class BrowserInstrumentedTest {
     }
 
     private static JSONObject json(String value) {
-        if (value == null) {
-            throw new IllegalStateException("DOM readiness unavailable");
-        }
+        if (value == null) throw new IllegalStateException("DOM readiness unavailable");
         try {
             return new JSONObject(value);
         } catch (JSONException invalid) {
@@ -969,23 +933,26 @@ public class BrowserInstrumentedTest {
     private static final class FinalReadiness {
         final String domJson;
         final InputContext input;
+        final InputSafety.Path path;
 
-        FinalReadiness(String domJson, InputContext input) {
+        FinalReadiness(String domJson, InputContext input, InputSafety.Path path) {
             this.domJson = domJson;
             this.input = input;
+            this.path = path;
         }
     }
 
     /**
-     * Final decisive sample: DOM value and complete native state are captured in the same WebView
-     * result callback after the last explicit idle/wait boundary. The test thread performs no later
-     * ActivityScenario or UiController main-loop operation before the single input attempt.
+     * The final DOM value, native state and intended path are sampled in the same WebView callback,
+     * and the supplied admission/input action runs before that callback returns to the main looper.
      */
-    private static FinalReadiness captureFinalReadiness(InputContext prepared, String expression) {
+    private static FinalReadiness captureFinalReadiness(InputContext prepared, String expression,
+            FinalPathSampler pathSampler, FinalAction action) {
         MainActivity activity = (MainActivity) prepared.state.activity;
         WebView view = (WebView) prepared.state.target;
         AtomicReference<String> dom = new AtomicReference<>();
         AtomicReference<InputContext> input = new AtomicReference<>();
+        AtomicReference<InputSafety.Path> path = new AtomicReference<>();
         AtomicReference<Throwable> failure = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
         InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
@@ -996,8 +963,13 @@ public class BrowserInstrumentedTest {
                 }
                 view.evaluateJavascript(expression, value -> {
                     try {
-                        dom.set(decodeJsValue(value));
-                        input.set(readInputContext(activity, view));
+                        String currentDom = decodeJsValue(value);
+                        InputContext currentInput = readInputContext(activity, view);
+                        InputSafety.Path currentPath = pathSampler.sample(view, currentInput, currentDom);
+                        dom.set(currentDom);
+                        input.set(currentInput);
+                        path.set(currentPath);
+                        action.run(currentDom, currentInput, currentPath);
                     } catch (RuntimeException | AssertionError unavailable) {
                         failure.set(unavailable);
                     } finally {
@@ -1011,7 +983,7 @@ public class BrowserInstrumentedTest {
         });
         try {
             if (!done.await(10_000, TimeUnit.MILLISECONDS)) {
-                throw new IllegalStateException("final readiness JavaScript evaluation timed out");
+                throw new IllegalStateException("final readiness/input callback timed out");
             }
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
@@ -1020,39 +992,75 @@ public class BrowserInstrumentedTest {
         Throwable unavailable = failure.get();
         if (unavailable instanceof RuntimeException) throw (RuntimeException) unavailable;
         if (unavailable instanceof AssertionError) throw (AssertionError) unavailable;
-        if (input.get() == null) throw new IllegalStateException("final native readiness unavailable");
-        return new FinalReadiness(dom.get(), input.get());
+        if (input.get() == null || path.get() == null) {
+            throw new IllegalStateException("final input readiness unavailable");
+        }
+        return new FinalReadiness(dom.get(), input.get(), path.get());
     }
 
     private static final class SwipePreparation {
         final InputContext input;
-        final float[] start;
-        final float[] end;
+        final InputSafety.Path path;
+        final UiController controller;
 
-        SwipePreparation(InputContext input, float[] start, float[] end) {
+        SwipePreparation(InputContext input, InputSafety.Path path, UiController controller) {
             this.input = input;
-            this.start = start;
-            this.end = end;
+            this.path = path;
+            this.controller = controller;
         }
     }
 
-    /** Exact Espresso 3.6.1 swipeUp coordinate providers, sampled before the final idle boundary. */
     private SwipePreparation captureSwipePreparation() {
-        SwipePreparation[] captured = new SwipePreparation[1];
-        scenario.onActivity(activity -> {
-            WebView view = activity.findViewById(R.id.browser_web_view);
-            intendedActivity = new WeakReference<>(activity);
-            intendedView = new WeakReference<>(view);
-            float[] start = GeneralLocation.translate(GeneralLocation.BOTTOM_CENTER,
-                    0, -0.083f).calculateCoordinates(view);
-            float[] end = GeneralLocation.TOP_CENTER.calculateCoordinates(view);
-            captured[0] = new SwipePreparation(readInputContext(activity, view), start, end);
+        InputContext expected = captureInputContext();
+        AtomicReference<SwipePreparation> captured = new AtomicReference<>();
+        ViewAction swipe = swipeUp();
+        onView(withId(R.id.browser_web_view)).perform(new ViewAction() {
+            @Override public org.hamcrest.Matcher<View> getConstraints() {
+                return swipe.getConstraints();
+            }
+            @Override public String getDescription() {
+                return "capture final-readiness swipe controller/provider";
+            }
+            @Override public void perform(UiController controller, View view) {
+                if (view != expected.state.target) {
+                    throw new IllegalStateException("intended WebView changed during swipe preparation");
+                }
+                WebView webView = (WebView) view;
+                InputContext input = readInputContext((MainActivity) expected.state.activity, webView);
+                captured.set(new SwipePreparation(input, swipeProviderPath(webView), controller));
+            }
         });
-        if (captured[0] == null) throw new IllegalStateException("swipe preparation unavailable");
-        return captured[0];
+        if (captured.get() == null) throw new IllegalStateException("swipe preparation unavailable");
+        return captured.get();
     }
 
-    /** Queues a real DOM-only WebView turn after the old sample and waits for its callback. */
+    private static InputSafety.Path swipeProviderPath(WebView view) {
+        float[] start = GeneralLocation.translate(GeneralLocation.BOTTOM_CENTER,
+                0, -0.083f).calculateCoordinates(view);
+        float[] end = GeneralLocation.TOP_CENTER.calculateCoordinates(view);
+        return new InputSafety.Path(start[0], start[1], end[0], end[1]);
+    }
+
+    private UiController captureUiController(InputContext expected) {
+        AtomicReference<UiController> captured = new AtomicReference<>();
+        onView(withId(R.id.browser_web_view)).perform(new ViewAction() {
+            @Override public org.hamcrest.Matcher<View> getConstraints() {
+                return androidx.test.espresso.matcher.ViewMatchers.isDisplayed();
+            }
+            @Override public String getDescription() {
+                return "capture existing Espresso input controller";
+            }
+            @Override public void perform(UiController controller, View view) {
+                if (view != expected.state.target) {
+                    throw new IllegalStateException("intended WebView changed during controller capture");
+                }
+                captured.set(controller);
+            }
+        });
+        if (captured.get() == null) throw new IllegalStateException("Espresso UiController unavailable");
+        return captured.get();
+    }
+
     private static void awaitQueuedDomMutation(WebView view, String expression) {
         CountDownLatch done = new CountDownLatch(1);
         AtomicReference<Throwable> failure = new AtomicReference<>();
@@ -1082,14 +1090,10 @@ public class BrowserInstrumentedTest {
         if (unavailable instanceof AssertionError) throw (AssertionError) unavailable;
     }
 
-    /** Records bounded test-owned evidence in the app-scoped milestone sink. */
     private void recordInputEvidence(String line) {
-        if (milestones != null) {
-            milestones.record("INPUT " + line);
-        }
+        if (milestones != null) milestones.record("INPUT " + line);
     }
 
-    /** All nested failure observers share this one deadline, including CaseTrace.failure. */
     private HarnessProtocol.FailureBudget failureBudget() {
         if (failureBudget == null) failureBudget = new HarnessProtocol.FailureBudget(
                 SystemClock::elapsedRealtime, HarnessProtocol.FailureBudget.DEFAULT_BUDGET_MS);
@@ -1103,11 +1107,10 @@ public class BrowserInstrumentedTest {
         return operation.await();
     }
 
-    /** Queued work and JS callbacks retain only weak intended targets / the cancellable token. */
     private static HarnessProtocol.DiagnosticWork diagnosticJs(WeakReference<MainActivity> owner,
             WeakReference<WebView> target, String expression) {
         return operation -> {
-            if (!operation.active()) return; // Before any Activity/view access.
+            if (!operation.active()) return;
             MainActivity activity = owner.get();
             WebView view = target.get();
             if (activity == null || activity.isDestroyed() || activity.isFinishing()
@@ -1116,9 +1119,7 @@ public class BrowserInstrumentedTest {
                 operation.complete(null);
                 return;
             }
-            if (!operation.active()) return; // Immediately before JS dispatch.
-            // The callback captures weak references only. A still-open test token does not
-            // authorize publication after Activity recreation or WebView replacement/reparenting.
+            if (!operation.active()) return;
             view.evaluateJavascript(expression, value -> operation.completeIfOwned(value,
                     () -> intendedOwnerStillCurrent(owner, target)));
         };
@@ -1146,7 +1147,7 @@ public class BrowserInstrumentedTest {
                     operation.complete(null);
                     return;
                 }
-                if (!operation.active()) return; // No new scenario lookup on the failure path.
+                if (!operation.active()) return;
                 operation.complete(readInputContext(activity, view).describe());
             });
             String dom = "not-applicable";
@@ -1156,15 +1157,12 @@ public class BrowserInstrumentedTest {
                 dom = raw == null ? "unavailable(deadline/cancelled)"
                         : parseScrollFacts("failure", expectedLocation, decodeJsValue(raw), start).describe();
             }
-            // Retain in memory here, with no blocking file/network flush inside the 2s budget.
-            // AfterClass flushes the scoped evidence to the instrumentation result stream.
             milestones.recordDeferred("INPUT FAILURE_EVIDENCE stage=" + stage + " elapsedMs="
                     + budget.elapsedMs() + " context=" + (context == null ? "unavailable" : context)
                     + " dom=" + dom + " primary=" + primary.getClass().getSimpleName());
         });
     }
 
-    /** Snapshot only: intended target, never a claim of the actual InputDispatcher recipient. */
     private static final class InputContext {
         final long uptimeMs;
         final String activityName;
@@ -1189,7 +1187,6 @@ public class BrowserInstrumentedTest {
         return captured[0];
     }
 
-    /** Called only on the main loop; diagnostics check their token immediately before entry. */
     private static InputContext readInputContext(MainActivity activity, WebView view) {
         if (activity.isDestroyed() || activity.isFinishing() || view == null
                 || activity.findViewById(R.id.browser_web_view) != view) {
@@ -1204,7 +1201,6 @@ public class BrowserInstrumentedTest {
         Rect visible = new Rect();
         if (!decor.getGlobalVisibleRect(root)) root.setEmpty();
         if (!view.getGlobalVisibleRect(visible)) visible.setEmpty();
-        // getGlobalVisibleRect is window/root-relative; the gesture uses screen coordinates.
         root.offset(screen[0] - window[0], screen[1] - window[1]);
         visible.offset(screen[0] - window[0], screen[1] - window[1]);
         int[] location = new int[2];
@@ -1234,7 +1230,6 @@ public class BrowserInstrumentedTest {
             + "scrollHeight:d.scrollHeight,clientHeight:d.clientHeight,"
             + "innerWidth:window.innerWidth,innerHeight:window.innerHeight});})()";
 
-    /** Coherent bounded scroll/document observation; a failure to observe is not a scroll claim. */
     private final class ScrollFacts {
         final String phase;
         final long sampleStartMs;
@@ -1307,7 +1302,6 @@ public class BrowserInstrumentedTest {
         }
     }
 
-    /** Real input injection is only accepted while this app owns the focused window. */
     private void awaitWindowFocus() {
         long deadline = SystemClock.uptimeMillis() + 15_000;
         while (SystemClock.uptimeMillis() < deadline) {
@@ -1317,9 +1311,7 @@ public class BrowserInstrumentedTest {
             } catch (RuntimeException e) {
                 throw new IllegalStateException("browser activity unavailable for input", e);
             }
-            if (Boolean.TRUE.equals(focused.get())) {
-                return;
-            }
+            if (Boolean.TRUE.equals(focused.get())) return;
             SystemClock.sleep(200);
         }
         fail("the browser window never gained input focus");
@@ -1347,9 +1339,7 @@ public class BrowserInstrumentedTest {
             JSONObject entry = requests.getJSONObject(i);
             if ("POST".equals(entry.optString("method"))
                     && "/submit".equals(entry.optString("path"))
-                    && testId.equals(entry.optString("testId"))) {
-                count++;
-            }
+                    && testId.equals(entry.optString("testId"))) count++;
         }
         return count;
     }
@@ -1360,9 +1350,7 @@ public class BrowserInstrumentedTest {
             JSONObject entry = requests.getJSONObject(i);
             if ("POST".equals(entry.optString("method"))
                     && "/submit".equals(entry.optString("path"))
-                    && testId.equals(entry.optString("testId"))) {
-                return entry;
-            }
+                    && testId.equals(entry.optString("testId"))) return entry;
         }
         fail("no POST submission recorded for " + testId);
         return null;
@@ -1397,7 +1385,6 @@ public class BrowserInstrumentedTest {
     }
 
     private HarnessProtocol.Snapshot reloadFreshFixture(String path, String title) {
-        // This capture must precede the Reload action; a reload never receives a null outgoing ID.
         HarnessProtocol.Baseline gate = HarnessProtocol.Baseline.reloading(
                 readFixtureSnapshot(), title, fixtureUrl(path));
         onView(withId(R.id.button_reload)).perform(click());
@@ -1417,7 +1404,6 @@ public class BrowserInstrumentedTest {
         return accepted.get();
     }
 
-    /** Version-2 trace: coherent DOM sample intervals and API attempt intervals are distinct. */
     private final class CaseTrace {
         final String caseId;
         final String expectedLocation;
@@ -1455,8 +1441,6 @@ public class BrowserInstrumentedTest {
                 String raw = captureDiagnostic(diagnosticJs(intendedActivity, intendedView, FIXTURE_SNAPSHOT));
                 HarnessProtocol.Snapshot snapshot = raw == null ? null
                         : decodeSnapshot(decodeJsValue(raw), start, SystemClock.uptimeMillis());
-                // No second 2s budget or blocking HTTP acknowledgement on a failure path.
-                // Explicitly local/deferred evidence, not a successful fixture-server capture.
                 milestones.recordDeferred("CASE_FAILURE_LOCAL case=" + caseId + " outcome=" + outcome
                         + " dispatch=" + dispatch.stage + " marker="
                         + (snapshot == null ? "unavailable" : snapshot.marker) + " location="
@@ -1498,13 +1482,10 @@ public class BrowserInstrumentedTest {
         connection.setConnectTimeout(5_000);
         connection.setReadTimeout(5_000);
         try (InputStream in = connection.getInputStream()) {
-            BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(in, StandardCharsets.UTF_8));
+            BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
             StringBuilder builder = new StringBuilder();
             String line;
-            while ((line = reader.readLine()) != null) {
-                builder.append(line).append('\n');
-            }
+            while ((line = reader.readLine()) != null) builder.append(line).append('\n');
             return builder.toString();
         } finally {
             connection.disconnect();
