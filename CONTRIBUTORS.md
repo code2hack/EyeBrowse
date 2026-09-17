@@ -24,7 +24,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "id": "01a0864a-e865-7447-96f3-6b653a20d3ac",
     "model": "gpt-6-astra",
     "name": "EyeBrowse-Manager",
-    "status": "paused"
+    "status": "retired"
   },
   {
     "role": "Worker",
