@@ -3,7 +3,6 @@ package com.code2hack.eyebrowse.phone;
 import static androidx.test.espresso.Espresso.onView;
 import static androidx.test.espresso.action.ViewActions.click;
 import static androidx.test.espresso.action.ViewActions.replaceText;
-import static androidx.test.espresso.action.ViewActions.swipeUp;
 import static androidx.test.espresso.assertion.ViewAssertions.matches;
 import static androidx.test.espresso.matcher.ViewMatchers.isEnabled;
 import static androidx.test.espresso.matcher.ViewMatchers.withId;
@@ -30,12 +29,7 @@ import android.webkit.WebView;
 import android.widget.EditText;
 import android.widget.TextView;
 
-import androidx.test.espresso.ViewAction;
-import androidx.test.espresso.UiController;
 import androidx.test.espresso.action.GeneralLocation;
-import androidx.test.espresso.action.Press;
-import androidx.test.espresso.action.Swipe;
-import androidx.test.espresso.action.Swiper;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.rules.ActivityScenarioRule;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -176,6 +170,23 @@ public class BrowserInstrumentedTest {
         waitForMarker();
         realClickElement("click-button");
         waitUntil("click counter updates", () -> "1".equals(domText("click-count")));
+    }
+
+    @Test
+    public void queuedDomOnlyTargetMoveBeforeFinalTapSampleDispatchesZeroInput() throws Exception {
+        openAddress(fixtureUrl("/basic.html"));
+        waitForMarker();
+        HarnessProtocol.Dispatch dispatch = new HarnessProtocol.Dispatch();
+        try {
+            realClickElement("click-button", dispatch, null, view -> awaitQueuedDomMutation(view,
+                    "(function(){var el=document.getElementById('click-button');"
+                            + "el.style.transform='translateY(24px)';return 'moved';})()"));
+            fail("DOM-only target movement must stop before tap dispatch");
+        } catch (IllegalStateException expected) {
+            assertEquals("DOM target/viewport changed after preparation", expected.getMessage());
+        }
+        assertEquals("not-attempted", dispatch.stage);
+        assertEquals("0", domText("click-count"));
     }
 
     /**
@@ -441,15 +452,32 @@ public class BrowserInstrumentedTest {
 
     @Test
     public void realSwipeScrollsLongDocument() throws Exception {
-        String expectedLocation = fixtureUrl("/scroll.html");
+        performSwipeScroll(fixtureUrl("/scroll.html"), new HarnessProtocol.Dispatch(), null);
+    }
+
+    @Test
+    public void queuedDomOnlyDocumentChangeBeforeFinalSwipeSampleDispatchesZeroInput() throws Exception {
+        HarnessProtocol.Dispatch dispatch = new HarnessProtocol.Dispatch();
+        try {
+            performSwipeScroll(fixtureUrl("/scroll.html"), dispatch,
+                    view -> awaitQueuedDomMutation(view,
+                            "(function(){document.getElementById('load-marker').textContent="
+                                    + "'R1-swapped';return 'changed';})()"));
+            fail("DOM-only document change must stop before swipe dispatch");
+        } catch (IllegalStateException expected) {
+            assertEquals("document changed after preparation", expected.getMessage());
+        }
+        assertEquals("not-attempted", dispatch.stage);
+        assertEquals("0", jsRead("String(Math.round(window.scrollY))"));
+    }
+
+    private void performSwipeScroll(String expectedLocation, HarnessProtocol.Dispatch dispatch,
+            InputSeamHook seamHook) throws Exception {
         openAddress(expectedLocation);
         waitForMarker();
         dismissIme();
-        // Bounded at-event evidence only: exact DOM scroll/document metrics before the gesture, a
-        // small input-context record with the intended extent, and a coherent post-gesture
-        // observation. The DOM reads do not perform the scroll being claimed; the assertion still
-        // requires real input-driven scrolling and distinguishes "no scroll observed" from "DOM
-        // unavailable".
+        // The DOM reads do not perform the scroll being claimed; the assertion still requires
+        // one real input-driven swipe and distinguishes unavailable DOM from no scroll.
         ScrollFacts before = readScrollFacts("before-swipe", expectedLocation);
         recordInputEvidence("scroll " + before.describe());
         awaitWindowFocus();
@@ -459,41 +487,26 @@ public class BrowserInstrumentedTest {
         assertEquals(expectedLocation, ready.rawLocation);
         assertEquals("same document after readiness wait", before.marker, ready.marker);
         DispatchReadiness.DomState preparedDom = swipeDomState(ready);
-        InputContext prepared = captureInputContext();
-        HarnessProtocol.Dispatch dispatch = new HarnessProtocol.Dispatch();
-        ViewAction swipe = swipeUp(); // Reuse constraints/description, not its three-try wrapper.
+        SwipePreparation prepared = captureSwipePreparation();
+        InputSafety.Path path = new InputSafety.Path(prepared.start[0], prepared.start[1],
+                prepared.end[0], prepared.end[1]);
+        // This is the last blocking evidence write. Every deliberate main/DOM wait below occurs
+        // before the decisive final callback sample.
+        recordInputEvidence("swipe intended-provider-path=" + path + " "
+                + prepared.input.describe() + " dom=" + preparedDom.describe());
         try {
-            onView(withId(R.id.browser_web_view)).perform(new ViewAction() {
-                @Override public org.hamcrest.Matcher<View> getConstraints() { return swipe.getConstraints(); }
-                @Override public String getDescription() { return "readiness-checked " + swipe.getDescription(); }
-                @Override public void perform(UiController controller, View view) {
-                    assertTrue("same intended WebView", view == prepared.state.target);
-                    // These are Espresso 3.6.1 swipeUp's actual coordinate providers, not an
-                    // exclusive visible extent or a claim of independently observed dispatch.
-                    float[] start = GeneralLocation.translate(GeneralLocation.BOTTOM_CENTER,
-                            0, -0.083f).calculateCoordinates(view);
-                    float[] end = GeneralLocation.TOP_CENTER.calculateCoordinates(view);
-                    InputSafety.Path path = new InputSafety.Path(start[0], start[1], end[0], end[1]);
-                    // This is the final blocking evidence write. The DOM/native admission below is
-                    // sampled after Espresso's pre-action idle boundary and after this write.
-                    recordInputEvidence("swipe intended-provider-path=" + path + " "
-                            + prepared.describe() + " dom=" + preparedDom.describe());
-                    String finalDomJson = jsFromEspresso(controller, (WebView) view, SCROLL_FACTS_JS);
-                    DispatchReadiness.DomState currentDom = swipeDomState(finalDomJson);
-                    InputContext current = readInputContext((MainActivity) prepared.state.activity,
-                            (WebView) view);
-                    DispatchReadiness.actionOnceIfReady(prepared.state, current.state, path,
-                            preparedDom, currentDom, dispatch, () -> {
-                                // Same Espresso FAST gesture/precision, but never
-                                // GeneralSwipeAction's retry loop after a FAILURE status (including
-                                // uncertain injection).
-                                Swiper.Status result = Swipe.FAST.sendSwipe(controller, start, end,
-                                        Press.FINGER.describePrecision());
-                                assertEquals("single Espresso swipe failed; no replay",
-                                        Swiper.Status.SUCCESS, result);
-                            }, SystemClock::uptimeMillis);
-                }
-            });
+            DispatchReadiness.DomState preBoundaryDom = swipeDomState(js(SCROLL_FACTS_JS));
+            requireDomUnchanged(preparedDom, preBoundaryDom);
+            if (seamHook != null) seamHook.run((WebView) prepared.input.state.target);
+            // Explicitly drain the boundary that made cc1eb56 stale. The decisive DOM/native sample
+            // is taken only AFTER this idle turn; no Espresso/ActivityScenario main turn follows it.
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            FinalReadiness current = captureFinalReadiness(prepared.input, SCROLL_FACTS_JS);
+            DispatchReadiness.DomState currentDom = swipeDomState(current.domJson);
+            DispatchReadiness.actionOnceIfReady(prepared.input.state, current.input.state, path,
+                    preparedDom, currentDom, dispatch,
+                    () -> SingleShotSwipe.send(prepared.start, prepared.end),
+                    SystemClock::uptimeMillis);
         } catch (RuntimeException | AssertionError dispatchFailure) {
             recordFailureEvidence("swipe.perform stage=" + dispatch.stage, dispatchFailure, expectedLocation);
             throw dispatchFailure; // Original throwable, never a wrapper; no replay.
@@ -684,24 +697,6 @@ public class BrowserInstrumentedTest {
         return decodeJsValue(raw.get());
     }
 
-    /** Single final JavaScript sample from inside an Espresso action; no retry/readiness loop. */
-    private static String jsFromEspresso(UiController controller, WebView view, String expression) {
-        AtomicReference<String> raw = new AtomicReference<>();
-        AtomicInteger completed = new AtomicInteger();
-        view.evaluateJavascript(expression, value -> {
-            raw.set(value);
-            completed.set(1);
-        });
-        long deadline = SystemClock.uptimeMillis() + 10_000;
-        while (completed.get() == 0 && SystemClock.uptimeMillis() < deadline) {
-            controller.loopMainThreadForAtLeast(1);
-        }
-        if (completed.get() == 0) {
-            throw new IllegalStateException("final JavaScript evaluation timed out");
-        }
-        return decodeJsValue(raw.get());
-    }
-
     private String jsOrNull(String expression) {
         try {
             return jsRead(expression);
@@ -790,6 +785,10 @@ public class BrowserInstrumentedTest {
         return count.get();
     }
 
+    private interface InputSeamHook {
+        void run(WebView view);
+    }
+
     /**
      * Injects synthetic instrumented touch through the system input pipeline. It establishes ordinary
      * activation in the foreground EyeBrowse window; it is not human touch and not IME evidence. The
@@ -797,11 +796,16 @@ public class BrowserInstrumentedTest {
      * scrolling - and the geometry is measured after it, before this single tap attempt.
      */
     private void realClickElement(String elementId) throws Exception {
-        realClickElement(elementId, new HarnessProtocol.Dispatch(), null);
+        realClickElement(elementId, new HarnessProtocol.Dispatch(), null, null);
     }
 
     private void realClickElement(String elementId, HarnessProtocol.Dispatch dispatch,
                                   HarnessProtocol.Snapshot expectedDocument) throws Exception {
+        realClickElement(elementId, dispatch, expectedDocument, null);
+    }
+
+    private void realClickElement(String elementId, HarnessProtocol.Dispatch dispatch,
+            HarnessProtocol.Snapshot expectedDocument, InputSeamHook seamHook) throws Exception {
         awaitWindowFocus();
         String identityGuard = expectedDocument == null ? "" :
                 "if(document.getElementById('load-marker')?.textContent!=="
@@ -842,41 +846,55 @@ public class BrowserInstrumentedTest {
         }
         InputSafety.Path point = new InputSafety.Path(mapped.state.x + x, mapped.state.y + y,
                 mapped.state.x + x, mapped.state.y + y);
-        sendTap(mapped, preparedDom, elementId, point, dispatch);
+        sendTap(mapped, preparedDom, elementId, point, dispatch, seamHook);
     }
 
     private void sendTap(InputContext prepared, DispatchReadiness.DomState preparedDom,
-            String elementId, InputSafety.Path point, HarnessProtocol.Dispatch dispatch) {
-        // Last blocking evidence write before the final DOM/native admission sample.
+            String elementId, InputSafety.Path point, HarnessProtocol.Dispatch dispatch,
+            InputSeamHook seamHook) {
+        // Last blocking evidence write before all remaining readiness work.
         recordInputEvidence("tap intended=" + point + " " + prepared.describe()
                 + " dom=" + preparedDom.describe());
         awaitWindowFocus();
-        String finalDomJson = js(tapFactsJs(elementId));
-        if (finalDomJson == null) {
-            throw new IllegalStateException("final tap target unavailable");
-        }
-        DispatchReadiness.DomState currentDom = tapDomState(elementId, json(finalDomJson));
-        InputContext current = captureInputContext();
-        long now = SystemClock.uptimeMillis();
-        MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN,
-                point.startX, point.startY, 0);
-        MotionEvent up = MotionEvent.obtain(now, now + 60, MotionEvent.ACTION_UP,
-                point.endX, point.endY, 0);
-        down.setSource(InputDevice.SOURCE_TOUCHSCREEN);
-        up.setSource(InputDevice.SOURCE_TOUCHSCREEN);
         try {
-            DispatchReadiness.tapOnceIfReady(prepared.state, current.state, point,
-                    preparedDom, currentDom, dispatch,
-                    () -> InstrumentationRegistry.getInstrumentation().sendPointerSync(down),
-                    () -> InstrumentationRegistry.getInstrumentation().sendPointerSync(up),
-                    SystemClock::uptimeMillis);
+            String preBoundaryJson = js(tapFactsJs(elementId));
+            if (preBoundaryJson == null) {
+                throw new IllegalStateException("pre-boundary tap target unavailable");
+            }
+            DispatchReadiness.DomState preBoundaryDom =
+                    tapDomState(elementId, json(preBoundaryJson));
+            requireDomUnchanged(preparedDom, preBoundaryDom);
+            if (seamHook != null) seamHook.run((WebView) prepared.state.target);
+            // This is the last deliberate main-loop boundary. Final DOM and native state are then
+            // captured together in the WebView callback; no ActivityScenario/main-idle turn follows.
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            FinalReadiness current = captureFinalReadiness(prepared, tapFactsJs(elementId));
+            if (current.domJson == null) {
+                throw new IllegalStateException("final tap target unavailable");
+            }
+            DispatchReadiness.DomState currentDom =
+                    tapDomState(elementId, json(current.domJson));
+            long now = SystemClock.uptimeMillis();
+            MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN,
+                    point.startX, point.startY, 0);
+            MotionEvent up = MotionEvent.obtain(now, now + 60, MotionEvent.ACTION_UP,
+                    point.endX, point.endY, 0);
+            down.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+            up.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+            try {
+                DispatchReadiness.tapOnceIfReady(prepared.state, current.input.state, point,
+                        preparedDom, currentDom, dispatch,
+                        () -> InstrumentationRegistry.getInstrumentation().sendPointerSync(down),
+                        () -> InstrumentationRegistry.getInstrumentation().sendPointerSync(up),
+                        SystemClock::uptimeMillis);
+            } finally {
+                down.recycle();
+                up.recycle();
+            }
         } catch (RuntimeException | AssertionError failure) {
             // Bounded supplementary evidence; the ORIGINAL throwable is rethrown unchanged.
             recordFailureEvidence("tap-dispatch stage=" + dispatch.stage, failure, null);
             throw failure;
-        } finally {
-            down.recycle();
-            up.recycle();
         }
     }
 
@@ -940,6 +958,128 @@ public class BrowserInstrumentedTest {
         } catch (JSONException invalid) {
             throw new IllegalStateException("DOM readiness was not valid JSON", invalid);
         }
+    }
+
+    private static void requireDomUnchanged(DispatchReadiness.DomState prepared,
+            DispatchReadiness.DomState current) {
+        String reason = prepared.revalidationReason(current);
+        if (reason != null) throw new IllegalStateException(reason);
+    }
+
+    private static final class FinalReadiness {
+        final String domJson;
+        final InputContext input;
+
+        FinalReadiness(String domJson, InputContext input) {
+            this.domJson = domJson;
+            this.input = input;
+        }
+    }
+
+    /**
+     * Final decisive sample: DOM value and complete native state are captured in the same WebView
+     * result callback after the last explicit idle/wait boundary. The test thread performs no later
+     * ActivityScenario or UiController main-loop operation before the single input attempt.
+     */
+    private static FinalReadiness captureFinalReadiness(InputContext prepared, String expression) {
+        MainActivity activity = (MainActivity) prepared.state.activity;
+        WebView view = (WebView) prepared.state.target;
+        AtomicReference<String> dom = new AtomicReference<>();
+        AtomicReference<InputContext> input = new AtomicReference<>();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        CountDownLatch done = new CountDownLatch(1);
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+            try {
+                if (activity.isDestroyed() || activity.isFinishing() || !view.isAttachedToWindow()
+                        || activity.findViewById(R.id.browser_web_view) != view) {
+                    throw new IllegalStateException("intended Activity/view unavailable");
+                }
+                view.evaluateJavascript(expression, value -> {
+                    try {
+                        dom.set(decodeJsValue(value));
+                        input.set(readInputContext(activity, view));
+                    } catch (RuntimeException | AssertionError unavailable) {
+                        failure.set(unavailable);
+                    } finally {
+                        done.countDown();
+                    }
+                });
+            } catch (RuntimeException | AssertionError unavailable) {
+                failure.set(unavailable);
+                done.countDown();
+            }
+        });
+        try {
+            if (!done.await(10_000, TimeUnit.MILLISECONDS)) {
+                throw new IllegalStateException("final readiness JavaScript evaluation timed out");
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while sampling final readiness", interrupted);
+        }
+        Throwable unavailable = failure.get();
+        if (unavailable instanceof RuntimeException) throw (RuntimeException) unavailable;
+        if (unavailable instanceof AssertionError) throw (AssertionError) unavailable;
+        if (input.get() == null) throw new IllegalStateException("final native readiness unavailable");
+        return new FinalReadiness(dom.get(), input.get());
+    }
+
+    private static final class SwipePreparation {
+        final InputContext input;
+        final float[] start;
+        final float[] end;
+
+        SwipePreparation(InputContext input, float[] start, float[] end) {
+            this.input = input;
+            this.start = start;
+            this.end = end;
+        }
+    }
+
+    /** Exact Espresso 3.6.1 swipeUp coordinate providers, sampled before the final idle boundary. */
+    private SwipePreparation captureSwipePreparation() {
+        SwipePreparation[] captured = new SwipePreparation[1];
+        scenario.onActivity(activity -> {
+            WebView view = activity.findViewById(R.id.browser_web_view);
+            intendedActivity = new WeakReference<>(activity);
+            intendedView = new WeakReference<>(view);
+            float[] start = GeneralLocation.translate(GeneralLocation.BOTTOM_CENTER,
+                    0, -0.083f).calculateCoordinates(view);
+            float[] end = GeneralLocation.TOP_CENTER.calculateCoordinates(view);
+            captured[0] = new SwipePreparation(readInputContext(activity, view), start, end);
+        });
+        if (captured[0] == null) throw new IllegalStateException("swipe preparation unavailable");
+        return captured[0];
+    }
+
+    /** Queues a real DOM-only WebView turn after the old sample and waits for its callback. */
+    private static void awaitQueuedDomMutation(WebView view, String expression) {
+        CountDownLatch done = new CountDownLatch(1);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        if (!MAIN.post(() -> {
+            try {
+                if (!view.isAttachedToWindow()) {
+                    throw new IllegalStateException("mutation target WebView detached");
+                }
+                view.evaluateJavascript(expression, ignored -> done.countDown());
+            } catch (RuntimeException | AssertionError unavailable) {
+                failure.set(unavailable);
+                done.countDown();
+            }
+        })) {
+            throw new IllegalStateException("main queue rejected DOM mutation regression");
+        }
+        try {
+            if (!done.await(10_000, TimeUnit.MILLISECONDS)) {
+                throw new IllegalStateException("queued DOM mutation timed out");
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while awaiting DOM mutation", interrupted);
+        }
+        Throwable unavailable = failure.get();
+        if (unavailable instanceof RuntimeException) throw (RuntimeException) unavailable;
+        if (unavailable instanceof AssertionError) throw (AssertionError) unavailable;
     }
 
     /** Records bounded test-owned evidence in the app-scoped milestone sink. */
