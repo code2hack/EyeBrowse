@@ -54,7 +54,7 @@ Record installed versions/hashes and current results in the run/evidence record 
 - **pi-phone-use:** one real guarded S20 normal PIN-unlock/relock cycle and further bounded setup use. This does not qualify every catastrophic-loss condition or make Wi-Fi continuously reachable.
 - **Feishu:** verified private Owner identity/route, daemon replies, and direct installed-SDK text send/readback with Owner receipt. Owner subsequently reported fixing the notification problem. Do not reopen that resolved notification issue merely because its exact setting change was not supplied; do not claim an agent retest or infer unrelated capabilities from it.
 - **Todo tool:** actual checklist operations and session-branch storage are available. Shared governance metadata, transition decisions and request routing are not supplied by the checklist tool itself.
-- **Paseo/Pi:** a local Worker was imported after its former process stopped; a later serialized archive/restore changed its workspace placement while preserving native identity/history and checkout. Post-import identity/model/effort and a basic Manager↔Worker SDK round trip with explicit steering and stable message IDs were checked. This does not qualify every migration, busy/permission/archive race, restart, parent-retirement or RPC UI path. Record the actual installed versions and case evidence in the run record.
+- **Paseo/Pi:** a disposable local Pi agent was newly created through the supported creation API without an initial prompt, registered before its correlated assignment, verified in its isolated cwd, and safely archived after its probe; runtime cessation and retained history were checked. Separate import/archive-restore and basic Manager↔Worker SDK steering evidence also exists. These results cover the exercised paths, not every provider, creation retry, migration, busy/permission/archive race, restart, parent-retirement or RPC UI path. Record the actual installed versions, invocation and case evidence in the run record.
 
 Use the existing Paseo control plane and qualified SDK procedure for local pi-agent messages. Do not install another messenger/task engine, enable its autonomous workers, or expose additional lifecycle tools merely because they are available. Installed source code is not proof that a tool is injected into the current agent. Any proposed alternative returns through the applicable operational/implementation authority and qualification gates.
 
@@ -99,7 +99,27 @@ Before create/import, the Manager:
 5. Obtains and checks the actual Paseo ID and native session ID, provider/model/effort, cwd/branch and lifecycle. Register a genuinely new participant before project work; a non-mutating setup exchange may establish otherwise unavailable identity. Reusing a native session does not create a fresh failure allowance. Record the binding in runtime and verify it after every change.
 6. Sends the complete assignment only after registration/readiness and verifies a correlated startup receipt. A visible Paseo tab, API acceptance, imported transcript or `idle` flag alone is not startup/capability confirmation.
 
-The inspected SDK import shape is:
+For a **new** local Pi agent, use the qualified supported creation API, not an import as a substitute. Persist the exact options and a fresh logical creation idempotency key before calling. In the inspected API, keyed creation requires sending the initial prompt separately; omit `initialPrompt`:
+
+```js
+const created = await client.createAgent({
+  config: {
+    provider: 'pi',
+    cwd: assignedWorktree,
+    title: assignedName,
+    model: ownerSelectedModel,
+    thinkingOptionId: ownerSelectedEffort,
+  },
+  workspaceId: verifiedWorkspaceId,
+  callerAgentId: verifiedManagerPaseoId,
+  env: { TMPDIR: assignedScratch },
+  idempotencyKey: createIntent.idempotencyKey,
+});
+```
+
+Inspect the returned actual native/Paseo identities and configuration, register the participant, then send the separate correlated assignment using the delivery procedure below. A native session file may materialize only on that first message; an API-supplied path is not an already-verified file header. Verify the header when it exists. Preserve creation options/results and distinguish a creation receipt from an assignment receipt and finished work. On an uncertain creation outcome, reconcile the same key/result rather than issuing another creation with a new key. The disposable check established one successful creation/registration/probe/archive path, not duplicate/crash-recovery behavior or every model/provider.
+
+Reserve import for an explicitly authorized **existing-session migration**. The inspected SDK import shape is:
 
 ```js
 // Existing verified Paseo connection; native file, workspace and lifecycle checked.
