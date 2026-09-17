@@ -5,7 +5,8 @@ Operational procedures for EyeBrowse. `AGENTS.md` is the authority for roles, ap
 ## Workspace, records and consumers
 
 - Repository: `git@github.com:code2hack/EyeBrowse.git`; canonical articles are on remote `main`.
-- Manager checkout: `/home/code2hack/Projects/EyeBrowse`.
+- Paseo project: **EyeBrowse**. Manager checkout: `/home/code2hack/Projects/EyeBrowse`.
+- Local Workers, Experts and helpers use their exact assigned isolated worktree cwds within that Paseo project. A common project does not mean a shared `main` cwd. Keep each mission's branch, source checkout and unique scratch directory explicit.
 - Runtime root: `/home/code2hack/.local/state/eyebrowse`.
 - Per-version settings: `<runtime-root>/<version>/runtime.json`.
 - Per-run record: `<runtime-root>/<version>/runs/<run-id>/run.json`; ticket evidence and assignments remain under that run.
@@ -20,8 +21,12 @@ Refresh remote refs and identify the actual baseline before planning, dispatch o
 | Governance and canonical agent-message semantics | `AGENTS.md`; agents and operational procedures follow its current revision |
 | Verified operational recipes | This file and the installed skills/scripts; agents load the relevant skill before use |
 | Provider catalog and executable model settings | `~/.pi/agent/models.json` and approved runtime configuration; Pi/provider loaders consume their own settings |
-| Session identity/lifecycle | `CONTRIBUTORS.md` under `AGENTS.md` §15.1; Manager/Planner resolve it before routing |
+| Participant identity/lifecycle | `CONTRIBUTORS.md` under `AGENTS.md` §15.1; retain native session identity and resolve the actual registration before routing |
+| Local process, project/workspace and archive state | Paseo daemon and its registry; inspect the actual agent rather than inferring state from its title |
+| Native Pi session/history | Pi session storage; Paseo owns that session's one local RPC process/controller |
+| Paseo transport binding | Existing runtime records map the native tuple to the verified Paseo host/server, agent ID, project/workspace, cwd and model/effort; Manager procedures resolve the binding before operations |
 | Run approvals, resources, canonical todo metadata and pending requests | Existing run/mission/runtime records; **Manager procedures consume these explicitly** |
+| Message dispatch evidence | The sender's retained intent/body/message ID and Paseo's request receipt; Manager separately verifies recipient acknowledgment, complete report and acceptance |
 | Local todo checklist | Installed `todo` extension's tool-result details in the selected native Pi session branch; its `session_start`/`session_tree` handlers reconstruct the checklist |
 | Browser profile and tab ownership | pi-browser-harness's own configuration/session state, consumed by that extension |
 | Device-screen policy and credential reference | Runtime `screenAccessPolicy`, read by the configured `pi-phone-use` helper |
@@ -33,7 +38,9 @@ The Manager is the coordinated writer for shared dispatch, ownership, failure-hi
 
 ## Runtime and capability preflight
 
-Use the current Owner-approved profile, model, effort, concurrency and alarm settings from runtime and their decision references. Do not restore obsolete defaults from an old worktree, package configuration or conversation summary. Current local profile assignments require `max`; verify the effective setting rather than accepting silent clamping. An Expert or remote/helper assignment needs its own actual capability/resource check, not a guessed default model.
+Use the current Owner-approved profile, model, effort, concurrency and alarm settings from runtime and their decision references. Do not restore obsolete defaults from an old worktree, package configuration or conversation summary, or hard-code one effort level for every role. Verify the effective provider/model/effort after create, import or restart; a sampled session-file preview can omit a later setting change. Correct a mismatch before project work and retain the evidence. An Expert or remote/helper assignment needs its own actual capability/resource check, not a guessed default model.
+
+Agent active-work/wall-clock ceilings and clock-based work checkpoints are not applied under the current Owner policy. This does not remove scoped objectives, failure accounting, concurrency/compute limits, finite individual command/transport/test safety timeouts, or product timing requirements. A client wait timeout is not an agent failure or permission to repeat a possibly accepted operation.
 
 Model catalogs/authentication live in the configured harness/provider stores. A same-session model change is metadata, not a replacement identity or a fresh attempt budget. Availability fallback is allowed only under the applicable current Owner policy; distinguish it from implementation failure. Never silently substitute a provider, model or lower effort. A low quota warning or required-runtime outage is handled through the existing Owner gate, not provider hopping.
 
@@ -47,12 +54,15 @@ Record installed versions/hashes and current results in the run/evidence record 
 - **pi-phone-use:** one real guarded S20 normal PIN-unlock/relock cycle and further bounded setup use. This does not qualify every catastrophic-loss condition or make Wi-Fi continuously reachable.
 - **Feishu:** verified private Owner identity/route, daemon replies, and direct installed-SDK text send/readback with Owner receipt. Owner subsequently reported fixing the notification problem. Do not reopen that resolved notification issue merely because its exact setting change was not supplied; do not claim an agent retest or infer unrelated capabilities from it.
 - **Todo tool:** actual checklist operations and session-branch storage are available. Shared governance metadata, transition decisions and request routing are not supplied by the checklist tool itself.
+- **Paseo/Pi:** a disposable local Pi agent was newly created through the supported creation API without an initial prompt, registered before its correlated assignment, verified in its isolated cwd, and safely archived after its probe; runtime cessation and retained history were checked. Separate import/archive-restore and basic Manager↔Worker SDK steering evidence also exists. These results cover the exercised paths, not every provider, creation retry, migration, busy/permission/archive race, restart, parent-retirement or RPC UI path. Record the actual installed versions, invocation and case evidence in the run record.
+
+Use the existing Paseo control plane and qualified SDK procedure for local pi-agent messages. Do not install another messenger/task engine, enable its autonomous workers, or expose additional lifecycle tools merely because they are available. Installed source code is not proof that a tool is injected into the current agent. Any proposed alternative returns through the applicable operational/implementation authority and qualification gates.
 
 Skill-loader success is not end-to-end orchestration acceptance. Keep the qualification status of notifier, inbound Owner control, exact-candidate local verification, Expert handback and restart recovery explicit. An unqualified capability blocks operations that depend on it; it is not permission to invent a replacement framework or resume an Owner-paused ticket.
 
 ## Canonical todos and the installed checklist
 
-The installed tool is `todo`, with actions `list`, `add`, `toggle`, `clear`; `/todos` displays the current session branch in the TUI. Its source is currently `~/.pi/agent/extensions/todo.ts`. Inspect the actual installed implementation before depending on changed behavior.
+The installed tool is `todo`, with actions `list`, `add`, `toggle`, `clear`. Use its tool interface in Paseo-backed Pi sessions; `/todos` is a TUI display, not the required management surface or a shared scheduler. Its source is currently `~/.pi/agent/extensions/todo.ts`. Inspect the actual installed implementation before depending on changed behavior.
 
 It stores `{ id, text, done }`, the next numeric ID and action/error details in native session tool-result details. IDs and state are local to that session branch; `clear` resets IDs. `toggle` is not idempotent. The tool has no shared assignment, failure-history, candidate, helper, approval or request-correlation fields.
 
@@ -76,23 +86,52 @@ Use `AGENTS.md` §§5–6 for version/ticket/todo planning and batch authority. 
 
 Include the ticket/plan/todo, exact code baseline, actual recipient tuple, write ownership, worktree/scratch or verified remote capabilities, resources, current history, evidence location and reporting/Owner-contact paths in the assignment. Account for helper and Expert resource needs within the approved limit; serialize or obtain a necessary exception rather than bypassing the limit by renaming a role.
 
-### Local launch
+### Local create/import in Paseo
 
-Keep local agents in separate visible windows in Manager's tmux session. Resolve explicit pane IDs and record them against registry tuples; labels alone are not routing/authentication. Use the installed interactive-shell tool for supervised/dispatch launches, not a hidden nested agent.
+Local project-agent instances live in Paseo, not tmux, standalone Pi TUIs, or hidden nested agent processes. Paseo is the sole controller of their Pi RPC sessions. Ordinary non-agent shell commands may still run as tools; they do not authorize launching an unmanaged agent.
 
-Manager-resolved template; quote all assigned values safely:
+Before create/import, the Manager:
 
-```bash
-session=$(tmux display-message -p -t "$TMUX_PANE" '#{session_id}')
-scratch=$(mktemp -d "/tmp/eyebrowse-${mission}.XXXXXXXX")
-git worktree add -b "$branch" "$worktree" "$base"
-printf -v launch '%q ' env "TMPDIR=$scratch" pi --provider "$provider" \
-  --model "$model" --thinking max --session "$session_file" --name "$name"
-tmux new-window -d -P -F '#{pane_id}' -t "$session" -n "$window" -c "$worktree" \
-  "exec $launch"
+1. Resolves the authorized role/profile, current registry/assignment, exact baseline, isolated branch/worktree and unique mission scratch path. Inspect the actual EyeBrowse Paseo project ID; do not trust a display name alone or create a new project merely because a worktree has a different basename.
+2. Creates/selects an EyeBrowse workspace bound to that exact worktree cwd. Preserve the source checkout; do not move Worker operations into Manager's `main` directory for visual grouping. Paseo's explicit import workspace must match the import cwd.
+3. For an existing native session, confirms a safe stopped former process and preserves its file/history and pending requests before import. Import resumes a process; it does not attach to an already-running TUI. Never import the same native session concurrently or blindly repeat an import with uncertain outcome.
+4. Uses the installed, qualified Paseo create/import API with explicit project/workspace placement. For Pi import, its provider handle is the verified native session-file path, not a guessed UUID/path. Where the CLI cannot express the required placement, use the existing SDK rather than relabeling an incorrectly placed agent.
+5. Obtains and checks the actual Paseo ID and native session ID, provider/model/effort, cwd/branch and lifecycle. Register a genuinely new participant before project work; a non-mutating setup exchange may establish otherwise unavailable identity. Reusing a native session does not create a fresh failure allowance. Record the binding in runtime and verify it after every change.
+6. Sends the complete assignment only after registration/readiness and verifies a correlated startup receipt. A visible Paseo tab, API acceptance, imported transcript or `idle` flag alone is not startup/capability confirmation.
+
+For a **new** local Pi agent, use the qualified supported creation API, not an import as a substitute. Persist the exact options and a fresh logical creation idempotency key before calling. In the inspected API, keyed creation requires sending the initial prompt separately; omit `initialPrompt`:
+
+```js
+const created = await client.createAgent({
+  config: {
+    provider: 'pi',
+    cwd: assignedWorktree,
+    title: assignedName,
+    model: ownerSelectedModel,
+    thinkingOptionId: ownerSelectedEffort,
+  },
+  workspaceId: verifiedWorkspaceId,
+  callerAgentId: verifiedManagerPaseoId,
+  env: { TMPDIR: assignedScratch },
+  idempotencyKey: createIntent.idempotencyKey,
+});
 ```
 
-Start a new session idle, obtain its native ID, and register the actual participant before project work. Supply the complete assignment only after registration and verify receipt plus actual `PI_SESSION_ID`, `PI_PROVIDER`, `PI_MODEL` and `PI_REASONING_LEVEL`. A created window is not startup confirmation. Do not fork/revive/replace sessions or reset work history implicitly.
+Inspect the returned actual native/Paseo identities and configuration, register the participant, then send the separate correlated assignment using the delivery procedure below. A native session file may materialize only on that first message; an API-supplied path is not an already-verified file header. Verify the header when it exists. Preserve creation options/results and distinguish a creation receipt from an assignment receipt and finished work. On an uncertain creation outcome, reconcile the same key/result rather than issuing another creation with a new key. The disposable check established one successful creation/registration/probe/archive path, not duplicate/crash-recovery behavior or every model/provider.
+
+Reserve import for an explicitly authorized **existing-session migration**. The inspected SDK import shape is:
+
+```js
+// Existing verified Paseo connection; native file, workspace and lifecycle checked.
+await client.importAgent({
+  provider: 'pi',
+  sessionId: nativeSessionFile,
+  cwd: assignedWorktree,
+  workspaceId: verifiedWorkspaceId,
+});
+```
+
+Do not run this example against a live or retired session without the corresponding authorized migration/reactivation. Snapshot/reconcile unexpected existing imports rather than resetting/discarding state. Keep selected command paths, installed SDK/CLI versions and actual executable evidence in the operational record, not credentials in the document.
 
 ### Remote implementer and local helper
 
@@ -106,17 +145,36 @@ On `CANDIDATE_READY`, verify the remote SHA before local verification. Record ex
 
 **Use the sole canonical envelope in `AGENTS.md` §15.3.** DEV, skills and adapters implement it by reference, not with an independently maintained normative format. Preserve visible registered identity, authoritative tuples and request/reply correlation through every transport. Check registry status and resolve contradictory identity before acting.
 
-For tmux, send the complete prepared message literally, then submit Enter as a separate delivery action:
+### Local pi-agent delivery
 
-```bash
-tmux send-keys -t "$recipient_pane" -l "$message"
-# Separate submission after the literal text has reached the editor:
-tmux send-keys -t "$recipient_pane" Enter
+Use Paseo's existing SDK, not `tmux send-keys` or a second direct Pi RPC controller. Resolve the installed connector/API from the qualified installation recorded in runtime; version changes require affected requalification. The following is an API pattern, not a claim that a routing/outbox service exists automatically:
+
+```js
+// Existing verified Paseo connection, after the checks below and intent save.
+await client.sendAgentMessage(recipient.paseoAgentId, canonicalEnvelope, {
+  messageId: intent.messageId,
+  activeTurnBehavior: 'steer',
+});
 ```
+
+For each logical send:
+
+1. Resolve the current registered role/native tuple and its exact Paseo host/server/agent binding, assignment and candidate. Inspect actual provider/native persistence identity and project/workspace/cwd. Stop on disagreement; names, prefixes or labels are not substitutes.
+2. Check canonical lifecycle/assignment and actual Paseo archive/permission state. Do not send to retiring, retired, archived or otherwise ineligible actors as a way to wake them. Explicit reactivation is a separate assignment. Serialize send/retirement changes and reconcile manual changes. Defer routine delivery across pending Owner permission/authentication UI rather than clearing or denying it incidentally.
+3. Persist the canonical Request-ID, recipient, exact message body and stable transport `messageId` before submission. Keep that same ID/body if reconciling the same logical send. Record API acceptance separately from a recipient acknowledgment, final report and acceptance.
+4. Use explicit steering only on the qualified Pi/provider path. It enters at a supported boundary, not necessarily after the entire task settles. Non-steerable/slash-command inputs can fall back to interruption; ordinary peer messages are envelopes, not slash commands. If safe busy delivery is not established, defer it to a verified settled state/event. Cancellation/replacement is an explicit separate operation, not the default for a routine report.
+5. On rejection, connection loss or unknown outcome, inspect the correlated receipt/history before another action. The SDK request journal can deduplicate an identical completed send, reject a conflicting body, or report an unknown crash-window outcome. Unknown is not permission to mint a new ID or replay the request.
+6. The recipient proactively sends a correlated result through the same checked route. Do not synchronously wait on each other in a cycle. Use event-driven result handling; retain pending state across reconnect/restart and inspect only as required for recovery or an Owner status request.
+
+In the inspected Paseo implementation, plain CLI `send --no-wait` changes waiting, **not** the default interrupt policy; it does not expose the stable message ID used above. Sending can also unarchive an agent and clear pending permissions. The public send path has no atomic fail-if-archived guarantee. These are reasons for explicit lifecycle coordination and receiver-side assignment checks, not claims of a security boundary against another process sharing the host account.
+
+Built-in `send_agent_prompt` and finish notifications may be used only if actually injected and qualified with the required semantics. Their defaults must not be assumed equivalent to this SDK recipe. A finish notice may be truncated and its subscription may not survive restart. Obtain the full correlated result when needed; completion notices, RPC `agent_end`, and client wait timeouts are not proof of settled work or product success. Pi's `agent_settled` distinguishes final settling from automatic continuations.
+
+### Remote conversations and handoffs
 
 For ChatGPT, use the verified skill's DOM/AX path. Check the exact conversation, existing draft and in-flight generation before mutation. Submit once and verify the corresponding new turn. A long response can use bounded read-only observation/event notification; do not repeatedly ask an agent for progress. Preserve pending request and last verified message IDs across restart and reconcile possible success before resending. A local watcher, browser response, or GitHub post is not by itself acceptance of the requested work.
 
-For each handoff, record send, receipt, returned evidence and verification separately. Retry the same logical request with its existing correlation identity. Reject duplicate/stale results as new dispatch, failure, approval or ownership changes. End the Manager dispatch turn after startup/receipt and actionable reports are handled; use meaningful reports/events to resume coordination.
+For each handoff, record send, receipt, returned evidence and verification separately. When a retry is authorized after reconciliation, retain the logical request's existing correlation identity and unchanged body. Include the applicable assignment revision and reject stale revisions at the receiver. Reject duplicate/stale results as new dispatch, failure, approval or ownership changes. End the Manager dispatch turn after startup/receipt and actionable reports are handled; use meaningful reports/events to resume coordination.
 
 ### Expert handoff and Worker return
 
@@ -125,6 +183,22 @@ When the canonical record reaches the condition in `AGENTS.md` §14, resolve a c
 The Manager coordinates product findings; Worker/Expert owns diagnosis and correction. Manager may perform authorized operational setup/recovery, but does not become the product-code or failing-acceptance-test troubleshooter.
 
 Verify the Expert's exact pushed candidate, todo-specific evidence, required local-helper result and continuation notes. Resolve required review findings under `AGENTS.md` §13. Reconcile workspace state without discarding uncommitted work, relinquish Expert write ownership, and explicitly return the later todos to the recorded Worker. Confirm receipt before resuming it. Retire only assignments that actually end; a ticket Worker returning from helper duty is not retired. This handback is not ticket closure or an extra whole-ticket review ceremony.
+
+### Restart, migration and retirement
+
+Keep exactly one live local process/controller per native session and one active project-wide Manager. A stopped process, an imported session, its Paseo transport ID and a completed continuity check are separate facts. Preserve the actual session, candidate, source ownership, pending request/reply IDs and recovery evidence; do not infer uninterrupted execution from an imported transcript. Verify model/effort and tool availability after startup, including RPC-specific UI limitations. Do not revive old TUI routes as an implicit fallback.
+
+Before Manager restart/handoff/archive, reconcile active child assignments and remote conversations. Browser-harness shutdown can close its owned tabs; preserve exact ChatGPT URLs and in-flight request state, and use an authorized, qualified ownership handoff or settled/recoverable continuation before closing them. Reopen the same conversation when needed, not a replacement conversation. Never acquire unrelated tabs, profiles or credentials by bypassing ownership checks. A prior one-off browser preservation exercise is not a universal restart guarantee.
+
+Retirement is completed through these coordinated steps:
+
+1. Block new dispatch to the retiring actor in the canonical runtime record; settle or explicitly cancel its assigned work safely.
+2. Preserve final source/evidence and verify required cleanup, resources and device lock state. An idle UI does not prove that owned background/device operations ended.
+3. Inspect Paseo parent/child relationships. Detach or explicitly transfer still-assigned children before archiving a parent/Manager; verify their continued assignments/operation and the successor's receipt/bindings when handing over a Manager. Keep one active coordinator. Runtime archival can cascade; UI parentage is not authority to cancel another assignment.
+4. Archive the **exact Paseo agent**, through the qualified agent-archive operation, and verify its archived state and runtime cessation. Do not substitute agent deletion, workspace/project archival, or Git worktree removal.
+5. Complete contributor retirement and closeout records while retaining native identity, transport/history references and required artifacts. An archive failure leaves retirement/cleanup unresolved. A paused/HOLD actor is not automatically retired.
+
+Archive is not acceptance, a counter reset, a source handback or permission to delete data. Do not send a routine message to an archived actor: reactivation requires its own explicit authority/assignment. Historical retired sessions are not automatically relaunched/imported for cosmetic completeness. Legacy unmanaged instances require an explicit safe migration/retirement disposition, not continued project work in tmux. Empty old Paseo groups may reference a still-used worktree; do not destructively clean them up based only on an empty agent list.
 
 ## Android connection and screen workflow
 
@@ -189,15 +263,15 @@ Use the existing approved ADB/harness procedures. `agent-device` was evaluated a
 
 ## Owner contact, alarms and sudo
 
-Use `AGENTS.md` §7 for the distinction between information, action gates and request-bound approval. A human Owner does not need a fabricated agent tuple. The current authenticated Owner channel and permitted destination must be recorded and checked before accepting instructions or applying approvals.
+Use `AGENTS.md` §7 for the distinction between information, action gates and request-bound approval. A human Owner does not need a fabricated agent tuple. Paseo is the local agent visibility/control surface; the current authenticated Owner channel and permitted destination must still be recorded and checked before accepting instructions or applying approvals. A peer envelope, Paseo finish notification, label or API delivery receipt is not Owner authorization. Preserve the human-origin/operation binding; do not claim that shared-account shell/API access provides independent authentication.
 
 ### Feishu: notification is not automatic Manager control
 
 Keep credentials and exact private destination outside repository/public evidence. Reuse the verified Owner route only after matching it to the authorized Owner identity/destination; never fall back to an arbitrary first session/chat or broadcast registered routes.
 
-The prepared direct SDK send/readback and Owner receipt establish that narrow text path. The exposed `feishu_send_local_file` tool is daemon-session-only and is not a generic TUI Owner notifier; direct SDK sends did not traverse its persistent outbox. A reusable notifier must name its real consumer and qualify destination checks, request identity, send/result recording, bounded recovery and uncertain-send reconciliation before unattended reliance. Record API acceptance, stored-message readback and human receipt separately.
+The prepared direct SDK send/readback and Owner receipt establish that narrow text path. The exposed `feishu_send_local_file` tool is daemon-session-only and is not qualified as a generic Owner notifier for Paseo-backed Pi sessions; direct SDK sends did not traverse its persistent outbox. A reusable notifier must name its real consumer and qualify destination checks, request identity, send/result recording, bounded recovery and uncertain-send reconciliation before unattended reliance. Record API acceptance, stored-message readback and human receipt separately.
 
-Owner reported fixing Feishu notifications. That observation does not qualify voice calling, urgency permissions, the TUI tool, inbound routing, or permanent reconnect behavior. Do not add phone-urgency permission or consume its allowance merely to obtain a notification. Discord is not part of the current adopted route.
+Owner reported fixing Feishu notifications. That observation does not qualify voice calling, urgency permissions, delivery from every agent surface, inbound routing, or permanent reconnect behavior. Do not add phone-urgency permission or consume its allowance merely to obtain a notification. Discord is not part of the current adopted route.
 
 Automated project Owner-control admission is **not qualified or activated** by the current preparation. Until it is, use the established authenticated Manager channel for decisions; a Feishu-created model session is not this registered Manager. Before enabling that path, validate sender AND permitted destination, duplicate/stale request handling, approval binding to the actual operation/candidate, routing to the current Manager tuple, and confirmed receipt. An Owner binding is not an access-control allowlist; inspect the actual bridge configuration/consumers rather than assuming it is.
 
@@ -213,16 +287,11 @@ Read the current run's explicit Owner alarm choice before use; prior-run permiss
 
 The script was checked with `bash -n`; it defaults to six seconds, reads `~/Music/super-mario-alarm.mp3`, and uses FFmpeg plus `aplay -D plughw:0,3`. Physical audibility needs Owner confirmation. Report alarm failure in writing without unbounded retries. Do not sound it for routine informational Expert handoff or use notification receipt as approval.
 
-### Sudo pane
+### Owner-controlled privileged terminal
 
-For an approved sudo escalation, use a separate pane in Manager's current tmux window, explain the exact command/purpose, and let Owner enter the password directly. Do not capture or request it in chat/logs.
+For an approved sudo escalation, explain the exact command and purpose and present a dedicated Owner-controlled interactive terminal. A Paseo terminal may be used only after its password-echo, input/output logging and Owner-access behavior are qualified; a terminal creation success alone is insufficient. If that path is unavailable, ask the Owner to perform the specific command directly in a trusted host terminal, or remain at the gate. This human terminal is not an alternative residence for project agents.
 
-```bash
-manager_window=$(tmux display-message -p -t "$TMUX_PANE" '#{window_id}')
-tmux split-window -h -P -F '#{pane_id}' -t "$manager_window" -c "$worktree"
-```
-
-Use interactive execution for the prompt. Record only the non-secret outcome and close only that operation's pane afterward. Resource approval does not waive other Owner gates.
+The Owner enters any password directly. Never request, type, capture, retain or relay it through agent messages, `send_terminal_keys`, tool arguments, screenshots or logs. Qualify with non-secret simulated input before relying on a new terminal adapter; do not use a real credential as a probe. Record only the non-secret outcome, verify the resulting state, and close only the operation-owned terminal. Resource approval does not waive other Owner gates.
 
 ## Qualification, document review and cutover
 
@@ -235,7 +304,13 @@ Before activating the affected workflow, exercise small disposable setup cases�
 - exact-candidate cloud/local-helper handoff and verified return to the recorded Worker;
 - pending reply, Expert assignment, local-verification wait and unacknowledged handback across restart;
 - no duplicate dispatch, simultaneous writers, lost counters or stale approval consumption;
-- scoped Owner notifier/admission failures and safe screen-cleanup failure reporting.
+- scoped Owner notifier/admission failures and safe screen-cleanup failure reporting;
+- correct EyeBrowse project/workspace/worktree binding on create/import, with no accidental `main` writes or duplicate native-session process;
+- actual busy-receiver steering versus interruption/fallback, pending permission UI preservation, stable-ID deduplication/conflict/unknown-outcome recovery, and full-result correlation;
+- retired/archived recipient rejection, safe parent/child retirement, verified archival, and non-secret Owner-terminal privacy checks;
+- Paseo/SDK/Pi reconnect and Manager handoff with pending results, native identity/model preservation and remote-browser ownership/continuity.
+
+These setup cases do not create an aggregate agent work-time deadline. Keep individual commands and recovery operations finite and scoped. An unavailable affected capability remains explicitly gated, not falsely marked qualified by documentation or API acceptance.
 
 State the boundary of each check. Fresh-process record reconstruction is not a live multi-agent restart test; a tabletop/data simulation is not an actual Expert/device mission. New tracked harness functionality follows Planner ticketing and independent review; small operational preparation does not authorize a framework rewrite.
 
