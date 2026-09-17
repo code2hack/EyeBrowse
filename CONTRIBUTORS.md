@@ -165,6 +165,16 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "model": "GPT-5.6 Sol / gpt-5-6-thinking / Extra High",
     "name": "Expert",
     "status": "active"
+  },
+  {
+    "role": "Worker",
+    "scope": "Owner-authorized disposable Paseo creation/lifecycle qualification; no product work",
+    "host": "u4090",
+    "runtime": "pi",
+    "id": "01a0adea-daa5-76bc-838a-c7eb0083814b",
+    "model": "GLM-5.3-Flash-EXL3 / max",
+    "name": "Paseo-Create-Setup-1",
+    "status": "active"
   }
 ]
 ```
