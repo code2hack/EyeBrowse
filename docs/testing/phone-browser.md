@@ -191,16 +191,18 @@ The instrumented suite (`BrowserInstrumentedTest`) covers: fresh start, address 
 activation, `target=_blank` and gesture popup in the same tab, unsolicited popup no-op, real swipe
 scrolling, recreation retention (document, field values, load count), simulated process-restart
 recovery without auto-load, untrusted-HTTPS refusal, controlled HTTP failure, unsupported
-destinations, and the harmless POST correlation (one submission, field names only).
+destinations, the harmless POST correlation (one submission, field names only), and zero-dispatch
+used-path regressions for a DOM-only tap-target move and document-marker change across the final
+readiness boundary.
 
 Input/evidence boundaries:
 
-* Activations use `Instrumentation.sendPointerSync` with `SOURCE_TOUCHSCREEN` touch events. This is
-  synthetic instrumented input: it establishes ordinary activation (links, buttons, form submit,
-  swipe) in the focused EyeBrowse window, but it is **not** human touch, IME or physical-display
-  evidence. Prepare focus and geometry before one DOWN/UP attempt. Any partial/uncertain failure
-  ends that attempt and is recorded; focus reacquisition never licenses replay. Input API return is
-  distinguished from the observed fixture effect.
+* Activations use `Instrumentation.sendPointerSync` with pointer/touch events. This is synthetic
+  instrumented input: it establishes ordinary activation (links, buttons, form submit, swipe) in the
+  focused EyeBrowse window, but it is **not** human touch, IME or physical-display evidence. Prepare
+  focus and geometry before one input attempt. Any partial/uncertain failure ends that attempt and is
+  recorded; focus reacquisition never licenses replay. Input API return is distinguished from the
+  observed fixture effect.
 * Page reads and fixture setup use `WebView.evaluateJavascript` from the androidTest APK only. The
   pinned `espresso-web:3.6.1` was dropped as a simplification approved by the Planner (clarification
   C1). Its active evaluation path already calls `WebView.evaluateJavascript`, so the earlier note here
@@ -231,25 +233,35 @@ metadata is retained in memory and flushed to the instrumentation stream at clas
 sent through blocking HTTP/file I/O inside the deadline; process loss before flush may lose those
 explicitly deferred rows. Successful case trace HTTP connect/read still has a 5 s timeout.
 
-**Open scoped review finding (I5-T01 correction checkpoint):** the native refresh described below
-is not yet complete DOM/target revalidation. The DOM observation still precedes milestone I/O and,
-for swipe, Espresso's pre-action idle boundary. A DOM-only replacement/moved target with native
-facts unchanged can therefore reach dispatch. R1 remains unresolved; this checkpoint is not
-pre-device clearance. Diagnostic JS completion now additionally rechecks the weak intended
-Activity/WebView ownership at callback admission, including replacement within an open test;
-already-dispatched JS still cannot be recalled.
+**I5-T01 correction history:** independent review of `cc1eb56` kept R1 open because the purported
+final DOM sample was still followed by a known main-thread boundary: swipe's
+`UiController.loopMainThreadForAtLeast()` performs a subsequent idle drain, while tap performed a
+later `ActivityScenario.onActivity` native read. A DOM-only document/target change in those intervals
+could authorize stale input even when native mapping remained equal. The round2 JVM supplied-snapshot
+classifier tests therefore did not prove the used Android ordering. R2's weak actual-Activity/WebView
+completion fence was source-cleared and is retained.
 
-The swipe uses Espresso 3.6.1's same `Swipe.FAST`, `Press.FINGER`, and `swipeUp` coordinate
-providers: bottom-center translated by -0.083 of height to top-center. Invoke the underlying swipe
-once, not `GeneralSwipeAction`'s three-try wrapper on FAILURE. A returned failure is an explicit
-single-swipe failure (Espresso may not expose its internal injection exception); any exception
-that escapes is rethrown unchanged. These are intended provider coordinates, not independent
-dispatcher observations. The shared guard checks both endpoints/full straight path
-against current visible screen bounds and IME exclusion. Empty/clipped/unknown geometry stops the
-action. Tap target DOM geometry/identity is reread without scrolling after focus preparation; both
-tap and swipe revalidate Activity/view identity, focus/attachment, bounds/mapping, display, scroll
-and IME/insets after slow work. There is no additional focus wait or evidence write between that
-final readiness decision and dispatch, and no replay after an uncertain result.
+Round3 removes those known callback-to-boundary gaps in the used test paths. After the final
+blocking evidence/focus work, each path performs its last explicit main-idle boundary and then
+`captureFinalReadiness` obtains the returned DOM value and complete native Activity/view state in the
+same WebView result callback. The test thread performs no later `ActivityScenario.onActivity`,
+Espresso `UiController` main-loop pump, blocking evidence write or focus wait before the shared
+`DispatchReadiness` decision and single input attempt. The new Android seam regressions deliberately
+change only target geometry or the document marker after the pre-boundary sample and require
+`Dispatch.stage == "not-attempted"` with zero click/scroll effect. They are source definitions until
+separately authorized instrumentation execution; source text is not a device PASS.
+
+The swipe preserves Espresso 3.6.1's exact `swipeUp` coordinate providers (bottom-center translated
+by `-0.083f` of view height to top-center), `Press.FINGER` precision, ten interpolated move points and
+the 150 ms FAST timing shape. It no longer calls `Swipe.FAST`/`UiController` after the decisive sample,
+because that idle-pumping path was the reviewed R1 seam. `SingleShotSwipe` sends one sequence through
+the same target-scoped instrumentation pointer API used by tap, with no GeneralSwipeAction retry,
+second automation client, UiAutomation connection, privilege or replay. These remain intended
+provider coordinates, not independently observed dispatcher coordinates. The shared guard checks
+both endpoints/full straight path against current visible screen bounds and IME exclusion;
+empty/clipped/unknown geometry stops the action. Tap target DOM geometry/identity and swipe
+document/viewport facts are revalidated together with current Activity/view identity, focus,
+attachment, mapping, display, scroll and IME/insets after the known slow/idle work.
 
 Run required software checks on the available real devices and use reserved supplemental window
 conditions as specified by the current plan. Unavailable physical-only observations are
