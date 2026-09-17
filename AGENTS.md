@@ -71,7 +71,7 @@ These are distinct activities:
 
 ### 5.1 Version plan
 
-The Planner prepares a version plan when explicitly requested by the Project Owner. It identifies the version/specification baseline, included/excluded scope, milestone/ticket breakdown, dependencies, version-level acceptance evidence, anticipated human gates, and unresolved decisions.
+The Planner prepares a version plan when explicitly requested by the Project Owner. It identifies the version and specification baseline, included/excluded work, milestone or ticket breakdown, planned dependencies, version-level acceptance evidence, risks, and anticipated human gates.
 
 The Planner presents the version plan to the Owner for review. Version implementation requires Owner authorization of that version's scope and plan. A version plan does not replace its tickets' detailed Worker plans.
 
