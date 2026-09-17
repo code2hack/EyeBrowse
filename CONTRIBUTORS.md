@@ -18,13 +18,13 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Manager",
-    "scope": "project-wide",
+    "scope": "outgoing Manager; bounded handoff/retirement only",
     "host": "u4090",
     "runtime": "pi",
     "id": "01a0864a-e865-7447-96f3-6b653a20d3ac",
     "model": "gpt-6-astra",
     "name": "EyeBrowse-Manager",
-    "status": "active"
+    "status": "paused"
   },
   {
     "role": "Worker",
@@ -178,13 +178,13 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Manager",
-    "scope": "project-wide successor; read-only handoff standby until explicit cutover",
+    "scope": "project-wide",
     "host": "u4090",
     "runtime": "pi",
     "id": "01a0b008-4721-73da-b70e-2870ec36f8ab",
     "model": "GLM-5.3-Flash-EXL3 / max",
     "name": "EyeBrowse-Manager-GLM",
-    "status": "paused"
+    "status": "active"
   }
 ]
 ```
