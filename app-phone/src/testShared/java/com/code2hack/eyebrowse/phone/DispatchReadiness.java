@@ -8,8 +8,11 @@ import java.util.function.LongSupplier;
  *
  * <p>The caller samples DOM and native state after its last known slow/idle/evidence boundary,
  * then calls one of the dispatch methods below without another wait or observation. A DOM-only
- * document/target change therefore stops before {@link HarnessProtocol.Dispatch} begins, even when
- * the Activity/WebView/native mapping remains equal. This class is never part of the app APK.
+ * document/target change therefore stops before {@link HarnessProtocol.Dispatch} begins. When a
+ * caller deliberately recomputes the path from that final native snapshot, benign earlier mapping
+ * drift does not force reuse of stale coordinates: ownership/display must still match preparation,
+ * the final state must itself be safe, and the exact DOM target/document must still match.
+ * This class is never part of the app APK.
  */
 final class DispatchReadiness {
     private DispatchReadiness() {}
@@ -69,6 +72,42 @@ final class DispatchReadiness {
         }
     }
 
+    /**
+     * Final admission for a path recomputed from {@code currentNative}. The old snapshot is used only
+     * to fence the intended Activity/WebView/display identity; mapping/bounds/insets may legitimately
+     * settle before the final callback because the caller is not reusing the old coordinates.
+     */
+    static String recomputedFinalReason(InputSafety.State preparedNative,
+            InputSafety.State currentNative, InputSafety.Path currentPath,
+            DomState preparedDom, DomState currentDom) {
+        if (preparedNative == null || currentNative == null) {
+            return "input readiness unavailable";
+        }
+        String unsafe = currentNative.unsafeReason(currentPath);
+        if (unsafe != null) {
+            return unsafe;
+        }
+        if (preparedNative.activity != currentNative.activity
+                || preparedNative.target != currentNative.target) {
+            return "input owner changed after preparation";
+        }
+        if (preparedNative.displayId != currentNative.displayId) {
+            return "input display changed after preparation";
+        }
+        return preparedDom == null ? "DOM readiness unavailable"
+                : preparedDom.revalidationReason(currentDom);
+    }
+
+    static void requireRecomputedReady(InputSafety.State preparedNative,
+            InputSafety.State currentNative, InputSafety.Path currentPath,
+            DomState preparedDom, DomState currentDom) {
+        String reason = recomputedFinalReason(preparedNative, currentNative, currentPath,
+                preparedDom, currentDom);
+        if (reason != null) {
+            throw new IllegalStateException(reason);
+        }
+    }
+
     static void actionOnceIfReady(InputSafety.State preparedNative, InputSafety.State currentNative,
             InputSafety.Path path, DomState preparedDom, DomState currentDom,
             HarnessProtocol.Dispatch dispatch, Runnable action, LongSupplier clock) {
@@ -80,6 +119,22 @@ final class DispatchReadiness {
             InputSafety.Path path, DomState preparedDom, DomState currentDom,
             HarnessProtocol.Dispatch dispatch, Runnable down, Runnable up, LongSupplier clock) {
         requireReady(preparedNative, currentNative, path, preparedDom, currentDom);
+        dispatch.tapOnce(down, up, clock);
+    }
+
+    static void actionOnceIfRecomputedReady(InputSafety.State preparedNative,
+            InputSafety.State currentNative, InputSafety.Path currentPath,
+            DomState preparedDom, DomState currentDom, HarnessProtocol.Dispatch dispatch,
+            Runnable action, LongSupplier clock) {
+        requireRecomputedReady(preparedNative, currentNative, currentPath, preparedDom, currentDom);
+        dispatch.actionOnce(action, clock);
+    }
+
+    static void tapOnceIfRecomputedReady(InputSafety.State preparedNative,
+            InputSafety.State currentNative, InputSafety.Path currentPath,
+            DomState preparedDom, DomState currentDom, HarnessProtocol.Dispatch dispatch,
+            Runnable down, Runnable up, LongSupplier clock) {
+        requireRecomputedReady(preparedNative, currentNative, currentPath, preparedDom, currentDom);
         dispatch.tapOnce(down, up, clock);
     }
 }
