@@ -1,6 +1,6 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android") version "1.8.22"
+    id("org.jetbrains.kotlin.android") version "2.2.21"
 }
 
 android {
@@ -40,6 +40,8 @@ dependencies {
     implementation(project(":core:browser"))
     implementation("androidx.activity:activity:1.9.3")
     implementation("androidx.core:core:1.15.0")
+    // Keep the pre-existing runtime stdlib line while using a newer compatible compiler plugin.
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.8.22")
 
     constraints {
         // androidx.lifecycle 2.6.2 -> kotlinx-coroutines-android 1.6.4 still requests the split
