@@ -122,11 +122,13 @@ final class DispatchReadiness {
     static final class CallbackHandoff {
         private final AtomicReference<Throwable> primary = new AtomicReference<>();
 
-        void capture(CallbackWork work) {
+        boolean capture(CallbackWork work) {
             try {
                 work.run();
+                return true;
             } catch (Exception | AssertionError failure) {
                 primary.compareAndSet(null, failure);
+                return false;
             }
         }
 
