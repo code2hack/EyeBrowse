@@ -486,7 +486,7 @@ public class BrowserInstrumentedTest {
                     });
             recordInputEvidence("swipe final-sample intended=" + current.path + " "
                     + current.input.describe());
-        } catch (RuntimeException | AssertionError dispatchFailure) {
+        } catch (Exception | AssertionError dispatchFailure) {
             recordFailureEvidence("swipe.perform stage=" + dispatch.stage, dispatchFailure, expectedLocation);
             throw dispatchFailure;
         }
@@ -793,7 +793,7 @@ public class BrowserInstrumentedTest {
 
     private void sendTap(InputContext prepared, DispatchReadiness.DomState preparedDom,
             String elementId, InputSafety.Path point, HarnessProtocol.Dispatch dispatch,
-            InputSeamHook seamHook) {
+            InputSeamHook seamHook) throws Exception {
         UiController controller = captureUiController(prepared);
         recordInputEvidence("tap intended=" + point + " " + prepared.describe()
                 + " dom=" + preparedDom.describe());
@@ -834,7 +834,7 @@ public class BrowserInstrumentedTest {
                     });
             recordInputEvidence("tap final-sample intended=" + current.path + " "
                     + current.input.describe());
-        } catch (RuntimeException | AssertionError failure) {
+        } catch (Exception | AssertionError failure) {
             recordFailureEvidence("tap-dispatch stage=" + dispatch.stage, failure, null);
             throw failure;
         }
@@ -947,13 +947,13 @@ public class BrowserInstrumentedTest {
      * and the supplied admission/input action runs before that callback returns to the main looper.
      */
     private static FinalReadiness captureFinalReadiness(InputContext prepared, String expression,
-            FinalPathSampler pathSampler, FinalAction action) {
+            FinalPathSampler pathSampler, FinalAction action) throws Exception {
         MainActivity activity = (MainActivity) prepared.state.activity;
         WebView view = (WebView) prepared.state.target;
         AtomicReference<String> dom = new AtomicReference<>();
         AtomicReference<InputContext> input = new AtomicReference<>();
         AtomicReference<InputSafety.Path> path = new AtomicReference<>();
-        AtomicReference<Throwable> failure = new AtomicReference<>();
+        DispatchReadiness.CallbackHandoff handoff = new DispatchReadiness.CallbackHandoff();
         CountDownLatch done = new CountDownLatch(1);
         InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
             try {
@@ -963,21 +963,24 @@ public class BrowserInstrumentedTest {
                 }
                 view.evaluateJavascript(expression, value -> {
                     try {
-                        String currentDom = decodeJsValue(value);
-                        InputContext currentInput = readInputContext(activity, view);
-                        InputSafety.Path currentPath = pathSampler.sample(view, currentInput, currentDom);
-                        dom.set(currentDom);
-                        input.set(currentInput);
-                        path.set(currentPath);
-                        action.run(currentDom, currentInput, currentPath);
-                    } catch (RuntimeException | AssertionError unavailable) {
-                        failure.set(unavailable);
+                        handoff.capture(() -> {
+                            String currentDom = decodeJsValue(value);
+                            InputContext currentInput = readInputContext(activity, view);
+                            InputSafety.Path currentPath =
+                                    pathSampler.sample(view, currentInput, currentDom);
+                            dom.set(currentDom);
+                            input.set(currentInput);
+                            path.set(currentPath);
+                            action.run(currentDom, currentInput, currentPath);
+                        });
                     } finally {
                         done.countDown();
                     }
                 });
             } catch (RuntimeException | AssertionError unavailable) {
-                failure.set(unavailable);
+                handoff.capture(() -> {
+                    throw unavailable;
+                });
                 done.countDown();
             }
         });
@@ -989,9 +992,7 @@ public class BrowserInstrumentedTest {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("interrupted while sampling final readiness", interrupted);
         }
-        Throwable unavailable = failure.get();
-        if (unavailable instanceof RuntimeException) throw (RuntimeException) unavailable;
-        if (unavailable instanceof AssertionError) throw (AssertionError) unavailable;
+        handoff.rethrowIfPresent();
         if (input.get() == null || path.get() == null) {
             throw new IllegalStateException("final input readiness unavailable");
         }
