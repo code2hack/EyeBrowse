@@ -21,7 +21,6 @@ import android.os.SystemClock;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Display;
-import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -479,11 +478,12 @@ public class BrowserInstrumentedTest {
                     (view, input, domJson) -> swipeProviderPath(view),
                     (domJson, input, path) -> {
                         DispatchReadiness.DomState currentDom = swipeDomState(domJson);
-                        DispatchReadiness.actionOnceIfRecomputedReady(
-                                prepared.input.state, input.state, path, preparedDom, currentDom,
-                                dispatch, () -> SingleShotSwipe.send(prepared.controller, path),
-                                SystemClock::uptimeMillis);
-                    });
+                        DispatchReadiness.requireRecomputedReady(
+                                prepared.input.state, input.state, path, preparedDom, currentDom);
+                    },
+                    path -> dispatch.actionOnce(
+                            () -> SingleShotSwipe.send(prepared.controller, path),
+                            SystemClock::uptimeMillis));
             recordInputEvidence("swipe final-sample intended=" + current.path + " "
                     + current.input.describe());
         } catch (Exception | AssertionError dispatchFailure) {
@@ -747,8 +747,12 @@ public class BrowserInstrumentedTest {
         InputSafety.Path sample(WebView view, InputContext input, String domJson);
     }
 
-    private interface FinalAction {
+    private interface FinalAdmission {
         void run(String domJson, InputContext input, InputSafety.Path path);
+    }
+
+    private interface FinalDispatch {
+        void run(InputSafety.Path path) throws Exception;
     }
 
     private void realClickElement(String elementId) throws Exception {
@@ -813,23 +817,19 @@ public class BrowserInstrumentedTest {
                     (domJson, input, currentPoint) -> {
                         DispatchReadiness.DomState currentDom =
                                 tapDomState(elementId, json(domJson));
-                        long now = SystemClock.uptimeMillis();
-                        MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN,
-                                currentPoint.startX, currentPoint.startY, 0);
-                        MotionEvent up = MotionEvent.obtain(now, now + 60, MotionEvent.ACTION_UP,
-                                currentPoint.endX, currentPoint.endY, 0);
-                        down.setSource(InputDevice.SOURCE_TOUCHSCREEN);
-                        up.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+                        DispatchReadiness.requireRecomputedReady(
+                                prepared.state, input.state, currentPoint, preparedDom, currentDom);
+                    },
+                    currentPoint -> {
+                        MotionEvent down = SingleShotSwipe.obtainTapDown(currentPoint);
                         try {
-                            DispatchReadiness.tapOnceIfRecomputedReady(
-                                    prepared.state, input.state, currentPoint,
-                                    preparedDom, currentDom, dispatch,
-                                    () -> SingleShotSwipe.inject(controller, down),
-                                    () -> SingleShotSwipe.inject(controller, up),
+                            dispatch.tapOnce(
+                                    () -> SingleShotSwipe.injectTapDown(controller, down),
+                                    () -> SingleShotSwipe.injectTapUp(
+                                            controller, down, currentPoint),
                                     SystemClock::uptimeMillis);
                         } finally {
                             down.recycle();
-                            up.recycle();
                         }
                     });
             recordInputEvidence("tap final-sample intended=" + current.path + " "
@@ -943,11 +943,15 @@ public class BrowserInstrumentedTest {
     }
 
     /**
-     * The final DOM value, native state and intended path are sampled in the same WebView callback,
-     * and the supplied admission/input action runs before that callback returns to the main looper.
+     * The final DOM value, native state and intended path are sampled/admitted in one WebView
+     * callback. A successful callback posts exactly one input task at the front of the main queue,
+     * so ordinary queued UI work cannot be inserted by this harness between admission and dispatch.
+     * The input itself therefore runs after the WebView callback returns, avoiding nested injection
+     * from onReceiveValue while preserving the no-pre-action-idle R1 ordering.
      */
     private static FinalReadiness captureFinalReadiness(InputContext prepared, String expression,
-            FinalPathSampler pathSampler, FinalAction action) throws Exception {
+            FinalPathSampler pathSampler, FinalAdmission admission, FinalDispatch dispatch)
+            throws Exception {
         MainActivity activity = (MainActivity) prepared.state.activity;
         WebView view = (WebView) prepared.state.target;
         AtomicReference<String> dom = new AtomicReference<>();
@@ -962,18 +966,41 @@ public class BrowserInstrumentedTest {
                     throw new IllegalStateException("intended Activity/view unavailable");
                 }
                 view.evaluateJavascript(expression, value -> {
+                    boolean admitted = handoff.capture(() -> {
+                        String currentDom = decodeJsValue(value);
+                        InputContext currentInput = readInputContext(activity, view);
+                        InputSafety.Path currentPath =
+                                pathSampler.sample(view, currentInput, currentDom);
+                        admission.run(currentDom, currentInput, currentPath);
+                        dom.set(currentDom);
+                        input.set(currentInput);
+                        path.set(currentPath);
+                    });
+                    if (!admitted) {
+                        done.countDown();
+                        return;
+                    }
+                    boolean posted;
                     try {
-                        handoff.capture(() -> {
-                            String currentDom = decodeJsValue(value);
-                            InputContext currentInput = readInputContext(activity, view);
-                            InputSafety.Path currentPath =
-                                    pathSampler.sample(view, currentInput, currentDom);
-                            dom.set(currentDom);
-                            input.set(currentInput);
-                            path.set(currentPath);
-                            action.run(currentDom, currentInput, currentPath);
+                        posted = MAIN.postAtFrontOfQueue(() -> {
+                            try {
+                                handoff.capture(() -> dispatch.run(path.get()));
+                            } finally {
+                                done.countDown();
+                            }
                         });
-                    } finally {
+                    } catch (RuntimeException | AssertionError postingFailure) {
+                        handoff.capture(() -> {
+                            throw postingFailure;
+                        });
+                        done.countDown();
+                        return;
+                    }
+                    if (!posted) {
+                        handoff.capture(() -> {
+                            throw new IllegalStateException(
+                                    "main queue rejected final input dispatch");
+                        });
                         done.countDown();
                     }
                 });
@@ -986,11 +1013,11 @@ public class BrowserInstrumentedTest {
         });
         try {
             if (!done.await(10_000, TimeUnit.MILLISECONDS)) {
-                throw new IllegalStateException("final readiness/input callback timed out");
+                throw new IllegalStateException("final readiness/input dispatch timed out");
             }
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("interrupted while sampling final readiness", interrupted);
+            throw new IllegalStateException("interrupted while awaiting final input dispatch", interrupted);
         }
         handoff.rethrowIfPresent();
         if (input.get() == null || path.get() == null) {
