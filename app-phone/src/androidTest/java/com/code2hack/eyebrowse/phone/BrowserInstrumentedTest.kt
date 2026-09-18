@@ -59,9 +59,10 @@ import java.util.function.LongSupplier
  * Instrumentation checks of the Phone browser against the local fixture server.
  *
  * Behavior/evidence boundaries are unchanged from the Java source: page reads use
- * WebView.evaluateJavascript; activation uses the pinned Espresso controller with synthetic pointer
- * events (not human touch/IME evidence); fixture field setup uses page JavaScript; and simulated
- * process restart is not physical process-death evidence.
+ * WebView.evaluateJavascript; activation uses Espresso's pinned event construction/precision but
+ * submits synthetic pointer events once through Instrumentation (not human touch/IME evidence);
+ * fixture field setup uses page JavaScript; and simulated process restart is not physical
+ * process-death evidence. Dispatch.stage tracks API-call progress, not proof of input delivery.
  */
 @RunWith(AndroidJUnit4::class)
 class BrowserInstrumentedTest {
