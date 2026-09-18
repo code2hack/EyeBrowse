@@ -1630,3 +1630,277 @@ class BrowserInstrumentedTest {
         fail("the browser window never gained input focus")
     }
 
+
+    private fun observations(): JSONObject = JSONObject(observationsRaw())
+
+    private fun observationsRaw(): String = fetch("$FIXTURE_BASE/api/observations")
+
+    private fun loadCount(path: String): Int {
+        val loads = observations().optJSONObject("loads")
+        return loads?.optInt(path, 0) ?: 0
+    }
+
+    private fun countPosts(testId: String): Int {
+        val requests: JSONArray = observations().getJSONArray("requests")
+        var count = 0
+        for (i in 0 until requests.length()) {
+            val entry = requests.getJSONObject(i)
+            if (
+                entry.optString("method") == "POST" &&
+                entry.optString("path") == "/submit" &&
+                entry.optString("testId") == testId
+            ) {
+                count++
+            }
+        }
+        return count
+    }
+
+    private fun lastPost(testId: String): JSONObject {
+        val requests = observations().getJSONArray("requests")
+        for (i in requests.length() - 1 downTo 0) {
+            val entry = requests.getJSONObject(i)
+            if (
+                entry.optString("method") == "POST" &&
+                entry.optString("path") == "/submit" &&
+                entry.optString("testId") == testId
+            ) {
+                return entry
+            }
+        }
+        fail("no POST submission recorded for $testId")
+        throw AssertionError("unreachable after JUnit fail")
+    }
+
+    private fun readFixtureSnapshot(): HarnessProtocol.Snapshot {
+        val start = SystemClock.uptimeMillis()
+        return decodeSnapshot(
+            jsRead(FIXTURE_SNAPSHOT),
+            start,
+            SystemClock.uptimeMillis(),
+        )
+    }
+
+    private fun decodeSnapshot(
+        jsonValue: String?,
+        start: Long,
+        end: Long,
+    ): HarnessProtocol.Snapshot {
+        try {
+            val value = JSONObject(
+                jsonValue ?: throw NullPointerException("fixture snapshot unavailable"),
+            )
+            return HarnessProtocol.Snapshot(
+                value.optString("marker", null),
+                value.optString("title", null),
+                value.getString("location"),
+                value.getString("readyState"),
+                start,
+                end,
+            )
+        } catch (invalid: JSONException) {
+            throw IllegalStateException("fixture snapshot was not valid JSON", invalid)
+        } catch (invalid: NullPointerException) {
+            throw IllegalStateException("fixture snapshot was not valid JSON", invalid)
+        }
+    }
+
+    private fun openFreshFixture(path: String, title: String): HarnessProtocol.Snapshot {
+        val before =
+            if (attachedWebView() == null) {
+                null
+            } else {
+                readFixtureSnapshot()
+            }
+        val gate = HarnessProtocol.Baseline.opening(before, title, fixtureUrl(path))
+        openAddress(fixtureUrl(path))
+        return awaitFreshFixture(gate)
+    }
+
+    private fun reloadFreshFixture(path: String, title: String): HarnessProtocol.Snapshot {
+        val gate = HarnessProtocol.Baseline.reloading(
+            readFixtureSnapshot(),
+            title,
+            fixtureUrl(path),
+        )
+        onView(withId(R.id.button_reload)).perform(click())
+        return awaitFreshFixture(gate)
+    }
+
+    private fun awaitFreshFixture(gate: HarnessProtocol.Baseline): HarnessProtocol.Snapshot {
+        val accepted = AtomicReference<HarnessProtocol.Snapshot?>()
+        waitUntil("new complete fixture document") {
+            val sample = readFixtureSnapshot()
+            if (gate.accepts(sample)) {
+                accepted.set(sample)
+                true
+            } else {
+                false
+            }
+        }
+        return accepted.get()
+            ?: throw IllegalStateException("fresh fixture accepted without retained snapshot")
+    }
+
+    private inner class CaseTrace(
+        val caseId: String,
+        val expectedLocation: String,
+    ) {
+        val dispatch = HarnessProtocol.Dispatch()
+        var step: String = "preparation"
+
+        fun capture(
+            phase: String,
+            outcome: String,
+            snapshot: HarnessProtocol.Snapshot?,
+        ) {
+            val previousStep = step
+            step = "capture"
+            reportCase(phase, outcome, snapshot)
+            step = previousStep
+        }
+
+        fun failure(original: Throwable) {
+            val outcome =
+                when {
+                    dispatch.stage != "not-attempted" && dispatch.stage != "returned" ->
+                        "dispatch-unknown"
+                    step == "capture" -> "capture-failed"
+                    step == "assertion" -> "assertion-failed"
+                    step == "observation" -> "observation-failed"
+                    else -> "prepare-failed"
+                }
+
+            val suppressedBefore = original.suppressed.size
+            HarnessProtocol.preserveFailure(original) {
+                val start = SystemClock.uptimeMillis()
+                val raw = captureDiagnostic(
+                    diagnosticJs(intendedActivity, intendedView, FIXTURE_SNAPSHOT),
+                )
+                val snapshot =
+                    if (raw == null) {
+                        null
+                    } else {
+                        decodeSnapshot(
+                            decodeJsValue(raw),
+                            start,
+                            SystemClock.uptimeMillis(),
+                        )
+                    }
+
+                milestones?.recordDeferred(
+                    "CASE_FAILURE_LOCAL case=$caseId outcome=$outcome " +
+                        "dispatch=${dispatch.stage} marker=${snapshot?.marker ?: "unavailable"} " +
+                        "location=" +
+                        if (snapshot == null) {
+                            "unavailable"
+                        } else {
+                            HarnessProtocol.traceLocation(snapshot.location, expectedLocation)
+                        } +
+                        " fixtureAck=not-attempted diagnosticElapsedMs=${failureBudget().elapsedMs()}",
+                )
+            }
+
+            if (original.suppressed.size > suppressedBefore) {
+                println("CASE_EVIDENCE_INCOMPLETE $caseId")
+            }
+        }
+
+        private fun reportCase(
+            phase: String,
+            outcome: String,
+            snapshot: HarnessProtocol.Snapshot?,
+        ) {
+            val location =
+                if (snapshot == null) {
+                    "(other)"
+                } else {
+                    HarnessProtocol.traceLocation(snapshot.location, expectedLocation)
+                }
+
+            val response = fetch(
+                "$FIXTURE_BASE/api/case?case=${enc(caseId)}" +
+                    "&phase=${enc(phase)}" +
+                    "&marker=${enc(snapshot?.marker ?: "")}" +
+                    "&location=${enc(location)}" +
+                    "&outcome=${enc(outcome)}" +
+                    "&t=${SystemClock.uptimeMillis()}" +
+                    "&sampleStart=${snapshot?.sampleStartMs ?: -1}" +
+                    "&sampleEnd=${snapshot?.sampleEndMs ?: -1}" +
+                    "&actionStart=${dispatch.startMs}" +
+                    "&actionEnd=${dispatch.endMs}" +
+                    "&dispatch=${enc(dispatch.stage)}",
+            )
+            HarnessProtocol.requireRecorded(JSONObject(response).optBoolean("recorded", false))
+        }
+    }
+
+    private fun enc(value: String?): String =
+        try {
+            URLEncoder.encode(value ?: "", "UTF-8")
+        } catch (_: UnsupportedEncodingException) {
+            ""
+        }
+
+    private fun fetch(url: String): String {
+        val connection = URL(url).openConnection() as HttpURLConnection
+        connection.connectTimeout = 5_000
+        connection.readTimeout = 5_000
+        return try {
+            connection.inputStream.use { input ->
+                BufferedReader(InputStreamReader(input, StandardCharsets.UTF_8)).use { reader ->
+                    buildString {
+                        var line: String?
+                        while (reader.readLine().also { line = it } != null) {
+                            append(line).append('\n')
+                        }
+                    }
+                }
+            }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    companion object {
+        private const val DEFAULT_FIXTURE_BASE = "http://127.0.0.1:25341"
+        private val FIXTURE_BASE = trimTrailingSlash(
+            InstrumentationRegistry.getArguments()
+                .getString("fixtureBaseUrl", DEFAULT_FIXTURE_BASE)
+                ?: DEFAULT_FIXTURE_BASE,
+        )
+        private val SECURE_BASE = trimTrailingSlash(
+            InstrumentationRegistry.getArguments()
+                .getString("secureBaseUrl", "https://127.0.0.1:25342")
+                ?: "https://127.0.0.1:25342",
+        )
+        private const val SYNTHETIC_TEST_ID = "fixture-post-1"
+        private const val TIMEOUT_MS = 20_000L
+
+        private const val SCROLL_FACTS_JS =
+            "(function(){var d=document.documentElement;" +
+                "var m=document.getElementById('load-marker');" +
+                "return JSON.stringify({marker:m?m.textContent:null," +
+                "location:String(document.location.href)," +
+                "scrollTop:Math.round(d.scrollTop),scrollY:Math.round(window.scrollY)," +
+                "scrollHeight:d.scrollHeight,clientHeight:d.clientHeight," +
+                "innerWidth:window.innerWidth,innerHeight:window.innerHeight});})()"
+
+        private const val FIXTURE_SNAPSHOT =
+            "(function(){" +
+                "var m=document.getElementById('load-marker'),t=document.getElementById('page-title');" +
+                "return JSON.stringify({marker:m?m.textContent:null,title:t?t.textContent:null," +
+                "location:String(document.location.href),readyState:document.readyState});})()"
+
+        private var milestones: MilestoneSink? = null
+
+        @JvmStatic
+        @AfterClass
+        fun flushInputMilestones() {
+            milestones?.flushToStream("Browser input evidence")
+        }
+
+        private fun trimTrailingSlash(value: String): String =
+            if (value.endsWith("/")) value.substring(0, value.length - 1) else value
+    }
+}
