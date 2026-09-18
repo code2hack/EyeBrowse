@@ -97,7 +97,11 @@ internal class DispatchReadiness private constructor() {
             if (nativeReason != null) {
                 return nativeReason
             }
-            return preparedDom?.revalidationReason(currentDom) ?: "DOM readiness unavailable"
+            return if (preparedDom == null) {
+                "DOM readiness unavailable"
+            } else {
+                preparedDom.revalidationReason(currentDom)
+            }
         }
 
         fun requireReady(
@@ -141,7 +145,11 @@ internal class DispatchReadiness private constructor() {
             if (preparedNative.displayId != currentNative.displayId) {
                 return "input display changed after preparation"
             }
-            return preparedDom?.revalidationReason(currentDom) ?: "DOM readiness unavailable"
+            return if (preparedDom == null) {
+                "DOM readiness unavailable"
+            } else {
+                preparedDom.revalidationReason(currentDom)
+            }
         }
 
         fun requireRecomputedReady(
