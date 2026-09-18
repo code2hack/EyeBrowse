@@ -1482,7 +1482,7 @@ class BrowserInstrumentedTest {
         )
     }
 
-    private class ScrollFacts(
+    private inner class ScrollFacts(
         val phase: String,
         val sampleStartMs: Long,
         val sampleEndMs: Long,
