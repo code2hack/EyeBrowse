@@ -247,3 +247,331 @@ class BrowserInstrumentedTest {
         assertEquals(loadsBeforeCorrection + 1, loadCount("/basic.html"))
     }
 
+
+    @Test
+    fun nativeAddressBarRefusesTheScriptProbePayloadWithoutRunningIt() {
+        val url = fixtureUrl("/destinations.html")
+        openAddress(url)
+        waitForMarker()
+        assertEquals("idle", domText("script-probe"))
+        val marker = domText("load-marker")
+
+        submitAddress("javascript:void(document.getElementById('script-probe').textContent='ran')")
+
+        assertEquals("Only http:// and https:// addresses are supported", statusText())
+        assertEquals("the payload must not run", "idle", domText("script-probe"))
+        assertEquals(marker, domText("load-marker"))
+        assertEquals(url, jsRead("String(document.location.href)"))
+        assertEquals(1, attachedWebViews())
+    }
+
+    @Test
+    fun activatedTargetBlankLinkStaysInCurrentTabAndBackReturns() {
+        openAddress(fixtureUrl("/target-blank.html"))
+        waitUntil("target=_blank page") { domText("page-title") == "New-window link page" }
+        realClickElement("blank-link")
+        waitUntil("activated target=_blank link loads in this tab") {
+            domText("page-title") == "Opened page"
+        }
+        assertEquals(1, attachedWebViews())
+        assertEquals(fixtureUrl("/opened.html"), sessionDisplayUrl())
+        waitUntil("Back becomes enabled") { viewEnabled(R.id.button_back) }
+        onView(withId(R.id.button_back)).perform(click())
+        waitUntil("Back returns to the previous page") {
+            domText("page-title") == "New-window link page"
+        }
+    }
+
+    @Test
+    fun unsolicitedPopupDoesNotReplaceThePage() {
+        openAddress(fixtureUrl("/popup.html"))
+        val marker = waitForMarker()
+        waitUntil("unsolicited window.open attempt") {
+            val status = domText("popup-status")
+            status != null && status.contains("unsolicited")
+        }
+        SystemClock.sleep(1500)
+        assertEquals(marker, domText("load-marker"))
+        assertEquals(fixtureUrl("/popup.html"), sessionDisplayUrl())
+        assertEquals(1, attachedWebViews())
+    }
+
+    @Test
+    fun gesturePopupUsesCurrentTab() {
+        openAddress(fixtureUrl("/popup.html"))
+        waitForMarker()
+        realClickElement("gesture-popup-button")
+        waitUntil("gesture window.open stays in this tab") {
+            domText("page-title") == "Opened page"
+        }
+        assertEquals(1, attachedWebViews())
+    }
+
+    @Test
+    fun recreationRetainsLiveDocumentFieldValuesAndLoadCount() {
+        openAddress(fixtureUrl("/form.html"))
+        val marker = waitForMarker()
+        setElementValue("text-field", "draft-value")
+        val loadsBefore = loadCount("/form.html")
+        scenario.recreate()
+        assertEquals(marker, domText("load-marker"))
+        assertEquals("draft-value", jsRead("document.getElementById('text-field').value"))
+        assertEquals(loadsBefore, loadCount("/form.html"))
+        assertEquals(1, attachedWebViews())
+        assertEquals(fixtureUrl("/form.html"), sessionDisplayUrl())
+    }
+
+    @Test
+    fun simulatedProcessRestartOffersSavedUrlWithoutAutoLoading() {
+        val url = fixtureUrl("/basic.html")
+        openAddress(url)
+        waitForMarker()
+        val loadsBefore = loadCount("/basic.html")
+        scenario.onActivity { session.simulateProcessRestartForTest() }
+        scenario.recreate()
+        onView(withId(R.id.status_text)).check(matches(withText(containsString("no longer live"))))
+        onView(withId(R.id.address_input)).check(matches(withText(url)))
+        assertEquals("no automatic reload on recovery", loadsBefore, loadCount("/basic.html"))
+        assertEquals(0, attachedWebViews())
+        onView(withId(R.id.button_open)).perform(click())
+        waitUntil("explicit recovery load") { domText("page-title") == "Basic page" }
+        assertEquals(loadsBefore + 1, loadCount("/basic.html"))
+    }
+
+    @Test
+    fun untrustedHttpsIsRefusedAndPageNeverRenders() {
+        val loadsBefore = loadCount("/secure-ok.html")
+        openAddress("$SECURE_BASE/secure-ok.html")
+        waitUntil("SSL refusal status") { statusText().contains("Could not load") }
+        assertEquals(
+            "missing",
+            jsRead(
+                "document.querySelector('[data-testid=\"secure-page\"]')" +
+                    " ? 'present' : 'missing'",
+            ),
+        )
+        assertEquals(
+            "the untrusted endpoint must never serve the page",
+            loadsBefore,
+            loadCount("/secure-ok.html"),
+        )
+        assertEquals(1, attachedWebViews())
+    }
+
+    @Test
+    fun controlledHttpFailureRendersTheServerBody() {
+        openAddress(fixtureUrl("/fail"))
+        waitUntil("controlled 500 body") { domText("page-title") == "Controlled failure page" }
+        assertTrue(Regex("L\\d+").matches(waitForMarker()))
+        assertEquals(fixtureUrl("/fail"), sessionDisplayUrl())
+    }
+
+    @Test
+    fun pageOriginDestinationsNeverLeaveTheSession() {
+        var freshRefusals = 0
+        for (element in arrayOf("dest-mailto", "dest-content", "dest-file", "dest-intent", "dest-data")) {
+            if (checkPageOriginCase(element, element, false)) freshRefusals++
+        }
+        assertTrue(
+            "at least one page-origin destination must reach the app as a refusal",
+            freshRefusals > 0,
+        )
+    }
+
+    @Test
+    fun contentDestinationIsAnEngineNoOpWithoutAFabricatedNotice() {
+        checkPageOriginCase("content-standalone", "dest-content", true)
+    }
+
+    private fun checkPageOriginCase(
+        caseId: String,
+        element: String,
+        requireNoOp: Boolean,
+    ): Boolean {
+        val baseline = openFreshFixture("/destinations.html", "Unsupported destinations")
+        val trace = CaseTrace(caseId, fixtureUrl("/destinations.html"))
+        try {
+            trace.capture("baseline", "prepared", baseline)
+            val baselineStatus = statusText()
+            assertEquals("clean baseline before $element", "Unsupported destinations", baselineStatus)
+            trace.step = "preparation"
+            realClickElement(element, trace.dispatch, baseline)
+            trace.capture("dispatch", "returned", baseline)
+            trace.step = "observation"
+            waitUntil("activation of $element") { domText("last-activated") == element }
+            SystemClock.sleep(600)
+            val after = readFixtureSnapshot()
+            val statusAfter = statusText()
+            val refused =
+                statusAfter == "Blocked unsupported address. Only http:// and https:// load here."
+            trace.capture(
+                "observation",
+                if (baseline.marker != after.marker) {
+                    "changed"
+                } else if (refused) {
+                    "refused"
+                } else if (baselineStatus == statusAfter) {
+                    "no-op"
+                } else {
+                    "unexpected"
+                },
+                after,
+            )
+            trace.step = "assertion"
+            assertTrue("unexpected status for $element", refused || baselineStatus == statusAfter)
+            if (requireNoOp) {
+                assertEquals(
+                    "a no-op must not fabricate an app notice",
+                    baselineStatus,
+                    statusAfter,
+                )
+            }
+            assertEquals("document marker preserved for $element", baseline.marker, after.marker)
+            assertEquals("location preserved for $element", baseline.location, after.location)
+            assertEquals("single engine for $element", 1, attachedWebViews())
+            onView(withId(R.id.button_reload)).check(matches(isEnabled()))
+            return refused
+        } catch (failure: Exception) {
+            trace.failure(failure)
+            throw failure
+        } catch (failure: AssertionError) {
+            trace.failure(failure)
+            throw failure
+        }
+    }
+
+    @Test
+    fun pageOwnedJavascriptRunsInThePageSandbox() {
+        openAddress(fixtureUrl("/destinations.html"))
+        waitForMarker()
+        val marker = domText("load-marker")
+        val location = jsRead("String(document.location.href)")
+        assertEquals("idle", domText("script-probe"))
+        realClickElement("dest-script-probe")
+        waitUntil("page script runs") { domText("script-probe") == "ran" }
+        assertEquals(marker, domText("load-marker"))
+        assertEquals(location, jsRead("String(document.location.href)"))
+        assertEquals(1, attachedWebViews())
+    }
+
+    @Test
+    fun realSwipeScrollsLongDocument() {
+        performSwipeScroll(fixtureUrl("/scroll.html"), HarnessProtocol.Dispatch(), null)
+    }
+
+    @Test
+    fun queuedDomOnlyDocumentChangeBeforeFinalSwipeSampleDispatchesZeroInput() {
+        val dispatch = HarnessProtocol.Dispatch()
+        try {
+            performSwipeScroll(
+                fixtureUrl("/scroll.html"),
+                dispatch,
+                InputSeamHook { view ->
+                    awaitQueuedDomMutation(
+                        view,
+                        "(function(){document.getElementById('load-marker').textContent=" +
+                            "'R1-swapped';return 'changed';})()",
+                    )
+                },
+            )
+            fail("DOM-only document change must stop before swipe dispatch")
+        } catch (expected: IllegalStateException) {
+            assertEquals("document changed after preparation", expected.message)
+        }
+        assertEquals("not-attempted", dispatch.stage)
+        assertEquals("0", jsRead("String(Math.round(window.scrollY))"))
+    }
+
+    private fun performSwipeScroll(
+        expectedLocation: String,
+        dispatch: HarnessProtocol.Dispatch,
+        seamHook: InputSeamHook?,
+    ) {
+        openAddress(expectedLocation)
+        waitForMarker()
+        dismissIme()
+        val before = readScrollFacts("before-swipe", expectedLocation)
+        recordInputEvidence("scroll ${before.describe()}")
+        awaitWindowFocus()
+        val ready = readScrollFacts("ready-after-focus", expectedLocation)
+        recordInputEvidence("scroll ${ready.describe()}")
+        assertTrue(
+            "coherent fixture observation before swipe",
+            before.error == null && ready.error == null,
+        )
+        assertEquals(expectedLocation, ready.rawLocation)
+        assertEquals("same document after readiness wait", before.marker, ready.marker)
+        val preparedDom = swipeDomState(ready)
+        val prepared = captureSwipePreparation()
+        recordInputEvidence(
+            "swipe intended-provider-path=${prepared.path} " +
+                "${prepared.input.describe()} dom=${preparedDom.describe()}",
+        )
+        try {
+            val preBoundaryDom = swipeDomState(js(SCROLL_FACTS_JS))
+            requireDomUnchanged(preparedDom, preBoundaryDom)
+            seamHook?.run(prepared.input.state.target as WebView)
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            val current = captureFinalReadiness(
+                prepared.input,
+                SCROLL_FACTS_JS,
+                FinalPathSampler { view, _, _ -> swipeProviderPath(view) },
+                FinalAdmission { domJson, input, path ->
+                    val currentDom = swipeDomState(domJson)
+                    DispatchReadiness.requireRecomputedReady(
+                        prepared.input.state,
+                        input.state,
+                        path,
+                        preparedDom,
+                        currentDom,
+                    )
+                },
+                FinalDispatch { path ->
+                    dispatch.actionOnce(
+                        Runnable { SingleShotSwipe.send(prepared.controller, path) },
+                        SystemClock::uptimeMillis,
+                    )
+                },
+            )
+            recordInputEvidence(
+                "swipe final-sample intended=${current.path} ${current.input.describe()}",
+            )
+        } catch (failure: Exception) {
+            recordFailureEvidence("swipe.perform stage=${dispatch.stage}", failure, expectedLocation)
+            throw failure
+        } catch (failure: AssertionError) {
+            recordFailureEvidence("swipe.perform stage=${dispatch.stage}", failure, expectedLocation)
+            throw failure
+        }
+
+        try {
+            waitUntil("document scrolled") {
+                val scrollY = jsOrNull("String(Math.round(window.scrollY))")
+                scrollY != null && scrollY.toDouble() > 0
+            }
+        } catch (timeout: AssertionError) {
+            recordFailureEvidence("scroll-timeout", timeout, expectedLocation)
+            throw timeout
+        }
+
+        val after = readScrollFacts("after-swipe", expectedLocation)
+        recordInputEvidence("scroll ${after.describe()}")
+        assertTrue(
+            "actual input-driven scroll observed: before [${before.describe()}] " +
+                "after [${after.describe()}]",
+            after.error == null && after.scrollY > 0 && after.scrollY > ready.scrollY,
+        )
+        assertEquals("scroll stayed in the intended document", ready.marker, after.marker)
+        assertEquals(expectedLocation, after.rawLocation)
+    }
+
+    @Test
+    fun harmlessPostIsRecordedOnceWithoutTypedValues() {
+        openAddress(fixtureUrl("/form.html"))
+        waitForMarker()
+        setElementValue("text-field", "automation-text")
+        setElementValue("password-field", "automation-secret")
+        setElementValue("notes-field", "automation-notes")
+        setElementText("editable-field", "automation-editable")
+        assertEquals("automation-text", jsRead("document.getElementById('text-field').value"))
+        assertEquals("automation-editable", domText("editable-field"))
