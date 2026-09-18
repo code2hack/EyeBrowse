@@ -171,6 +171,33 @@ path, tolerance change, sleep-based readiness fence, or input replay is introduc
 This is source-only until a fresh exact-head host gate and renewed relevant review. Runtime success
 of the new queue-front/event-shape path remains a future device fact.
 
+## Focus-owner diagnostic and fail-closed admission
+
+A separately labeled, read-only device diagnostic around the failing `1f54cec5` swipe established that
+display-0 input focus was held throughout the failure interval by the third-party package
+`cn.litiaotiao.app`, not the EyeBrowse activity under test. This reconciles the earlier direct
+`sendPointerSync` cross-application SecurityException with the later Espresso/InputManager
+`false` results: both are evidence of an input attempt while another application's window owns
+system input focus. This diagnostic is environment evidence, not a passing test and not a license to
+retry, dismiss, disable, or inject across the other app.
+
+The harness now adds one final fail-closed ownership predicate immediately before
+`HarnessProtocol.Dispatch.begin` in the already-existing queue-front input task. It reads the
+instrumentation-owned `UiAutomation` with
+`FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES` and calls
+`findFocus(AccessibilityNodeInfo.FOCUS_INPUT)`. The focused node's package must exactly equal the
+target activity package. Missing focus/package information or a different package throws before
+dispatch begins, leaving `Dispatch.stage == "not-attempted"`.
+
+This is read-only introspection. Input remains on the pinned Espresso `UiController`; UiAutomation
+is never used to inject. There is no polling, wait, retry, auto-dismiss, new privilege, second input
+client, or timing reset. The already source-cleared final DOM/native/path admission and queue-front
+single-shot dispatch ordering are otherwise unchanged.
+
+The same correction set also restores the Java source's nullable `findViewById` semantics in
+`attachedWebView()`: Kotlin no longer inserts a non-null intrinsic check when the WebView is
+temporarily absent. No new synchronization or readiness wait is added.
+
 ## Scope and evidence boundary
 
 This correction changes testShared/JVM/androidTest and necessary test documentation only. It does not
