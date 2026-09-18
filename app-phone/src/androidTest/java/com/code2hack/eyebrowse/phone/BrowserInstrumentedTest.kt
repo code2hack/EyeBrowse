@@ -1,5 +1,6 @@
 package com.code2hack.eyebrowse.phone
 
+import android.app.UiAutomation
 import android.content.Context
 import android.graphics.Rect
 import android.os.Handler
@@ -10,6 +11,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
+import android.view.accessibility.AccessibilityNodeInfo
 import android.webkit.WebView
 import android.widget.EditText
 import android.widget.TextView
@@ -1123,6 +1125,7 @@ class BrowserInstrumentedTest {
                                 MAIN.postAtFrontOfQueue {
                                     try {
                                         handoff.capture {
+                                            requireTargetInputFocus(activity.packageName)
                                             dispatch.run(
                                                 checkNotNull(path.get()) {
                                                     "final dispatch path unavailable"
@@ -1176,6 +1179,38 @@ class BrowserInstrumentedTest {
             throw IllegalStateException("final input readiness unavailable")
         }
         return FinalReadiness(dom.get(), finalInput, finalPath)
+    }
+
+    /**
+     * Fail closed on the actual system input-focus owner immediately before Dispatch.begin.
+     *
+     * Instrumentation owns a single UiAutomation instance. DONT_SUPPRESS_ACCESSIBILITY_SERVICES
+     * keeps third-party accessibility services/overlays undisturbed; this harness only reads focus
+     * and never injects through UiAutomation. No retry or wait is performed.
+     */
+    private fun requireTargetInputFocus(expectedPackage: String) {
+        val automation = InstrumentationRegistry.getInstrumentation().getUiAutomation(
+            UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES,
+        ) ?: throw IllegalStateException("system input-focus owner unavailable")
+        val focused =
+            try {
+                automation.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            } catch (unavailable: IllegalStateException) {
+                throw IllegalStateException("system input-focus owner unavailable", unavailable)
+            }
+                ?: throw IllegalStateException("system input-focus owner unavailable")
+        try {
+            val actualPackage = focused.packageName?.toString()
+                ?: throw IllegalStateException("system input-focus owner unavailable")
+            if (actualPackage != expectedPackage) {
+                throw IllegalStateException(
+                    "input focus owned by another package: $actualPackage; expected $expectedPackage",
+                )
+            }
+        } finally {
+            @Suppress("DEPRECATION")
+            focused.recycle()
+        }
     }
 
     private class SwipePreparation(
