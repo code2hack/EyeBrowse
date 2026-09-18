@@ -183,17 +183,25 @@ ActivityScenario call, Espresso ViewInteraction/main-loop pump, focus wait, mile
 evidence write, UiAutomation/accessibility observation, or other harness observation.
 
 This also removes pinned Espresso 3.6.1's hidden
-`InputManagerEventInjectionStrategy` SecurityException retry. Tap submits one DOWN and, only if
-that succeeds, one UP. Swipe retains the pinned FAST shape (DOWN, ten interpolated MOVE events, UP
-over the 150 ms cadence), but each event is submitted exactly once in order; the first rejection
-aborts the sequence and no rejected/uncertain event is replayed. The cadence sleep is gesture timing
-on the instrumentation thread, not readiness waiting or rejection recovery.
+`InputManagerEventInjectionStrategy` SecurityException retry. Tap submits each generated DOWN/UP
+event at most once; swipe retains the pinned FAST shape (DOWN, ten interpolated MOVE events, UP over
+the 150 ms cadence) and submits each generated event at most once in order. No event is ever
+resubmitted after a returned, thrown, rejected, or otherwise uncertain submission. The cadence sleep
+is gesture timing on the instrumentation thread, not readiness waiting or rejection recovery.
 
-`Instrumentation.sendPointerSync` is scoped by Android to windows owned by the instrumented
-application. If another app owns the target at injection time, the platform rejection is retained as
-the original single-attempt failure and the harness does not retry it. No UiAutomation input,
-second automation client, INJECT_EVENTS grant, reflected InputManager path, or privileged workaround
-is introduced.
+Android 12 `Instrumentation.sendPointerSync` is a `void` API. It calls the window/input service in
+WAIT_FOR_FINISH mode but discards the service's boolean result, and it also swallows RemoteException.
+Therefore the harness can observe thrown exceptions such as a cross-application SecurityException,
+but it cannot truthfully observe a system-side `false` / timeout / generic failed result at the
+submission call. Such a silent outcome is never retried or resubmitted; it is detected only by the
+existing downstream input-effect assertions (activation/click/navigation for taps and positive
+document scroll for swipe). `HarnessProtocol.Dispatch` remains exactly what its source already
+states: API-call progress, not proof of website delivery.
+
+No UiAutomation input, second automation client, INJECT_EVENTS grant, reflected InputManager path,
+or privileged workaround is introduced. This reconciles the source guarantee with §4.2's
+no-replay/no-resubmission requirement without claiming platform rejection observability that the
+allowed API does not provide.
 
 The Kotlin conversion parity fix also remains: `attachedWebView()` preserves the Java source's
 nullable `findViewById` behavior and adds no synchronization/readiness wait.
