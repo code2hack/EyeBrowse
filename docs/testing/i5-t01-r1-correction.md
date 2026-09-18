@@ -104,6 +104,34 @@ Android instrumentation, fixture, install, or device result is claimed for that 
 note. The failed focused-three result belongs to `8e3fde9`; a changed candidate requires a fresh host
 gate, renewed relevant independent review, and a separately released focused-three invocation.
 
+## Round4 checked-primary handoff correction
+
+The independent review of `bb8b3574eabee5256f0ba7103b45ceb1586a16ee` credited the
+recomputed final path and Espresso-controller route, but withheld pre-device clearance for one
+error-preservation defect. A tap-side `UiController.injectMotionEvent` rejection is Espresso's
+checked `InjectEventSecurityException`. `SingleShotSwipe.inject` already retained that exact
+object, but the WebView callback handoff and outer tap evidence handler caught only runtime
+exceptions/assertions, so the checked primary could bypass the intended callback-to-test-thread
+relay.
+
+The correction uses one shared test-only `DispatchReadiness.CallbackHandoff` on the actual Android
+path. It captures `Exception | AssertionError` from the final WebView callback, always releases the
+callback latch in `finally`, and rethrows the same captured object on the instrumentation test
+thread. The outer tap path now records bounded supplementary failure evidence for checked or
+runtime/assertion primaries and rethrows the same primary unchanged. No input retry, privilege,
+UiAutomation client, permission grant, or new injection route is added.
+
+The JVM regression
+`checkedCallbackPrimaryCrossesHandoffByIdentityWithStageAndCleanup` exercises that same handoff
+primitive with a checked DOWN failure. It requires one DOWN attempt and zero UP attempts,
+`Dispatch.stage == "down-attempted"`, both dispatch/callback cleanup finally-blocks, exact
+same-object propagation to the caller, and retention of a deliberately failing supplementary
+evidence capture only as a suppressed exception.
+
+This source correction is not a host/device result. The current shared/JVM source changed, so a fresh
+exact-head host/JVM gate and renewed relevant independent review are required before another focused
+device release.
+
 ## Scope and evidence boundary
 
 This correction changes testShared/JVM/androidTest and necessary test documentation only. It does not
