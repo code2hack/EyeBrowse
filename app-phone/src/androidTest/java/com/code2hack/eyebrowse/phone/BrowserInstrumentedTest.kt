@@ -1,6 +1,5 @@
 package com.code2hack.eyebrowse.phone
 
-import android.app.UiAutomation
 import android.content.Context
 import android.graphics.Rect
 import android.os.Handler
@@ -11,20 +10,15 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
-import android.view.accessibility.AccessibilityNodeInfo
 import android.webkit.WebView
 import android.widget.EditText
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso.onView
-import androidx.test.espresso.UiController
-import androidx.test.espresso.ViewAction
 import androidx.test.espresso.action.GeneralLocation
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.action.ViewActions.replaceText
-import androidx.test.espresso.action.ViewActions.swipeUp
 import androidx.test.espresso.assertion.ViewAssertions.matches
-import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.isEnabled
 import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.espresso.matcher.ViewMatchers.withText
@@ -520,12 +514,10 @@ class BrowserInstrumentedTest {
                         currentDom,
                     )
                 },
-                FinalDispatch { path ->
-                    dispatch.actionOnce(
-                        Runnable { SingleShotSwipe.send(prepared.controller, path) },
-                        LongSupplier { SystemClock.uptimeMillis() },
-                    )
-                },
+            )
+            dispatch.actionOnce(
+                Runnable { SingleShotSwipe.send(current.path) },
+                LongSupplier { SystemClock.uptimeMillis() },
             )
             recordInputEvidence(
                 "swipe final-sample intended=${current.path} ${current.input.describe()}",
@@ -816,11 +808,6 @@ class BrowserInstrumentedTest {
         fun run(domJson: String?, input: InputContext, path: InputSafety.Path)
     }
 
-    private fun interface FinalDispatch {
-        @Throws(Exception::class)
-        fun run(path: InputSafety.Path)
-    }
-
     private fun realClickElement(elementId: String) {
         realClickElement(elementId, HarnessProtocol.Dispatch(), null, null)
     }
@@ -893,7 +880,6 @@ class BrowserInstrumentedTest {
         dispatch: HarnessProtocol.Dispatch,
         seamHook: InputSeamHook?,
     ) {
-        val controller = captureUiController(prepared)
         recordInputEvidence(
             "tap intended=$point ${prepared.describe()} dom=${preparedDom.describe()}",
         )
@@ -921,21 +907,17 @@ class BrowserInstrumentedTest {
                         currentDom,
                     )
                 },
-                FinalDispatch { currentPoint ->
-                    val down = SingleShotSwipe.obtainTapDown(currentPoint)
-                    try {
-                        dispatch.tapOnce(
-                            Runnable { SingleShotSwipe.injectTapDown(controller, down) },
-                            Runnable {
-                                SingleShotSwipe.injectTapUp(controller, down, currentPoint)
-                            },
-                            LongSupplier { SystemClock.uptimeMillis() },
-                        )
-                    } finally {
-                        down.recycle()
-                    }
-                },
             )
+            val down = SingleShotSwipe.obtainTapDown(current.path)
+            try {
+                dispatch.tapOnce(
+                    Runnable { SingleShotSwipe.injectTapDown(down) },
+                    Runnable { SingleShotSwipe.injectTapUp(down, current.path) },
+                    LongSupplier { SystemClock.uptimeMillis() },
+                )
+            } finally {
+                down.recycle()
+            }
             recordInputEvidence(
                 "tap final-sample intended=${current.path} ${current.input.describe()}",
             )
@@ -1077,16 +1059,16 @@ class BrowserInstrumentedTest {
     )
 
     /**
-     * Final DOM/native/path admission remains in the WebView callback. On success exactly one input
-     * task is posted at the front of the main queue so injection runs after onReceiveValue returns
-     * without adding another Espresso pre-action idle boundary.
+     * Final DOM/native/path sampling and fail-closed admission occur in the same WebView callback
+     * after the last deliberate idle boundary. The callback then releases the instrumentation test
+     * thread; no later ActivityScenario, Espresso ViewInteraction/main-loop pump, focus wait,
+     * evidence write, or other observation occurs before the single Instrumentation input attempt.
      */
     private fun captureFinalReadiness(
         prepared: InputContext,
         expression: String,
         pathSampler: FinalPathSampler,
         admission: FinalAdmission,
-        dispatch: FinalDispatch,
     ): FinalReadiness {
         val activity = prepared.state.activity as MainActivity
         val view = prepared.state.target as WebView
@@ -1108,50 +1090,18 @@ class BrowserInstrumentedTest {
                 }
 
                 view.evaluateJavascript(expression) { value ->
-                    val admitted = handoff.capture {
-                        val currentDom = decodeJsValue(value)
-                        val currentInput = readInputContext(activity, view)
-                        val currentPath = pathSampler.sample(view, currentInput, currentDom)
-                        admission.run(currentDom, currentInput, currentPath)
-                        dom.set(currentDom)
-                        input.set(currentInput)
-                        path.set(currentPath)
-                    }
-                    if (!admitted) {
-                        done.countDown()
-                    } else {
-                        val posted =
-                            try {
-                                MAIN.postAtFrontOfQueue {
-                                    try {
-                                        handoff.capture {
-                                            requireTargetInputFocus(activity.packageName)
-                                            dispatch.run(
-                                                checkNotNull(path.get()) {
-                                                    "final dispatch path unavailable"
-                                                },
-                                            )
-                                        }
-                                    } finally {
-                                        done.countDown()
-                                    }
-                                }
-                            } catch (postingFailure: RuntimeException) {
-                                handoff.capture { throw postingFailure }
-                                done.countDown()
-                                return@evaluateJavascript
-                            } catch (postingFailure: AssertionError) {
-                                handoff.capture { throw postingFailure }
-                                done.countDown()
-                                return@evaluateJavascript
-                            }
-
-                        if (!posted) {
-                            handoff.capture {
-                                throw IllegalStateException("main queue rejected final input dispatch")
-                            }
-                            done.countDown()
+                    try {
+                        handoff.capture {
+                            val currentDom = decodeJsValue(value)
+                            val currentInput = readInputContext(activity, view)
+                            val currentPath = pathSampler.sample(view, currentInput, currentDom)
+                            admission.run(currentDom, currentInput, currentPath)
+                            dom.set(currentDom)
+                            input.set(currentInput)
+                            path.set(currentPath)
                         }
+                    } finally {
+                        done.countDown()
                     }
                 }
             } catch (unavailable: RuntimeException) {
@@ -1165,11 +1115,11 @@ class BrowserInstrumentedTest {
 
         try {
             if (!done.await(10_000, TimeUnit.MILLISECONDS)) {
-                throw IllegalStateException("final readiness/input dispatch timed out")
+                throw IllegalStateException("final readiness callback timed out")
             }
         } catch (interrupted: InterruptedException) {
             Thread.currentThread().interrupt()
-            throw IllegalStateException("interrupted while awaiting final input dispatch", interrupted)
+            throw IllegalStateException("interrupted while awaiting final readiness", interrupted)
         }
 
         handoff.rethrowIfPresent()
@@ -1181,67 +1131,22 @@ class BrowserInstrumentedTest {
         return FinalReadiness(dom.get(), finalInput, finalPath)
     }
 
-    /**
-     * Fail closed on the actual system input-focus owner immediately before Dispatch.begin.
-     *
-     * Instrumentation owns a single UiAutomation instance. DONT_SUPPRESS_ACCESSIBILITY_SERVICES
-     * keeps third-party accessibility services/overlays undisturbed; this harness only reads focus
-     * and never injects through UiAutomation. No retry or wait is performed.
-     */
-    private fun requireTargetInputFocus(expectedPackage: String) {
-        val automation = InstrumentationRegistry.getInstrumentation().getUiAutomation(
-            UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES,
-        ) ?: throw IllegalStateException("system input-focus owner unavailable")
-        val focused =
-            try {
-                automation.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-            } catch (unavailable: IllegalStateException) {
-                throw IllegalStateException("system input-focus owner unavailable", unavailable)
-            }
-                ?: throw IllegalStateException("system input-focus owner unavailable")
-        try {
-            val actualPackage = focused.packageName?.toString()
-                ?: throw IllegalStateException("system input-focus owner unavailable")
-            if (actualPackage != expectedPackage) {
-                throw IllegalStateException(
-                    "input focus owned by another package: $actualPackage; expected $expectedPackage",
-                )
-            }
-        } finally {
-            @Suppress("DEPRECATION")
-            focused.recycle()
-        }
-    }
-
     private class SwipePreparation(
         val input: InputContext,
         val path: InputSafety.Path,
-        val controller: UiController,
     )
 
     private fun captureSwipePreparation(): SwipePreparation {
         val expected = captureInputContext()
         val captured = AtomicReference<SwipePreparation?>()
-        val swipe = swipeUp()
-        onView(withId(R.id.browser_web_view)).perform(
-            object : ViewAction {
-                override fun getConstraints(): org.hamcrest.Matcher<View> = swipe.constraints
-
-                override fun getDescription(): String =
-                    "capture final-readiness swipe controller/provider"
-
-                override fun perform(controller: UiController, view: View) {
-                    if (view !== expected.state.target) {
-                        throw IllegalStateException(
-                            "intended WebView changed during swipe preparation",
-                        )
-                    }
-                    val webView = view as WebView
-                    val input = readInputContext(expected.state.activity as MainActivity, webView)
-                    captured.set(SwipePreparation(input, swipeProviderPath(webView), controller))
-                }
-            },
-        )
+        scenario.onActivity { activity ->
+            val view: WebView = activity.findViewById(R.id.browser_web_view)
+            if (view !== expected.state.target) {
+                throw IllegalStateException("intended WebView changed during swipe preparation")
+            }
+            val input = readInputContext(expected.state.activity as MainActivity, view)
+            captured.set(SwipePreparation(input, swipeProviderPath(view)))
+        }
         return captured.get() ?: throw IllegalStateException("swipe preparation unavailable")
     }
 
@@ -1254,28 +1159,6 @@ class BrowserInstrumentedTest {
         val end = GeneralLocation.TOP_CENTER.calculateCoordinates(view)
         return InputSafety.Path(start[0], start[1], end[0], end[1])
     }
-
-    private fun captureUiController(expected: InputContext): UiController {
-        val captured = AtomicReference<UiController?>()
-        onView(withId(R.id.browser_web_view)).perform(
-            object : ViewAction {
-                override fun getConstraints(): org.hamcrest.Matcher<View> = isDisplayed()
-
-                override fun getDescription(): String = "capture existing Espresso input controller"
-
-                override fun perform(controller: UiController, view: View) {
-                    if (view !== expected.state.target) {
-                        throw IllegalStateException(
-                            "intended WebView changed during controller capture",
-                        )
-                    }
-                    captured.set(controller)
-                }
-            },
-        )
-        return captured.get() ?: throw IllegalStateException("Espresso UiController unavailable")
-    }
-
 
     private fun awaitQueuedDomMutation(view: WebView, expression: String) {
         val done = CountDownLatch(1)
