@@ -159,7 +159,7 @@ round8 review established that pinned Espresso 3.6.1 still contains an internal 
 retry beneath `UiController`. Therefore the queue-front Espresso injection mechanism is retained
 only as history here; it is superseded by the strict Instrumentation route described below.
 
-## Focus-owner diagnostic and strict one-attempt reconciliation
+## Focus-owner diagnostic and strict single-submission reconciliation
 
 A separately labeled, read-only device diagnostic around the failing `1f54cec5` swipe established
 that display-0 input focus was held throughout the failure interval by the third-party package
@@ -195,8 +195,10 @@ Therefore the harness can observe thrown exceptions such as a cross-application 
 but it cannot truthfully observe a system-side `false` / timeout / generic failed result at the
 submission call. Such a silent outcome is never retried or resubmitted; it is detected only by the
 existing downstream input-effect assertions (activation/click/navigation for taps and positive
-document scroll for swipe). `HarnessProtocol.Dispatch` remains exactly what its source already
-states: API-call progress, not proof of website delivery.
+document scroll for swipe). Later MOVE/UP events in the already-defined gesture are distinct planned
+events, not resubmissions of an earlier event; the complete tap/swipe gesture itself is never replayed.
+`HarnessProtocol.Dispatch` remains exactly what its source already states: API-call progress, not
+proof of website delivery.
 
 No UiAutomation input, second automation client, INJECT_EVENTS grant, reflected InputManager path,
 or privileged workaround is introduced. This reconciles the source guarantee with §4.2's
