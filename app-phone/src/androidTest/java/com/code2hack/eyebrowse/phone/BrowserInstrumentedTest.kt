@@ -1385,7 +1385,7 @@ class BrowserInstrumentedTest {
                     }
             }
 
-            milestones?.recordDeferred(
+            checkNotNull(milestones).recordDeferred(
                 "INPUT FAILURE_EVIDENCE stage=$stage elapsedMs=${budget.elapsedMs()} " +
                     "context=${context ?: "unavailable"} dom=$dom " +
                     "primary=${primary.javaClass.simpleName}",
@@ -1779,7 +1779,7 @@ class BrowserInstrumentedTest {
                         )
                     }
 
-                milestones?.recordDeferred(
+                checkNotNull(milestones).recordDeferred(
                     "CASE_FAILURE_LOCAL case=$caseId outcome=$outcome " +
                         "dispatch=${dispatch.stage} marker=${snapshot?.marker ?: "unavailable"} " +
                         "location=" +
