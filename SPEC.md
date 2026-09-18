@@ -70,6 +70,14 @@ Pairing, connection, hosting, control ownership, RG presentation mode, and text-
 
 ## 4. Runtime and component boundaries
 
+### 4.0 Implementation language
+
+**Kotlin is the required production implementation language for EyeBrowse v0.0.1.** Production Android/shared source in `app-phone`, `app-rg`, and shared `core` modules MUST be implemented in Kotlin. Gradle configuration SHOULD continue to use Kotlin DSL (`.gradle.kts`).
+
+No new Java production source MAY be introduced after this decision baseline. Java production source already merged or present on an active implementation branch is transitional only and MUST be migrated to Kotlin before issue #5 can be accepted and before downstream v0.0.1 feature work is treated as implementation-ready. This migration MUST preserve externally observable behavior and acceptance evidence rather than redesigning the product while translating it.
+
+Historical experiments under `experiments/` do not need to be rewritten merely to satisfy this constraint. Existing Java test/support code MAY remain temporarily when it does not ship in the product, but new or materially rewritten product tests SHOULD use Kotlin unless a concrete tooling constraint is documented. Generated/vendor code is outside this language rule.
+
 EyeBrowse MUST remain one repository producing two Android APKs: Phone and RG. Shared contracts MUST NOT become divergent product forks.
 
 | Boundary | Responsibility |
