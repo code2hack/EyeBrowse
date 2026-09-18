@@ -8,11 +8,13 @@ import androidx.test.espresso.action.Press
 import androidx.test.platform.app.InstrumentationRegistry
 
 /**
- * Test-only strict single-attempt pointer injection through Instrumentation.
+ * Test-only single-submission pointer injection through Instrumentation.
  *
  * Event construction retains the pinned Espresso tap/FAST gesture shape, but the actual system
- * submission does not enter Espresso's retrying InputManagerEventInjectionStrategy. Every motion
- * event is sent at most once; a rejection/exception stops the gesture immediately with no replay.
+ * submission does not enter Espresso's retrying InputManagerEventInjectionStrategy. Every generated
+ * event is submitted at most once and is never resubmitted. Android 12 sendPointerSync is void:
+ * thrown failures are visible to this harness, while a false system injection result (and a
+ * RemoteException swallowed inside Instrumentation) is not observable at submission time.
  */
 internal object SingleShotSwipe {
     private const val SWIPE_EVENT_COUNT = 10
@@ -54,8 +56,10 @@ internal object SingleShotSwipe {
     }
 
     /**
-     * Exact pinned FAST shape: DOWN, ten linear MOVE points, UP over 150 ms. Events are submitted
-     * once in order through Instrumentation.sendPointerSync; the first rejection aborts the sequence.
+     * Exact pinned FAST shape: DOWN, ten linear MOVE points, UP over 150 ms. Each event is
+     * submitted once in order through Instrumentation.sendPointerSync and is never resubmitted.
+     * A thrown failure aborts immediately; silent platform-side failure is not observable here and
+     * is therefore detected only by the caller's downstream scroll/effect assertions.
      */
     fun send(path: InputSafety.Path) {
         val start = floatArrayOf(path.startX, path.startY)
