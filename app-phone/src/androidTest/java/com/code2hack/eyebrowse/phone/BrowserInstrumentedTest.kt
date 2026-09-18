@@ -56,6 +56,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import java.util.function.BooleanSupplier
+import java.util.function.LongSupplier
 
 /**
  * Instrumentation checks of the Phone browser against the local fixture server.
@@ -205,7 +206,7 @@ class BrowserInstrumentedTest {
             try {
                 trace.capture("baseline", "prepared", baseline)
                 trace.step = "dispatch"
-                trace.dispatch.actionOnce(Runnable { submitAddress(input) }, SystemClock::uptimeMillis)
+                trace.dispatch.actionOnce(Runnable { submitAddress(input) }, LongSupplier { SystemClock.uptimeMillis() })
                 trace.capture("dispatch", "returned", baseline)
                 trace.step = "observation"
                 val after = readFixtureSnapshot()
@@ -529,7 +530,7 @@ class BrowserInstrumentedTest {
                 FinalDispatch { path ->
                     dispatch.actionOnce(
                         Runnable { SingleShotSwipe.send(prepared.controller, path) },
-                        SystemClock::uptimeMillis,
+                        LongSupplier { SystemClock.uptimeMillis() },
                     )
                 },
             )
@@ -935,7 +936,7 @@ class BrowserInstrumentedTest {
                             Runnable {
                                 SingleShotSwipe.injectTapUp(controller, down, currentPoint)
                             },
-                            SystemClock::uptimeMillis,
+                            LongSupplier { SystemClock.uptimeMillis() },
                         )
                     } finally {
                         down.recycle()
@@ -1294,7 +1295,7 @@ class BrowserInstrumentedTest {
     private fun failureBudget(): HarnessProtocol.FailureBudget {
         if (failureBudget == null) {
             failureBudget = HarnessProtocol.FailureBudget(
-                SystemClock::elapsedRealtime,
+                LongSupplier { SystemClock.elapsedRealtime() },
                 HarnessProtocol.FailureBudget.DEFAULT_BUDGET_MS,
             )
         }
