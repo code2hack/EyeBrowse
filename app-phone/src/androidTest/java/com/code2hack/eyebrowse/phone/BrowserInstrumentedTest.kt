@@ -575,3 +575,318 @@ class BrowserInstrumentedTest {
         setElementText("editable-field", "automation-editable")
         assertEquals("automation-text", jsRead("document.getElementById('text-field').value"))
         assertEquals("automation-editable", domText("editable-field"))
+
+        val postsBefore = countPosts(SYNTHETIC_TEST_ID)
+        realClickElement("submit-button")
+        waitUntil("submission page") { domText("page-title") == "Submission recorded" }
+        assertEquals(
+            "exactly one submission for this test id",
+            postsBefore + 1,
+            countPosts(SYNTHETIC_TEST_ID),
+        )
+        val fields = lastPost(SYNTHETIC_TEST_ID).getJSONArray("fields").toString()
+        assertTrue(fields, fields.contains("test_id"))
+        assertTrue(fields, fields.contains("message"))
+        assertTrue(fields, fields.contains("secret"))
+        assertTrue(fields, fields.contains("notes"))
+        val raw = observationsRaw()
+        assertFalse("typed text must never reach the fixture record", raw.contains("automation-text"))
+        assertFalse(
+            "password text must never reach the fixture record",
+            raw.contains("automation-secret"),
+        )
+    }
+
+    private fun openAddress(url: String) {
+        submitAddress(url)
+    }
+
+    private fun submitAddress(text: String) {
+        onView(withId(R.id.address_input)).perform(click(), replaceText(text))
+        onView(withId(R.id.button_open)).perform(click())
+        dismissIme()
+    }
+
+    private fun addressFieldText(): String {
+        val text = AtomicReference("")
+        scenario.onActivity { activity ->
+            val field: EditText = activity.findViewById(R.id.address_input)
+            text.set(field.text.toString())
+        }
+        return text.get()
+    }
+
+    private fun fixtureUrl(path: String): String = FIXTURE_BASE + path
+
+    private fun dismissIme() {
+        try {
+            androidx.test.espresso.Espresso.closeSoftKeyboard()
+        } catch (_: RuntimeException) {
+        } catch (_: AssertionError) {
+        }
+    }
+
+    private fun awaitFixtureServer() {
+        val deadline = SystemClock.uptimeMillis() + 10_000
+        while (SystemClock.uptimeMillis() < deadline) {
+            try {
+                fetch("$FIXTURE_BASE/healthz")
+                return
+            } catch (_: Exception) {
+                SystemClock.sleep(200)
+            }
+        }
+        fail(
+            "fixture server not reachable at $FIXTURE_BASE " +
+                "(start tools/browser-fixtures.py and adb reverse tcp:25341 tcp:25341)",
+        )
+    }
+
+    private fun waitForMarker(): String {
+        val marker = AtomicReference<String?>()
+        waitUntil("fixture load marker") {
+            val value = domText("load-marker")
+            if (value != null && Regex("L\\d+").matches(value)) {
+                marker.set(value)
+                true
+            } else {
+                false
+            }
+        }
+        return checkNotNull(marker.get()) { "fixture marker missing after readiness" }
+    }
+
+    private fun waitUntil(description: String, condition: BooleanSupplier) {
+        val deadline = SystemClock.uptimeMillis() + TIMEOUT_MS
+        var last: Throwable? = null
+        while (SystemClock.uptimeMillis() < deadline) {
+            try {
+                if (condition.asBoolean) return
+            } catch (failure: RuntimeException) {
+                last = failure
+            } catch (failure: AssertionError) {
+                last = failure
+            }
+            SystemClock.sleep(150)
+        }
+        fail(
+            "timed out waiting for $description" +
+                if (last == null) "" else " (last: $last)",
+        )
+    }
+
+    private fun jsRead(expression: String): String? {
+        var last: IllegalStateException? = null
+        for (attempt in 0 until 2) {
+            try {
+                return jsOnce(expression)
+            } catch (failure: IllegalStateException) {
+                last = failure
+                try {
+                    Thread.sleep(500)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw failure
+                }
+            }
+        }
+        throw checkNotNull(last)
+    }
+
+    private fun js(expression: String): String? = jsOnce(expression)
+
+    private fun jsOnce(expression: String): String? {
+        val view = attachedWebView()
+        if (view == null) throw IllegalStateException("no WebView is attached")
+        val raw = AtomicReference<String?>()
+        val latch = CountDownLatch(1)
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            view.evaluateJavascript(expression) { value ->
+                raw.set(value)
+                latch.countDown()
+            }
+        }
+        try {
+            if (!latch.await(10_000, TimeUnit.MILLISECONDS)) {
+                throw IllegalStateException("JavaScript evaluation timed out")
+            }
+        } catch (failure: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw IllegalStateException("interrupted while evaluating JavaScript", failure)
+        }
+        return decodeJsValue(raw.get())
+    }
+
+    private fun jsOrNull(expression: String): String? =
+        try {
+            jsRead(expression)
+        } catch (_: RuntimeException) {
+            null
+        } catch (_: AssertionError) {
+            null
+        }
+
+    private fun decodeJsValue(raw: String?): String? {
+        if (raw == null || raw == "null") return null
+        return try {
+            val value = JSONObject("{\"v\":$raw}").get("v")
+            if (value === JSONObject.NULL) null else value.toString()
+        } catch (_: JSONException) {
+            raw
+        }
+    }
+
+    private fun domText(elementId: String): String? =
+        jsRead(
+            "(function(){var el=document.getElementById('$elementId');" +
+                "return el ? el.textContent : null;})()",
+        )
+
+    private fun setElementValue(elementId: String, value: String) {
+        js(
+            "(function(){var el=document.getElementById('$elementId');" +
+                "el.focus();el.value=${JSONObject.quote(value)};" +
+                "el.dispatchEvent(new Event('input',{bubbles:true}));" +
+                "el.dispatchEvent(new Event('change',{bubbles:true}));" +
+                "return el.value;})()",
+        )
+    }
+
+    private fun setElementText(elementId: String, value: String) {
+        js(
+            "(function(){var el=document.getElementById('$elementId');" +
+                "el.focus();el.textContent=${JSONObject.quote(value)};" +
+                "el.dispatchEvent(new Event('input',{bubbles:true}));" +
+                "return el.textContent;})()",
+        )
+    }
+
+    private fun attachedWebView(): WebView? {
+        val view = AtomicReference<WebView?>()
+        scenario.onActivity { activity ->
+            val current: WebView = activity.findViewById(R.id.browser_web_view)
+            view.set(current)
+            intendedActivity = WeakReference(activity)
+            intendedView = WeakReference(current)
+        }
+        return view.get()
+    }
+
+    private fun sessionLoading(): Boolean {
+        val loading = AtomicReference(false)
+        scenario.onActivity { loading.set(session.isLoading) }
+        return loading.get()
+    }
+
+    private fun statusText(): String {
+        val text = AtomicReference("")
+        scenario.onActivity { activity ->
+            val status: TextView = activity.findViewById(R.id.status_text)
+            text.set(if (status.visibility == View.VISIBLE) status.text.toString() else "")
+        }
+        return text.get()
+    }
+
+    private fun sessionDisplayUrl(): String? {
+        val url = AtomicReference<String?>()
+        scenario.onActivity { url.set(session.displayUrl()) }
+        return url.get()
+    }
+
+    private fun viewEnabled(viewId: Int): Boolean {
+        val enabled = AtomicReference(false)
+        scenario.onActivity { activity ->
+            enabled.set(activity.findViewById<View>(viewId).isEnabled)
+        }
+        return enabled.get()
+    }
+
+    private fun attachedWebViews(): Int {
+        val count = AtomicInteger()
+        scenario.onActivity { activity ->
+            val container: ViewGroup = activity.findViewById(R.id.web_container)
+            count.set(container.childCount)
+        }
+        return count.get()
+    }
+
+    private fun interface InputSeamHook {
+        fun run(view: WebView)
+    }
+
+    private fun interface FinalPathSampler {
+        fun sample(view: WebView, input: InputContext, domJson: String): InputSafety.Path
+    }
+
+    private fun interface FinalAdmission {
+        fun run(domJson: String, input: InputContext, path: InputSafety.Path)
+    }
+
+    private fun interface FinalDispatch {
+        @Throws(Exception::class)
+        fun run(path: InputSafety.Path)
+    }
+
+    private fun realClickElement(elementId: String) {
+        realClickElement(elementId, HarnessProtocol.Dispatch(), null, null)
+    }
+
+    private fun realClickElement(
+        elementId: String,
+        dispatch: HarnessProtocol.Dispatch,
+        expectedDocument: HarnessProtocol.Snapshot?,
+    ) {
+        realClickElement(elementId, dispatch, expectedDocument, null)
+    }
+
+    private fun realClickElement(
+        elementId: String,
+        dispatch: HarnessProtocol.Dispatch,
+        expectedDocument: HarnessProtocol.Snapshot?,
+        seamHook: InputSeamHook?,
+    ) {
+        awaitWindowFocus()
+        val identityGuard =
+            if (expectedDocument == null) {
+                ""
+            } else {
+                "if(document.getElementById('load-marker')?.textContent!==" +
+                    JSONObject.quote(expectedDocument.marker) +
+                    "||String(document.location.href)!==" +
+                    JSONObject.quote(expectedDocument.location) +
+                    "){return JSON.stringify({marker:document.getElementById('load-marker')?.textContent," +
+                    "location:String(document.location.href)});}"
+            }
+        val rectJson = js(
+            "(function(){$identityGuard" +
+                "var el=document.getElementById('$elementId');" +
+                "if(!el){return null;}el.scrollIntoView({block:'center'});" +
+                "var r=el.getBoundingClientRect();" +
+                "return JSON.stringify({x:(r.left+r.width/2),y:(r.top+r.height/2)," +
+                "w:window.innerWidth,h:window.innerHeight," +
+                "marker:document.getElementById('load-marker')?.textContent," +
+                "location:String(document.location.href)});})()",
+        )
+        if (rectJson == null) {
+            fail("fixture element not found: $elementId")
+            return
+        }
+        val rect = JSONObject(rectJson)
+        if (expectedDocument != null) {
+            assertEquals(
+                "document changed during touch preparation",
+                expectedDocument.marker,
+                rect.optString("marker", null),
+            )
+            assertEquals(
+                "location changed during touch preparation",
+                expectedDocument.location,
+                rect.getString("location"),
+            )
+        }
+        val preparedDom = tapDomState(elementId, rect)
+        val mapped = captureInputContext()
+        val point = tapPath(mapped, rect)
+        sendTap(mapped, preparedDom, elementId, point, dispatch, seamHook)
+    }
+
