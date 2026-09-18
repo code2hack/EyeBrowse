@@ -152,51 +152,51 @@ but ignores the boolean returned by `injectMotionEventSequence` and reports SUCC
 exception escapes. Thus a later scroll timeout does not establish that InputManager accepted the
 sequence.
 
-The current source keeps final DOM/native/path sampling and fail-closed admission inside the WebView
-value callback, but no longer injects while that callback is still executing. Only after admission
-passes, the callback posts exactly one input task with `Handler.postAtFrontOfQueue`; that task runs
-on the next main-loop iteration before ordinary queued UI work from this harness. A failed admission
-posts no input task. The existing `CallbackHandoff` spans both callback and front task, so checked,
-runtime, or assertion primaries still return to the instrumentation thread with the original
-`Dispatch.stage`.
+The f6/104 source lineage kept final DOM/native/path sampling and fail-closed admission inside the
+WebView value callback, then posted one queue-front Espresso input task. That historical correction
+made `false` injection results explicit and retained the pinned tap/FAST event shape, but the later
+round8 review established that pinned Espresso 3.6.1 still contains an internal SecurityException
+retry beneath `UiController`. Therefore the queue-front Espresso injection mechanism is retained
+only as history here; it is superseded by the strict Instrumentation route described below.
 
-Tap now uses Espresso's own `MotionEvents.obtainDownEvent` / `obtainUpEvent` construction and
-`Press.FINGER` precision. It performs one application-level DOWN/UP attempt and the same bounded
-tap-detection dwell used by Espresso, without MotionEvents' outer retry wrapper. Swipe constructs
-the exact pinned FAST sequence itself and calls `injectMotionEventSequence` once; a `false`
-result is now an explicit single-attempt failure rather than a fabricated SUCCESS followed by a
-scroll timeout. No second automation client, UiAutomation injection, permission grant, new product
-path, tolerance change, sleep-based readiness fence, or input replay is introduced.
+## Focus-owner diagnostic and strict one-attempt reconciliation
 
-This is source-only until a fresh exact-head host gate and renewed relevant review. Runtime success
-of the new queue-front/event-shape path remains a future device fact.
-
-## Focus-owner diagnostic and fail-closed admission
-
-A separately labeled, read-only device diagnostic around the failing `1f54cec5` swipe established that
-display-0 input focus was held throughout the failure interval by the third-party package
+A separately labeled, read-only device diagnostic around the failing `1f54cec5` swipe established
+that display-0 input focus was held throughout the failure interval by the third-party package
 `cn.litiaotiao.app`, not the EyeBrowse activity under test. This reconciles the earlier direct
 `sendPointerSync` cross-application SecurityException with the later Espresso/InputManager
-`false` results: both are evidence of an input attempt while another application's window owns
-system input focus. This diagnostic is environment evidence, not a passing test and not a license to
-retry, dismiss, disable, or inject across the other app.
+`false` results: both are evidence of an input attempt while another application's window owned
+system input focus. The environment interferer was handled separately by the Manager/Owner; this
+diagnostic is not a passing test and does not authorize retries or cross-app injection.
 
-The harness now adds one final fail-closed ownership predicate immediately before
-`HarnessProtocol.Dispatch.begin` in the already-existing queue-front input task. It reads the
-instrumentation-owned `UiAutomation` with
-`FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES` and calls
-`findFocus(AccessibilityNodeInfo.FOCUS_INPUT)`. The focused node's package must exactly equal the
-target activity package. Missing focus/package information or a different package throws before
-dispatch begins, leaving `Dispatch.stage == "not-attempted"`.
+The round8 review correctly rejected the first harness response, which called
+`getUiAutomation(...).findFocus(FOCUS_INPUT)` after final admission. That API can connect/reconnect
+UiAutomation and block on an accessibility result, so it was a slow post-admission observation with
+no complete readiness refresh and also violated the existing no-extra-UiAutomation-connection
+constraint. That focus probe is now removed completely.
 
-This is read-only introspection. Input remains on the pinned Espresso `UiController`; UiAutomation
-is never used to inject. There is no polling, wait, retry, auto-dismiss, new privilege, second input
-client, or timing reset. The already source-cleared final DOM/native/path admission and queue-front
-single-shot dispatch ordering are otherwise unchanged.
+The actual input route is now strict `Instrumentation.sendPointerSync`, executed on the
+instrumentation test thread immediately after the decisive WebView callback releases its result.
+Final DOM/native/path sampling and `requireRecomputedReady` still occur in that callback after the
+last deliberate idle boundary. Between callback completion and `Dispatch.begin` there is no later
+ActivityScenario call, Espresso ViewInteraction/main-loop pump, focus wait, milestone/file/HTTP
+evidence write, UiAutomation/accessibility observation, or other harness observation.
 
-The same correction set also restores the Java source's nullable `findViewById` semantics in
-`attachedWebView()`: Kotlin no longer inserts a non-null intrinsic check when the WebView is
-temporarily absent. No new synchronization or readiness wait is added.
+This also removes pinned Espresso 3.6.1's hidden
+`InputManagerEventInjectionStrategy` SecurityException retry. Tap submits one DOWN and, only if
+that succeeds, one UP. Swipe retains the pinned FAST shape (DOWN, ten interpolated MOVE events, UP
+over the 150 ms cadence), but each event is submitted exactly once in order; the first rejection
+aborts the sequence and no rejected/uncertain event is replayed. The cadence sleep is gesture timing
+on the instrumentation thread, not readiness waiting or rejection recovery.
+
+`Instrumentation.sendPointerSync` is scoped by Android to windows owned by the instrumented
+application. If another app owns the target at injection time, the platform rejection is retained as
+the original single-attempt failure and the harness does not retry it. No UiAutomation input,
+second automation client, INJECT_EVENTS grant, reflected InputManager path, or privileged workaround
+is introduced.
+
+The Kotlin conversion parity fix also remains: `attachedWebView()` preserves the Java source's
+nullable `findViewById` behavior and adds no synchronization/readiness wait.
 
 ## Scope and evidence boundary
 
