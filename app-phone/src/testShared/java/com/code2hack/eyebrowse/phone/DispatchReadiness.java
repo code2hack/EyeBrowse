@@ -1,6 +1,7 @@
 package com.code2hack.eyebrowse.phone;
 
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.LongSupplier;
 
 /**
@@ -105,6 +106,39 @@ final class DispatchReadiness {
                 preparedDom, currentDom);
         if (reason != null) {
             throw new IllegalStateException(reason);
+        }
+    }
+
+    @FunctionalInterface
+    interface CallbackWork {
+        void run() throws Exception;
+    }
+
+    /**
+     * Exact callback-to-test-thread failure relay used by the final Android readiness/input path.
+     * Checked injection failures are retained by object identity; assertion/runtime failures keep
+     * the same behavior. Fatal VM errors are deliberately not converted into ordinary test results.
+     */
+    static final class CallbackHandoff {
+        private final AtomicReference<Throwable> primary = new AtomicReference<>();
+
+        void capture(CallbackWork work) {
+            try {
+                work.run();
+            } catch (Exception | AssertionError failure) {
+                primary.compareAndSet(null, failure);
+            }
+        }
+
+        void rethrowIfPresent() throws Exception {
+            Throwable failure = primary.get();
+            if (failure == null) {
+                return;
+            }
+            if (failure instanceof Exception) {
+                throw (Exception) failure;
+            }
+            throw (AssertionError) failure;
         }
     }
 
