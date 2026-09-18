@@ -73,16 +73,6 @@ class BrowserInstrumentedTest {
 
     private lateinit var scenario: ActivityScenario<MainActivity>
     private lateinit var session: PhoneBrowserSession
-    private val main = Handler(Looper.getMainLooper())
-    private val diagnosticQueue = object : HarnessProtocol.MainQueue {
-        override fun post(work: Runnable) {
-            if (!main.post(work)) throw IllegalStateException("main queue rejected diagnostic")
-        }
-
-        override fun remove(work: Runnable) {
-            main.removeCallbacks(work)
-        }
-    }
     private val diagnosticOwner = HarnessProtocol.DiagnosticOwner()
     private var intendedActivity = WeakReference<MainActivity>(null)
     private var intendedView = WeakReference<WebView>(null)
@@ -1129,7 +1119,7 @@ class BrowserInstrumentedTest {
                     } else {
                         val posted =
                             try {
-                                main.postAtFrontOfQueue {
+                                MAIN.postAtFrontOfQueue {
                                     try {
                                         handoff.capture {
                                             dispatch.run(
@@ -1255,7 +1245,7 @@ class BrowserInstrumentedTest {
         val done = CountDownLatch(1)
         val failure = AtomicReference<Throwable?>()
         if (
-            !main.post {
+            !MAIN.post {
                 try {
                     if (!view.isAttachedToWindow) {
                         throw IllegalStateException("mutation target WebView detached")
@@ -1306,7 +1296,7 @@ class BrowserInstrumentedTest {
         val operation = HarnessProtocol.Diagnostic(
             diagnosticOwner,
             failureBudget(),
-            diagnosticQueue,
+            DIAGNOSTIC_QUEUE,
             work,
         )
         operation.schedule()
@@ -1892,6 +1882,19 @@ class BrowserInstrumentedTest {
                 "var m=document.getElementById('load-marker'),t=document.getElementById('page-title');" +
                 "return JSON.stringify({marker:m?m.textContent:null,title:t?t.textContent:null," +
                 "location:String(document.location.href),readyState:document.readyState});})()"
+
+        private val MAIN = Handler(Looper.getMainLooper())
+        private val DIAGNOSTIC_QUEUE = object : HarnessProtocol.MainQueue {
+            override fun post(work: Runnable) {
+                if (!MAIN.post(work)) {
+                    throw IllegalStateException("main queue rejected diagnostic")
+                }
+            }
+
+            override fun remove(work: Runnable) {
+                MAIN.removeCallbacks(work)
+            }
+        }
 
         private var milestones: MilestoneSink? = null
 
