@@ -1,6 +1,7 @@
 package com.code2hack.eyebrowse.phone;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThrows;
 
@@ -89,8 +90,9 @@ public class DispatchReadinessTest {
         CheckedInjectionFailure primary = new CheckedInjectionFailure();
         IllegalStateException evidenceFailure = new IllegalStateException("evidence failed");
 
+        boolean callbackSucceeded;
         try {
-            handoff.capture(() -> {
+            callbackSucceeded = handoff.capture(() -> {
                 try {
                     DispatchReadiness.tapOnceIfRecomputedReady(
                             nativeState(), nativeState(), point(),
@@ -110,6 +112,8 @@ public class DispatchReadinessTest {
         } finally {
             callbackCleanup.incrementAndGet();
         }
+
+        assertFalse(callbackSucceeded);
 
         Exception actual = assertThrows(Exception.class, handoff::rethrowIfPresent);
         assertSame(primary, actual);
