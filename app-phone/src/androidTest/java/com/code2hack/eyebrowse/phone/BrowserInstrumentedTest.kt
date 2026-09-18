@@ -756,7 +756,7 @@ class BrowserInstrumentedTest {
     private fun attachedWebView(): WebView? {
         val view = AtomicReference<WebView?>()
         scenario.onActivity { activity ->
-            val current: WebView = activity.findViewById(R.id.browser_web_view)
+            val current: WebView? = activity.findViewById(R.id.browser_web_view)
             view.set(current)
             intendedActivity = WeakReference(activity)
             intendedView = WeakReference(current)
