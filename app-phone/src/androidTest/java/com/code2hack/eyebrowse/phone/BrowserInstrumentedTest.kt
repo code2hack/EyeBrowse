@@ -815,11 +815,11 @@ class BrowserInstrumentedTest {
     }
 
     private fun interface FinalPathSampler {
-        fun sample(view: WebView, input: InputContext, domJson: String): InputSafety.Path
+        fun sample(view: WebView, input: InputContext, domJson: String?): InputSafety.Path
     }
 
     private fun interface FinalAdmission {
-        fun run(domJson: String, input: InputContext, path: InputSafety.Path)
+        fun run(domJson: String?, input: InputContext, path: InputSafety.Path)
     }
 
     private fun interface FinalDispatch {
@@ -888,5 +888,364 @@ class BrowserInstrumentedTest {
         val mapped = captureInputContext()
         val point = tapPath(mapped, rect)
         sendTap(mapped, preparedDom, elementId, point, dispatch, seamHook)
+    }
+
+
+    private fun sendTap(
+        prepared: InputContext,
+        preparedDom: DispatchReadiness.DomState,
+        elementId: String,
+        point: InputSafety.Path,
+        dispatch: HarnessProtocol.Dispatch,
+        seamHook: InputSeamHook?,
+    ) {
+        val controller = captureUiController(prepared)
+        recordInputEvidence(
+            "tap intended=$point ${prepared.describe()} dom=${preparedDom.describe()}",
+        )
+        awaitWindowFocus()
+        try {
+            val preBoundaryJson = js(tapFactsJs(elementId))
+            if (preBoundaryJson == null) {
+                throw IllegalStateException("pre-boundary tap target unavailable")
+            }
+            val preBoundaryDom = tapDomState(elementId, json(preBoundaryJson))
+            requireDomUnchanged(preparedDom, preBoundaryDom)
+            seamHook?.run(prepared.state.target as WebView)
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            val current = captureFinalReadiness(
+                prepared,
+                tapFactsJs(elementId),
+                FinalPathSampler { _, input, domJson -> tapPath(input, domJson) },
+                FinalAdmission { domJson, input, currentPoint ->
+                    val currentDom = tapDomState(elementId, json(domJson))
+                    DispatchReadiness.requireRecomputedReady(
+                        prepared.state,
+                        input.state,
+                        currentPoint,
+                        preparedDom,
+                        currentDom,
+                    )
+                },
+                FinalDispatch { currentPoint ->
+                    val down = SingleShotSwipe.obtainTapDown(currentPoint)
+                    try {
+                        dispatch.tapOnce(
+                            Runnable { SingleShotSwipe.injectTapDown(controller, down) },
+                            Runnable {
+                                SingleShotSwipe.injectTapUp(controller, down, currentPoint)
+                            },
+                            SystemClock::uptimeMillis,
+                        )
+                    } finally {
+                        down.recycle()
+                    }
+                },
+            )
+            recordInputEvidence(
+                "tap final-sample intended=${current.path} ${current.input.describe()}",
+            )
+        } catch (failure: Exception) {
+            recordFailureEvidence("tap-dispatch stage=${dispatch.stage}", failure, null)
+            throw failure
+        } catch (failure: AssertionError) {
+            recordFailureEvidence("tap-dispatch stage=${dispatch.stage}", failure, null)
+            throw failure
+        }
+    }
+
+    private fun tapFactsJs(elementId: String): String =
+        "(function(){var el=document.getElementById(${JSONObject.quote(elementId)});" +
+            "if(!el)return null;var r=el.getBoundingClientRect();" +
+            "return JSON.stringify({x:r.left+r.width/2,y:r.top+r.height/2," +
+            "w:window.innerWidth,h:window.innerHeight," +
+            "marker:document.getElementById('load-marker')?.textContent," +
+            "location:String(document.location.href)});})()"
+
+    private fun tapDomState(
+        elementId: String,
+        value: JSONObject,
+    ): DispatchReadiness.DomState =
+        try {
+            DispatchReadiness.DomState(
+                value.optString("marker", null),
+                value.getString("location"),
+                elementId,
+                "x=${value.getDouble("x")};y=${value.getDouble("y")};" +
+                    "w=${value.getDouble("w")};h=${value.getDouble("h")}",
+            )
+        } catch (invalid: JSONException) {
+            throw IllegalStateException("tap DOM readiness was not valid JSON", invalid)
+        }
+
+    private fun tapPath(input: InputContext, domJson: String?): InputSafety.Path =
+        tapPath(input, json(domJson))
+
+    private fun tapPath(input: InputContext, value: JSONObject): InputSafety.Path =
+        try {
+            val cssWidth = value.getDouble("w")
+            val cssHeight = value.getDouble("h")
+            if (cssWidth <= 0 || cssHeight <= 0) {
+                throw IllegalStateException("tap CSS viewport unavailable")
+            }
+            val localX = (value.getDouble("x") * input.state.width / cssWidth).toFloat()
+            val localY = (value.getDouble("y") * input.state.height / cssHeight).toFloat()
+            if (
+                localX < 1 ||
+                localY < 1 ||
+                localX > input.state.width - 1 ||
+                localY > input.state.height - 1
+            ) {
+                throw IllegalStateException("computed touch point outside the WebView")
+            }
+            InputSafety.Path(
+                input.state.x + localX,
+                input.state.y + localY,
+                input.state.x + localX,
+                input.state.y + localY,
+            )
+        } catch (invalid: JSONException) {
+            throw IllegalStateException("tap path DOM readiness was not valid JSON", invalid)
+        }
+
+    private fun swipeDomState(facts: ScrollFacts): DispatchReadiness.DomState {
+        if (facts.error != null) {
+            throw IllegalStateException("swipe DOM readiness unavailable: ${facts.error}")
+        }
+        return DispatchReadiness.DomState(
+            facts.marker,
+            facts.rawLocation,
+            "document-scroll",
+            swipeGeometry(
+                facts.scrollTop,
+                facts.scrollY,
+                facts.scrollHeight,
+                facts.clientHeight,
+                facts.innerWidth,
+                facts.innerHeight,
+            ),
+        )
+    }
+
+    private fun swipeDomState(jsonValue: String?): DispatchReadiness.DomState {
+        val value = json(jsonValue)
+        return try {
+            DispatchReadiness.DomState(
+                value.optString("marker", null),
+                value.getString("location"),
+                "document-scroll",
+                swipeGeometry(
+                    value.getInt("scrollTop"),
+                    value.getInt("scrollY"),
+                    value.getInt("scrollHeight"),
+                    value.getInt("clientHeight"),
+                    value.getInt("innerWidth"),
+                    value.getInt("innerHeight"),
+                ),
+            )
+        } catch (invalid: JSONException) {
+            throw IllegalStateException("swipe DOM readiness was not valid JSON", invalid)
+        }
+    }
+
+    private fun swipeGeometry(
+        scrollTop: Int,
+        scrollY: Int,
+        scrollHeight: Int,
+        clientHeight: Int,
+        innerWidth: Int,
+        innerHeight: Int,
+    ): String =
+        "scrollTop=$scrollTop;scrollY=$scrollY;scrollHeight=$scrollHeight;" +
+            "clientHeight=$clientHeight;innerWidth=$innerWidth;innerHeight=$innerHeight"
+
+    private fun json(value: String?): JSONObject {
+        if (value == null) throw IllegalStateException("DOM readiness unavailable")
+        return try {
+            JSONObject(value)
+        } catch (invalid: JSONException) {
+            throw IllegalStateException("DOM readiness was not valid JSON", invalid)
+        }
+    }
+
+    private fun requireDomUnchanged(
+        prepared: DispatchReadiness.DomState,
+        current: DispatchReadiness.DomState,
+    ) {
+        val reason = prepared.revalidationReason(current)
+        if (reason != null) throw IllegalStateException(reason)
+    }
+
+    private class FinalReadiness(
+        val domJson: String?,
+        val input: InputContext,
+        val path: InputSafety.Path,
+    )
+
+    /**
+     * Final DOM/native/path admission remains in the WebView callback. On success exactly one input
+     * task is posted at the front of the main queue so injection runs after onReceiveValue returns
+     * without adding another Espresso pre-action idle boundary.
+     */
+    private fun captureFinalReadiness(
+        prepared: InputContext,
+        expression: String,
+        pathSampler: FinalPathSampler,
+        admission: FinalAdmission,
+        dispatch: FinalDispatch,
+    ): FinalReadiness {
+        val activity = prepared.state.activity as MainActivity
+        val view = prepared.state.target as WebView
+        val dom = AtomicReference<String?>()
+        val input = AtomicReference<InputContext?>()
+        val path = AtomicReference<InputSafety.Path?>()
+        val handoff = DispatchReadiness.CallbackHandoff()
+        val done = CountDownLatch(1)
+
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            try {
+                if (
+                    activity.isDestroyed ||
+                    activity.isFinishing ||
+                    !view.isAttachedToWindow ||
+                    activity.findViewById<WebView>(R.id.browser_web_view) !== view
+                ) {
+                    throw IllegalStateException("intended Activity/view unavailable")
+                }
+
+                view.evaluateJavascript(expression) { value ->
+                    val admitted = handoff.capture {
+                        val currentDom = decodeJsValue(value)
+                        val currentInput = readInputContext(activity, view)
+                        val currentPath = pathSampler.sample(view, currentInput, currentDom)
+                        admission.run(currentDom, currentInput, currentPath)
+                        dom.set(currentDom)
+                        input.set(currentInput)
+                        path.set(currentPath)
+                    }
+                    if (!admitted) {
+                        done.countDown()
+                    } else {
+                        val posted =
+                            try {
+                                main.postAtFrontOfQueue {
+                                    try {
+                                        handoff.capture {
+                                            dispatch.run(
+                                                checkNotNull(path.get()) {
+                                                    "final dispatch path unavailable"
+                                                },
+                                            )
+                                        }
+                                    } finally {
+                                        done.countDown()
+                                    }
+                                }
+                            } catch (postingFailure: RuntimeException) {
+                                handoff.capture { throw postingFailure }
+                                done.countDown()
+                                return@evaluateJavascript
+                            } catch (postingFailure: AssertionError) {
+                                handoff.capture { throw postingFailure }
+                                done.countDown()
+                                return@evaluateJavascript
+                            }
+
+                        if (!posted) {
+                            handoff.capture {
+                                throw IllegalStateException("main queue rejected final input dispatch")
+                            }
+                            done.countDown()
+                        }
+                    }
+                }
+            } catch (unavailable: RuntimeException) {
+                handoff.capture { throw unavailable }
+                done.countDown()
+            } catch (unavailable: AssertionError) {
+                handoff.capture { throw unavailable }
+                done.countDown()
+            }
+        }
+
+        try {
+            if (!done.await(10_000, TimeUnit.MILLISECONDS)) {
+                throw IllegalStateException("final readiness/input dispatch timed out")
+            }
+        } catch (interrupted: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw IllegalStateException("interrupted while awaiting final input dispatch", interrupted)
+        }
+
+        handoff.rethrowIfPresent()
+        val finalInput = input.get()
+        val finalPath = path.get()
+        if (finalInput == null || finalPath == null) {
+            throw IllegalStateException("final input readiness unavailable")
+        }
+        return FinalReadiness(dom.get(), finalInput, finalPath)
+    }
+
+    private class SwipePreparation(
+        val input: InputContext,
+        val path: InputSafety.Path,
+        val controller: UiController,
+    )
+
+    private fun captureSwipePreparation(): SwipePreparation {
+        val expected = captureInputContext()
+        val captured = AtomicReference<SwipePreparation?>()
+        val swipe = swipeUp()
+        onView(withId(R.id.browser_web_view)).perform(
+            object : ViewAction {
+                override fun getConstraints(): org.hamcrest.Matcher<View> = swipe.constraints
+
+                override fun getDescription(): String =
+                    "capture final-readiness swipe controller/provider"
+
+                override fun perform(controller: UiController, view: View) {
+                    if (view !== expected.state.target) {
+                        throw IllegalStateException(
+                            "intended WebView changed during swipe preparation",
+                        )
+                    }
+                    val webView = view as WebView
+                    val input = readInputContext(expected.state.activity as MainActivity, webView)
+                    captured.set(SwipePreparation(input, swipeProviderPath(webView), controller))
+                }
+            },
+        )
+        return captured.get() ?: throw IllegalStateException("swipe preparation unavailable")
+    }
+
+    private fun swipeProviderPath(view: WebView): InputSafety.Path {
+        val start = GeneralLocation.translate(
+            GeneralLocation.BOTTOM_CENTER,
+            0f,
+            -0.083f,
+        ).calculateCoordinates(view)
+        val end = GeneralLocation.TOP_CENTER.calculateCoordinates(view)
+        return InputSafety.Path(start[0], start[1], end[0], end[1])
+    }
+
+    private fun captureUiController(expected: InputContext): UiController {
+        val captured = AtomicReference<UiController?>()
+        onView(withId(R.id.browser_web_view)).perform(
+            object : ViewAction {
+                override fun getConstraints(): org.hamcrest.Matcher<View> = isDisplayed()
+
+                override fun getDescription(): String = "capture existing Espresso input controller"
+
+                override fun perform(controller: UiController, view: View) {
+                    if (view !== expected.state.target) {
+                        throw IllegalStateException(
+                            "intended WebView changed during controller capture",
+                        )
+                    }
+                    captured.set(controller)
+                }
+            },
+        )
+        return captured.get() ?: throw IllegalStateException("Espresso UiController unavailable")
     }
 
