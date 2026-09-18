@@ -132,6 +132,45 @@ This source correction is not a host/device result. The current shared/JVM sourc
 exact-head host/JVM gate and renewed relevant independent review are required before another focused
 device release.
 
+## Focused3 #2 device evidence and event-delivery correction
+
+The focused3 run on `f6d9a7a58f2eea4754e83cbaec020f56f3e0b731` completed all three
+selected methods in 29.005 s on the authorized API31 S20+ and returned one PASS / two FAIL:
+
+- delayed consumer release/reacquire remained PASS;
+- the content-destination tap passed final recomputed readiness, then Espresso
+  `UiController.injectMotionEvent` returned `false`; and
+- the swipe no longer hit the earlier INJECT_EVENTS SecurityException, but the pinned
+  `Swipe.FAST` path timed out waiting for document scroll.
+
+These are new runtime modes, not passes. They retain the earlier evidence that the stale mapping
+comparison and direct `sendPointerSync` permission route were no longer the active failures.
+
+Pinned Espresso source matters to the correction. `UiControllerImpl` requires motion injection on
+the main thread. `Swipe.FAST` constructs one DOWN + ten linear MOVE events + one UP over 150 ms,
+but ignores the boolean returned by `injectMotionEventSequence` and reports SUCCESS unless an
+exception escapes. Thus a later scroll timeout does not establish that InputManager accepted the
+sequence.
+
+The current source keeps final DOM/native/path sampling and fail-closed admission inside the WebView
+value callback, but no longer injects while that callback is still executing. Only after admission
+passes, the callback posts exactly one input task with `Handler.postAtFrontOfQueue`; that task runs
+on the next main-loop iteration before ordinary queued UI work from this harness. A failed admission
+posts no input task. The existing `CallbackHandoff` spans both callback and front task, so checked,
+runtime, or assertion primaries still return to the instrumentation thread with the original
+`Dispatch.stage`.
+
+Tap now uses Espresso's own `MotionEvents.obtainDownEvent` / `obtainUpEvent` construction and
+`Press.FINGER` precision. It performs one application-level DOWN/UP attempt and the same bounded
+tap-detection dwell used by Espresso, without MotionEvents' outer retry wrapper. Swipe constructs
+the exact pinned FAST sequence itself and calls `injectMotionEventSequence` once; a `false`
+result is now an explicit single-attempt failure rather than a fabricated SUCCESS followed by a
+scroll timeout. No second automation client, UiAutomation injection, permission grant, new product
+path, tolerance change, sleep-based readiness fence, or input replay is introduced.
+
+This is source-only until a fresh exact-head host gate and renewed relevant review. Runtime success
+of the new queue-front/event-shape path remains a future device fact.
+
 ## Scope and evidence boundary
 
 This correction changes testShared/JVM/androidTest and necessary test documentation only. It does not
