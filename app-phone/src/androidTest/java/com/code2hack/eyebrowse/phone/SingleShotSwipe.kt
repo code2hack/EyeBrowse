@@ -3,15 +3,16 @@ package com.code2hack.eyebrowse.phone
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.ViewConfiguration
-import androidx.test.espresso.InjectEventSecurityException
-import androidx.test.espresso.UiController
 import androidx.test.espresso.action.MotionEvents
 import androidx.test.espresso.action.Press
+import androidx.test.platform.app.InstrumentationRegistry
 
 /**
- * Test-only one-attempt Espresso-compatible pointer construction on an already-captured UiController.
- * GeneralSwipeAction/MotionEvents retry wrappers are not used. A false controller result is a hard
- * single-attempt failure; checked injection failures keep their original object identity.
+ * Test-only strict single-attempt pointer injection through Instrumentation.
+ *
+ * Event construction retains the pinned Espresso tap/FAST gesture shape, but the actual system
+ * submission does not enter Espresso's retrying InputManagerEventInjectionStrategy. Every motion
+ * event is sent at most once; a rejection/exception stops the gesture immediately with no replay.
  */
 internal object SingleShotSwipe {
     private const val SWIPE_EVENT_COUNT = 10
@@ -24,58 +25,39 @@ internal object SingleShotSwipe {
         )
 
     /**
-     * Sends one Espresso-shaped DOWN and gives the main loop the same bounded tap-detection dwell
-     * used by MotionEvents.sendDown, but never retries a false/uncertain DOWN.
+     * One DOWN submission. The following sleep is only the retained tap-detection gesture cadence,
+     * not readiness observation, retry, or rejection recovery.
      */
-    fun injectTapDown(controller: UiController, down: MotionEvent) {
-        requireController(controller)
-        try {
-            if (!controller.injectMotionEvent(down)) {
-                throw IllegalStateException("Espresso tap DOWN injection returned false")
-            }
-            val isTapAt = down.downTime + ViewConfiguration.getTapTimeout() / 2L
-            while (true) {
-                val delay = isTapAt - SystemClock.uptimeMillis()
-                if (delay <= 10L) {
-                    break
-                }
-                controller.loopMainThreadForAtLeast(maxOf(1L, delay / 4L))
-            }
-        } catch (original: InjectEventSecurityException) {
-            throw original
-        }
+    fun injectTapDown(down: MotionEvent) {
+        instrumentation().sendPointerSync(down)
+        sleepUntil(down.downTime + ViewConfiguration.getTapTimeout() / 2L)
     }
 
     fun injectTapUp(
-        controller: UiController,
         down: MotionEvent,
         point: InputSafety.Path,
     ) {
-        requireController(controller)
+        val eventTime = maxOf(
+            SystemClock.uptimeMillis(),
+            down.downTime + ViewConfiguration.getTapTimeout() / 2L,
+        )
         val up = MotionEvents.obtainUpEvent(
             down,
+            eventTime,
             floatArrayOf(point.endX, point.endY),
         )
         try {
-            try {
-                if (!controller.injectMotionEvent(up)) {
-                    throw IllegalStateException("Espresso tap UP injection returned false")
-                }
-            } catch (original: InjectEventSecurityException) {
-                throw original
-            }
+            instrumentation().sendPointerSync(up)
         } finally {
             up.recycle()
         }
     }
 
     /**
-     * Exact pinned FAST shape: DOWN, ten linear MOVE points, UP over 150 ms. Unlike Swipe.FAST,
-     * this helper observes injectMotionEventSequence's boolean result instead of silently returning
-     * SUCCESS when InputManager reports false.
+     * Exact pinned FAST shape: DOWN, ten linear MOVE points, UP over 150 ms. Events are submitted
+     * once in order through Instrumentation.sendPointerSync; the first rejection aborts the sequence.
      */
-    fun send(controller: UiController, path: InputSafety.Path) {
-        requireController(controller)
+    fun send(path: InputSafety.Path) {
         val start = floatArrayOf(path.startX, path.startY)
         val end = floatArrayOf(path.endX, path.endY)
         val precision = Press.FINGER.describePrecision()
@@ -96,21 +78,22 @@ internal object SingleShotSwipe {
             }
             eventTime += intervalMs.toLong()
             events += MotionEvents.obtainUpEvent(down, eventTime, end)
-            try {
-                if (!controller.injectMotionEventSequence(events)) {
-                    throw IllegalStateException("Espresso swipe injection returned false")
-                }
-            } catch (original: InjectEventSecurityException) {
-                throw original
+
+            for (event in events) {
+                sleepUntil(event.eventTime)
+                instrumentation().sendPointerSync(event)
             }
         } finally {
             events.forEach(MotionEvent::recycle)
         }
     }
 
-    private fun requireController(controller: UiController?) {
-        if (controller == null) {
-            throw IllegalStateException("captured Espresso UiController unavailable")
+    private fun instrumentation() = InstrumentationRegistry.getInstrumentation()
+
+    private fun sleepUntil(eventTime: Long) {
+        val remaining = eventTime - SystemClock.uptimeMillis()
+        if (remaining > 0) {
+            SystemClock.sleep(remaining)
         }
     }
 }
