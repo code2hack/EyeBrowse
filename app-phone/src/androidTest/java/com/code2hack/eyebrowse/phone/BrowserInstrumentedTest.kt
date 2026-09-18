@@ -1249,3 +1249,384 @@ class BrowserInstrumentedTest {
         return captured.get() ?: throw IllegalStateException("Espresso UiController unavailable")
     }
 
+
+    private fun awaitQueuedDomMutation(view: WebView, expression: String) {
+        val done = CountDownLatch(1)
+        val failure = AtomicReference<Throwable?>()
+        if (
+            !main.post {
+                try {
+                    if (!view.isAttachedToWindow) {
+                        throw IllegalStateException("mutation target WebView detached")
+                    }
+                    view.evaluateJavascript(expression) { done.countDown() }
+                } catch (unavailable: RuntimeException) {
+                    failure.set(unavailable)
+                    done.countDown()
+                } catch (unavailable: AssertionError) {
+                    failure.set(unavailable)
+                    done.countDown()
+                }
+            }
+        ) {
+            throw IllegalStateException("main queue rejected DOM mutation regression")
+        }
+
+        try {
+            if (!done.await(10_000, TimeUnit.MILLISECONDS)) {
+                throw IllegalStateException("queued DOM mutation timed out")
+            }
+        } catch (interrupted: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw IllegalStateException("interrupted while awaiting DOM mutation", interrupted)
+        }
+
+        when (val unavailable = failure.get()) {
+            is RuntimeException -> throw unavailable
+            is AssertionError -> throw unavailable
+        }
+    }
+
+    private fun recordInputEvidence(line: String) {
+        milestones?.record("INPUT $line")
+    }
+
+    private fun failureBudget(): HarnessProtocol.FailureBudget {
+        if (failureBudget == null) {
+            failureBudget = HarnessProtocol.FailureBudget(
+                SystemClock::elapsedRealtime,
+                HarnessProtocol.FailureBudget.DEFAULT_BUDGET_MS,
+            )
+        }
+        return checkNotNull(failureBudget)
+    }
+
+    private fun captureDiagnostic(work: HarnessProtocol.DiagnosticWork): String? {
+        val operation = HarnessProtocol.Diagnostic(
+            diagnosticOwner,
+            failureBudget(),
+            diagnosticQueue,
+            work,
+        )
+        operation.schedule()
+        return operation.await()
+    }
+
+    private fun diagnosticJs(
+        owner: WeakReference<MainActivity>,
+        target: WeakReference<WebView>,
+        expression: String,
+    ): HarnessProtocol.DiagnosticWork =
+        HarnessProtocol.DiagnosticWork { operation ->
+            if (!operation.active()) return@DiagnosticWork
+            val activity = owner.get()
+            val view = target.get()
+            if (
+                activity == null ||
+                activity.isDestroyed ||
+                activity.isFinishing ||
+                view == null ||
+                !view.isAttachedToWindow ||
+                activity.findViewById<WebView>(R.id.browser_web_view) !== view
+            ) {
+                operation.complete(null)
+                return@DiagnosticWork
+            }
+            if (!operation.active()) return@DiagnosticWork
+            view.evaluateJavascript(expression) { value ->
+                operation.completeIfOwned(value) {
+                    intendedOwnerStillCurrent(owner, target)
+                }
+            }
+        }
+
+    private fun intendedOwnerStillCurrent(
+        owner: WeakReference<MainActivity>,
+        target: WeakReference<WebView>,
+    ): Boolean {
+        val activity = owner.get()
+        val view = target.get()
+        return activity != null &&
+            !activity.isDestroyed &&
+            !activity.isFinishing &&
+            view != null &&
+            view.isAttachedToWindow &&
+            activity.findViewById<WebView>(R.id.browser_web_view) === view
+    }
+
+    private fun recordFailureEvidence(
+        stage: String,
+        primary: Throwable,
+        expectedLocation: String?,
+    ) {
+        HarnessProtocol.preserveFailure(primary) {
+            val budget = failureBudget()
+            val activityRef = intendedActivity
+            val viewRef = intendedView
+            val context = captureDiagnostic(
+                HarnessProtocol.DiagnosticWork { operation ->
+                    if (!operation.active()) return@DiagnosticWork
+                    val activity = activityRef.get()
+                    val view = viewRef.get()
+                    if (activity == null || view == null) {
+                        operation.complete(null)
+                        return@DiagnosticWork
+                    }
+                    if (!operation.active()) return@DiagnosticWork
+                    operation.complete(readInputContext(activity, view).describe())
+                },
+            )
+
+            var dom = "not-applicable"
+            if (expectedLocation != null) {
+                val start = SystemClock.uptimeMillis()
+                val raw = captureDiagnostic(diagnosticJs(activityRef, viewRef, SCROLL_FACTS_JS))
+                dom =
+                    if (raw == null) {
+                        "unavailable(deadline/cancelled)"
+                    } else {
+                        parseScrollFacts(
+                            "failure",
+                            expectedLocation,
+                            decodeJsValue(raw),
+                            start,
+                        ).describe()
+                    }
+            }
+
+            milestones?.recordDeferred(
+                "INPUT FAILURE_EVIDENCE stage=$stage elapsedMs=${budget.elapsedMs()} " +
+                    "context=${context ?: "unavailable"} dom=$dom " +
+                    "primary=${primary.javaClass.simpleName}",
+            )
+        }
+    }
+
+    private class InputContext(
+        val activityName: String,
+        val state: InputSafety.State,
+    ) {
+        val uptimeMs: Long = SystemClock.uptimeMillis()
+
+        fun describe(): String =
+            "t=$uptimeMs activity=$activityName ${state.mapping()}"
+    }
+
+    private fun captureInputContext(): InputContext {
+        val captured = AtomicReference<InputContext?>()
+        scenario.onActivity { activity ->
+            val view: WebView = activity.findViewById(R.id.browser_web_view)
+            intendedActivity = WeakReference(activity)
+            intendedView = WeakReference(view)
+            captured.set(readInputContext(activity, view))
+        }
+        return captured.get() ?: throw IllegalStateException("input context unavailable")
+    }
+
+    private fun readInputContext(
+        activity: MainActivity,
+        targetView: WebView?,
+    ): InputContext {
+        val view = targetView
+            ?: throw IllegalStateException("intended Activity/view unavailable")
+        if (
+            activity.isDestroyed ||
+            activity.isFinishing ||
+            activity.findViewById<WebView>(R.id.browser_web_view) !== view
+        ) {
+            throw IllegalStateException("intended Activity/view unavailable")
+        }
+
+        val decor = activity.window.decorView
+        val screen = IntArray(2)
+        val window = IntArray(2)
+        decor.getLocationOnScreen(screen)
+        decor.getLocationInWindow(window)
+        val root = Rect()
+        val visible = Rect()
+        if (!decor.getGlobalVisibleRect(root)) root.setEmpty()
+        if (!view.getGlobalVisibleRect(visible)) visible.setEmpty()
+        root.offset(screen[0] - window[0], screen[1] - window[1])
+        visible.offset(screen[0] - window[0], screen[1] - window[1])
+
+        val location = IntArray(2)
+        view.getLocationOnScreen(location)
+        val insets: WindowInsets? = view.rootWindowInsets
+        val display: Display? = view.display
+
+        val state = InputSafety.State(
+            activity,
+            view,
+            activity.hasWindowFocus(),
+            decor.isAttachedToWindow,
+            view.isAttachedToWindow,
+            view.isShown,
+            view.hasFocus(),
+            display?.displayId ?: -1,
+            location[0],
+            location[1],
+            view.width,
+            view.height,
+            view.scrollX,
+            view.scrollY,
+            InputSafety.Bounds(root.left, root.top, root.right, root.bottom),
+            InputSafety.Bounds(visible.left, visible.top, visible.right, visible.bottom),
+            InputSafety.imeState(
+                insets != null,
+                insets?.isVisible(WindowInsets.Type.ime()) == true,
+            ),
+            insets?.getInsets(WindowInsets.Type.ime())?.bottom ?: -1,
+            if (insets == null) {
+                "unavailable"
+            } else {
+                "ime=${insets.getInsets(WindowInsets.Type.ime())} " +
+                    "bars=${insets.getInsets(WindowInsets.Type.systemBars())} " +
+                    "cutout=${insets.getInsets(WindowInsets.Type.displayCutout())}"
+            },
+        )
+
+        return InputContext(
+            "${activity.packageName}/${activity.javaClass.simpleName}",
+            state,
+        )
+    }
+
+    private class ScrollFacts(
+        val phase: String,
+        val sampleStartMs: Long,
+        val sampleEndMs: Long,
+        val rawLocation: String?,
+        val location: String,
+        val marker: String?,
+        val scrollTop: Int,
+        val scrollY: Int,
+        val scrollHeight: Int,
+        val clientHeight: Int,
+        val innerWidth: Int,
+        val innerHeight: Int,
+        val error: String?,
+    ) {
+        fun describe(): String {
+            if (error != null) {
+                return "phase=$phase t=$sampleStartMs-$sampleEndMs ($error)"
+            }
+            return "phase=$phase t=$sampleStartMs-$sampleEndMs marker=$marker " +
+                "location=$location scrollTop=$scrollTop scrollY=$scrollY " +
+                "scrollHeight=$scrollHeight clientHeight=$clientHeight " +
+                "viewport=${innerWidth}x$innerHeight"
+        }
+    }
+
+    private fun readScrollFacts(phase: String, expectedLocation: String): ScrollFacts {
+        val start = SystemClock.uptimeMillis()
+        return try {
+            parseScrollFacts(phase, expectedLocation, jsRead(SCROLL_FACTS_JS), start)
+        } catch (unavailable: RuntimeException) {
+            ScrollFacts(
+                phase,
+                start,
+                SystemClock.uptimeMillis(),
+                null,
+                "(other)",
+                null,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                "DOM observation unavailable: $unavailable",
+            )
+        } catch (unavailable: AssertionError) {
+            ScrollFacts(
+                phase,
+                start,
+                SystemClock.uptimeMillis(),
+                null,
+                "(other)",
+                null,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                "DOM observation unavailable: $unavailable",
+            )
+        }
+    }
+
+    private fun parseScrollFacts(
+        phase: String,
+        expectedLocation: String,
+        jsonValue: String?,
+        start: Long,
+    ): ScrollFacts {
+        try {
+            val value = JSONObject(jsonValue ?: throw NullPointerException("missing scroll facts"))
+            val rawLocation = value.getString("location")
+            return ScrollFacts(
+                phase,
+                start,
+                SystemClock.uptimeMillis(),
+                rawLocation,
+                HarnessProtocol.traceLocation(rawLocation, expectedLocation),
+                value.optString("marker", null),
+                value.getInt("scrollTop"),
+                value.getInt("scrollY"),
+                value.getInt("scrollHeight"),
+                value.getInt("clientHeight"),
+                value.getInt("innerWidth"),
+                value.getInt("innerHeight"),
+                null,
+            )
+        } catch (unavailable: RuntimeException) {
+            return ScrollFacts(
+                phase,
+                start,
+                SystemClock.uptimeMillis(),
+                null,
+                "(other)",
+                null,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                "DOM observation unavailable: ${unavailable.javaClass.simpleName}",
+            )
+        } catch (unavailable: JSONException) {
+            return ScrollFacts(
+                phase,
+                start,
+                SystemClock.uptimeMillis(),
+                null,
+                "(other)",
+                null,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                "DOM observation unavailable: ${unavailable.javaClass.simpleName}",
+            )
+        }
+    }
+
+    private fun awaitWindowFocus() {
+        val deadline = SystemClock.uptimeMillis() + 15_000
+        while (SystemClock.uptimeMillis() < deadline) {
+            val focused = AtomicReference(false)
+            try {
+                scenario.onActivity { activity -> focused.set(activity.hasWindowFocus()) }
+            } catch (failure: RuntimeException) {
+                throw IllegalStateException("browser activity unavailable for input", failure)
+            }
+            if (focused.get() == true) return
+            SystemClock.sleep(200)
+        }
+        fail("the browser window never gained input focus")
+    }
+
