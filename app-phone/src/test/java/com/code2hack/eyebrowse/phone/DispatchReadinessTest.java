@@ -1,6 +1,7 @@
 package com.code2hack.eyebrowse.phone;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThrows;
 
 import java.util.concurrent.atomic.AtomicInteger;
@@ -73,6 +74,62 @@ public class DispatchReadinessTest {
         assertEquals("returned", dispatch.stage);
         assertEquals(1, down.get());
         assertEquals(1, up.get());
+    }
+
+    private static final class CheckedInjectionFailure extends Exception {}
+
+    @Test
+    public void checkedCallbackPrimaryCrossesHandoffByIdentityWithStageAndCleanup() throws Exception {
+        HarnessProtocol.Dispatch dispatch = new HarnessProtocol.Dispatch();
+        DispatchReadiness.CallbackHandoff handoff = new DispatchReadiness.CallbackHandoff();
+        AtomicInteger down = new AtomicInteger();
+        AtomicInteger up = new AtomicInteger();
+        AtomicInteger dispatchCleanup = new AtomicInteger();
+        AtomicInteger callbackCleanup = new AtomicInteger();
+        CheckedInjectionFailure primary = new CheckedInjectionFailure();
+        IllegalStateException evidenceFailure = new IllegalStateException("evidence failed");
+
+        try {
+            handoff.capture(() -> {
+                try {
+                    DispatchReadiness.tapOnceIfRecomputedReady(
+                            nativeState(), nativeState(), point(),
+                            dom("L1", "x=100;y=200;w=800;h=600"),
+                            dom("L1", "x=100;y=200;w=800;h=600"),
+                            dispatch,
+                            () -> {
+                                down.incrementAndGet();
+                                DispatchReadinessTest.<RuntimeException>sneakyThrow(primary);
+                            },
+                            up::incrementAndGet,
+                            () -> 1L);
+                } finally {
+                    dispatchCleanup.incrementAndGet();
+                }
+            });
+        } finally {
+            callbackCleanup.incrementAndGet();
+        }
+
+        Exception actual = assertThrows(Exception.class, handoff::rethrowIfPresent);
+        assertSame(primary, actual);
+        HarnessProtocol.preserveFailure(actual, () -> {
+            throw evidenceFailure;
+        });
+
+        assertSame("supplementary evidence must not replace the primary", primary, actual);
+        assertEquals("down-attempted", dispatch.stage);
+        assertEquals(1, down.get());
+        assertEquals(0, up.get());
+        assertEquals(1, dispatchCleanup.get());
+        assertEquals(1, callbackCleanup.get());
+        assertEquals(1, actual.getSuppressed().length);
+        assertSame(evidenceFailure, actual.getSuppressed()[0]);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T extends Throwable> void sneakyThrow(Throwable failure) throws T {
+        throw (T) failure;
     }
 
     @Test public void finalMappingDriftPermitsFreshlyRecomputedPath() {
