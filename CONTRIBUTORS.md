@@ -177,6 +177,17 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "name": "Expert-#6",
     "status": "active"
   },
+
+  {
+    "role": "Worker",
+    "scope": "v0.0.1; issue #6 RG-chain; sole source writer; Paseo worktree wks_65a49d03 (~/.paseo/worktrees/3stq8yqr/work-issue-6-r1, branch work/issue-6-r1 @ main)",
+    "host": "u4090",
+    "runtime": "pi",
+    "id": "204730f4-7032-4135-a2a9-8ea79e96174f",
+    "model": "GLM-5.3-Flash-EXL3 / max",
+    "name": "Worker-#6-r1",
+    "status": "active"
+  },
   {
     "role": "Worker",
     "scope": "Owner-authorized disposable Paseo creation/lifecycle qualification; no product work",
