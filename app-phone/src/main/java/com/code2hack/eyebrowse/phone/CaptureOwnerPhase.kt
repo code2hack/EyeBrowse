@@ -1,4 +1,4 @@
-package com.code2hack.eyebrowse.phone;
+package com.code2hack.eyebrowse.phone
 
 /**
  * Single-owner capture lifecycle phase machine (R2), JVM-testable and single-threaded by
@@ -16,60 +16,60 @@ package com.code2hack.eyebrowse.phone;
  * captured references), this prevents a stale teardown from closing replacement resources or
  * overlapping two consumers' borrowed-buffer lifetimes.
  */
-final class CaptureOwnerPhase {
+internal class CaptureOwnerPhase {
 
-    enum Phase {
+    enum class Phase {
         IDLE,
         ACTIVE,
         RETIRING,
         QUIESCENT
     }
 
-    private Phase phase = Phase.IDLE;
+    private var phase: Phase = Phase.IDLE
 
-    Phase phase() {
-        return phase;
+    fun phase(): Phase {
+        return phase
     }
 
     /** True when a teardown has been requested but has not completed. */
-    boolean isRetiring() {
-        return phase == Phase.RETIRING;
+    fun isRetiring(): Boolean {
+        return phase == Phase.RETIRING
     }
 
     /** True when the previous owner has fully retired (or none ever existed). */
-    boolean isQuiescent() {
-        return phase == Phase.IDLE || phase == Phase.QUIESCENT;
+    fun isQuiescent(): Boolean {
+        return phase == Phase.IDLE || phase == Phase.QUIESCENT
     }
 
     /** True while a capture owner is live (frame production possible). */
-    boolean isActive() {
-        return phase == Phase.ACTIVE;
+    fun isActive(): Boolean {
+        return phase == Phase.ACTIVE
     }
 
     /** Starts a capture owner; legal only from a quiescent state. */
-    boolean beginActive() {
+    fun beginActive(): Boolean {
         if (phase != Phase.IDLE && phase != Phase.QUIESCENT) {
-            return false;
+            return false
         }
-        phase = Phase.ACTIVE;
-        return true;
+        phase = Phase.ACTIVE
+        return true
     }
 
     /** Requests retirement of the live owner; legal only from {@code ACTIVE}. */
-    boolean beginRetiring() {
+    fun beginRetiring(): Boolean {
         if (phase != Phase.ACTIVE) {
-            return false;
+            return false
         }
-        phase = Phase.RETIRING;
-        return true;
+        phase = Phase.RETIRING
+        return true
     }
 
     /** Completes the retiring teardown; legal only from {@code RETIRING}. */
-    boolean completeRetirement() {
+    fun completeRetirement(): Boolean {
         if (phase != Phase.RETIRING) {
-            return false;
+            return false
         }
-        phase = Phase.QUIESCENT;
-        return true;
+        phase = Phase.QUIESCENT
+        return true
     }
 }

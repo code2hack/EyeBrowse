@@ -1,4 +1,4 @@
-package com.code2hack.eyebrowse.phone;
+package com.code2hack.eyebrowse.phone
 
 /**
  * Keeps the bounded platform wake lock refreshed while lease liveness is valid (JVM-testable).
@@ -8,42 +8,39 @@ package com.code2hack.eyebrowse.phone;
  * every lease renewal, and the watchdog tick while a lease is live) instead of waiting for the
  * timeout to expire before reacquiring. A renewing lease never enters an unheld gap.
  */
-final class WakeLockKeeper {
+internal class WakeLockKeeper(
+    private val handle: Handle,
+    private val clock: HostingPolicy.Clock,
+) {
 
     /** Minimal platform seam so refresh/loss behavior is deterministically testable. */
     interface Handle {
-        void acquire(long timeoutMs);
+        fun acquire(timeoutMs: Long)
 
-        boolean isHeld();
+        fun isHeld(): Boolean
 
-        void release();
+        fun release()
     }
 
-    private final Handle handle;
-    private final HostingPolicy.Clock clock;
-    private long lastRefreshMs = Long.MIN_VALUE;
-
-    WakeLockKeeper(Handle handle, HostingPolicy.Clock clock) {
-        this.handle = handle;
-        this.clock = clock;
-    }
+    // Java original: non-volatile `private long lastRefreshMs` — volatility intentionally NOT added.
+    private var lastRefreshMs: Long = Long.MIN_VALUE
 
     /** Executes a fresh bounded acquisition, moving the platform timeout deadline forward. */
-    void refresh() {
-        handle.acquire(HostingPolicy.WAKE_LOCK_TIMEOUT_MS);
-        lastRefreshMs = clock.now();
+    fun refresh() {
+        handle.acquire(HostingPolicy.WAKE_LOCK_TIMEOUT_MS)
+        lastRefreshMs = clock.now()
     }
 
-    void release() {
-        handle.release();
-        lastRefreshMs = Long.MIN_VALUE;
+    fun release() {
+        handle.release()
+        lastRefreshMs = Long.MIN_VALUE
     }
 
-    boolean isHeld() {
-        return handle.isHeld();
+    fun isHeld(): Boolean {
+        return handle.isHeld()
     }
 
-    long lastRefreshMs() {
-        return lastRefreshMs;
+    fun lastRefreshMs(): Long {
+        return lastRefreshMs
     }
 }

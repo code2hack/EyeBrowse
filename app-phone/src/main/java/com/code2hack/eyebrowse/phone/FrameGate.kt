@@ -1,4 +1,4 @@
-package com.code2hack.eyebrowse.phone;
+package com.code2hack.eyebrowse.phone
 
 /**
  * Admission authority for captured-frame delivery (JVM-testable, lock-free).
@@ -19,23 +19,27 @@ package com.code2hack.eyebrowse.phone;
  * teardown holding that monitor cannot deadlock against a delivery callback. Time is passed in by
  * the caller (compatible monotonic {@code SystemClock.elapsedRealtime()} in production, explicit
  * values in JVM tests), keeping every decision a pure function of its arguments.
+ *
+ * <p>Migration note: visibility widened package-private -> public for the separately compiled
+ * androidTest consumer (disclosed in the migration ledger). Token comparison uses referential
+ * identity (`===`), preserving the Java `==` semantics of the original.
  */
-final class FrameGate {
+class FrameGate {
 
-    private volatile Object currentToken;
-    private volatile int generation;
-    private volatile boolean accepting;
-    private volatile long acceptUntilElapsedMs;
+    @Volatile private var currentToken: Any? = null
+    @Volatile private var generation: Int = 0
+    @Volatile private var accepting: Boolean = false
+    @Volatile private var acceptUntilElapsedMs: Long = 0L
 
     /**
      * Opens the gate for {@code token} at {@code hostingGeneration}, admitting only that pair and
      * only until {@code acceptUntilElapsedMs} on the compatible monotonic clock.
      */
-    void open(Object token, int hostingGeneration, long acceptUntilElapsedMs) {
-        this.generation = hostingGeneration;
-        this.currentToken = token;
-        this.accepting = true;
-        this.acceptUntilElapsedMs = acceptUntilElapsedMs;
+    fun open(token: Any?, hostingGeneration: Int, acceptUntilElapsedMs: Long) {
+        generation = hostingGeneration
+        currentToken = token
+        accepting = true
+        this.acceptUntilElapsedMs = acceptUntilElapsedMs
     }
 
     /**
@@ -43,9 +47,9 @@ final class FrameGate {
      * authoritative expiry deadline has not yet been reached at {@code nowElapsedMs} (R4):
      * authority expires AT the deadline instant, so {@code now == acceptUntil} is expired.
      */
-    boolean admit(Object token, int frameGeneration, long nowElapsedMs) {
-        return accepting && currentToken == token && generation == frameGeneration
-                && nowElapsedMs < acceptUntilElapsedMs;
+    fun admit(token: Any?, frameGeneration: Int, nowElapsedMs: Long): Boolean {
+        return accepting && currentToken === token && generation == frameGeneration &&
+                nowElapsedMs < acceptUntilElapsedMs
     }
 
     /**
@@ -54,26 +58,26 @@ final class FrameGate {
      * deadline moves to {@code newAcceptUntilMs}. A renewal at or after expiry is rejected and
      * moves nothing — an expired lease cannot revive its delivery authority (R4).
      */
-    boolean renew(long nowElapsedMs, long newAcceptUntilMs) {
+    fun renew(nowElapsedMs: Long, newAcceptUntilMs: Long): Boolean {
         if (!accepting || nowElapsedMs >= acceptUntilElapsedMs) {
-            return false;
+            return false
         }
-        acceptUntilElapsedMs = newAcceptUntilMs;
-        return true;
+        acceptUntilElapsedMs = newAcceptUntilMs
+        return true
     }
 
     /** Closes the gate: no further admissions or renewals until the next open. */
-    void close() {
-        accepting = false;
-        currentToken = null;
+    fun close() {
+        accepting = false
+        currentToken = null
     }
 
-    boolean isOpen() {
-        return accepting;
+    fun isOpen(): Boolean {
+        return accepting
     }
 
     /** Current expiry deadline (diagnostics/tests). */
-    long acceptUntilElapsedMs() {
-        return acceptUntilElapsedMs;
+    fun acceptUntilElapsedMs(): Long {
+        return acceptUntilElapsedMs
     }
 }
