@@ -93,6 +93,41 @@
         android:textSize="13sp"
         android:visibility="gone" />
 
+    <LinearLayout
+        android:id="@+id/hosting_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="4dp"
+        android:layout_marginEnd="12dp"
+        android:background="@drawable/toolbar_background"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingTop="4dp"
+        android:paddingEnd="4dp"
+        android:paddingBottom="4dp">
+
+        <TextView
+            android:id="@+id/hosting_status"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="@color/eyebrowse_text_secondary"
+            android:textSize="13sp"
+            android:text="@string/hosting_status_idle" />
+
+        <Button
+            android:id="@+id/button_hosting_toggle"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="0dp"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:text="@string/action_hosting_start" />
+    </LinearLayout>
+
     <FrameLayout
         android:id="@+id/web_container"
         android:layout_width="match_parent"

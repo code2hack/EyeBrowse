@@ -16,4 +16,20 @@
     <string name="status_load_failed">Could not load %1$s</string>
     <string name="status_blocked">Blocked unsupported address. Only http:// and https:// load here.</string>
     <string name="status_permission_denied">This site asked for a device permission; EyeBrowse denies camera, microphone, location and file access.</string>
+
+    <string name="action_hosting_start">Start hosting</string>
+    <string name="action_hosting_stop">Stop hosting</string>
+    <string name="hosting_status_idle">Not hosting</string>
+    <string name="hosting_status_starting">Starting hosting…</string>
+    <string name="hosting_status_active">Hosting · generation %1$d · %2$s · control stays on phone</string>
+    <string name="hosting_status_failed">Hosting stopped: %1$s</string>
+    <string name="hosting_capture_active">capture active</string>
+    <string name="hosting_capture_idle">capture idle</string>
+    <string name="hosting_failure_no_page">open a page before starting hosting</string>
+    <string name="hosting_failure_browser_lost">the page stopped; start hosting again</string>
+    <string name="hosting_failure_service_lost">the hosting service was stopped; start hosting again</string>
+    <string name="hosting_failure_previous_shutdown">previous hosting shutdown still completing; try again</string>
+    <string name="hosting_notification_channel">Hosting</string>
+    <string name="hosting_notification_title">EyeBrowse hosting active</string>
+    <string name="hosting_notification_text">The current page is hosted while EyeBrowse is in the background.</string>
 </resources>

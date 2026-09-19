@@ -1,0 +1,241 @@
+# I5-T01 input-readiness correction history
+
+Expert: Expert
+
+This note records the source correction history on `work/issue-5-expert`. It supersedes the older
+input-sequencing description in `docs/testing/phone-browser.md` when the two differ. It is not a
+host/device clearance, an I5-T01 handback, or ticket acceptance.
+
+## Round2 result retained
+
+The independent review of `cc1eb56f03a486048a483f87467b79ec4c772bfe` was
+`CHANGES_REQUESTED`. Its shared `DispatchReadiness` classifier rejected supplied unequal DOM/native
+snapshots, but the used Android sequencing still had a callback-to-input gap:
+
+- swipe sampled DOM through `UiController.loopMainThreadForAtLeast()`, whose pinned Espresso 3.6.1
+  implementation subsequently drains the main loop until idle; and
+- tap sampled DOM before a later `ActivityScenario.onActivity` native-observation turn.
+
+A DOM-only document/target change in either interval could therefore leave stale DOM A authorizing
+input. R2 was source-cleared in that review and remains unchanged: diagnostic JavaScript completion
+still uses `Diagnostic.completeIfOwned` with weak actual Activity/WebView ownership plus the
+existing test/deadline/duplicate fences.
+
+## Round3 source/host clearance and device result
+
+The round3 candidate `8e3fde9db9b4361a56efae34f0ab9cbc8aaf0e4e` removed those known
+callback-to-idle / callback-to-ActivityScenario gaps. Its scoped source/host review passed, but that
+was explicitly pre-device evidence. The subsequent Manager-released focused-three device invocation
+on the API31 S20+ completed all three methods with **one pass and two failures**:
+
+- `HostingInstrumentedTest#delayedConsumerReleaseReacquireIsolatesBorrowedFrames` passed.
+- `BrowserInstrumentedTest#contentDestinationIsAnEngineNoOpWithoutAFabricatedNotice` stopped before
+  dispatch with `IllegalStateException: input context changed after preparation`. This proves the
+  old byte-for-byte prepared/native mapping equality was too strict for that live path; the retained
+  evidence does not by itself identify which individual native field changed.
+- `BrowserInstrumentedTest#realSwipeScrollsLongDocument` reached its single swipe attempt but direct
+  `Instrumentation.sendPointerSync` was rejected by Android 12 with the cross-application
+  `INJECT_EVENTS` SecurityException. No privilege grant, root/system signing, second automation
+  client, or replay is an allowed remedy.
+
+The source/host PASS on `8e3fde9` remains valid historical evidence for that exact head; it is not a
+runtime PASS and is not carried forward as verification of a changed head.
+
+## Current correction: recompute final path, then inject on the existing Espresso controller
+
+The current source keeps the round3 DOM sequencing fence and changes only the used input admission
+and injection seam.
+
+Preparation still records the intended Activity/WebView/display, document marker/location, exact DOM
+target/viewport geometry, and an intended provider path for evidence. Any Espresso controller
+capture, blocking evidence write, focus wait, pre-boundary DOM observation, seam regression mutation,
+and explicit idle drain occur **before** the decisive sample.
+
+`captureFinalReadiness` then runs one WebView JavaScript evaluation. In its result callback, before
+returning to the main looper, it now:
+
+1. decodes the exact current document/target/viewport facts;
+2. captures complete current native Activity/view/focus/attachment/display/bounds/IME state;
+3. recomputes the intended input path from that **current** native mapping (tap from the exact DOM
+   CSS center/viewport; swipe from the pinned Espresso 3.6.1 `swipeUp` providers); and
+4. performs `DispatchReadiness` admission and the one input attempt in that same callback.
+
+For a recomputed path, admission no longer requires every non-coordinate native diagnostic string to
+be byte-identical to preparation. It instead requires the current state itself to pass the complete
+`InputSafety.unsafeReason` guard, the exact prepared Activity/WebView owner and display to remain the
+same, and the prepared/current document marker/location and target/viewport geometry to match. Thus
+a changed mapping cannot reuse stale screen coordinates: it is either safely recomputed from the
+final sample or rejected. Owner/display changes and every unsafe final bounds/focus/IME condition
+still stop before `HarnessProtocol.Dispatch` begins.
+
+Tap sends exactly one DOWN and, only after a successful DOWN, one UP through the **already-captured
+Espresso `UiController`**. Swipe calls pinned `Swipe.FAST` exactly once on that same captured
+controller, preserving `Press.FINGER`, the exact bottom-center translated by `-0.083f` to top-center
+providers, ten interpolated move points, and the 150 ms FAST shape. `GeneralSwipeAction`'s retry loop
+is not used. No direct `UiAutomation.injectInputEvent`, new UiAutomation client, `INJECT_EVENTS`
+grant, root/system signing, or input replay exists in the final tree. A provisional forward commit
+that explored the existing UiAutomation connection was superseded before candidate freeze; history
+was not rewritten.
+
+The important sequencing distinction is that the controller is captured in an earlier no-op
+Espresso action. The decisive WebView callback does **not** enter another `onView(...).perform(...)`
+or pre-action idle synchronization. Admission begins the dispatch before the captured controller's
+injection machinery can perform any injection-time waiting. The known harness-created pre-dispatch
+idle gap identified in round2 therefore stays removed.
+
+## Regression coverage
+
+The two Android used-seam regressions remain on the exact production-style test paths:
+
+- `queuedDomOnlyTargetMoveBeforeFinalTapSampleDispatchesZeroInput` changes only target DOM geometry
+  after the pre-boundary sample and requires `Dispatch.stage == "not-attempted"` plus zero click
+  effect.
+- `queuedDomOnlyDocumentChangeBeforeFinalSwipeSampleDispatchesZeroInput` changes only the fixture
+  marker after the pre-boundary sample and requires `Dispatch.stage == "not-attempted"` plus zero
+  scroll effect.
+
+The ordinary content-destination tap and `realSwipeScrollsLongDocument` remain the positive used
+paths. `DispatchReadinessTest` now also covers final mapping drift with a freshly recomputed safe path
+and proves that owner or display changes still produce zero dispatch, alongside the retained
+DOM-only negative and positive single-shot cases.
+
+These are source definitions on the changed head. No cloud/local host build, fresh JVM execution,
+Android instrumentation, fixture, install, or device result is claimed for that changed head by this
+note. The failed focused-three result belongs to `8e3fde9`; a changed candidate requires a fresh host
+gate, renewed relevant independent review, and a separately released focused-three invocation.
+
+## Round4 checked-primary handoff correction
+
+The independent review of `bb8b3574eabee5256f0ba7103b45ceb1586a16ee` credited the
+recomputed final path and Espresso-controller route, but withheld pre-device clearance for one
+error-preservation defect. A tap-side `UiController.injectMotionEvent` rejection is Espresso's
+checked `InjectEventSecurityException`. `SingleShotSwipe.inject` already retained that exact
+object, but the WebView callback handoff and outer tap evidence handler caught only runtime
+exceptions/assertions, so the checked primary could bypass the intended callback-to-test-thread
+relay.
+
+The correction uses one shared test-only `DispatchReadiness.CallbackHandoff` on the actual Android
+path. It captures `Exception | AssertionError` from the final WebView callback, always releases the
+callback latch in `finally`, and rethrows the same captured object on the instrumentation test
+thread. The outer tap path now records bounded supplementary failure evidence for checked or
+runtime/assertion primaries and rethrows the same primary unchanged. No input retry, privilege,
+UiAutomation client, permission grant, or new injection route is added.
+
+The JVM regression
+`checkedCallbackPrimaryCrossesHandoffByIdentityWithStageAndCleanup` exercises that same handoff
+primitive with a checked DOWN failure. It requires one DOWN attempt and zero UP attempts,
+`Dispatch.stage == "down-attempted"`, both dispatch/callback cleanup finally-blocks, exact
+same-object propagation to the caller, and retention of a deliberately failing supplementary
+evidence capture only as a suppressed exception.
+
+This source correction is not a host/device result. The current shared/JVM source changed, so a fresh
+exact-head host/JVM gate and renewed relevant independent review are required before another focused
+device release.
+
+## Focused3 #2 device evidence and event-delivery correction
+
+The focused3 run on `f6d9a7a58f2eea4754e83cbaec020f56f3e0b731` completed all three
+selected methods in 29.005 s on the authorized API31 S20+ and returned one PASS / two FAIL:
+
+- delayed consumer release/reacquire remained PASS;
+- the content-destination tap passed final recomputed readiness, then Espresso
+  `UiController.injectMotionEvent` returned `false`; and
+- the swipe no longer hit the earlier INJECT_EVENTS SecurityException, but the pinned
+  `Swipe.FAST` path timed out waiting for document scroll.
+
+These are new runtime modes, not passes. They retain the earlier evidence that the stale mapping
+comparison and direct `sendPointerSync` permission route were no longer the active failures.
+
+Pinned Espresso source matters to the correction. `UiControllerImpl` requires motion injection on
+the main thread. `Swipe.FAST` constructs one DOWN + ten linear MOVE events + one UP over 150 ms,
+but ignores the boolean returned by `injectMotionEventSequence` and reports SUCCESS unless an
+exception escapes. Thus a later scroll timeout does not establish that InputManager accepted the
+sequence.
+
+The f6/104 source lineage kept final DOM/native/path sampling and fail-closed admission inside the
+WebView value callback, then posted one queue-front Espresso input task. That historical correction
+made `false` injection results explicit and retained the pinned tap/FAST event shape, but the later
+round8 review established that pinned Espresso 3.6.1 still contains an internal SecurityException
+retry beneath `UiController`. Therefore the queue-front Espresso injection mechanism is retained
+only as history here; it is superseded by the strict Instrumentation route described below.
+
+## Focus-owner diagnostic and strict single-submission reconciliation
+
+A separately labeled, read-only device diagnostic around the failing `1f54cec5` swipe established
+that display-0 input focus was held throughout the failure interval by the third-party package
+`cn.litiaotiao.app`, not the EyeBrowse activity under test. This reconciles the earlier direct
+`sendPointerSync` cross-application SecurityException with the later Espresso/InputManager
+`false` results: both are evidence of an input attempt while another application's window owned
+system input focus. The environment interferer was handled separately by the Manager/Owner; this
+diagnostic is not a passing test and does not authorize retries or cross-app injection.
+
+The round8 review correctly rejected the first harness response, which called
+`getUiAutomation(...).findFocus(FOCUS_INPUT)` after final admission. That API can connect/reconnect
+UiAutomation and block on an accessibility result, so it was a slow post-admission observation with
+no complete readiness refresh and also violated the existing no-extra-UiAutomation-connection
+constraint. That focus probe is now removed completely.
+
+The actual input route is now strict `Instrumentation.sendPointerSync`, executed on the
+instrumentation test thread immediately after the decisive WebView callback releases its result.
+Final DOM/native/path sampling and `requireRecomputedReady` still occur in that callback after the
+last deliberate idle boundary. Between callback completion and `Dispatch.begin` there is no later
+ActivityScenario call, Espresso ViewInteraction/main-loop pump, focus wait, milestone/file/HTTP
+evidence write, UiAutomation/accessibility observation, or other harness observation.
+
+This also removes pinned Espresso 3.6.1's hidden
+`InputManagerEventInjectionStrategy` SecurityException retry. Tap submits each generated DOWN/UP
+event at most once; swipe retains the pinned FAST shape (DOWN, ten interpolated MOVE events, UP over
+the 150 ms cadence) and submits each generated event at most once in order. No event is ever
+resubmitted after a returned, thrown, rejected, or otherwise uncertain submission. The cadence sleep
+is gesture timing on the instrumentation thread, not readiness waiting or rejection recovery.
+
+Android 12 `Instrumentation.sendPointerSync` is a `void` API. It calls the window/input service in
+WAIT_FOR_FINISH mode but discards the service's boolean result, and it also swallows RemoteException.
+Therefore the harness can observe thrown exceptions such as a cross-application SecurityException,
+but it cannot truthfully observe a system-side `false` / timeout / generic failed result at the
+submission call. Such a silent outcome is never retried or resubmitted; it is detected only by the
+existing downstream input-effect assertions (activation/click/navigation for taps and positive
+document scroll for swipe). Later MOVE/UP events in the already-defined gesture are distinct planned
+events, not resubmissions of an earlier event; the complete tap/swipe gesture itself is never replayed.
+`HarnessProtocol.Dispatch` remains exactly what its source already states: API-call progress, not
+proof of website delivery.
+
+No UiAutomation input, second automation client, INJECT_EVENTS grant, reflected InputManager path,
+or privileged workaround is introduced. This reconciles the source guarantee with §4.2's
+no-replay/no-resubmission requirement without claiming platform rejection observability that the
+allowed API does not provide.
+
+The Kotlin conversion parity fix also remains: `attachedWebView()` preserves the Java source's
+nullable `findViewById` behavior and adds no synchronization/readiness wait.
+
+## Exact-time UID/window diagnosis and IME-evocation correction
+
+The evidence-only exact-time tap run on `4765ff77` directly established that the instrumentation
+runner executes in a separate test process/UID from the EyeBrowse activity window. That fact alone
+does not make the strict Instrumentation route deterministically invalid: the same frozen test passed
+during a sustained clean interval where EyeBrowse remained the registered/focused/topmost touchable
+window and no IME window was registered.
+
+The intermittent failures therefore track transient input-target topology rather than a simple
+"runner UID differs from app UID" condition. The strongest reproducible transient is harness-created:
+fixture navigation previously executed `click()` on the native address EditText before
+`replaceText()`. A separate probe showed that touching an editable field evokes the full-height
+Samsung IME input window that had overlapped the exact Browser gesture points in earlier failures.
+
+The preliminary address-field click is unnecessary for these tests. Espresso `ReplaceTextAction`
+sets the EditText text property directly and requires only a displayed EditText; it does not require
+that prior click/focus. The fixture setup now performs only `replaceText(text)`, then clicks the
+Open button. The existing defensive `dismissIme()` call remains, as do all final native
+IME/insets/readiness checks.
+
+This change does not alter the Browser-under-test pointer gesture, its pinned tap/swipe coordinates,
+the strict single-submission Instrumentation route, final DOM/native/path recomputation, or any
+product behavior. It removes an avoidable test-setup action whose only effect relevant to this
+mission was to create a transient foreign input window before the later Browser gesture.
+
+## Scope and evidence boundary
+
+This correction changes testShared/JVM/androidTest and necessary test documentation only. It does not
+change production/core/RG/fixture/dependency code, Option A output qualification, original
+eligibility, content tolerance, API levels, diagnostic 2 s budget, resource/timing assertions,
+device authorization, or phase sequencing. R2 remains source-cleared and unchanged.

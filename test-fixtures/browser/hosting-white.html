@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>White capture page</title>
+<style>
+  /* Intentionally ALL-WHITE document with the same DOM contract and freeze hook as hosting.html:
+     the delivered pixels are white for both raw initialization callbacks and the live document,
+     so qualification must depend on the expected document rather than a white heuristic. Text
+     uses near-white-on-white to keep the sampled corner pixels white while the document stays a
+     real, live page. */
+  body{font-family:sans-serif;background:#ffffff;color:#ffffff;margin:0;padding:16px}
+  h1{font-size:30px;margin:8px 0}
+  .counter{font-size:72px;font-weight:700;color:#fdfdfd}
+  input{font-size:20px;padding:12px;width:100%;box-sizing:border-box;margin-top:12px;
+        background:#ffffff;color:#ffffff;border:1px solid #f2f2f2}
+</style>
+</head>
+<body>
+<h1 id="page-title">White capture page</h1>
+<div>load marker: <span id="load-marker"></span></div>
+<div class="counter" id="live-counter">0</div>
+<div><label for="hosting-field">State field <input id="hosting-field" placeholder="state target"></label></div>
+<script>
+var marker = 'W' + Math.floor(Math.random() * 1e9);
+document.getElementById('load-marker').textContent = marker;
+var n = 0;
+var frozen = false;
+setInterval(function () {
+  if (frozen) { return; }
+  n++;
+  document.getElementById('live-counter').textContent = n + ' @ ' + Date.now();
+}, 1000);
+window.__eyebrowseFreeze = function (value) {
+  frozen = !!value;
+  if (frozen && document.activeElement) { document.activeElement.blur(); }
+};
+</script>
+</body>
+</html>

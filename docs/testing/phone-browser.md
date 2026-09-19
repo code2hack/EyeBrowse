@@ -191,16 +191,18 @@ The instrumented suite (`BrowserInstrumentedTest`) covers: fresh start, address 
 activation, `target=_blank` and gesture popup in the same tab, unsolicited popup no-op, real swipe
 scrolling, recreation retention (document, field values, load count), simulated process-restart
 recovery without auto-load, untrusted-HTTPS refusal, controlled HTTP failure, unsupported
-destinations, and the harmless POST correlation (one submission, field names only).
+destinations, the harmless POST correlation (one submission, field names only), and zero-dispatch
+used-path regressions for a DOM-only tap-target move and document-marker change across the final
+readiness boundary.
 
 Input/evidence boundaries:
 
-* Activations use `Instrumentation.sendPointerSync` with `SOURCE_TOUCHSCREEN` touch events. This is
-  synthetic instrumented input: it establishes ordinary activation (links, buttons, form submit,
-  swipe) in the focused EyeBrowse window, but it is **not** human touch, IME or physical-display
-  evidence. Prepare focus and geometry before one DOWN/UP attempt. Any partial/uncertain failure
-  ends that attempt and is recorded; focus reacquisition never licenses replay. Input API return is
-  distinguished from the observed fixture effect.
+* Activations use `Instrumentation.sendPointerSync` with pointer/touch events. This is synthetic
+  instrumented input: it establishes ordinary activation (links, buttons, form submit, swipe) in the
+  focused EyeBrowse window, but it is **not** human touch, IME or physical-display evidence. Prepare
+  focus and geometry before one input attempt. Any partial/uncertain failure ends that attempt and is
+  recorded; focus reacquisition never licenses replay. Input API return is distinguished from the
+  observed fixture effect.
 * Page reads and fixture setup use `WebView.evaluateJavascript` from the androidTest APK only. The
   pinned `espresso-web:3.6.1` was dropped as a simplification approved by the Planner (clarification
   C1). Its active evaluation path already calls `WebView.evaluateJavascript`, so the earlier note here
@@ -222,15 +224,72 @@ Input/evidence boundaries:
 Argument names and bounds: the suite reads `fixtureBaseUrl` and `secureBaseUrl` (revision 1's
 `untrustedHttpsUrl` is not consumed). Condition polling has a 20 s budget and may finish after the
 last bounded predicate call; each JavaScript evaluation has a 10 s bound, with at most one retry for
-read-only observations. Focus preparation has a 15 s bound, input is single-shot, failure-only DOM
-capture has one 2 s evaluation, and each trace HTTP connect/read has a 5 s timeout. Record actual
-runtime and nested waits rather than claiming a tighter wall-clock guarantee.
+read-only observations. Focus preparation has a 15 s bound and input is single-shot. The entire
+failure-observation path (including a nested case failure) shares one absolute 2 s deadline. It posts
+test-owned work to the existing main Handler, checks expiry/owner before Activity/view access and
+JS dispatch, removes queued work and clears retained work on timeout/interruption/teardown, and
+suppresses late completion. Already-dispatched platform JS is not claimed to be recalled. Failure
+metadata is retained in memory and flushed to the instrumentation stream at class teardown, not
+sent through blocking HTTP/file I/O inside the deadline; process loss before flush may lose those
+explicitly deferred rows. Successful case trace HTTP connect/read still has a 5 s timeout.
+
+**I5-T01 correction history:** independent review of `cc1eb56` kept R1 open because the purported
+final DOM sample was still followed by a known main-thread boundary: swipe's
+`UiController.loopMainThreadForAtLeast()` performs a subsequent idle drain, while tap performed a
+later `ActivityScenario.onActivity` native read. A DOM-only document/target change in those intervals
+could authorize stale input even when native mapping remained equal. The round2 JVM supplied-snapshot
+classifier tests therefore did not prove the used Android ordering. R2's weak actual-Activity/WebView
+completion fence was source-cleared and is retained.
+
+Round3 removes those known callback-to-boundary gaps in the used test paths. After the final
+blocking evidence/focus work, each path performs its last explicit main-idle boundary and then
+`captureFinalReadiness` obtains the returned DOM value and complete native Activity/view state in the
+same WebView result callback. The test thread performs no later `ActivityScenario.onActivity`,
+Espresso `UiController` main-loop pump, blocking evidence write or focus wait before the shared
+`DispatchReadiness` decision and single input attempt. The new Android seam regressions deliberately
+change only target geometry or the document marker after the pre-boundary sample and require
+`Dispatch.stage == "not-attempted"` with zero click/scroll effect. They are source definitions until
+separately authorized instrumentation execution; source text is not a device PASS.
+
+The swipe preserves Espresso 3.6.1's exact `swipeUp` coordinate providers (bottom-center translated
+by `-0.083f` of view height to top-center), `Press.FINGER` precision, ten interpolated move points and
+the 150 ms FAST timing shape. It no longer calls `Swipe.FAST`/`UiController` after the decisive sample,
+because that idle-pumping path was the reviewed R1 seam. `SingleShotSwipe` sends one sequence through
+the same target-scoped instrumentation pointer API used by tap, with no GeneralSwipeAction retry,
+second automation client, UiAutomation connection, privilege or replay. These remain intended
+provider coordinates, not independently observed dispatcher coordinates. The shared guard checks
+both endpoints/full straight path against current visible screen bounds and IME exclusion;
+empty/clipped/unknown geometry stops the action. Tap target DOM geometry/identity and swipe
+document/viewport facts are revalidated together with current Activity/view identity, focus,
+attachment, mapping, display, scroll and IME/insets after the known slow/idle work.
 
 Run required software checks on the available real devices and use reserved supplemental window
 conditions as specified by the current plan. Unavailable physical-only observations are
 `NOT EXERCISED — unattended profile`, not passes or unchanged Owner blockers. Preserve valid prior
 Owner observations with their actual build/source. Secure-lock/private-authentication and management
 route safety remain real boundaries.
+
+### #5 current guarded screen-condition boundary
+
+The later Owner-authorized S20/API31 continuation plan controls #5 over this document's older
+Fold6 execution examples. Device/fixture phases require their separate Manager release. The
+installed `pi-phone-use` guard performs normal unlock before a bounded child and immediate verified
+relock in `finally`. Use that existing procedure for focused/full/UI phases, preserving the physical
+identity and authorized transport. It does not provide a qualified mid-instrumentation
+lock/recovery handshake: the full Browser+Hosting invocation includes later foreground native
+input, and nested guards or standalone locking against its guard are prohibited. Do not deliberately
+lock during that invocation and hope the remaining input succeeds, pass a credential into the test,
+or create another runner to bridge it.
+
+Accordingly, intentional display-off/secure-lock capture in this frozen suite is **NOT EXERCISED —
+unattended profile**, specifically for the missing qualified mid-invocation recovery coordination,
+not because `isDeviceSecure()` means recovery is impossible. The test records contemporaneous lock
+facts and explicitly defers external helper availability/verification to the current phase evidence;
+it cannot attest a host helper from app state. Guarded entry/final relock proves neither locked
+120 s capture nor navigation. If a later qualified procedure becomes available, reconcile it with
+Manager before claiming that condition. Record actual background/interactive/keyguard observations
+and the required 120 s capture/navigation separately; do not relabel incidental display-off as
+secure-lock PASS. No new Owner physical gate is introduced by this limited condition.
 
 For a private-LAN run, the address-field journey uses `fixtureBaseUrl=http://192.168.0.52:25341` and
 `secureBaseUrl=https://192.168.0.52:25342`, and must not depend on `adb reverse`. Before treating the

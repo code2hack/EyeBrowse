@@ -1,5 +1,6 @@
 plugins {
     id("com.android.application")
+    id("org.jetbrains.kotlin.android") version "2.2.21"
 }
 
 android {
@@ -8,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.code2hack.eyebrowse.phone"
-        minSdk = 32
+        minSdk = 31
         targetSdk = 35
         versionCode = 1
         versionName = "0.0.1"
@@ -26,15 +27,23 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
     // The same pure harness protocol is exercised by JVM tests and Android instrumentation only.
     sourceSets.getByName("test").java.srcDir("src/testShared/java")
+    sourceSets.getByName("test").kotlin.srcDir("src/testShared/java")
     sourceSets.getByName("androidTest").java.srcDir("src/testShared/java")
+    sourceSets.getByName("androidTest").kotlin.srcDir("src/testShared/java")
 }
 
 dependencies {
     implementation(project(":core:browser"))
     implementation("androidx.activity:activity:1.9.3")
     implementation("androidx.core:core:1.15.0")
+    // Keep the pre-existing runtime stdlib line while using a newer compatible compiler plugin.
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.8.22")
 
     constraints {
         // androidx.lifecycle 2.6.2 -> kotlinx-coroutines-android 1.6.4 still requests the split
