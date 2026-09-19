@@ -43,7 +43,7 @@ import com.code2hack.eyebrowse.core.browser.StartupPolicy
  */
 class PhoneBrowserSession private constructor(private val appContext: Context) {
 
-    interface Listener {
+    fun interface Listener {
         fun onSessionChanged(session: PhoneBrowserSession)
     }
 

@@ -18,7 +18,7 @@ import kotlin.math.max
  */
 class HostingPolicy private constructor() {
 
-    interface Clock {
+    fun interface Clock {
         fun now(): Long
     }
 
