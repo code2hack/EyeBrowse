@@ -17,5 +17,6 @@ dependencyResolutionManagement {
 rootProject.name = "EyeBrowse"
 
 include(":core:browser")
+include(":core:link")
 include(":app-phone")
 include(":app-rg")
