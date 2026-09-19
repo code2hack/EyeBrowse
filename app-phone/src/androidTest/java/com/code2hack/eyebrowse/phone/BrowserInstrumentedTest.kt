@@ -589,7 +589,7 @@ class BrowserInstrumentedTest {
     }
 
     private fun submitAddress(text: String) {
-        onView(withId(R.id.address_input)).perform(click(), replaceText(text))
+        onView(withId(R.id.address_input)).perform(replaceText(text))
         onView(withId(R.id.button_open)).perform(click())
         dismissIme()
     }
