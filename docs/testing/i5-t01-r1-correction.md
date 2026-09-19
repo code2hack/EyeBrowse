@@ -208,6 +208,31 @@ allowed API does not provide.
 The Kotlin conversion parity fix also remains: `attachedWebView()` preserves the Java source's
 nullable `findViewById` behavior and adds no synchronization/readiness wait.
 
+## Exact-time UID/window diagnosis and IME-evocation correction
+
+The evidence-only exact-time tap run on `4765ff77` directly established that the instrumentation
+runner executes in a separate test process/UID from the EyeBrowse activity window. That fact alone
+does not make the strict Instrumentation route deterministically invalid: the same frozen test passed
+during a sustained clean interval where EyeBrowse remained the registered/focused/topmost touchable
+window and no IME window was registered.
+
+The intermittent failures therefore track transient input-target topology rather than a simple
+"runner UID differs from app UID" condition. The strongest reproducible transient is harness-created:
+fixture navigation previously executed `click()` on the native address EditText before
+`replaceText()`. A separate probe showed that touching an editable field evokes the full-height
+Samsung IME input window that had overlapped the exact Browser gesture points in earlier failures.
+
+The preliminary address-field click is unnecessary for these tests. Espresso `ReplaceTextAction`
+sets the EditText text property directly and requires only a displayed EditText; it does not require
+that prior click/focus. The fixture setup now performs only `replaceText(text)`, then clicks the
+Open button. The existing defensive `dismissIme()` call remains, as do all final native
+IME/insets/readiness checks.
+
+This change does not alter the Browser-under-test pointer gesture, its pinned tap/swipe coordinates,
+the strict single-submission Instrumentation route, final DOM/native/path recomputation, or any
+product behavior. It removes an avoidable test-setup action whose only effect relevant to this
+mission was to create a transient foreign input window before the later Browser gesture.
+
 ## Scope and evidence boundary
 
 This correction changes testShared/JVM/androidTest and necessary test documentation only. It does not
