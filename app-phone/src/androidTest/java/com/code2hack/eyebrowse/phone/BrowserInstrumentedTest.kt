@@ -761,7 +761,7 @@ class BrowserInstrumentedTest {
 
     private fun sessionLoading(): Boolean {
         val loading = AtomicReference(false)
-        scenario.onActivity { loading.set(session.isLoading) }
+        scenario.onActivity { loading.set(session.isLoading()) }
         return loading.get()
     }
 
