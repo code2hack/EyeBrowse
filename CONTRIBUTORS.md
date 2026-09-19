@@ -108,33 +108,33 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Worker",
-    "scope": "v0.0.1; issue #5; DeepSeek fallback standby; retire/archive after #5 closeout",
+    "scope": "v0.0.1; issue #5; DeepSeek fallback standby; never activated; retired at #5 closeout",
     "host": "u4090",
     "runtime": "pi",
     "id": "01a0a441-925d-7484-81cf-23dd56f1ead4",
     "model": "deepseek-flash",
     "name": "Worker-#5-r2",
-    "status": "paused"
+    "status": "retired"
   },
   {
     "role": "Worker",
-    "scope": "v0.0.1; issue #5; GLM primary, ChatGPT Expert local-verification helper and designated return Worker; retire/archive after #5 closeout",
+    "scope": "v0.0.1; issue #5; GLM primary, ChatGPT Expert local-verification helper and designated return Worker; I5-T01..T02 executed; retired at #5 closeout",
     "host": "u4090",
     "runtime": "pi",
     "id": "01a0a81d-2502-7084-92bd-ef29f9f2e4fd",
     "model": "GLM-5.3-Flash-EXL3",
     "name": "Worker-#5-r3",
-    "status": "active"
+    "status": "retired"
   },
   {
     "role": "Expert",
-    "scope": "issue #5; I5-T01 escalated corrections and separately released focused verification",
+    "scope": "issue #5; I5-T01 escalated corrections and separately released focused verification; superseded by ChatGPT Expert; retired at #5 closeout",
     "host": "u4090",
     "runtime": "pi",
     "id": "01a0a81d-2515-762f-9c88-02e751c04cad",
     "model": "gpt-6-astra Max",
     "name": "Expert-#5",
-    "status": "paused"
+    "status": "retired"
   },
   {
     "role": "Planner",
@@ -158,13 +158,13 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Expert",
-    "scope": "issue #5; I5-T01 replacement Expert; paired local verification before handback",
+    "scope": "issue #5; I5-T01 replacement Expert; rounds 8-10 corrections, IME-evocation diagnosis and dda3d2cc handback; §14.4 sign-off delivered; retired at #5 closeout",
     "host": "chatgpt.com",
     "runtime": "chatgpt",
     "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70-eyebrowse/c/6aaa3ed7-f170-83e9-b793-000f0e2065f2",
     "model": "GPT-5.6 Sol / gpt-5-6-thinking / Extra High",
     "name": "Expert",
-    "status": "active"
+    "status": "retired"
   },
   {
     "role": "Worker",
