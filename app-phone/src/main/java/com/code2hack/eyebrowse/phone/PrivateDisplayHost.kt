@@ -140,12 +140,14 @@ class PrivateDisplayHost(
             imageReader = reader
             val displayManager = serviceContext.getSystemService(Context.DISPLAY_SERVICE)
                     as DisplayManager
-            val created = factory.createVirtualDisplay(displayManager, DISPLAY_NAME, width,
+            // Java original: the FIELD is assigned for every non-null created object BEFORE
+            // validation, so the rollback path releases a non-null-but-invalid native object.
+            virtualDisplay = factory.createVirtualDisplay(displayManager, DISPLAY_NAME, width,
                     height, measuredDensityDpi, reader.surface)
+            val created = virtualDisplay
             if (created == null || created.display == null) {
                 throw HostingException("virtual display creation failed")
             }
-            virtualDisplay = created
             val presentationHost = factory.createPresentation(serviceContext, created.display)
             presentation = presentationHost
             presentationHost.show()
@@ -237,7 +239,10 @@ class PrivateDisplayHost(
             }
             synchronized(nativeLock) {
                 try {
-                    virtualDisplay?.surface = reader.surface
+                    // Java original: REQUIRED virtualDisplay.setSurface(...) — an absent display
+                    // NPEs here, the new reader is closed and the recoverable failure is
+                    // surfaced; it must never be silently skipped or published live-unattached.
+                    virtualDisplay!!.setSurface(reader.surface)
                 } catch (error: RuntimeException) {
                     reader.close()
                     throw HostingException("surface reattach failed: " + error.message)
