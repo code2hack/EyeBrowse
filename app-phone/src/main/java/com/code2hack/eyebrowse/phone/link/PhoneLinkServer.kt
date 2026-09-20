@@ -26,6 +26,7 @@ import com.code2hack.eyebrowse.phone.HostingController
 class PhoneLinkServer(
     private val identity: PhoneLinkIdentity,
     private val invitations: PairingInvitationManager,
+    private val identityRecovery: PhoneIdentityRecovery,
     private val store: PhonePairingStore,
     private val hostingController: HostingController?,
     private val locators: () -> List<Locator>,
@@ -99,6 +100,9 @@ class PhoneLinkServer(
     @Synchronized
     fun start() {
         if (engine != null) return
+        // Validate/repair only at use time. Construction must survive an inadequate VALID/CORRUPT
+        // alias so PairingActivity can still expose the explicit Forget recovery control.
+        identityRecovery.ensureUsableIdentity()
         hostingController?.addListener(hostingListener)
         val newEngine = LinkServerEngine(identity, trustController, LinkTimings.PRODUCT, engineListener)
         newEngine.start(LinkProtocol.LOCAL_PORT)
@@ -140,15 +144,9 @@ class PhoneLinkServer(
         stop(sendForgetNotice = true)
         store.clear()
         invitations.cancel()
-        // Review B2 recovery: trust is now definitively ABSENT, so this is the one legal moment
-        // to repair an inadequate identity alias (same B1 rule; best-effort — a still-broken
-        // keystore keeps failing closed on the next start() with a visible GENERATE_FAILED note).
-        runCatching {
-            identity.ensureKeyOrUpgrade(
-                regenerateIfInadequate =
-                    com.code2hack.eyebrowse.core.link.session.IdentityRotation.regenerateAllowed(store.read()),
-            )
-        }
+        // Trust has been explicitly cleared. Only an ABSENT read can authorize repair/rotation;
+        // VALID/CORRUPT never silently rotate. Failure remains recoverable/fail-closed.
+        identityRecovery.repairAfterForget()
     }
 
     companion object {
@@ -167,24 +165,22 @@ class PhoneLinkServer(
         private fun create(appContext: Context): PhoneLinkServer {
             val identity = PhoneLinkIdentity()
             val store = PhonePairingStore(appContext)
-            // Identity regeneration is legal ONLY for definitively ABSENT trust (review B1):
-            // CORRUPT never rotates — it recovers through the explicit Forget path (B2), which
-            // repairs the identity once trust is cleared. An inadequate alias under CORRUPT/VALID
-            // fails closed; the failure is deferred (the server is still constructed) and surfaces
-            // as GENERATE_FAILED when start() needs the unusable identity.
-            runCatching {
-                identity.ensureKeyOrUpgrade(
-                    regenerateIfInadequate =
-                        com.code2hack.eyebrowse.core.link.session.IdentityRotation.regenerateAllowed(store.read()),
-                )
-            }
+            // Construction is side-effect free with respect to identity usability. VALID/CORRUPT
+            // trust with an inadequate alias must still reach PairingActivity and explicit Forget.
+            val identityRecovery = PhoneIdentityRecovery(
+                readTrust = store::read,
+                ensureIdentity = identity::ensureKeyOrUpgrade,
+                readCurrentFingerprint = identity::spkiSha256Hex,
+            )
             val invitations = PairingInvitationManager(
                 lifecycle = InvitationLifecycle { android.os.SystemClock.elapsedRealtime() },
-                phoneSpkiSha256Hex = identity.spkiSha256Hex(),
+                // Resolve on each generation: legal post-Forget rotation cannot leave an old pin.
+                phoneSpkiSha256Hex = identityRecovery::currentFingerprint,
             )
             val server = PhoneLinkServer(
                 identity = identity,
                 invitations = invitations,
+                identityRecovery = identityRecovery,
                 store = store,
                 hostingController = runCatching { HostingController.get(appContext) }.getOrNull(),
                 locators = { PhoneLocatorEnumerator.enumerate(appContext) },

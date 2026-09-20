@@ -14,7 +14,7 @@ import java.security.SecureRandom
  */
 class PairingInvitationManager(
     private val lifecycle: InvitationLifecycle,
-    private val phoneSpkiSha256Hex: String,
+    private val phoneSpkiSha256Hex: () -> String,
     private val random: (Int) -> ByteArray = { size ->
         ByteArray(size).also { SecureRandom().nextBytes(it) }
     },
@@ -33,13 +33,17 @@ class PairingInvitationManager(
     @Synchronized
     fun generate(locators: List<Locator>): ActiveInvitation {
         require(locators.isNotEmpty()) { "at least one emittable locator is required" }
+        // Resolve the Phone identity at generation time, before mutating invitation lifecycle.
+        // This avoids pinning the manager to a pre-Forget identity and lets a legal post-Forget
+        // alias repair advertise the newly generated TLS key (T02 B1/B2 wiring).
+        val currentPhoneSpkiSha256Hex = phoneSpkiSha256Hex()
         val id = B64URL.encode(random(LinkProtocol.INVITATION_ID_BYTES))
         val secret = random(LinkProtocol.INVITATION_SECRET_BYTES)
         val invitation = lifecycle.generate(id, secret)
         val payload = InvitationCodec.encode(
             invitationId = id,
             invitationSecret = secret,
-            phoneSpkiSha256Hex = phoneSpkiSha256Hex,
+            phoneSpkiSha256Hex = currentPhoneSpkiSha256Hex,
             locators = locators,
             ttlSeconds = invitation.ttlSeconds,
         )

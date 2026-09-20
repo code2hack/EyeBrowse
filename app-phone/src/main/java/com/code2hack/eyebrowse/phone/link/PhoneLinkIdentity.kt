@@ -70,8 +70,8 @@ class PhoneLinkIdentity() : TlsServerIdentity {
     /**
      * As [ensureKey], but an EXISTING alias whose digest specification is inadequate for TLS may
      * be regenerated only when `regenerateIfInadequate` is set — which the server grants only
-     * while no VALID pairing trust exists (identity is stable for the lifetime of a pairing;
-     * changing it afterwards requires the explicit Forget/replacement path).
+     * when pairing trust is definitively ABSENT. VALID and CORRUPT both fail closed; CORRUPT must
+     * first recover through explicit Forget, which clears trust before rotation is permitted.
      */
     @Synchronized
     fun ensureKeyOrUpgrade(regenerateIfInadequate: Boolean) {

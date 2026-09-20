@@ -166,9 +166,9 @@ written) and required the following corrections, all applied on this branch:
   NONEwithECDSA upcall; VERIFY in the purpose set breaks that upcall; absent digest
   authorizations are treated as "none authorized". Existing aliases are validated EMPIRICALLY
   (`supportsRawEcdsa()` — a real raw signature attempt), because KeyInfo digest metadata proved
-  unreliable on the device. An inadequate alias is regenerated only while no VALID pairing trust
-  exists (identity is stable for the lifetime of a pairing; later changes require the explicit
-  Forget/replacement path and fail closed).
+  unreliable on the device. An inadequate alias is regenerated automatically only when trust is
+  definitively ABSENT. VALID and CORRUPT both fail closed without silent rotation; CORRUPT recovery
+  requires explicit Forget, which clears trust first and only then permits alias repair/rotation.
 - **Pairing UI is event-driven** (server link observers), not polling — required for reliable
   accessibility-tree instrumentation and lower power draw; expiry/link notes are computed on
   refresh events.
@@ -178,8 +178,65 @@ written) and required the following corrections, all applied on this branch:
   decoder + SAME production controller; no pairing shortcut exists outside engine callbacks.
 - **Bounded server diagnostics:** the link engines log failure class + message only (no
   payloads, no key material) — this proved required for device-field diagnosis.
-- **Device findings (recorded, not silently widened):** cold first camera frame on the RG
-  measures ~7.9 s against the plan's <=5 s target (warm reacquisition is fast); Doze/light
-  network restriction drops inbound SYNs to the phone listener when the app is backgrounded
-  (pairing windows keep the phone UI foreground; a pairing foreground service is a T03
-  concern); Samsung Freecess kills backgrounded apps under the default 30 s screen timeout.
+- **Device findings:** physical RG cold first analyzer frame measured **7911 ms**. Planner
+  adjudication `I6-T02-CAMERA-ADJUDICATION-20260920-6AAA09E0-01`, option (c), revised the
+  authoritative T02 camera contract to cold <=10 s / warm reacquisition <=5 s /
+  cancel-unbind-release <=2 s; therefore the preserved 7911 ms cold evidence is PASS and is not
+  rerun merely to chase the superseded 5 s cold target. Doze/light network restriction drops
+  inbound SYNs to the phone listener when the app is backgrounded (pairing windows keep the phone
+  UI foreground; a pairing foreground service is a T03 concern); Samsung Freecess kills
+  backgrounded apps under the default 30 s screen timeout.
+
+## D13 — T02 identity recovery and invitation-pin freshness
+
+- Automatic repair/rotation of an inadequate Phone AndroidKeyStore alias is authorized **only**
+  when the tri-state trust read is `PeerTrustRead.Absent`. `Valid` and `Corrupt` both fail closed;
+  neither state silently deletes or replaces the Phone TLS identity.
+- Phone pairing-surface/server construction is side-effect free with respect to key usability.
+  It does not force an SPKI read or rotation, so an inadequate VALID/CORRUPT alias cannot prevent
+  `PairingActivity` construction before the existing explicit Forget control becomes reachable.
+- Listener start is the identity-use boundary: it applies the ABSENT-only policy and surfaces an
+  inadequate VALID/CORRUPT alias through the existing recoverable Generate-failure path.
+- Explicit Forget closes the link, clears trust, cancels the invitation, then performs best-effort
+  identity repair. Only the post-clear ABSENT state can authorize rotation.
+- `PairingInvitationManager` resolves the Phone SPKI fingerprint lazily for each generation,
+  before invitation lifecycle mutation. A legal post-Forget key rotation therefore cannot leave
+  the process-scoped invitation manager advertising an obsolete pin; the first new QR carries
+  the same fingerprint as the current TLS identity.
+
+## D14 — T02 CameraUnavailable production failure semantics
+
+- `CameraQrScanner` reports provider-acquisition or bind failure through the production camera
+  error callback as `CAMERA_UNAVAILABLE`, exactly once.
+- Failure cleanup best-effort unbinds partial CameraX use cases and clears the provider reference,
+  allowing a subsequent normal scanner acquisition rather than leaving a false camera-active
+  surface.
+- The deterministic no-match-selector instrumentation regression exercises this production
+  failure path and then proves normal camera reacquisition. It does not create a fake pairing path.
+
+## D15 — T02 camera timing contract (Planner adjudication)
+
+Authority: `I6-T02-CAMERA-ADJUDICATION-20260920-6AAA09E0-01`, option (c).
+
+- cold first real CameraX analyzer frame: **<=10,000 ms**;
+- warm reacquisition: **<=5,000 ms**;
+- cancel / unbind / release: **<=2,000 ms**.
+- The preserved physical-RG cold measurement of **7911 ms** is PASS under this contract. It is
+  retained as evidence rather than automatically rerun solely because the prior cold <=5 s
+  requirement was superseded.
+- Runtime camera instrumentation uses these same bounds. The Android 12 permission-denial flow
+  remains a split invocation because host-side `pm revoke` kills the instrumented process; that
+  procedural fact is not treated as a product camera failure.
+
+## D16 — T02 completed authentication-negative evidence
+
+- **Invalid invitation secret/token:** a structurally valid invitation with the valid invitation
+  ID but wrong secret reached the production Phone authentication endpoint and returned
+  `INVITATION_INVALID` before authentication, with zero protected status exposed.
+- **Wrong RG proof:** the controlled negative client established TLS 1.3 to the Phone-role
+  endpoint, verified the pinned Phone SPKI, completed the real Hello/Challenge exchange,
+  presented the expected RG SPKI but signed with a different private key, and received
+  `AUTHENTICATION_FAILED` with zero protected status.
+- The Phone role for these correction-round negatives is explicitly **substituted emulator
+  evidence** under the standing Owner decision; it is not relabeled physical KeyMint evidence,
+  and it does not seed trust or bypass the production Phone authentication engine.

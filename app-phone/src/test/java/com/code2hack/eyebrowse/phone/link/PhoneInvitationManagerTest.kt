@@ -33,9 +33,52 @@ class PhoneInvitationManagerTest {
 
     private fun manager(clock: FakeClock) = PairingInvitationManager(
         lifecycle = InvitationLifecycle(clock::now),
-        phoneSpkiSha256Hex = fp,
+        phoneSpkiSha256Hex = { fp },
         random = FixedRandom(),
     )
+
+    @Test
+    fun `fingerprint is lazy and later invitation uses current Phone identity (B2 wiring)`() {
+        val clock = FakeClock()
+        var currentFp = "11".repeat(32)
+        var reads = 0
+        val manager = PairingInvitationManager(
+            lifecycle = InvitationLifecycle(clock::now),
+            phoneSpkiSha256Hex = {
+                reads += 1
+                currentFp
+            },
+            random = FixedRandom(),
+        )
+
+        assertEquals("manager construction must not touch Phone identity", 0, reads)
+        val first = InvitationCodec.parse(manager.generate(locators).payload).getOrThrow()
+        assertEquals("11".repeat(32), first.phoneSpkiSha256Hex)
+
+        currentFp = "22".repeat(32)
+        val second = InvitationCodec.parse(manager.generate(locators).payload).getOrThrow()
+        assertEquals("22".repeat(32), second.phoneSpkiSha256Hex)
+        assertEquals(2, reads)
+    }
+
+    @Test
+    fun `fingerprint failure occurs before invitation lifecycle mutation (B1 wiring)`() {
+        val clock = FakeClock()
+        val manager = PairingInvitationManager(
+            lifecycle = InvitationLifecycle(clock::now),
+            phoneSpkiSha256Hex = { throw IllegalStateException("inadequate alias") },
+            random = FixedRandom(),
+        )
+
+        var thrown = false
+        try {
+            manager.generate(locators)
+        } catch (_: IllegalStateException) {
+            thrown = true
+        }
+        assertTrue(thrown)
+        assertNull(manager.activeInvitation())
+    }
 
     @Test
     fun `generated invitation payload parses and carries plan-required fields`() {
