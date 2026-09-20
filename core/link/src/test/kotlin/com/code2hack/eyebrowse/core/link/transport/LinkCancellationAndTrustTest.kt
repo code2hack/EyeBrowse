@@ -182,7 +182,8 @@ class LinkCancellationAndTrustTest {
         assertEquals(LinkError.AuthenticationFailed, failure)
         assertTrue("test did not consume a material TCP phase", tcpElapsedMs.get() >= 900)
         assertTrue(
-            "operation exceeded configured budget plus 500 ms scheduling slack",
+            "operation exceeded configured budget plus 500 ms scheduling slack: " +
+                "elapsed=${elapsedMs}ms budget=${tight.operationBudgetMs}ms tcp=${tcpElapsedMs.get()}ms",
             elapsedMs <= tight.operationBudgetMs + 500,
         )
         assertTrue(client.authenticated.isEmpty())

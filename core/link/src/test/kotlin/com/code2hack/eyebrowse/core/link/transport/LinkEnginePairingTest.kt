@@ -160,6 +160,8 @@ class LinkEnginePairingTest {
         val invitation = server.generateInvitation()
         client.engine.connect(client.attempt(server.identity.spkiSha256Hex(), port, invitation))
         assertTrue(Harness.await(server.committed))
+        assertTrue(Harness.await(client.connected))
+        assertTrue(Harness.await(server.linkUp))
         client.engine.disconnect()
         assertTrue(Harness.await(server.linkDown))
         val rawReused = Harness.RawClient(port, server.identity.spkiSha256Hex(), keyPair = client.keyPair)

@@ -594,6 +594,14 @@ class LinkClientEngine(
     private fun elapsedMs(sinceNanos: Long) = (System.nanoTime() - sinceNanos) / 1_000_000
 
     internal fun closeQuietly(socket: Socket) {
+        // Failed/cancelled TLS cleanup is part of the bounded operation. Force an abortive TCP
+        // close so SSLSocket.close() cannot spend another read-timeout window on TLS shutdown
+        // after the operation/auth deadline has already expired (review B3/B4).
+        try {
+            if (!socket.isClosed) socket.setSoLinger(true, 0)
+        } catch (e: Exception) {
+            // best effort; close below remains mandatory
+        }
         try {
             socket.close()
         } catch (e: Exception) {

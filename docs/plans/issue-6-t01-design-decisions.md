@@ -62,7 +62,8 @@ Authority: issues/6#issuecomment-5742886185 (ticket plan). All decisions below s
   locator attempts. After a TCP connection succeeds, TLS handshake + application authentication
   share one absolute ≤5 s auth deadline, additionally capped by the remaining operation deadline;
   timeout is recomputed before each blocking handshake/auth read. Cancellation owns the raw socket
-  before blocking TCP connect and closes current connection work within ≤2 s.
+  before blocking TCP connect and closes current connection work within ≤2 s. Deadline/cancel
+  teardown is abortive so TLS cleanup does not receive another timeout window.
 
 ## D8 — Peer binding / replacement / Forget (pure BindingPolicy in core:link)
 - One remembered peer per endpoint. Same-identity locator refresh allowed after TLS pin proof;
@@ -108,9 +109,10 @@ written) and required the following corrections, all applied on this branch:
   cancellation/ownership token guarded by one operation lock. The raw socket is published to that
   operation **before** blocking `connect()`, ownership transitions raw→TLS only for that same live
   operation, and every failure/session-exit path clears matching ownership. `disconnect()`
-  atomically marks the operation cancelled and takes/closes its owned socket. The final local
-  `onAuthenticated` trust commit and CONNECTED transition are serialized against Cancel under the
-  same operation lock, removing the prior check→callback race. Regressions deterministically cover
+  atomically marks the operation cancelled and takes/closes its owned socket. Owned-socket teardown
+  is abortive (`SO_LINGER=0`) so cancellation/deadline cleanup cannot consume another socket-timeout
+  window. The final local `onAuthenticated` trust commit and CONNECTED transition are serialized
+  against Cancel under the same operation lock, removing the prior check→callback race. Regressions deterministically cover
   cancellation during blocked TCP connect, cancellation at the precommit boundary, stalling
   application auth, and established-session cancellation; deliberate cancellation quiesces within
   ≤2 s and cannot produce local trust commit/CONNECTED.
@@ -120,8 +122,9 @@ written) and required the following corrections, all applied on this branch:
   TLS+application-auth deadline is derived as
   `min(operation deadline, tcp-success time + authTimeoutMs)`; remaining time is recomputed before
   TLS handshake and before each blocking application-auth read, so no read receives a fresh full
-  auth allowance. Regressions assert the configured aggregate deadline with bounded scheduling
-  slack and include a materially slow TCP phase followed by stalled authentication, which would
+  auth allowance. Deadline/failure teardown is abortive and receives no extra cleanup allowance.
+  Regressions assert the configured aggregate deadline with bounded scheduling slack and include a
+  materially slow TCP phase followed by stalled authentication, which would
   fail under the former pre-connect budget snapshot behavior.
 - **A5 (R4/B5, amends D5):** both AndroidKeyStore identities explicitly request
   `secp256r1` via `KeyGenParameterSpec.setAlgorithmParameterSpec(ECGenParameterSpec)`; a
