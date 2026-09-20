@@ -186,6 +186,16 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "id": "204730f4-7032-4135-a2a9-8ea79e96174f",
     "model": "GLM-5.3-Flash-EXL3 / max",
     "name": "Worker-#6-r1",
+    "status": "retired"
+  },
+  {
+    "role": "Worker",
+    "scope": "v0.0.1; issue #6 RG-chain; replacement for Worker-#6-r1; sole source writer",
+    "host": "u4090",
+    "runtime": "codex",
+    "id": "01a0bfbf-8f30-77d1-8c8f-756c51e5d547",
+    "model": "GPT-5.6 Sol / gpt-5.6-sol / Extra High",
+    "name": "Worker-#6-r2-Codex",
     "status": "active"
   },
   {
@@ -206,6 +216,16 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "id": "01a0b008-4721-73da-b70e-2870ec36f8ab",
     "model": "GLM-5.3-Flash-EXL3 / max",
     "name": "EyeBrowse-Manager-GLM",
+    "status": "retired"
+  },
+  {
+    "role": "Manager",
+    "scope": "project-wide",
+    "host": "u4090",
+    "runtime": "codex",
+    "id": "01a0bfb9-8fc0-7981-a493-14c6894dc70c",
+    "model": "gpt-5.6-luna / max",
+    "name": "EyeBrowse-Manager-Codex",
     "status": "active"
   }
 ]
