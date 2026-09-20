@@ -58,6 +58,8 @@ class PairingActivity : ComponentActivity() {
         override fun isLinkUp(): Boolean = server.isLinkUp()
 
         override fun isPaired(): Boolean = server.isPaired()
+
+        override fun isCorrupt(): Boolean = server.trustIsCorrupt()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -115,6 +117,8 @@ class PairingActivity : ComponentActivity() {
         }
         generateButton.isEnabled = true
         cancelButton.isEnabled = state.invitationPayload != null
-        forgetButton.isEnabled = state.paired || state.linkUp
+        // Review B2: the explicit reset stays reachable under CORRUPT trust (it is distinct from
+        // a clean "not paired" and must not strand the user without recovery).
+        forgetButton.isEnabled = state.forgetEnabled
     }
 }

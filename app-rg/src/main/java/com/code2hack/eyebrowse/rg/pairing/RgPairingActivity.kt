@@ -95,6 +95,7 @@ class RgPairingActivity : ComponentActivity() {
             mainExecutor = ContextCompat.getMainExecutor(this),
             onPayload = { payload -> runOnUiThread { onDecoded(payload) } },
             onFirstFrame = { runOnUiThread { show(CAMERA_FRAME_NOTE) } },
+            onCameraError = { error -> runOnUiThread { show(describe(error)) } },
         )
         scanner = newScanner
         newScanner.start(previewView)

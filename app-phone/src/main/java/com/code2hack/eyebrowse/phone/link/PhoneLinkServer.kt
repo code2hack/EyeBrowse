@@ -120,6 +120,9 @@ class PhoneLinkServer(
     /** Usable pairing exists (VALID trust; CORRUPT intentionally reports false and fails closed). */
     fun isPaired(): Boolean = store.read() is PeerTrustRead.Valid
 
+    /** Trust store is CORRUPT (unreadable): distinct from ABSENT; recovery is explicit Forget (B2). */
+    fun trustIsCorrupt(): Boolean = store.read() is PeerTrustRead.Corrupt
+
     /** Generates a fresh invitation (cancels any previous one) with current explicit locators. */
     fun generateInvitation(): PairingInvitationManager.ActiveInvitation =
         invitations.generate(locators())
@@ -137,6 +140,15 @@ class PhoneLinkServer(
         stop(sendForgetNotice = true)
         store.clear()
         invitations.cancel()
+        // Review B2 recovery: trust is now definitively ABSENT, so this is the one legal moment
+        // to repair an inadequate identity alias (same B1 rule; best-effort — a still-broken
+        // keystore keeps failing closed on the next start() with a visible GENERATE_FAILED note).
+        runCatching {
+            identity.ensureKeyOrUpgrade(
+                regenerateIfInadequate =
+                    com.code2hack.eyebrowse.core.link.session.IdentityRotation.regenerateAllowed(store.read()),
+            )
+        }
     }
 
     companion object {
@@ -155,8 +167,17 @@ class PhoneLinkServer(
         private fun create(appContext: Context): PhoneLinkServer {
             val identity = PhoneLinkIdentity()
             val store = PhonePairingStore(appContext)
-            // Identity regeneration is legal only before a VALID pairing exists (ledger D12).
-            identity.ensureKeyOrUpgrade(regenerateIfInadequate = store.read() !is PeerTrustRead.Valid)
+            // Identity regeneration is legal ONLY for definitively ABSENT trust (review B1):
+            // CORRUPT never rotates — it recovers through the explicit Forget path (B2), which
+            // repairs the identity once trust is cleared. An inadequate alias under CORRUPT/VALID
+            // fails closed; the failure is deferred (the server is still constructed) and surfaces
+            // as GENERATE_FAILED when start() needs the unusable identity.
+            runCatching {
+                identity.ensureKeyOrUpgrade(
+                    regenerateIfInadequate =
+                        com.code2hack.eyebrowse.core.link.session.IdentityRotation.regenerateAllowed(store.read()),
+                )
+            }
             val invitations = PairingInvitationManager(
                 lifecycle = InvitationLifecycle { android.os.SystemClock.elapsedRealtime() },
                 phoneSpkiSha256Hex = identity.spkiSha256Hex(),

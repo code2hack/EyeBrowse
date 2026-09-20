@@ -22,6 +22,10 @@ class PhonePairingUiController(
         val expiresAtMs: Long? = null,
         val linkUp: Boolean = false,
         val paired: Boolean = false,
+        /** Trust store is CORRUPT (unreadable): distinct from ABSENT; recovery = explicit Forget. */
+        val corruptTrust: Boolean = false,
+        /** Forget is reachable while paired, linked, OR under CORRUPT trust (review B2). */
+        val forgetEnabled: Boolean = false,
         val note: String = "",
     )
 
@@ -33,6 +37,9 @@ class PhonePairingUiController(
         fun activeInvitationId(): String?
         fun isLinkUp(): Boolean
         fun isPaired(): Boolean
+
+        /** Tri-state trust: CORRUPT is distinct from ABSENT (review B2). */
+        fun isCorrupt(): Boolean
 
         data class GeneratedInvitation(val id: String, val payload: String, val expiresAtMs: Long)
     }
@@ -46,26 +53,52 @@ class PhonePairingUiController(
         return state
     }
 
-    fun onScreenShown(): UiState = update {
-        UiState(
-            linkUp = surface.isLinkUp(),
-            paired = surface.isPaired(),
-            note = if (surface.isPaired()) PAIRED_NOTE else IDLE_NOTE,
+    private fun observeSurface(previous: UiState): UiState {
+        val linkUp = surface.isLinkUp()
+        val paired = surface.isPaired()
+        val corruptTrust = surface.isCorrupt()
+        return previous.copy(
+            linkUp = linkUp,
+            paired = paired,
+            corruptTrust = corruptTrust,
+            // Review B2: the explicit reset stays reachable for CORRUPT trust, which reports
+            // isPaired()=false by design (it must NOT be presented as a clean "not paired").
+            forgetEnabled = paired || linkUp || corruptTrust,
         )
     }
 
+    fun onScreenShown(): UiState = update {
+        val s = observeSurface(UiState())
+        s.copy(note = when {
+            s.corruptTrust -> CORRUPT_NOTE
+            s.paired -> PAIRED_NOTE
+            else -> IDLE_NOTE
+        })
+    }
+
     fun onGenerateClicked(): UiState {
-        val generated = surface.generateInvitation() ?: return update {
-            it.copy(invitationId = null, invitationPayload = null, expiresAtMs = null, note = GENERATE_FAILED_NOTE)
+        val generated = surface.generateInvitation()
+        if (generated == null) {
+            return update {
+                val s = observeSurface(it)
+                s.copy(
+                    invitationId = null,
+                    invitationPayload = null,
+                    expiresAtMs = null,
+                    note = if (s.corruptTrust) CORRUPT_NOTE else GENERATE_FAILED_NOTE,
+                )
+            }
         }
         return update {
-            UiState(
+            val s = observeSurface(UiState())
+            s.copy(
                 invitationId = generated.id,
                 invitationPayload = generated.payload,
                 expiresAtMs = generated.expiresAtMs,
-                linkUp = surface.isLinkUp(),
-                paired = surface.isPaired(),
-                note = INVITATION_ACTIVE_NOTE,
+                // A successful generate does NOT clear CORRUPT trust: the upgrade/re-pair only
+                // completes after the explicit Forget (review B2); pairing will fail closed
+                // server-side until then.
+                note = if (s.corruptTrust) CORRUPT_NOTE else INVITATION_ACTIVE_NOTE,
             )
         }
     }
@@ -102,12 +135,17 @@ class PhonePairingUiController(
     fun onRefresh(): UiState = update { s ->
         val expiry = s.expiresAtMs
         val expired = expiry != null && nowMs() > expiry && s.invitationPayload != null
-        s.copy(
-            linkUp = surface.isLinkUp(),
-            paired = surface.isPaired(),
+        val refreshed = observeSurface(s)
+        refreshed.copy(
+            // Exactly ONE visible ACTIVE invitation (Phase C): an expired invitation is no longer
+            // active, so its QR display is cleared (review B5) instead of lingering on screen.
+            invitationId = if (expired) null else s.invitationId,
+            invitationPayload = if (expired) null else s.invitationPayload,
+            expiresAtMs = if (expired) null else s.expiresAtMs,
             note = when {
                 expired -> INVITATION_EXPIRED_NOTE
-                surface.isLinkUp() -> LINKED_NOTE
+                refreshed.linkUp -> LINKED_NOTE
+                refreshed.corruptTrust && !refreshed.paired -> CORRUPT_NOTE
                 else -> s.note
             },
         )
@@ -123,6 +161,7 @@ class PhonePairingUiController(
         const val NOTHING_TO_CANCEL_NOTE = "No invitation is displayed."
         const val FORGOTTEN_NOTE = "Pairing forgotten on this Phone. Re-pair with a new QR."
         const val INVITATION_EXPIRED_NOTE = "Invitation expired — generate a fresh QR."
+        const val CORRUPT_NOTE = "Stored pairing data is unreadable. Use Forget to reset, then pair again."
         const val LINKED_NOTE = "RG linked (authenticated)."
     }
 }

@@ -21,6 +21,7 @@ class PhonePairingUiControllerTest {
         var forgotten = false
         var linkUp = false
         var paired = false
+        var corrupt = false
         var failGenerate = false
 
         override fun generateInvitation(): PhonePairingUiController.PairingSurface.GeneratedInvitation? {
@@ -53,6 +54,7 @@ class PhonePairingUiControllerTest {
         override fun activeInvitationId(): String? = activeId
         override fun isLinkUp(): Boolean = linkUp
         override fun isPaired(): Boolean = paired
+        override fun isCorrupt(): Boolean = corrupt
     }
 
     @Test
@@ -109,8 +111,12 @@ class PhonePairingUiControllerTest {
         assertFalse(controller.current().linkUp)
     }
 
+    /**
+     * Review B5: exactly ONE visible ACTIVE invitation — an expired invitation is no longer
+     * active, so its QR display is cleared, not left on screen.
+     */
     @Test
-    fun `expiry tick annotates the note without touching the invitation`() {
+    fun `expiry clears the displayed QR and annotates the note`() {
         var now = 5_000L
         val surface = FakeSurface()
         val controller = PhonePairingUiController(surface) { now }
@@ -119,6 +125,59 @@ class PhonePairingUiControllerTest {
         now = 15_000L // past expiresAtMs (10_000)
         val state = controller.onRefresh()
         assertEquals(PhonePairingUiController.INVITATION_EXPIRED_NOTE, state.note)
-        assertEquals(surface.generated!!.id, state.invitationId)
+        assertNull(state.invitationId)
+        assertNull(state.invitationPayload)
+        assertNull(state.expiresAtMs)
+    }
+
+    /** Review B2: CORRUPT trust is distinct from a clean "not paired"; Forget stays reachable. */
+    @Test
+    fun `corrupt trust keeps the explicit Forget recovery reachable`() {
+        val surface = FakeSurface()
+        surface.corrupt = true
+        val controller = PhonePairingUiController(surface) { 0 }
+        val shown = controller.onScreenShown()
+        assertTrue(shown.corruptTrust)
+        assertTrue("Forget must be enabled under CORRUPT trust", shown.forgetEnabled)
+        assertEquals(PhonePairingUiController.CORRUPT_NOTE, shown.note)
+
+        // The generate path does not clear CORRUPT: upgrade/re-pair only AFTER Forget.
+        controller.onGenerateClicked()
+        assertTrue(controller.current().corruptTrust)
+        assertTrue(controller.current().forgetEnabled)
+
+        controller.onForgetClicked()
+        assertFalse(controller.current().corruptTrust)
+        assertFalse(controller.current().forgetEnabled)
+        assertTrue(surface.forgotten)
+    }
+
+    /** Review B2: a generate failure under CORRUPT points at the reset, not a generic failure. */
+    @Test
+    fun `generate failure under corrupt trust surfaces the corrupt reset note`() {
+        val surface = FakeSurface()
+        surface.corrupt = true
+        surface.failGenerate = true
+        val controller = PhonePairingUiController(surface) { 0 }
+        val state = controller.onGenerateClicked()
+        assertTrue(state.corruptTrust)
+        assertTrue(state.forgetEnabled)
+        assertEquals(PhonePairingUiController.CORRUPT_NOTE, state.note)
+    }
+
+    /** Review B2: paired/link-up states keep Forget reachable as before (no regression). */
+    @Test
+    fun `forget stays reachable while paired or linked`() {
+        val surface = FakeSurface()
+        val controller = PhonePairingUiController(surface) { 0 }
+        val idle = controller.onScreenShown()
+        assertFalse(idle.forgetEnabled)
+
+        surface.paired = true
+        assertTrue(controller.onRefresh().forgetEnabled)
+
+        surface.paired = false
+        surface.linkUp = true
+        assertTrue(controller.onRefresh().forgetEnabled)
     }
 }
