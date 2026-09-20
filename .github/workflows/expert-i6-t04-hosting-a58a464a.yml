@@ -1,4 +1,4 @@
-name: Expert I6-T04 hosting gates a58a464a
+name: Expert I6-T04 hosting gates dd20bb83
 
 on:
   push:
@@ -19,7 +19,7 @@ jobs:
       - name: Checkout exact Expert candidate
         uses: actions/checkout@v4
         with:
-          ref: a58a464a9d5f8214f3796a4adaa797bec356b788
+          ref: dd20bb83c00f9f3cbaa3ad10c19c51734affd64b
           persist-credentials: false
 
       - name: Set up JDK 17
@@ -38,17 +38,18 @@ jobs:
       - name: Verify exact SHA binding
         shell: bash
         run: |
-          test "$(git rev-parse HEAD)" = "a58a464a9d5f8214f3796a4adaa797bec356b788"
+          test "$(git rev-parse HEAD)" = "dd20bb83c00f9f3cbaa3ad10c19c51734affd64b"
           chmod +x ./gradlew
           java -version
           ./gradlew --version
 
-      - name: Targeted WebView attachment regressions
+      - name: Targeted hosting lifecycle regressions
         shell: bash
         run: |
           ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
             :app-phone:testDebugUnitTest \
-            --tests "com.code2hack.eyebrowse.phone.BrowserAttachmentTransferTest"
+            --tests "com.code2hack.eyebrowse.phone.BrowserAttachmentTransferTest" \
+            --tests "com.code2hack.eyebrowse.phone.CaptureDrainSequenceTest"
 
       - name: Full JVM tests and JVM module builds
         shell: bash
