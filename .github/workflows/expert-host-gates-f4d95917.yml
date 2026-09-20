@@ -1,4 +1,4 @@
-name: Expert targeted B3 B4 af92eae2
+name: Expert full host gates af92eae2
 
 on:
   push:
@@ -9,14 +9,14 @@ permissions:
   contents: read
 
 jobs:
-  targeted-b3-b4:
+  host-gates:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     steps:
-      - name: Checkout exact implementation candidate
+      - name: Checkout exact corrected implementation candidate
         uses: actions/checkout@v4
         with:
           ref: af92eae2973b70b05e3434717b1e3a9b80695fe1
@@ -40,9 +40,36 @@ jobs:
         run: |
           test "$(git rev-parse HEAD)" = "af92eae2973b70b05e3434717b1e3a9b80695fe1"
           chmod +x ./gradlew
+          java -version
+          ./gradlew --version
 
-      - name: Run B3 B4 regression class
+      - name: JVM tests and JVM module builds
+        id: jvm
+        continue-on-error: true
         shell: bash
         run: |
-          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
-            :core:link:test --tests 'com.code2hack.eyebrowse.core.link.transport.LinkCancellationAndTrustTest'
+          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g             :core:browser:build             :core:link:build             :app-phone:testDebugUnitTest             :app-rg:testDebugUnitTest
+
+      - name: Phone and RG debug plus androidTest assembly
+        id: builds
+        continue-on-error: true
+        shell: bash
+        run: |
+          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g             :app-phone:assembleDebug             :app-rg:assembleDebug             :app-phone:assembleDebugAndroidTest             :app-rg:assembleDebugAndroidTest
+
+      - name: Phone and RG lint
+        id: lint
+        continue-on-error: true
+        shell: bash
+        run: |
+          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g             :app-phone:lintDebug             :app-rg:lintDebug
+
+      - name: Require all host gates
+        shell: bash
+        run: |
+          echo "JVM=${{ steps.jvm.outcome }}"
+          echo "BUILDS=${{ steps.builds.outcome }}"
+          echo "LINT=${{ steps.lint.outcome }}"
+          test "${{ steps.jvm.outcome }}" = success
+          test "${{ steps.builds.outcome }}" = success
+          test "${{ steps.lint.outcome }}" = success
