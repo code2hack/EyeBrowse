@@ -236,6 +236,16 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "id": "01a0bfe8-79d4-73d0-97ce-aac94b7bc438",
     "model": "gpt-5.6-luna / max",
     "name": "EyeBrowse-Manager-Codex-r2",
+    "status": "retired"
+  },
+  {
+    "role": "Manager",
+    "scope": "project-wide",
+    "host": "u4090",
+    "runtime": "pi",
+    "id": "01a0c021-6d15-740e-bef7-c67e2504252f",
+    "model": "GLM-5.3-Flash-EXL3 / max",
+    "name": "EyeBrowse-Manager-GLM-r2",
     "status": "active"
   },
   {
