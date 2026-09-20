@@ -48,22 +48,16 @@ jobs:
           from pathlib import Path
           p = Path("core/link/src/test/kotlin/com/code2hack/eyebrowse/core/link/transport/LinkCancellationAndTrustTest.kt")
           s = p.read_text()
-          old = '''        val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
-
-        assertEquals(LinkError.AuthenticationFailed, failure)'''
-          new = '''        val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
-        val authStartedDeltaMs = client.stateTimesNanos[PairingState.AUTHENTICATING]
-            ?.let { TimeUnit.NANOSECONDS.toMillis(it - started) } ?: -1
-
-        assertEquals(LinkError.AuthenticationFailed, failure)'''
-          if old not in s:
+          anchor = "        val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)\n"
+          insert = anchor + "        val authStartedDeltaMs = client.stateTimesNanos[PairingState.AUTHENTICATING]?.let { TimeUnit.NANOSECONDS.toMillis(it - started) } ?: -1\n"
+          if anchor not in s:
               raise SystemExit("elapsed anchor missing")
-          s = s.replace(old, new)
-          old2 = '''"elapsed=${elapsedMs}ms budget=${tight.operationBudgetMs}ms tcp=${tcpElapsedMs.get()}ms",'''
-          new2 = '''"elapsed=${elapsedMs}ms budget=${tight.operationBudgetMs}ms tcp=${tcpElapsedMs.get()}ms authStart=${authStartedDeltaMs}ms",'''
-          if old2 not in s:
+          s = s.replace(anchor, insert, 1)
+          old = '"elapsed=${elapsedMs}ms budget=${tight.operationBudgetMs}ms tcp=${tcpElapsedMs.get()}ms",'
+          new = '"elapsed=${elapsedMs}ms budget=${tight.operationBudgetMs}ms tcp=${tcpElapsedMs.get()}ms authStart=${authStartedDeltaMs}ms",'
+          if old not in s:
               raise SystemExit("message anchor missing")
-          p.write_text(s.replace(old2, new2))
+          p.write_text(s.replace(old, new, 1))
           PY
 
       - name: Run B3/B4 class and print failure XML
