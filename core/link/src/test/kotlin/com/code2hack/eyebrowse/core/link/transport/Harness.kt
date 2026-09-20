@@ -73,6 +73,7 @@ object Harness {
         val linkUp = CountDownLatch(1)
         val linkDown = CountDownLatch(1)
         val linkLostNotifications = java.util.concurrent.atomic.AtomicInteger(0)
+        val listenerLinkDownNotifications = java.util.concurrent.atomic.AtomicInteger(0)
         lateinit var engine: LinkServerEngine
 
         private val trustController = object : LinkServerEngine.TrustController {
@@ -129,6 +130,7 @@ object Harness {
             }
 
             override fun onLinkDown() {
+                listenerLinkDownNotifications.incrementAndGet()
                 linkDown.countDown()
             }
         }

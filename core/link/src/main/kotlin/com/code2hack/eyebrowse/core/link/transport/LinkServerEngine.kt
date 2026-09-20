@@ -85,6 +85,19 @@ class LinkServerEngine(
     private val activeSocket = AtomicReference<SSLSocket?>(null)
 
     /**
+     * Serializes active-slot replacement with owner cleanup. In particular, stale eviction closes
+     * A and installs B while holding this lock; A's finally must acquire the same lock before it
+     * can clear the slot. This removes the close(A) -> A clears -> CAS(A,B) race (T03 E2).
+     */
+    private val activeOwnershipLock = Any()
+
+    /** JVM-only deterministic race seams; production leaves both null. */
+    @Volatile
+    internal var staleCloseBeforeInstallForTest: (() -> Unit)? = null
+    @Volatile
+    internal var beforeSessionOwnerCleanupForTest: (() -> Unit)? = null
+
+    /**
      * Last inbound activity of the active session (nanoTime), 0 when no session runs. A live peer
      * refreshes it at least every heartbeat interval (ping/pong ≤10 s); livenessTimeoutMs without
      * inbound ⇒ the occupant is provably dead and may be evicted for a new client (T03 listener
@@ -124,7 +137,11 @@ class LinkServerEngine(
     fun stop() {
         stopped = true
         serverSocket.get()?.close()
-        activeSocket.get()?.close()
+        // Coordinate socket close with stale replacement/install so Stop cannot race a new owner
+        // into the active slot while the eviction critical section is in progress.
+        synchronized(activeOwnershipLock) {
+            activeSocket.get()?.close()
+        }
         serverSocket.set(null)
         phase.set(Phase.IDLE)
     }
@@ -172,32 +189,50 @@ class LinkServerEngine(
                 // UNLESS the occupant is provably dead (no inbound for the liveness window): a
                 // wedged half-open session must not hold the slot indefinitely (T03 recovery).
                 val existing = activeSocket.get()
-                if (existing != null && shouldEvictStaleSession(
-                        activeSessionLastInboundNanos.get(),
-                        System.nanoTime(),
-                        timings.livenessTimeoutMs,
-                    )
-                ) {
-                    // Truthful link-down for the evicted authenticated link, emitted ONCE here by
-                    // the evictor (review round 1: the evicted session's own cleanup is fenced and
-                    // must not touch global state after replacement).
-                    val evictedWasAuthenticated = activeSessionAuthenticated
-                    closeQuietly(existing) // its session thread finishes via its own finally
-                    if (activeSocket.compareAndSet(existing, socket)) {
-                        activeSessionAuthenticated = false // replacement not yet authenticated
-                        activeSessionLastInboundNanos.set(System.nanoTime())
-                        if (evictedWasAuthenticated && !stopped) {
-                            trust.onLinkLost()
-                            listener.onLinkDown()
+                var replacementInstalled = false
+                var evictedWasAuthenticated = false
+                if (existing != null) {
+                    // E2: stale decision, close(A), and CAS(A -> B) form one ownership critical
+                    // section. A's finally uses the same lock, so it cannot clear A to null between
+                    // close and installation and spuriously reject this same Retry attempt.
+                    synchronized(activeOwnershipLock) {
+                        if (!stopped &&
+                            activeSocket.get() === existing &&
+                            shouldEvictStaleSession(
+                                activeSessionLastInboundNanos.get(),
+                                System.nanoTime(),
+                                timings.livenessTimeoutMs,
+                            )
+                        ) {
+                            evictedWasAuthenticated = activeSessionAuthenticated
+                            closeQuietly(existing)
+                            staleCloseBeforeInstallForTest?.invoke()
+                            // Stop may begin while close/test seam is in progress; never install a
+                            // replacement after stopped flips true.
+                            if (!stopped) {
+                                replacementInstalled = activeSocket.compareAndSet(existing, socket)
+                                if (replacementInstalled) {
+                                    activeSessionAuthenticated = false
+                                    activeSessionLastInboundNanos.set(System.nanoTime())
+                                    phase.set(Phase.AUTHENTICATING)
+                                    outbound.clear()
+                                }
+                            }
                         }
-                        phase.set(Phase.AUTHENTICATING)
-                        outbound.clear()
-                        Thread({ runSession(socket) }, "eyebrowse-link-session").apply {
-                            isDaemon = true
-                            start()
-                        }
-                        continue
                     }
+                }
+                if (replacementInstalled) {
+                    // The evictor owns the one truthful down publication for A. A's session-final
+                    // cleanup can no longer win ownership after B is installed.
+                    if (evictedWasAuthenticated && !stopped) {
+                        trust.onLinkLost()
+                        listener.onLinkDown()
+                    }
+                    Thread({ runSession(socket) }, "eyebrowse-link-session").apply {
+                        isDaemon = true
+                        start()
+                    }
+                    continue
                 }
                 closeQuietly(socket)
                 continue
@@ -253,23 +288,26 @@ class LinkServerEngine(
             // auth-phase stall or read-loop liveness timeout: bounded close
         } catch (e: Exception) {
             // Bounded diagnostics: failure class + message only, never payloads or key material.
+            // E1: do NOT publish listener-down here. All authenticated session-derived down events
+            // are centralized in owner-fenced cleanup (or the stale-session evictor).
             System.err.println("EyeBrowseLink: session failed: " + e.javaClass.name + ": " + e.message)
-            if (!stopped && authenticated) listener.onLinkDown()
         } finally {
             closeQuietly(socket)
-            // Owner-fenced cleanup (review round 1): global link state may only be mutated by the
-            // session that OWNS the active slot. An evicted session's finally must not clobber the
-            // replacement's AUTHENTICATING/LINK_UP phase, clear its liveness timestamp, or emit a
-            // stale link-down — the replacement (or the evictor) owns those transitions.
-            val stillOwner = activeSocket.compareAndSet(socket, null)
-            if (stillOwner) {
-                if (authenticated && !stopped) {
-                    trust.onLinkLost()
-                    listener.onLinkDown()
+            beforeSessionOwnerCleanupForTest?.invoke()
+            // Owner-fenced cleanup: global link state and listener-down may only be mutated by the
+            // session that still owns the active slot. The ownership lock also linearizes this CAS
+            // against stale close -> replacement installation in the acceptor.
+            synchronized(activeOwnershipLock) {
+                val stillOwner = activeSocket.compareAndSet(socket, null)
+                if (stillOwner) {
+                    if (authenticated && !stopped) {
+                        trust.onLinkLost()
+                        listener.onLinkDown()
+                    }
+                    phase.set(Phase.IDLE)
+                    activeSessionAuthenticated = false
+                    activeSessionLastInboundNanos.set(0)
                 }
-                phase.set(Phase.IDLE)
-                activeSessionAuthenticated = false
-                activeSessionLastInboundNanos.set(0)
             }
         }
     }

@@ -127,6 +127,7 @@ class StaleSessionEvictionTest {
             pinger.join(2_000)
 
             val linkLostBeforeB = server.linkLostNotifications.get()
+            val listenerDownBeforeB = server.listenerLinkDownNotifications.get()
 
             // B: normal client engine with the SAME stored identity -> eviction -> LINK_UP.
             val bSigner = object : com.code2hack.eyebrowse.core.link.crypto.RgSigningIdentity {
@@ -167,6 +168,11 @@ class StaleSessionEvictionTest {
                 linkLostBeforeB + 1,
                 server.linkLostNotifications.get(),
             )
+            // E1 regression: listener-side link-down is countable and must also be exactly one.
+            org.junit.Assert.assertEquals(
+                listenerDownBeforeB + 1,
+                server.listenerLinkDownNotifications.get(),
+            )
             client.engine.disconnect()
         } finally {
             aKeepAlive.set(false)
@@ -175,6 +181,122 @@ class StaleSessionEvictionTest {
         }
     }
 
+    /**
+     * E2 deterministic regression: the evictor closes stale A while holding the ownership lock.
+     * The test waits until A's session-final cleanup has reached the owner-CAS boundary before
+     * allowing the evictor to install B. Without the shared ownership lock, A can clear the slot
+     * to null first and the same B Retry is spuriously rejected.
+     */
+    @Test
+    fun `stale cleanup forced to owner boundary before install cannot reject the same replacement`() {
+        val timings = com.code2hack.eyebrowse.core.link.LinkTimings(
+            connectTimeoutMs = 1_000,
+            authTimeoutMs = 2_000,
+            heartbeatIntervalMs = 100,
+            livenessTimeoutMs = 10_000,
+            operationBudgetMs = 8_000,
+        )
+        val server = Harness.ServerHarness(timings = timings)
+        val port = server.start()
+        var a: Harness.RawClient? = null
+        val cleanupReachedOwnerBoundary = java.util.concurrent.CountDownLatch(1)
+        val evictionGapReached = java.util.concurrent.CountDownLatch(1)
+        val cleanupHookArmed = java.util.concurrent.atomic.AtomicBoolean(true)
+        try {
+            val occupant = com.code2hack.eyebrowse.core.link.testfix.TestCrypto.ecKeyPair()
+            val occupantSpki = occupant.public.encoded
+            server.storedPeerSpki.set(occupantSpki)
+            val pin = server.identity.spkiSha256Hex()
+
+            // A authenticates through the real reconnect path and remains the current owner.
+            a = Harness.RawClient(port, pin, occupant)
+            val hello = com.code2hack.eyebrowse.core.link.messages.HelloMessage(
+                com.code2hack.eyebrowse.core.link.LinkProtocol.MAJOR,
+                com.code2hack.eyebrowse.core.link.LinkProtocol.MINOR,
+                com.code2hack.eyebrowse.core.link.LinkProtocol.REQUIRED_CAPABILITIES,
+            )
+            a.send(hello)
+            assertTrue(a.readMessage() is com.code2hack.eyebrowse.core.link.messages.HelloMessage)
+            val challenge =
+                a.readMessage() as com.code2hack.eyebrowse.core.link.messages.ChallengeMessage
+            val nonce = com.code2hack.eyebrowse.core.link.invitation.B64URL.decode(challenge.nonce)!!
+            val transcript = com.code2hack.eyebrowse.core.link.crypto.ChallengeTranscript.build(
+                purpose = com.code2hack.eyebrowse.core.link.crypto.ChallengeTranscript.Purpose.RECONNECT,
+                protocolMajor = com.code2hack.eyebrowse.core.link.LinkProtocol.MAJOR,
+                protocolMinor = com.code2hack.eyebrowse.core.link.LinkProtocol.MINOR,
+                phoneSpki = server.identity.spki(),
+                rgSpki = occupantSpki,
+                nonce = nonce,
+            )
+            a.send(
+                com.code2hack.eyebrowse.core.link.messages.ReconnectAuthMessage(
+                    rgSpki = com.code2hack.eyebrowse.core.link.invitation.B64URL.encode(occupantSpki),
+                    nonce = challenge.nonce,
+                    sig = com.code2hack.eyebrowse.core.link.invitation.B64URL.encode(
+                        com.code2hack.eyebrowse.core.link.crypto.ChallengeTranscript.sign(
+                            transcript,
+                            occupant.private,
+                        ),
+                    ),
+                    hello = hello,
+                ),
+            )
+            assertTrue(a.readMessage() is com.code2hack.eyebrowse.core.link.messages.AuthOkMessage)
+            assertTrue(server.engine.isLinkUp())
+
+            // Freeze A as stale, then force the exact close -> cleanup -> install ordering.
+            server.engine.activeSessionLastInboundNanos.set(
+                System.nanoTime() - (timings.livenessTimeoutMs + 2_000) * 1_000_000,
+            )
+            server.engine.beforeSessionOwnerCleanupForTest = {
+                if (cleanupHookArmed.compareAndSet(true, false)) {
+                    cleanupReachedOwnerBoundary.countDown()
+                }
+            }
+            server.engine.staleCloseBeforeInstallForTest = {
+                evictionGapReached.countDown()
+                assertTrue(
+                    "A cleanup must reach the owner boundary before B installation",
+                    cleanupReachedOwnerBoundary.await(2, java.util.concurrent.TimeUnit.SECONDS),
+                )
+            }
+
+            val trustDownBefore = server.linkLostNotifications.get()
+            val listenerDownBefore = server.listenerLinkDownNotifications.get()
+            val bSigner = object : com.code2hack.eyebrowse.core.link.crypto.RgSigningIdentity {
+                override fun spki(): ByteArray = occupantSpki
+                override fun sign(transcript: ByteArray): ByteArray =
+                    com.code2hack.eyebrowse.core.link.crypto.ChallengeTranscript.sign(
+                        transcript,
+                        occupant.private,
+                    )
+            }
+            val b = Harness.ClientHarness()
+            b.startEngine()
+            b.engine.connect(b.attempt(pin, port, null, bSigner))
+
+            assertTrue("forced close/install race seam must execute", Harness.await(evictionGapReached))
+            assertTrue("the SAME B Retry must be admitted", Harness.await(b.connected))
+            assertTrue("B must own a live authenticated link", server.engine.isLinkUp())
+            assertEquals(
+                com.code2hack.eyebrowse.core.link.HostStatusValue.HOST_INACTIVE,
+                b.statuses.pollFirst(5, java.util.concurrent.TimeUnit.SECONDS),
+            )
+
+            // A was authenticated, so exactly one truthful down is published by the evictor.
+            assertEquals(trustDownBefore + 1, server.linkLostNotifications.get())
+            assertEquals(listenerDownBefore + 1, server.listenerLinkDownNotifications.get())
+
+            server.engine.beforeSessionOwnerCleanupForTest = null
+            server.engine.staleCloseBeforeInstallForTest = null
+            b.engine.disconnect()
+        } finally {
+            server.engine.beforeSessionOwnerCleanupForTest = null
+            server.engine.staleCloseBeforeInstallForTest = null
+            runCatching { a?.socket?.close() }
+            server.stop()
+        }
+    }
     /** Healthy non-eviction (integration): a live, refreshing occupant rejects a second client. */
     @Test
     fun `live healthy session is never evicted by a concurrent client`() {
