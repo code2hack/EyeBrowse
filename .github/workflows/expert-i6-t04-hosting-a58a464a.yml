@@ -1,4 +1,4 @@
-name: Expert I6-T04 hosting gates dd20bb83
+name: Expert I6-T04 hosting gates e27acf45
 
 on:
   push:
@@ -19,7 +19,7 @@ jobs:
       - name: Checkout exact Expert candidate
         uses: actions/checkout@v4
         with:
-          ref: dd20bb83c00f9f3cbaa3ad10c19c51734affd64b
+          ref: e27acf4564e723a3ae0e2f1306d6191bcd86f42a
           persist-credentials: false
 
       - name: Set up JDK 17
@@ -38,7 +38,7 @@ jobs:
       - name: Verify exact SHA binding
         shell: bash
         run: |
-          test "$(git rev-parse HEAD)" = "dd20bb83c00f9f3cbaa3ad10c19c51734affd64b"
+          test "$(git rev-parse HEAD)" = "e27acf4564e723a3ae0e2f1306d6191bcd86f42a"
           chmod +x ./gradlew
           java -version
           ./gradlew --version
