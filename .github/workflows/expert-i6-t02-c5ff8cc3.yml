@@ -1,4 +1,4 @@
-name: Expert I6-T02 host gates c5ff8cc3
+name: Expert I6-T02 host gates a1ac3133
 
 on:
   push:
@@ -19,7 +19,7 @@ jobs:
       - name: Checkout exact Expert candidate
         uses: actions/checkout@v4
         with:
-          ref: c5ff8cc35b4e192fed34458b0967379d95184782
+          ref: a1ac3133bc71cb1155a2b8036b8955d027537aee
           persist-credentials: false
 
       - name: Set up JDK 17
@@ -38,7 +38,7 @@ jobs:
       - name: Verify exact SHA binding
         shell: bash
         run: |
-          test "$(git rev-parse HEAD)" = "c5ff8cc35b4e192fed34458b0967379d95184782"
+          test "$(git rev-parse HEAD)" = "a1ac3133bc71cb1155a2b8036b8955d027537aee"
           chmod +x ./gradlew
           java -version
           ./gradlew --version
