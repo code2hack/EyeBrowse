@@ -674,6 +674,9 @@ public class HostingInstrumentedTest {
         setFieldValue("geometry-value");
         int loadsBefore = loadCount("/hosting.html");
         int[] sizeBefore = currentWebViewSize();
+        int restoreOrientation = sizeBefore[1] >= sizeBefore[0]
+                ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
         long generationBefore = runOnMainSync(() -> (long) hosting.currentGeneration());
 
         tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
@@ -736,8 +739,10 @@ public class HostingInstrumentedTest {
             return snapshot.status.attachment == HostingController.Attachment.PHONE_UI
                     && snapshot.viewAttached;
         });
-        scenario.onActivity(activity -> activity.setRequestedOrientation(
-                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED));
+        // UNSPECIFIED does not require the emulator/sensor to return to the baseline
+        // orientation. Restore the measured baseline orientation explicitly; the assertions below
+        // still require exact original geometry and unchanged live document/page state.
+        scenario.onActivity(activity -> activity.setRequestedOrientation(restoreOrientation));
         waitUntil("window restored", () -> {
             int[] size = currentWebViewSize();
             return size[0] == sizeBefore[0] && size[1] == sizeBefore[1];

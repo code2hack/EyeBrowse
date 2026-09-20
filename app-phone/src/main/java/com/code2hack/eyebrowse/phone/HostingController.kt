@@ -643,8 +643,11 @@ class HostingController private constructor(private val appContext: Context) {
                 notifyHostingChanged()
                 return
             }
-            if (!rebuildHost.rearmCapture(generation,
-                    BoundSink(lease!!, generation, frameConsumer!!))) {
+            if (!rebuildHost.rearmCapture(
+                    generation,
+                    BoundSink(lease!!, generation, frameConsumer!!),
+                    Runnable { session.requestFreshCaptureFrame() },
+                )) {
                 // A checked rearm failure must not leave a healthy capturing label (R6).
                 failureReason = "capture rearm failed after geometry rebuild"
                 rebuildHost.stopCapture()
@@ -714,10 +717,16 @@ class HostingController private constructor(private val appContext: Context) {
         }
         val host = displayHost ?: return null
         if (host.isRetiring()) {
-            // R2: the current capture owner is still retiring. Null means NO lease and NO hidden
-            // side effect; the caller retries explicitly once retirement is quiescent (the
-            // retirement recheck notifies listeners at that point).
-            return null
+            // The teardown task/thread may already be complete while the main-handler retirement
+            // signal is merely queued. Reconcile that finished owner synchronously so an explicit
+            // retry is not ordering-dependent; a genuinely live retiring owner still blocks.
+            if (!host.evaluateRetirementCompletion()) {
+                return null
+            }
+            if (idleReleasePendingOwner === host && host.isQuiescent()) {
+                idleReleaseCompletedElapsedMs = android.os.SystemClock.elapsedRealtime()
+                idleReleasePendingOwner = null
+            }
         }
         // Viewport authority: while the view is attached to the private presentation, its laid-out
         // dimensions are the OLD private geometry (a layout pass can overwrite them before the
@@ -754,10 +763,19 @@ class HostingController private constructor(private val appContext: Context) {
         // Same-owner rearm vs new-owner start: revocation retains the capture owner (thread and
         // reader stay for reacquisition), so a new lease after expiry/release rearms the SAME
         // active owner with the new bound sink; only a quiescent host starts a fresh owner (R2).
+        val freshFrameRequest = Runnable { session.requestFreshCaptureFrame() }
         val started = if (host.isOwnerActive()) {
-            host.rearmCapture(generation, BoundSink(newLease, generation, consumer))
+            host.rearmCapture(
+                generation,
+                BoundSink(newLease, generation, consumer),
+                freshFrameRequest,
+            )
         } else {
-            host.startCapture(generation, BoundSink(newLease, generation, consumer))
+            host.startCapture(
+                generation,
+                BoundSink(newLease, generation, consumer),
+                freshFrameRequest,
+            )
         }
         if (!started) {
             frameGate.close() // Nothing retained; the caller retries after quiescence (R2).

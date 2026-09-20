@@ -304,7 +304,8 @@ class PrivateDisplayHost(
      * when the owner is not actively capturable — the caller must surface that, never display a
      * healthy capturing state over an unarmed reader.
      */
-    fun rearmCapture(hostingGeneration: Int, boundSink: FrameSink?): Boolean {
+    fun rearmCapture(hostingGeneration: Int, boundSink: FrameSink?,
+            freshFrameRequest: Runnable?): Boolean {
         if (!ownerPhase.isActive() || imageReader == null || boundSink == null ||
                 captureThread == null || captureHandler == null) {
             return false
@@ -316,7 +317,7 @@ class PrivateDisplayHost(
         captureActive = true
         captureReleased = false
         imageReader?.setOnImageAvailableListener(::onImageAvailable, captureHandler)
-        scheduleDrain()
+        scheduleDrainThenFreshFrame(freshFrameRequest)
         Log.i(TAG, "rearmCapture gen=$hostingGeneration on rebuilt reader")
         return true
     }
@@ -331,7 +332,8 @@ class PrivateDisplayHost(
      * teardown. The caller retries explicitly after quiescence — a null acquisition has no
      * hidden side effects.
      */
-    fun startCapture(hostingGeneration: Int, boundSink: FrameSink?): Boolean {
+    fun startCapture(hostingGeneration: Int, boundSink: FrameSink?,
+            freshFrameRequest: Runnable?): Boolean {
         if (imageReader == null || boundSink == null) {
             return false
         }
@@ -350,7 +352,7 @@ class PrivateDisplayHost(
         if (captureThread != null) {
             // Reacquisition after lease loss: the capture thread survived; rearm the listener.
             imageReader?.setOnImageAvailableListener(::onImageAvailable, captureHandler)
-            scheduleDrain()
+            scheduleDrainThenFreshFrame(freshFrameRequest)
             return true
         }
         val thread = HandlerThread("EyeBrowseHostingCapture")
@@ -359,18 +361,22 @@ class PrivateDisplayHost(
         captureHandler = Handler(thread.looper)
         retainedCaptureThread = thread
         imageReader?.setOnImageAvailableListener(::onImageAvailable, captureHandler)
-        scheduleDrain()
+        scheduleDrainThenFreshFrame(freshFrameRequest)
         return true
     }
 
     /**
-     * Images queued before the listener was armed do not reliably fire the callback; acquire and
-     * close them so the producer cannot stay blocked on a full (maxImages=2) queue and stale
-     * frames are dropped, latest-only. Runs on the capture handler, serialized with callback
-     * acquisitions, and is bounded.
+     * Drain any pre-arm buffers first, then request a fresh render. The ordering is intentional:
+     * a static current document may otherwise have its only rendered frame consumed as "stale"
+     * and never produce another callback after the listener is armed.
      */
-    private fun scheduleDrain() {
-        captureHandler?.post { drainPendingImages() }
+    private fun scheduleDrainThenFreshFrame(freshFrameRequest: Runnable?) {
+        captureHandler?.post {
+            CaptureDrainSequence.run(
+                drain = { drainPendingImages() },
+                requestFresh = { freshFrameRequest?.run() },
+            )
+        }
     }
 
     private fun drainPendingImages() {

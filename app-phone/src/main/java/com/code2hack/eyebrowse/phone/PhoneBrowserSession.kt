@@ -243,6 +243,23 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
         return webView
     }
 
+    /**
+     * Requests a fresh draw after the capture path armed a new/recreated reader and drained
+     * pre-arm buffers. May be invoked from the capture thread; View.post performs the actual
+     * invalidation on the WebView/UI thread and fences renderer replacement.
+     */
+    fun requestFreshCaptureFrame() {
+        val target = webView ?: return
+        target.post {
+            if (webView !== target || rendererGone) {
+                return@post
+            }
+            target.requestLayout()
+            target.invalidate()
+            target.postInvalidateOnAnimation()
+        }
+    }
+
     /** True when {@code attachment} is still the current owner of the WebView. */
     fun isCurrentAttachment(attachment: Attachment?): Boolean {
         return attachment != null && attachment === currentAttachment
