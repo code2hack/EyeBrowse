@@ -13,6 +13,9 @@ jobs:
   host-gates:
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     steps:
       - name: Checkout exact implementation candidate
         uses: actions/checkout@v4
@@ -26,19 +29,18 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install Android 35 platform and build tools
         shell: bash
         run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
 
       - name: Verify exact candidate binding
         shell: bash
         run: |
           test "$(git rev-parse HEAD)" = "f4d959174570243cb45cfa2b4432309c1aba2f23"
           java -version
+          chmod +x ./gradlew
           ./gradlew --version
 
       - name: JVM builds and tests
