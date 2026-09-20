@@ -119,6 +119,12 @@ When ChatGPT is assigned as a Worker or Expert, the Manager MUST assign and star
 
 The ChatGPT implementer codes, runs the tests actually available in its cloud environment, commits and pushes its assigned branch, and reports `CANDIDATE_READY` with the exact SHA, executed checks, and unavailable checks. The Manager verifies the remote candidate and dispatches local verification of that SHA to the helper. Required local evidence is still required when cloud tests pass.
 
+A local-helper assignment does **not** reserve host-only verification gates to the helper or prohibit the remote implementer from running them. A ChatGPT Worker or Expert MUST run every relevant gate that is reasonably available in its own execution environment before reporting `CANDIDATE_READY`, including JVM/unit tests, builds, lint, static checks, or other host-only verification when the required toolchain is available.
+
+The local helper MUST still independently run the required local verification against the exact pushed candidate SHA. Remote and local execution of the same gate are complementary evidence, not duplicate ownership or a conflict.
+
+A gate is **local-only** only when it actually depends on a resource unavailable to the remote environment, such as an assigned physical device, host-specific hardware, private local service, credential, or other explicitly required local resource. JVM tests, Android compilation, and Android lint are not local-only merely because a local helper has been assigned. If the remote environment lacks the required SDK/toolchain, the implementer reports that gate as unavailable there; this does not waive the helper's required verification.
+
 The helper reports actual source/APK/device bindings, test results, reproduction evidence, and limitations to the Manager. The Manager routes technical findings back to the current Worker or Expert. The helper's supporting checklist and reports refer to the same todo, attempt, and candidate; they do not create a duplicate retry budget for the same objective.
 
 One implementer owns source writes at a time. The default helper assignment is verification/debugging; if the helper is assigned a correction, the Manager explicitly transfers write ownership and coordinates the remote implementer. A changed candidate requires affected verification again. Transport delivery, a cloud candidate, or a local test pass alone is not independent acceptance.

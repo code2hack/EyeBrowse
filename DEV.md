@@ -208,6 +208,12 @@ Verified host references include SDK `/home/code2hack/Android/Sdk` (platforms 35
 
 Use the assigned project's wrapper and explicit **debug** tasks, with the ticket's verified JDK/Gradle/AGP settings and resource limits. The current implementation procedure uses `--no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g`. Do not invoke aggregate/release helpers or add release acceptance gates without the applicable Owner request. An untracked `local.properties` or explicit SDK environment may configure the local SDK; no machine path or credential goes into product source.
 
+#### Gate portability
+
+Host paths and toolchains documented here are verified reference environments, not exclusive execution locations. JVM tests, Android builds, lint, and other host-only gates MAY run in any compatible environment that provides the required JDK/SDK/toolchain. Record the environment and exact candidate SHA with the result.
+
+Physical-device evidence and any verification that depends on an explicitly assigned local resource MUST run in the environment that owns or can access that resource. See `AGENTS.md` §5.4 for remote-implementer versus local-helper responsibilities.
+
 The isolated `experiments/locked-webview-spike` has its own verified Gradle8.11.1/AGP8.7.3/JDK17 debug commands:
 
 ```bash
