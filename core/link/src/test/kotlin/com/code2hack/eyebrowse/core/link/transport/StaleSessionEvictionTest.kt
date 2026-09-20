@@ -279,6 +279,10 @@ class StaleSessionEvictionTest {
 
             assertTrue("forced close/install race seam must execute", Harness.await(evictionGapReached))
             assertTrue("the SAME B Retry must be admitted", Harness.await(b.connected))
+            val bLinkUpDeadline = System.nanoTime() + 2_000_000_000L
+            while (!server.engine.isLinkUp() && System.nanoTime() < bLinkUpDeadline) {
+                Thread.sleep(10)
+            }
             assertTrue("B must own a live authenticated link", server.engine.isLinkUp())
             assertEquals(
                 com.code2hack.eyebrowse.core.link.HostStatusValue.HOST_INACTIVE,
