@@ -8,6 +8,7 @@ import com.code2hack.eyebrowse.core.link.crypto.SpkiFingerprint
 import com.code2hack.eyebrowse.core.link.invitation.B64URL
 import com.code2hack.eyebrowse.core.link.invitation.InvitationLifecycle
 import com.code2hack.eyebrowse.core.link.messages.HelloMessage
+import com.code2hack.eyebrowse.core.link.session.PeerTrustRead
 import com.code2hack.eyebrowse.core.link.session.PeerTrustRecord
 import com.code2hack.eyebrowse.core.link.transport.LinkServerEngine
 import com.code2hack.eyebrowse.core.link.transport.Locator
@@ -46,8 +47,9 @@ class PhoneLinkServer(
         override fun consumeInvitation(id: String, secretB64: String): InvitationLifecycle.ConsumeOutcome =
             invitations.consumeForServer(id, secretB64)
 
-        override fun pairedPeerSpki(): ByteArray? =
-            store.load()?.peerSpkiB64?.let { B64URL.decode(it) }
+        // Tri-state read: CORRUPT fails closed inside the binding policy (review R5/B6) — it is
+        // never reported as "unpaired", which would erase the replacement guard.
+        override fun pairedPeer(): PeerTrustRead = store.read()
 
         override fun commitPairedPeer(spki: ByteArray, clientHello: HelloMessage) {
             store.save(

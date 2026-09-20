@@ -12,8 +12,7 @@ import java.io.IOException
  * persisted.
  *
  * Writes are atomic (temp file + rename) and identity is written before locators in the same
- * record so a torn write can never yield locator-only trust; a corrupt record fails closed
- * (reported as no trust) rather than degrading into acceptance of an unverified peer.
+ * record so a torn write can never yield locator-only trust.
  */
 @Serializable
 data class PeerTrustRecord(
@@ -33,11 +32,28 @@ data class PeerTrustRecord(
     }
 }
 
+/**
+ * Tri-state trust read (review R5/B6). A CORRUPT store is NOT "unpaired": the endpoint cannot
+ * prove whether a remembered peer exists, so fail-closed semantics apply — new pairing and
+ * reconnect are refused until an explicit Forget clears the state. Returning null/unpaired for a
+ * corrupt record would silently erase the peer-replacement guard.
+ */
+sealed class PeerTrustRead {
+    /** No persisted trust. */
+    object Absent : PeerTrustRead()
+
+    /** Valid remembered peer. */
+    data class Valid(val record: PeerTrustRecord) : PeerTrustRead()
+
+    /** Persisted state exists but cannot be trusted; fail closed until explicit Forget. */
+    object Corrupt : PeerTrustRead()
+}
+
 interface PeerTrustStore {
-    fun load(): PeerTrustRecord?
+    fun read(): PeerTrustRead
     fun save(record: PeerTrustRecord)
     fun clear()
-    fun isPaired(): Boolean = load() != null
+    fun isPaired(): Boolean = read() is PeerTrustRead.Valid
 }
 
 /** File-backed store using the endpoint's app-private directory (context.filesDir on Android). */
@@ -46,13 +62,13 @@ class FilePeerTrustStore(private val file: File) : PeerTrustStore {
     private val json = Json { ignoreUnknownKeys = true }
 
     @Synchronized
-    override fun load(): PeerTrustRecord? {
-        if (!file.exists()) return null
+    override fun read(): PeerTrustRead {
+        if (!file.exists()) return PeerTrustRead.Absent
         return try {
-            json.decodeFromString(PeerTrustRecord.serializer(), file.readText(Charsets.UTF_8))
+            PeerTrustRead.Valid(json.decodeFromString(PeerTrustRecord.serializer(), file.readText(Charsets.UTF_8)))
         } catch (e: Exception) {
-            // Fail closed: corrupt trust is no trust.
-            null
+            // Fail closed: corrupt trust is explicitly CORRUPT, not "never paired" (review R5/B6).
+            PeerTrustRead.Corrupt
         }
     }
 

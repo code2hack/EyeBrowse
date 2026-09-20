@@ -77,6 +77,32 @@ class InvitationLifecycleTest {
     }
 
     @Test
+    fun `expired invitation keeps EXPIRED terminal state after replacement (B1)`() {
+        val clock = FakeClock()
+        val lifecycle = InvitationLifecycle(clock::now)
+        val first = lifecycle.generate("id-1", randomBytes(32))
+        clock.advance(first.ttlSeconds * 1000L + 1)
+        assertEquals(InvitationLifecycle.State.EXPIRED, lifecycle.stateOf("id-1"))
+        lifecycle.generate("id-2", randomBytes(32))
+        assertEquals(
+            "replacement must not move EXPIRED to CANCELLED (review R1/B1)",
+            InvitationLifecycle.State.EXPIRED,
+            lifecycle.stateOf("id-1"),
+        )
+        assertTrue(lifecycle.consume("id-1", first.secret) is InvitationLifecycle.ConsumeOutcome.Expired)
+    }
+
+    @Test
+    fun `consumed invitation keeps CONSUMED terminal state after replacement (B1)`() {
+        val lifecycle = InvitationLifecycle(FakeClock()::now)
+        val first = lifecycle.generate("id-1", randomBytes(32))
+        assertTrue(lifecycle.consume("id-1", first.secret) is InvitationLifecycle.ConsumeOutcome.Consumed)
+        lifecycle.generate("id-2", randomBytes(32))
+        assertEquals(InvitationLifecycle.State.CONSUMED, lifecycle.stateOf("id-1"))
+        assertTrue(lifecycle.consume("id-1", first.secret) is InvitationLifecycle.ConsumeOutcome.Reused)
+    }
+
+    @Test
     fun `secret comparison is content based and secret bytes are not exposed`() {
         val lifecycle = InvitationLifecycle(FakeClock()::now)
         val secret = randomBytes(32)

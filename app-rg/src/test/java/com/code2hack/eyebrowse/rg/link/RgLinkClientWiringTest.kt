@@ -129,6 +129,34 @@ class RgLinkClientWiringTest {
     }
 
     @Test
+    fun `corrupt rg trust refuses pairing and reconnect until forget (B6)`() {
+        val listener = RecordingListener()
+        val dir = tmp.newFolder()
+        val trustFile = java.io.File(dir, "pairing/peer.json")
+        val store = RgPairingStore(trustFile)
+        store.save(pairedRecord("ab".repeat(32)))
+        trustFile.writeText("{ corrupt trust blob")
+        val client = clientWith(listener, store)
+
+        // Even the SAME pinned phone must not auto-pair over unreadable trust (fail closed).
+        client.pairFromQr(payloadFor("ab".repeat(32)))
+        assertEquals(listOf(LinkError.PeerReplacementRequired), listener.failures)
+        assertTrue(listener.states.isEmpty())
+
+        client.reconnect()
+        assertEquals(
+            "reconnect over corrupt trust must demand explicit Forget (review R5/B6)",
+            listOf(LinkError.PeerReplacementRequired, LinkError.PeerReplacementRequired),
+            listener.failures,
+        )
+        assertTrue(listener.states.isEmpty())
+
+        // Forget clears the corrupt state; pairing may proceed afterwards.
+        client.forget()
+        assertFalse(client.isPaired())
+    }
+
+    @Test
     fun `store seam persists across instances and forget clears`() {
         val dir = tmp.newFolder()
         val store = RgPairingStore(File(dir, "pairing/peer.json"))

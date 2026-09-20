@@ -9,6 +9,7 @@ import com.code2hack.eyebrowse.core.link.crypto.RgSigningIdentity
 import com.code2hack.eyebrowse.core.link.invitation.InvitationCodec
 import com.code2hack.eyebrowse.core.link.messages.HelloMessage
 import com.code2hack.eyebrowse.core.link.session.BindingPolicy
+import com.code2hack.eyebrowse.core.link.session.PeerTrustRead
 import com.code2hack.eyebrowse.core.link.session.PeerTrustRecord
 import com.code2hack.eyebrowse.core.link.transport.LinkClientEngine
 import com.code2hack.eyebrowse.core.link.transport.Locator
@@ -71,9 +72,10 @@ class RgLinkClient(
             return
         }
         // Peer replacement rules (plan §8): a different Phone identity in the QR while paired
-        // requires explicit Forget before any connection attempt.
+        // requires explicit Forget before any connection attempt. CORRUPT stored trust fails
+        // closed as replacement-required (review R5/B6).
         val replacement = BindingPolicy.rgAcceptInvitation(
-            store.load()?.peerSpkiSha256Hex,
+            store.read(),
             parsed.phoneSpkiSha256Hex,
         )
         if (replacement != null) {
@@ -94,10 +96,13 @@ class RgLinkClient(
     /** Explicit Retry: reconnect with the stored peer; no QR and no invitation secret (§8). */
     fun reconnect() {
         if (engine?.isBusy == true) return
-        val record = store.load()
-        if (record == null) {
-            listener.onConnectFailed(LinkError.InvitationInvalid)
-            return
+        val record = when (val read = store.read()) {
+            is PeerTrustRead.Valid -> read.record
+            is PeerTrustRead.Corrupt ->
+                // Fail closed: explicit Forget required before any reconnect (review R5/B6).
+                return listener.onConnectFailed(LinkError.PeerReplacementRequired)
+            is PeerTrustRead.Absent ->
+                return listener.onConnectFailed(LinkError.InvitationInvalid)
         }
         val locators = record.lastLocators.mapNotNull { Locator.parse(it) }
         if (locators.isEmpty()) {

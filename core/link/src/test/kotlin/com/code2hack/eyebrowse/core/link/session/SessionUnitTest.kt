@@ -69,29 +69,63 @@ class SessionUnitTest {
     private val rgA = ByteArray(91) { 0x0A }
     private val rgB = ByteArray(91) { 0x0B }
 
+    private fun pairedRead(spki: ByteArray) = PeerTrustRead.Valid(
+        PeerTrustRecord(
+            peerSpkiSha256Hex = com.code2hack.eyebrowse.core.link.crypto.SpkiFingerprint.sha256Hex(spki),
+            peerSpkiB64 = com.code2hack.eyebrowse.core.link.invitation.B64URL.encode(spki),
+            lastLocators = listOf(),
+            protocolMajor = 1,
+            protocolMinor = 0,
+            peerCapabilities = listOf("PAIRING_V1", "STATUS_V1"),
+        ),
+    )
+
     @Test
     fun `phone accepts initial pairing when unpaired or same peer`() {
-        assertNull(BindingPolicy.phoneAcceptInitial(null, rgA))
-        assertNull(BindingPolicy.phoneAcceptInitial(rgA, rgA))
+        assertNull(BindingPolicy.phoneAcceptInitial(PeerTrustRead.Absent, rgA))
+        assertNull(BindingPolicy.phoneAcceptInitial(pairedRead(rgA), rgA))
     }
 
     @Test
     fun `phone refuses a different rg while paired until explicit forget`() {
-        assertEquals(LinkError.PeerReplacementRequired, BindingPolicy.phoneAcceptInitial(rgA, rgB))
+        assertEquals(LinkError.PeerReplacementRequired, BindingPolicy.phoneAcceptInitial(pairedRead(rgA), rgB))
+    }
+
+    @Test
+    fun `corrupt phone trust fails closed for pairing and reconnect (B6)`() {
+        assertEquals(
+            "corrupt state must not be treated as unpaired (review R5/B6)",
+            LinkError.PeerReplacementRequired,
+            BindingPolicy.phoneAcceptInitial(PeerTrustRead.Corrupt, rgA),
+        )
+        assertEquals(LinkError.WrongRgIdentity, BindingPolicy.phoneAcceptReconnect(PeerTrustRead.Corrupt, rgA))
     }
 
     @Test
     fun `phone reconnect requires stored matching peer`() {
-        assertNull(BindingPolicy.phoneAcceptReconnect(rgA, rgA))
-        assertEquals(LinkError.WrongRgIdentity, BindingPolicy.phoneAcceptReconnect(rgA, rgB))
-        assertEquals(LinkError.WrongRgIdentity, BindingPolicy.phoneAcceptReconnect(null, rgA))
+        assertNull(BindingPolicy.phoneAcceptReconnect(pairedRead(rgA), rgA))
+        assertEquals(LinkError.WrongRgIdentity, BindingPolicy.phoneAcceptReconnect(pairedRead(rgA), rgB))
+        assertEquals(LinkError.WrongRgIdentity, BindingPolicy.phoneAcceptReconnect(PeerTrustRead.Absent, rgA))
     }
 
     @Test
     fun `rg refuses a different phone in the QR while paired`() {
-        assertNull(BindingPolicy.rgAcceptInvitation(null, "fpA"))
-        assertNull(BindingPolicy.rgAcceptInvitation("fpA", "fpA"))
-        assertEquals(LinkError.PeerReplacementRequired, BindingPolicy.rgAcceptInvitation("fpA", "fpB"))
+        assertNull(BindingPolicy.rgAcceptInvitation(PeerTrustRead.Absent, "fpA"))
+        assertNull(BindingPolicy.rgAcceptInvitation(pairedRead(rgA).let {
+            PeerTrustRead.Valid(it.record.copy(peerSpkiSha256Hex = "fpA"))
+        }, "fpA"))
+        assertEquals(
+            LinkError.PeerReplacementRequired,
+            BindingPolicy.rgAcceptInvitation(
+                PeerTrustRead.Valid(pairedRead(rgA).record.copy(peerSpkiSha256Hex = "fpA")),
+                "fpB",
+            ),
+        )
+        assertEquals(
+            "corrupt rg trust must demand explicit Forget, not allow re-pairing (review R5/B6)",
+            LinkError.PeerReplacementRequired,
+            BindingPolicy.rgAcceptInvitation(PeerTrustRead.Corrupt, "fpA"),
+        )
     }
 
     // ------------------------------------------------------------- FilePeerTrustStore
@@ -113,20 +147,27 @@ class SessionUnitTest {
     fun `peer trust persists and reloads across a fresh store instance`() {
         val file = File(tmp.root, "pairing/peer_trust.json")
         val store = FilePeerTrustStore(file)
+        assertEquals(PeerTrustRead.Absent, store.read())
         assertFalse(store.isPaired())
-        assertNull(store.load())
         store.save(record())
         assertTrue(store.isPaired())
-        assertEquals(record(), FilePeerTrustStore(file).load())
+        assertEquals(
+            record(),
+            (FilePeerTrustStore(file).read() as PeerTrustRead.Valid).record,
+        )
     }
 
     @Test
-    fun `corrupt trust store fails closed as unpaired`() {
+    fun `corrupt trust store is a distinct fail-closed state, not unpaired (B6)`() {
         val file = File(tmp.root, "peer.json")
         val store = FilePeerTrustStore(file)
         store.save(record())
         file.writeText("{ definitely not json")
-        assertNull(store.load())
+        assertEquals(
+            "corrupt must be distinguishable from ABSENT (review R5/B6)",
+            PeerTrustRead.Corrupt,
+            store.read(),
+        )
         assertFalse(store.isPaired())
     }
 
@@ -136,9 +177,9 @@ class SessionUnitTest {
         val store = FilePeerTrustStore(file)
         store.save(record())
         store.clear()
-        assertNull(store.load())
+        assertEquals(PeerTrustRead.Absent, store.read())
         store.save(record())
-        assertNotNull(store.load())
+        assertTrue(store.read() is PeerTrustRead.Valid)
     }
 
     @Test

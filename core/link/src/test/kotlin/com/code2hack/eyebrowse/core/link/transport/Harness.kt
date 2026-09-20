@@ -11,6 +11,8 @@ import com.code2hack.eyebrowse.core.link.invitation.InvitationLifecycle
 import com.code2hack.eyebrowse.core.link.messages.ChallengeMessage
 import com.code2hack.eyebrowse.core.link.messages.HelloMessage
 import com.code2hack.eyebrowse.core.link.messages.LinkMessageCodec
+import com.code2hack.eyebrowse.core.link.session.PeerTrustRead
+import com.code2hack.eyebrowse.core.link.session.PeerTrustRecord
 import com.code2hack.eyebrowse.core.link.testfix.TestCrypto
 import java.io.InputStream
 import java.net.InetAddress
@@ -45,6 +47,14 @@ object Harness {
         val identity: TlsServerIdentity =
             TestCrypto.softwareTlsIdentity(keyPair, TestCrypto.selfSignedCertificate(keyPair, "eb-phone-test"))
         val storedPeerSpki = AtomicReference<ByteArray?>(null)
+
+        /** Review R5/B6 regression seam: force the store read to report CORRUPT. */
+        @Volatile
+        var corruptTrust: Boolean = false
+
+        /** Review R2/R3 regression seam: when set, serverHello blocks until released. */
+        @Volatile
+        var helloGate: java.util.concurrent.CountDownLatch? = null
         val committedPeer = AtomicReference<ByteArray?>(null)
         val committedClientHello = AtomicReference<HelloMessage?>(null)
         val committed = CountDownLatch(1)
@@ -56,15 +66,30 @@ object Harness {
         lateinit var engine: LinkServerEngine
 
         private val trustController = object : LinkServerEngine.TrustController {
-            override fun serverHello(): HelloMessage =
-                HelloMessage(LinkProtocol.MAJOR, LinkProtocol.MINOR, LinkProtocol.REQUIRED_CAPABILITIES)
+            override fun serverHello(): HelloMessage {
+                helloGate?.await()
+                return HelloMessage(LinkProtocol.MAJOR, LinkProtocol.MINOR, LinkProtocol.REQUIRED_CAPABILITIES)
+            }
 
             override fun consumeInvitation(id: String, secretB64: String): InvitationLifecycle.ConsumeOutcome {
                 val secret = B64URL.decode(secretB64) ?: return InvitationLifecycle.ConsumeOutcome.Invalid
                 return lifecycle.consume(id, secret)
             }
 
-            override fun pairedPeerSpki(): ByteArray? = storedPeerSpki.get()
+            override fun pairedPeer(): PeerTrustRead = when {
+                corruptTrust -> PeerTrustRead.Corrupt
+                storedPeerSpki.get() != null -> PeerTrustRead.Valid(
+                    PeerTrustRecord(
+                        peerSpkiSha256Hex = com.code2hack.eyebrowse.core.link.crypto.SpkiFingerprint.sha256Hex(storedPeerSpki.get()!!),
+                        peerSpkiB64 = B64URL.encode(storedPeerSpki.get()!!),
+                        lastLocators = listOf(),
+                        protocolMajor = LinkProtocol.MAJOR,
+                        protocolMinor = LinkProtocol.MINOR,
+                        peerCapabilities = LinkProtocol.REQUIRED_CAPABILITIES,
+                    ),
+                )
+                else -> PeerTrustRead.Absent
+            }
 
             override fun commitPairedPeer(spki: ByteArray, clientHello: HelloMessage) {
                 committedPeer.set(spki.copyOf())
@@ -121,12 +146,17 @@ object Harness {
         val connectFailed = LinkedBlockingDeque<LinkError>()
         val statuses = LinkedBlockingDeque<HostStatusValue>()
         val stateChanges = LinkedBlockingDeque<com.code2hack.eyebrowse.core.link.PairingState>()
+        val authenticated = LinkedBlockingDeque<ByteArray>()
 
         private val listener = object : LinkClientEngine.Listener {
             override fun onStateChange(state: com.code2hack.eyebrowse.core.link.PairingState) {
                 stateChanges.add(state)
                 if (state == com.code2hack.eyebrowse.core.link.PairingState.CONNECTED) connected.countDown()
                 if (state == com.code2hack.eyebrowse.core.link.PairingState.PAIRED_DISCONNECTED) disconnected.countDown()
+            }
+
+            override fun onAuthenticated(phoneSpki: ByteArray, usedLocator: Locator) {
+                authenticated.add(phoneSpki.copyOf())
             }
 
             override fun onStatus(status: HostStatusValue) {

@@ -1,5 +1,6 @@
 package com.code2hack.eyebrowse.phone.link
 
+import com.code2hack.eyebrowse.core.link.session.PeerTrustRead
 import com.code2hack.eyebrowse.core.link.session.PeerTrustRecord
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -25,7 +26,7 @@ class PhonePairingStoreTest {
     fun `save load clear lifecycle`() {
         val store = storeIn(File(tmp.newFolder(), "pairing/peer_trust.json"))
         assertFalse(store.isPaired())
-        assertNull(store.load())
+        assertEquals(PeerTrustRead.Absent, store.read())
         val record = PeerTrustRecord(
             peerSpkiSha256Hex = "cd".repeat(32),
             peerSpkiB64 = "c3BraQ",
@@ -36,8 +37,9 @@ class PhonePairingStoreTest {
         )
         store.save(record)
         assertTrue(store.isPaired())
-        assertEquals(record, store.load())
+        assertEquals(record, (store.read() as PeerTrustRead.Valid).record)
         store.clear()
+        assertEquals(PeerTrustRead.Absent, store.read())
         assertFalse(store.isPaired())
     }
 
@@ -49,7 +51,7 @@ class PhonePairingStoreTest {
             PeerTrustRecord("ab".repeat(32), "c3BraQ", listOf(), 1, 0, listOf("PAIRING_V1", "STATUS_V1")),
         )
         File(dir, "pairing/peer_trust.json").writeText("garbage{")
-        assertNull(store.load())
+        assertEquals(PeerTrustRead.Corrupt, store.read())
         assertFalse(store.isPaired())
     }
 }

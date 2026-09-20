@@ -66,6 +66,40 @@ class PhoneInvitationManagerTest {
     }
 
     @Test
+    fun `consuming a stale invitation never hides a newer active one (B2)`() {
+        val manager = manager(FakeClock())
+        val stale = manager.generate(locators)
+        val fresh = manager.generate(locators)
+        val staleSecret = InvitationCodec.parse(stale.payload).getOrThrow().invitationSecret
+        // The stale invitation was REPLACED, so its consume outcome is CANCELLED (B1 semantics);
+        // regardless of outcome class, the manager surface must keep the newer valid invitation.
+        val outcome = manager.consumeForServer(stale.id, B64URL.encode(staleSecret))
+        assertTrue(outcome is InvitationLifecycle.ConsumeOutcome.Cancelled)
+        assertEquals(
+            "manager surface must keep the newly generated valid invitation (review R1/B2)",
+            fresh.id,
+            manager.activeInvitation()!!.id,
+        )
+    }
+
+    @Test
+    fun `generate and consume race keeps the manager surface consistent (B2)`() {
+        val manager = manager(FakeClock())
+        repeat(50) {
+            val previous = manager.generate(locators)
+            val previousSecret = B64URL.encode(InvitationCodec.parse(previous.payload).getOrThrow().invitationSecret)
+            val consumer = Thread { manager.consumeForServer(previous.id, previousSecret) }
+            consumer.start()
+            val next = manager.generate(locators)
+            consumer.join()
+            val surface = manager.activeInvitation()
+            if (surface != null) {
+                assertEquals(next.id, surface.id)
+            }
+        }
+    }
+
+    @Test
     fun `cancel invalidates the active invitation`() {
         val manager = manager(FakeClock())
         manager.generate(locators)

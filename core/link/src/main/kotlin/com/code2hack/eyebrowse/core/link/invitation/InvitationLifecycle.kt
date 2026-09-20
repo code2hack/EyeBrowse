@@ -58,7 +58,11 @@ class InvitationLifecycle(
      */
     @Synchronized
     fun generate(id: String, secret: ByteArray, ttlSeconds: Int = LinkProtocol.INVITATION_TTL_SECONDS): Invitation {
-        activeId?.let { previous -> cancelledIds.add(previous) }
+        // Replacement cancels only a still-ACTIVE prior invitation; EXPIRED/CONSUMED terminal
+        // classes are preserved (plan §5: distinguishable failure outcomes). Review R1/B1.
+        activeId?.let { previous ->
+            if (stateOf(previous) == State.ACTIVE) cancelledIds.add(previous)
+        }
         val invitation = Invitation(id, secret.copyOf(), nowMillis(), ttlSeconds)
         generated[id] = invitation
         activeId = id

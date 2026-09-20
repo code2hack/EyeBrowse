@@ -2,6 +2,7 @@ package com.code2hack.eyebrowse.phone.link
 
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import com.code2hack.eyebrowse.core.link.crypto.EcKeys
 import com.code2hack.eyebrowse.core.link.crypto.SpkiFingerprint
 import com.code2hack.eyebrowse.core.link.crypto.TlsServerIdentity
 import java.security.KeyStore
@@ -23,10 +24,21 @@ class PhoneLinkIdentity() : TlsServerIdentity {
 
     private val keyStore: KeyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
 
-    /** Idempotently ensures the identity key exists (survives process death, not uninstall). */
+    /**
+     * Idempotently ensures the identity key exists (survives process death, not uninstall).
+     * Explicitly requests secp256r1 (review R4/B5) and validates any pre-existing alias against
+     * that curve — a non-P-256 identity fails closed instead of being silently reused.
+     */
     @Synchronized
     fun ensureKey() {
-        if (keyStore.containsAlias(ALIAS)) return
+        if (keyStore.containsAlias(ALIAS)) {
+            val existing = keyStore.getCertificate(ALIAS)?.publicKey
+                ?: throw IllegalStateException("Phone link identity alias exists without certificate")
+            check(EcKeys.isP256(existing)) {
+                "existing Phone link identity is not EC P-256; explicit identity reset required"
+            }
+            return
+        }
         val generator = java.security.KeyPairGenerator.getInstance(
             KeyProperties.KEY_ALGORITHM_EC,
             ANDROID_KEYSTORE,
@@ -36,6 +48,7 @@ class PhoneLinkIdentity() : TlsServerIdentity {
             KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY,
         )
             .setDigests(KeyProperties.DIGEST_SHA256)
+            .setAlgorithmParameterSpec(java.security.spec.ECGenParameterSpec(EcKeys.SECP256R1_NAME))
             .setCertificateSubject(javax.security.auth.x500.X500Principal("CN=EyeBrowse Phone Link"))
             .build()
         generator.initialize(spec, SecureRandom())

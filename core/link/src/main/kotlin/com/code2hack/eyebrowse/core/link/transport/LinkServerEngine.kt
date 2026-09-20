@@ -23,6 +23,7 @@ import com.code2hack.eyebrowse.core.link.messages.ReconnectAuthMessage
 import com.code2hack.eyebrowse.core.link.messages.StatusMessage
 import com.code2hack.eyebrowse.core.link.session.BindingPolicy
 import com.code2hack.eyebrowse.core.link.session.OutboundQueue
+import com.code2hack.eyebrowse.core.link.session.PeerTrustRead
 import java.io.EOFException
 import java.io.InputStream
 import java.io.OutputStream
@@ -61,7 +62,9 @@ class LinkServerEngine(
     interface TrustController {
         fun serverHello(): HelloMessage
         fun consumeInvitation(id: String, secretB64: String): InvitationLifecycle.ConsumeOutcome
-        fun pairedPeerSpki(): ByteArray?
+
+        /** Tri-state stored peer; CORRUPT fails closed inside the binding policy (review R5). */
+        fun pairedPeer(): PeerTrustRead
         fun commitPairedPeer(spki: ByteArray, clientHello: HelloMessage)
         fun currentHostStatus(): HostStatusValue
 
@@ -113,8 +116,13 @@ class LinkServerEngine(
         phase.set(Phase.IDLE)
     }
 
-    /** Best-effort pre-close Forget notice to the authenticated peer (plan §8). */
+    /**
+     * Best-effort pre-close Forget notice to the authenticated peer (plan §8).
+     * Authenticated-only (review R6/B7): never emitted during TLS/AUTHENTICATING — a pre-auth
+     * frame would be a control frame to an unauthenticated peer.
+     */
     fun sendForgetNotice() {
+        if (phase.get() != Phase.LINK_UP) return
         val socket = activeSocket.get() ?: return
         try {
             sendFrame(socket.outputStream.buffered(), LinkMessageCodec.encode(ForgetNoticeMessage))
@@ -221,8 +229,9 @@ class LinkServerEngine(
         val presentedNonce = B64URL.decode(auth.nonce) ?: return LinkError.AuthenticationFailed
         if (!MessageDigest.isEqual(nonce, presentedNonce)) return LinkError.AuthenticationFailed
         // Peer replacement first: a different RG while paired is refused before the invitation is
-        // touched (plan §8) — a refused peer must not burn a valid invitation.
-        BindingPolicy.phoneAcceptInitial(trust.pairedPeerSpki(), rgSpki)?.let { return it }
+        // touched (plan §8) — a refused peer must not burn a valid invitation. CORRUPT stored
+        // state fails closed here (review R5/B6).
+        BindingPolicy.phoneAcceptInitial(trust.pairedPeer(), rgSpki)?.let { return it }
         val transcript = ChallengeTranscript.build(
             purpose = ChallengeTranscript.Purpose.INITIAL_PAIRING,
             protocolMajor = clientHello.pmj,
@@ -250,7 +259,7 @@ class LinkServerEngine(
         val signature = B64URL.decode(auth.sig) ?: return LinkError.AuthenticationFailed
         val presentedNonce = B64URL.decode(auth.nonce) ?: return LinkError.AuthenticationFailed
         if (!MessageDigest.isEqual(nonce, presentedNonce)) return LinkError.AuthenticationFailed
-        BindingPolicy.phoneAcceptReconnect(trust.pairedPeerSpki(), rgSpki)?.let { return it }
+        BindingPolicy.phoneAcceptReconnect(trust.pairedPeer(), rgSpki)?.let { return it }
         val transcript = ChallengeTranscript.build(
             purpose = ChallengeTranscript.Purpose.RECONNECT,
             protocolMajor = clientHello.pmj,

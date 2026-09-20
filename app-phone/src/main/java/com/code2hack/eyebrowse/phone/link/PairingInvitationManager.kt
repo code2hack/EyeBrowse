@@ -63,12 +63,15 @@ class PairingInvitationManager(
         lifecycle.activeInvitation()?.id == it.id
     }
 
-    /** Called by the link server on authenticated initial pairing; atomic one-time consume. */
+    /** Called by the link server on authenticated initial pairing; atomic one-time consume.
+     *  Coordinated with [generate] on the manager monitor; the visible active surface is cleared
+     *  only when the consumed id is still the displayed one (review R1/B2). */
+    @Synchronized
     fun consumeForServer(id: String, secretB64: String): InvitationLifecycle.ConsumeOutcome {
         val secret = B64URL.decode(secretB64)
             ?: return InvitationLifecycle.ConsumeOutcome.Invalid
         val outcome = lifecycle.consume(id, secret)
-        if (outcome is InvitationLifecycle.ConsumeOutcome.Consumed) {
+        if (outcome is InvitationLifecycle.ConsumeOutcome.Consumed && active?.id == id) {
             active = null
         }
         return outcome
