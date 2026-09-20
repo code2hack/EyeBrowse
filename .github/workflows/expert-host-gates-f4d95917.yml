@@ -1,5 +1,4 @@
-# verification trigger: exact candidate f4d959174570243cb45cfa2b4432309c1aba2f23
-name: Expert host gates f4d95917
+name: Expert diagnose B4 f4d95917
 
 on:
   push:
@@ -10,9 +9,9 @@ permissions:
   contents: read
 
 jobs:
-  host-gates:
+  diagnose-b4:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 20
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
@@ -40,25 +39,23 @@ jobs:
         shell: bash
         run: |
           test "$(git rev-parse HEAD)" = "f4d959174570243cb45cfa2b4432309c1aba2f23"
-          java -version
           chmod +x ./gradlew
-          ./gradlew --version
 
-      - name: JVM builds and tests
+      - name: Instrument assertion message in runner working tree only
         shell: bash
         run: |
-          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
-            :core:browser:build :core:link:build test
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("core/link/src/test/kotlin/com/code2hack/eyebrowse/core/link/transport/LinkCancellationAndTrustTest.kt")
+          s = p.read_text()
+          old = '"operation exceeded configured budget plus 500 ms scheduling slack",'
+          new = '"operation exceeded configured budget plus 500 ms scheduling slack: elapsed=${elapsedMs}ms budget=${tight.operationBudgetMs}ms",'
+          if old not in s:
+              raise SystemExit("assertion anchor missing")
+          p.write_text(s.replace(old, new))
+          PY
 
-      - name: Phone and RG debug plus androidTest assembly
+      - name: Run core link tests for diagnostic measurement
         shell: bash
         run: |
-          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
-            :app-phone:assembleDebug :app-rg:assembleDebug \
-            :app-phone:assembleDebugAndroidTest :app-rg:assembleDebugAndroidTest
-
-      - name: Phone and RG lint
-        shell: bash
-        run: |
-          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
-            :app-phone:lintDebug :app-rg:lintDebug
+          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g :core:link:test
