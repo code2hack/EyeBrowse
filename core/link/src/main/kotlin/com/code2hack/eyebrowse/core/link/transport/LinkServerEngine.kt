@@ -89,8 +89,13 @@ class LinkServerEngine(
      * refreshes it at least every heartbeat interval (ping/pong ≤10 s); livenessTimeoutMs without
      * inbound ⇒ the occupant is provably dead and may be evicted for a new client (T03 listener
      * recovery: a wedged half-open session must not hold the single link slot indefinitely).
+     * Internal (not private) so the integration regression can freeze it deterministically.
      */
-    private val activeSessionLastInboundNanos = java.util.concurrent.atomic.AtomicLong(0)
+    internal val activeSessionLastInboundNanos = java.util.concurrent.atomic.AtomicLong(0)
+
+    /** Whether the ACTIVE session reached authenticated LINK_UP (eviction-down notification). */
+    @Volatile
+    internal var activeSessionAuthenticated: Boolean = false
     private val phase = AtomicReference(Phase.IDLE)
     @Volatile private var stopped = false
     private val outbound = OutboundQueue()
@@ -173,8 +178,18 @@ class LinkServerEngine(
                         timings.livenessTimeoutMs,
                     )
                 ) {
+                    // Truthful link-down for the evicted authenticated link, emitted ONCE here by
+                    // the evictor (review round 1: the evicted session's own cleanup is fenced and
+                    // must not touch global state after replacement).
+                    val evictedWasAuthenticated = activeSessionAuthenticated
                     closeQuietly(existing) // its session thread finishes via its own finally
                     if (activeSocket.compareAndSet(existing, socket)) {
+                        activeSessionAuthenticated = false // replacement not yet authenticated
+                        activeSessionLastInboundNanos.set(System.nanoTime())
+                        if (evictedWasAuthenticated && !stopped) {
+                            trust.onLinkLost()
+                            listener.onLinkDown()
+                        }
                         phase.set(Phase.AUTHENTICATING)
                         outbound.clear()
                         Thread({ runSession(socket) }, "eyebrowse-link-session").apply {
@@ -227,6 +242,7 @@ class LinkServerEngine(
             sendFrame(output, LinkMessageCodec.encode(AuthOkMessage))
             sendFrame(output, LinkMessageCodec.encode(StatusMessage.of(trust.currentHostStatus())))
             authenticated = true
+            activeSessionAuthenticated = true
             drainOutboundTo(output)
             phase.set(Phase.LINK_UP)
             listener.onLinkUp()
@@ -241,13 +257,20 @@ class LinkServerEngine(
             if (!stopped && authenticated) listener.onLinkDown()
         } finally {
             closeQuietly(socket)
-            if (authenticated && !stopped) {
-                trust.onLinkLost()
-                listener.onLinkDown()
+            // Owner-fenced cleanup (review round 1): global link state may only be mutated by the
+            // session that OWNS the active slot. An evicted session's finally must not clobber the
+            // replacement's AUTHENTICATING/LINK_UP phase, clear its liveness timestamp, or emit a
+            // stale link-down — the replacement (or the evictor) owns those transitions.
+            val stillOwner = activeSocket.compareAndSet(socket, null)
+            if (stillOwner) {
+                if (authenticated && !stopped) {
+                    trust.onLinkLost()
+                    listener.onLinkDown()
+                }
+                phase.set(Phase.IDLE)
+                activeSessionAuthenticated = false
+                activeSessionLastInboundNanos.set(0)
             }
-            phase.set(Phase.IDLE)
-            activeSessionLastInboundNanos.set(0)
-            activeSocket.compareAndSet(socket, null)
         }
     }
 
