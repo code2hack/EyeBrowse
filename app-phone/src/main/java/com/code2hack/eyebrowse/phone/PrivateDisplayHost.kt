@@ -237,17 +237,30 @@ class PrivateDisplayHost(
             if (reader == null) {
                 throw HostingException("image reader creation failed")
             }
+            var surfaceReattachFailure: RuntimeException? = null
             synchronized(nativeLock) {
                 try {
-                    // Java original: REQUIRED virtualDisplay.setSurface(...) — an absent display
-                    // NPEs here, the new reader is closed and the recoverable failure is
-                    // surfaced; it must never be silently skipped or published live-unattached.
                     virtualDisplay!!.setSurface(reader.surface)
+                    imageReader = reader
                 } catch (error: RuntimeException) {
                     reader.close()
-                    throw HostingException("surface reattach failed: " + error.message)
+                    surfaceReattachFailure = error
                 }
-                imageReader = reader
+            }
+            if (surfaceReattachFailure != null) {
+                // Some platform/WebView combinations do not reliably accept a fresh reader
+                // surface on a surviving VirtualDisplay after the prior reader was closed.
+                // Recover by rebuilding the same private display geometry through the existing
+                // navigation-preserving path instead of making explicit Retry fail forever.
+                Log.w(TAG, "surface reattach failed; rebuilding private display",
+                        surfaceReattachFailure)
+                rebuildAtSize(
+                    serviceContext,
+                    desiredWidth,
+                    desiredHeight,
+                    desiredDensityDpi,
+                    session,
+                )
             }
             return
         }
