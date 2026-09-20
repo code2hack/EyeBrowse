@@ -83,6 +83,14 @@ class LinkServerEngine(
 
     private val serverSocket = AtomicReference<ServerSocket?>(null)
     private val activeSocket = AtomicReference<SSLSocket?>(null)
+
+    /**
+     * Last inbound activity of the active session (nanoTime), 0 when no session runs. A live peer
+     * refreshes it at least every heartbeat interval (ping/pong ≤10 s); livenessTimeoutMs without
+     * inbound ⇒ the occupant is provably dead and may be evicted for a new client (T03 listener
+     * recovery: a wedged half-open session must not hold the single link slot indefinitely).
+     */
+    private val activeSessionLastInboundNanos = java.util.concurrent.atomic.AtomicLong(0)
     private val phase = AtomicReference(Phase.IDLE)
     @Volatile private var stopped = false
     private val outbound = OutboundQueue()
@@ -155,7 +163,27 @@ class LinkServerEngine(
             }
             socket.setEnabledProtocols(arrayOf(TLS_V1_3))
             if (!activeSocket.compareAndSet(null, socket)) {
-                // Exactly one active RG link: reject concurrent clients pre-auth, no status.
+                // Exactly one active RG link: reject concurrent clients pre-auth, no status —
+                // UNLESS the occupant is provably dead (no inbound for the liveness window): a
+                // wedged half-open session must not hold the slot indefinitely (T03 recovery).
+                val existing = activeSocket.get()
+                if (existing != null && shouldEvictStaleSession(
+                        activeSessionLastInboundNanos.get(),
+                        System.nanoTime(),
+                        timings.livenessTimeoutMs,
+                    )
+                ) {
+                    closeQuietly(existing) // its session thread finishes via its own finally
+                    if (activeSocket.compareAndSet(existing, socket)) {
+                        phase.set(Phase.AUTHENTICATING)
+                        outbound.clear()
+                        Thread({ runSession(socket) }, "eyebrowse-link-session").apply {
+                            isDaemon = true
+                            start()
+                        }
+                        continue
+                    }
+                }
                 closeQuietly(socket)
                 continue
             }
@@ -170,6 +198,7 @@ class LinkServerEngine(
 
     private fun runSession(socket: SSLSocket) {
         var authenticated = false
+        activeSessionLastInboundNanos.set(System.nanoTime())
         try {
             socket.soTimeout = timings.authTimeoutMs.toInt()
             val input = socket.inputStream.buffered()
@@ -217,6 +246,7 @@ class LinkServerEngine(
                 listener.onLinkDown()
             }
             phase.set(Phase.IDLE)
+            activeSessionLastInboundNanos.set(0)
             activeSocket.compareAndSet(socket, null)
         }
     }
@@ -306,6 +336,7 @@ class LinkServerEngine(
                     continue
                 }
                 lastInbound = System.nanoTime()
+                activeSessionLastInboundNanos.set(lastInbound)
                 when (val incoming = readIncoming(frame)) {
                     is PingMessage -> sendFrame(output, LinkMessageCodec.encode(PongMessage))
                     is PongMessage -> Unit // liveness refreshed above
@@ -385,8 +416,21 @@ class LinkServerEngine(
         try { socket.close() } catch (e: Exception) { /* bounded best-effort close */ }
     }
 
-    private companion object {
-        const val ACCEPT_POLL_MS = 1000
+    internal companion object {
+        private const val ACCEPT_POLL_MS = 1000
+
+        /**
+         * Pure eviction decision (T03 listener recovery): the occupant is evictable only when a
+         * session is tracked (lastInbound > 0) and has produced NO inbound for the full liveness
+         * window — a live peer refreshes it at least every heartbeat interval, so this can never
+         * evict a healthy link. Internal for the JVM regression.
+         */
+        internal fun shouldEvictStaleSession(
+            lastInboundNanos: Long,
+            nowNanos: Long,
+            livenessTimeoutMs: Long,
+        ): Boolean =
+            lastInboundNanos > 0 && (nowNanos - lastInboundNanos) > livenessTimeoutMs * 1_000_000
     }
 }
 

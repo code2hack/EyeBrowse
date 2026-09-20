@@ -154,9 +154,17 @@ class LinkClientEngine(
                 if (established != null) {
                     // CONNECTED was emitted atomically with the trust callback in establishSession.
                     sessionLoop(established.first, established.second, operation)
+                    System.err.println(
+                        "EyeBrowseLink: client session ended after connect: " +
+                            lastFailure.wireCode,
+                    )
                     return
                 }
                 lastError = lastFailure
+                System.err.println(
+                    "EyeBrowseLink: client locator attempt failed " + locator.toWire() +
+                        ": " + lastError.wireCode,
+                )
                 if (isAuthoritativeFailure(lastError)) break
             }
             reportFailureIfLive(operation, lastError)
@@ -246,7 +254,25 @@ class LinkClientEngine(
             try {
                 tls.startHandshake()
             } catch (e: SSLHandshakeException) {
-                lastFailure = LinkError.WrongPhoneIdentity
+                // T03: distinguish a pin rejection (wrong TLS identity) from a route/handshake
+                // failure (endpoint vanished mid-handshake, e.g. a dead forwarding path). Only a
+                // detectable pin mismatch is WrongPhoneIdentity; any other handshake failure is a
+                // reachability-class failure so the UI prompts the reachable-route retry.
+                lastFailure =
+                    if (hasCause(e) { it is SpkiPinningTrustManager.SpkiPinMismatchException }) {
+                        LinkError.WrongPhoneIdentity
+                    } else {
+                        LinkError.NetworkUnreachable
+                    }
+                return null.also { releaseAndClose(operation, tls) }
+            } catch (e: javax.net.ssl.SSLException) {
+                lastFailure = LinkError.NetworkUnreachable
+                return null.also { releaseAndClose(operation, tls) }
+            } catch (e: java.net.SocketException) {
+                lastFailure = LinkError.NetworkUnreachable
+                return null.also { releaseAndClose(operation, tls) }
+            } catch (e: java.io.EOFException) {
+                lastFailure = LinkError.NetworkUnreachable
                 return null.also { releaseAndClose(operation, tls) }
             }
 
@@ -260,6 +286,10 @@ class LinkClientEngine(
 
             lastFailure = LinkError.AuthenticationFailed
             if (!authenticate(tls, attempt, operation, authDeadlineNanos)) {
+                System.err.println(
+                    "EyeBrowseLink: client auth rejected by " + locator.toWire() +
+                        ": " + lastFailure.wireCode,
+                )
                 return null.also { releaseAndClose(operation, tls) }
             }
 
@@ -292,6 +322,18 @@ class LinkClientEngine(
             releaseAndClose(operation, tls)
             return null
         }
+    }
+
+    /** Walks the cause chain of [throwable] looking for a predicate match. */
+    private inline fun hasCause(throwable: Throwable, predicate: (Throwable) -> Boolean): Boolean {
+        var current: Throwable? = throwable
+        var depth = 0
+        while (current != null && depth < 16) {
+            if (predicate(current)) return true
+            current = current.cause
+            depth++
+        }
+        return false
     }
 
     /** Failures that will not improve by trying the next locator (plan §5/§7/§8 semantics). */

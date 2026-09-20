@@ -15,6 +15,9 @@ import javax.net.ssl.X509ExtendedTrustManager
  */
 class SpkiPinningTrustManager(private val pinnedSpkiSha256Hex: String) : X509ExtendedTrustManager() {
 
+    /** Distinguishable pin rejection: the client maps ONLY this to WrongPhoneIdentity (T03). */
+    class SpkiPinMismatchException(message: String) : CertificateException(message)
+
     init {
         require(SpkiFingerprint.isValidHexFingerprint(pinnedSpkiSha256Hex))
     }
@@ -46,7 +49,7 @@ class SpkiPinningTrustManager(private val pinnedSpkiSha256Hex: String) : X509Ext
         val pinBytes = SpkiFingerprint.fromHex(pinnedSpkiSha256Hex)
             ?: throw CertificateException("malformed pin")
         if (!SpkiFingerprint.equalsConstantTime(leafDigest, pinBytes)) {
-            throw CertificateException("server SPKI does not match the pinned Phone identity")
+            throw SpkiPinMismatchException("server SPKI does not match the pinned Phone identity")
         }
     }
 }

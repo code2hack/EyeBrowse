@@ -250,6 +250,40 @@ class LinkEnginePairingTest {
     }
 
     @Test
+    fun `handshake dropped before completion is reachability-class not wrong identity`() {
+        // T03: a TLS endpoint that vanishes mid-handshake (dead route/forwarding path) is a
+        // reachability-class failure — distinguishable from a pin mismatch (WrongPhoneIdentity).
+        val dead = java.net.ServerSocket(0)
+        val acceptor = Thread {
+            try {
+                dead.accept().use { socket ->
+                    socket.getOutputStream().write(0) // then vanish: no TLS response
+                }
+            } catch (_: Exception) {
+            }
+        }.apply { isDaemon = true; start() }
+        try {
+            val client = Harness.ClientHarness()
+            client.startEngine()
+            client.engine.connect(
+                client.attempt(
+                    com.code2hack.eyebrowse.core.link.crypto.SpkiFingerprint.sha256Hex(
+                        com.code2hack.eyebrowse.core.link.testfix.TestCrypto.ecKeyPair().public.encoded,
+                    ),
+                    dead.localPort,
+                    null,
+                ),
+            )
+            val failure = client.connectFailed.pollFirst(10, java.util.concurrent.TimeUnit.SECONDS)
+            assertEquals(LinkError.NetworkUnreachable, failure)
+            client.engine.disconnect()
+        } finally {
+            acceptor.join(2_000)
+            dead.close()
+        }
+    }
+
+    @Test
     fun `forget notice reaches the peer and the link ends in paired-disconnected`() {
         val client = Harness.ClientHarness()
         client.startEngine()

@@ -42,10 +42,13 @@ class RgPairingActivity : ComponentActivity() {
         }
 
     private val clientListener = object : RgLinkClient.Listener {
-        override fun onStateChange(state: PairingState) = show(describe(state))
-        override fun onStatus(status: HostStatusValue) = show(describe(status))
-        override fun onLinkLost() = show(LINK_LOST_NOTE)
-        override fun onConnectFailed(error: LinkError) = show(describe(error))
+        // Engine callbacks arrive on engine threads; every UI touch is marshalled to the main
+        // thread (T03 device finding: setText from an engine thread raised
+        // CalledFromWrongThreadException in the accessibility path).
+        override fun onStateChange(state: PairingState) = runOnUiThread { show(describe(state)) }
+        override fun onStatus(status: HostStatusValue) = runOnUiThread { show(describe(status)) }
+        override fun onLinkLost() = runOnUiThread { show(LINK_LOST_NOTE) }
+        override fun onConnectFailed(error: LinkError) = runOnUiThread { show(describe(error)) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

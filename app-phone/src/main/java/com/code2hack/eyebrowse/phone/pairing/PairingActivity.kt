@@ -81,6 +81,11 @@ class PairingActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Listener recovery (plan Phase E step 5): the surface-scoped listener returns with the
+        // surface after an app restart — it must not require a fresh Generate tap. Idempotent;
+        // an unusable identity (inadequate alias under VALID/CORRUPT trust) keeps failing closed
+        // at the generate attempt's existing catch, with the corrupt-Forget recovery reachable.
+        runCatching { server.start() }
         server.addLinkObserver(linkObserver)
         render(controller.onRefresh())
     }
