@@ -539,8 +539,19 @@ class HostingController private constructor(private val appContext: Context) {
         if (!phoneUiAvailable || phoneUiActivity !== activity || phoneUiContainer !== container) {
             return currentToken
         }
-        if (state == State.HOSTING && displayHost != null &&
-                attachment == Attachment.PRIVATE_DISPLAY) {
+        if (state == State.HOSTING && displayHost != null) {
+            val view = session.view()
+            val alreadyOwnedHere =
+                session.isCurrentAttachment(currentToken) && view != null && view.parent === container
+            if (alreadyOwnedHere) {
+                attachment = Attachment.PHONE_UI
+                uiOwnerToken = currentToken
+                return currentToken
+            }
+
+            // A recreated/relaunched Activity may arrive while attachment metadata still says
+            // PHONE_UI even though the old Activity (or private presentation) is the actual parent.
+            // Claim through this identity-fenced controller path rather than from onCreate.
             val token = moveWebViewToPhoneUi(activity, container)
             if (token != null) {
                 uiOwnerToken = token
@@ -682,9 +693,11 @@ class HostingController private constructor(private val appContext: Context) {
     fun moveWebViewToPhoneUi(activity: android.app.Activity,
             container: ViewGroup?): PhoneBrowserSession.Attachment? {
         Log.i(TAG, "moveToPhoneUi state=$state attachment=$attachment")
-        if (state != State.HOSTING || attachment == Attachment.PHONE_UI) {
+        if (state != State.HOSTING) {
             return null
         }
+        // PHONE_UI metadata is not sufficient ownership after Activity recreation. session.attach
+        // performs the ordered old-parent detach and mints the fresh identity token.
         val token = session.attach(activity, container)
         attachment = Attachment.PHONE_UI
         Log.i(TAG, "moveToPhoneUi done token=" + System.identityHashCode(token))

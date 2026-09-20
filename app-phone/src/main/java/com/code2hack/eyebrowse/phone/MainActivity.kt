@@ -158,7 +158,15 @@ class MainActivity : ComponentActivity() {
 
         session.addListener(sessionListener)
         hosting.addListener(hostingListener)
-        attachment = session.attach(this, webContainer)
+        // A live HOSTING session can still belong to the old Activity or private presentation.
+        // Defer its ownership transfer until onStart, after this Activity is registered as the
+        // Phone UI owner. Reparenting from onCreate can race the prior window's detach lifecycle.
+        attachment =
+            if (hosting.status().state == HostingController.State.HOSTING) {
+                null
+            } else {
+                session.attach(this, webContainer)
+            }
         if (session.startupDecision() != StartupPolicy.Decision.REATTACH_LIVE_SESSION) {
             addressBar.syncTo(session.lastCommittedUrl())
             setFieldText(addressBar.draft())

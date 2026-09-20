@@ -249,19 +249,38 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
     }
 
     private fun attachToContainer(baseContext: Context?, container: ViewGroup?) {
-        if (baseContext != null) {
-            contextWrapper.setBaseContext(baseContext)
-        }
-        attachedContainer = container
-        container!!.removeAllViews()
+        val target = container!!
         val view = webView
-        if (view != null) {
-            val parent = view.parent as? ViewGroup
-            if (parent != null && parent !== container) {
-                parent.removeView(view)
+        val oldParent = view?.parent as? ViewGroup
+        val alreadyInTarget = view != null && oldParent === target
+
+        for (step in BrowserAttachmentTransfer.plan(view != null, alreadyInTarget)) {
+            when (step) {
+                BrowserAttachmentTransfer.Step.DETACH_OLD_PARENT -> {
+                    // WebView.onDetachedFromWindow must still observe the OLD owner/display
+                    // context. Switching the MutableContextWrapper first can break Chromium's
+                    // detach path while crossing Activity/private-display ownership.
+                    oldParent?.removeView(view)
+                }
+                BrowserAttachmentTransfer.Step.UPDATE_CONTEXT -> {
+                    if (baseContext != null) {
+                        contextWrapper.setBaseContext(baseContext)
+                    }
+                    attachedContainer = target
+                }
+                BrowserAttachmentTransfer.Step.CLEAR_TARGET -> target.removeAllViews()
+                BrowserAttachmentTransfer.Step.ATTACH_TARGET -> {
+                    target.addView(
+                        view!!,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    )
+                }
             }
-            container.addView(view, ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT)
+        }
+
+        if (view != null) {
+            // A same-parent claim must reconcile layout without a gratuitous detach/re-add cycle.
             view.requestLayout()
             view.invalidate()
         }
