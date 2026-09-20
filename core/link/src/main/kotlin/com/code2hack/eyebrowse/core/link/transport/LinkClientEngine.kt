@@ -23,9 +23,11 @@ import com.code2hack.eyebrowse.core.link.messages.StatusMessage
 import java.io.EOFException
 import java.io.InputStream
 import java.net.InetSocketAddress
+import java.net.Socket
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLHandshakeException
 import javax.net.ssl.SSLSocket
 
 /**
@@ -36,13 +38,12 @@ import javax.net.ssl.SSLSocket
  *   the invitation (initial) or the stored peer record (reconnect) — no accept-all manager;
  * - a fresh ECDSA proof over the versioned transcript (fresh nonce) authorizes the session;
  * - no invitation secret is sent on reconnect;
- * - ONE monotonic absolute operation deadline is carried through TCP connect, TLS handshake and
- *   application auth: every blocking phase uses min(per-phase maximum, remaining budget)
- *   (review R3/B4);
- * - the in-flight raw/TLS socket is cancellation-owned from the moment it exists; cancellation
- *   state is re-checked at the security boundaries (before the auth proof is sent and before
- *   authenticated trust/state is committed), so a cancel can never complete a pairing
- *   (review R2/B3);
+ * - ONE monotonic absolute operation deadline is captured at connect() invocation and carried
+ *   unchanged through all locator attempts; after TCP succeeds, TLS + application auth share one
+ *   absolute auth deadline additionally capped by the operation deadline (review R3/B4);
+ * - each connect operation owns its raw socket BEFORE blocking Socket.connect(); raw→TLS ownership,
+ *   cancellation and the final trust/CONNECTED commit are serialized by one operation lock so
+ *   Cancel cannot race through local trust persistence (review R2/B3);
  * - bounded per-locator connect (≤3 s), one-operation budget (≤10 s), auth window (≤5 s);
  * - heartbeat 10 s / liveness 30 s; cancellation closes owned sockets within the 2 s bound.
  */
@@ -75,129 +76,212 @@ class LinkClientEngine(
         val invitation: Pair<String, ByteArray>? = null,
     )
 
+    /**
+     * Per-connect cancellation/ownership token. Every field except [deadlineNanos] is accessed
+     * only while holding [operationLock].
+     */
+    private class Operation(
+        val deadlineNanos: Long,
+        var cancelled: Boolean = false,
+        var socket: Socket? = null,
+    )
+
     private val running = AtomicBoolean(false)
+    private val operationLock = Any()
+    private var activeOperation: Operation? = null
+    private var lastFailure: LinkError = LinkError.NetworkUnreachable
 
     /**
-     * The currently owned socket (raw during TCP connect, TLS afterwards). Assigned as soon as
-     * it exists so [disconnect] closes it at any stage (review R2/B3). At most one operation is
-     * in flight ([running] guard), so plain set/clear is safe.
+     * JVM-test seam only. Production leaves this null and calls Socket.connect directly.
+     * Tests use it to deterministically hold or delay the TCP-connect phase while preserving
+     * the production socket object and cancellation ownership.
      */
-    private val inFlightSocket = AtomicReference<java.net.Socket?>(null)
+    internal var tcpConnectForTest: ((Socket, InetSocketAddress, Int) -> Unit)? = null
 
-    @Volatile private var stopped = false
-    private var lastFailure: LinkError = LinkError.NetworkUnreachable
+    /**
+     * JVM-test seam only. Runs after wire authentication succeeds but before the final
+     * cancellation-vs-trust-commit lock, allowing the precommit race to be exercised exactly.
+     */
+    internal var beforeFinalCommitForTest: (() -> Unit)? = null
 
     val isBusy: Boolean get() = running.get()
 
     /** Starts one bounded connect operation on a worker thread. */
     fun connect(attempt: Attempt) {
         check(running.compareAndSet(false, true)) { "client operation already running" }
-        stopped = false
-        Thread({ runOperation(attempt) }, "eyebrowse-link-client").apply {
+        val operation = Operation(
+            deadlineNanos = deadlineFromNowMs(timings.operationBudgetMs),
+        )
+        synchronized(operationLock) {
+            check(activeOperation == null) { "client operation ownership not released" }
+            activeOperation = operation
+        }
+        Thread({ runOperation(attempt, operation) }, "eyebrowse-link-client").apply {
             isDaemon = true
             start()
         }
     }
 
     /**
-     * Bounded disconnect: closes the in-flight socket at ANY stage (TCP connect, TLS handshake,
-     * auth exchange or established session); worker threads exit promptly.
+     * Bounded disconnect: atomically cancels the current operation and takes its owned socket,
+     * then closes the socket outside the lock. Because raw TCP ownership is published before
+     * connect(), this interrupts TCP connect, TLS/auth I/O and an established session.
      */
     fun disconnect() {
-        stopped = true
-        inFlightSocket.getAndSet(null)?.let { s ->
-            try { s.close() } catch (e: Exception) { /* bounded best-effort close */ }
+        val socketToClose = synchronized(operationLock) {
+            val operation = activeOperation ?: return
+            operation.cancelled = true
+            operation.socket.also { operation.socket = null }
         }
+        socketToClose?.let(::closeQuietly)
     }
 
     // ------------------------------------------------------------- operation
 
-    private fun runOperation(attempt: Attempt) {
+    private fun runOperation(attempt: Attempt, operation: Operation) {
         try {
-            listener.onStateChange(PairingState.CONNECTING)
-            val deadline = System.nanoTime() + timings.operationBudgetMs * 1_000_000
+            if (!emitStateIfLive(operation, PairingState.CONNECTING)) return
             var lastError: LinkError = LinkError.NetworkUnreachable
 
             for (locator in LocatorPolicy.orderForAttempts(attempt.locators)) {
-                if (stopped) return // bounded cancel: finally releases the operation
-                val remainingMs = (deadline - System.nanoTime()) / 1_000_000
-                if (remainingMs <= 0) break
-                val established = establishSession(attempt, locator, remainingMs)
-                if (stopped) {
-                    // Cancellation during TCP/TLS/auth: no CONNECTED, no trust commit.
-                    established?.let { closeQuietly(it.first) }
+                if (isCancelled(operation) || remainingMs(operation.deadlineNanos) <= 0) break
+                val established = establishSession(attempt, locator, operation)
+                if (isCancelled(operation)) {
+                    established?.let { releaseAndClose(operation, it.first) }
                     return
                 }
                 if (established != null) {
-                    listener.onStateChange(PairingState.CONNECTED)
-                    sessionLoop(established.first, established.second)
-                    return // session ended (lost/stop): PAIRED_DISCONNECTED emitted in sessionLoop
+                    // CONNECTED was emitted atomically with the trust callback in establishSession.
+                    sessionLoop(established.first, established.second, operation)
+                    return
                 }
                 lastError = lastFailure
                 if (isAuthoritativeFailure(lastError)) break
             }
-            if (!stopped) listener.onConnectFailed(lastError)
+            reportFailureIfLive(operation, lastError)
         } finally {
+            finishOperation(operation)
             running.set(false)
         }
     }
 
     /**
-     * TCP connect + TLS + app authentication against one locator, all inside [budgetMs]
-     * (the remaining absolute operation budget). Returns (socket, input) in the authenticated
-     * phase, or null after [lastFailure] records the failure class.
+     * TCP connect + TLS + application authentication against one locator. The absolute operation
+     * deadline is read from [operation]; after TCP succeeds, [authDeadlineNanos] is derived once
+     * and carried unchanged through TLS handshake plus every application-auth read.
      */
-    private fun establishSession(attempt: Attempt, locator: Locator, budgetMs: Long): Pair<SSLSocket, InputStream>? {
+    private fun establishSession(
+        attempt: Attempt,
+        locator: Locator,
+        operation: Operation,
+    ): Pair<SSLSocket, InputStream>? {
         lastFailure = LinkError.NetworkUnreachable
-        val raw = try {
-            val address = InetSocketAddress(locator.address, locator.port)
-            java.net.Socket().apply {
-                connect(address, minOf(timings.connectTimeoutMs, budgetMs).toInt().coerceAtLeast(1))
-                tcpNoDelay = true
-            }
-        } catch (e: Exception) {
-            return null // unreachable: try next locator within the operation budget
+        val raw = Socket()
+        if (!publishOwnedSocket(operation, raw)) {
+            closeQuietly(raw)
+            return null
         }
-        inFlightSocket.set(raw) // cancellation-owned from the beginning of the attempt (R2/B3)
+
+        val address = InetSocketAddress(locator.address, locator.port)
+        try {
+            val connectTimeout = boundedTimeoutMs(
+                operation.deadlineNanos,
+                timings.connectTimeoutMs,
+            ) ?: return null.also { releaseAndClose(operation, raw) }
+            connectRaw(raw, address, connectTimeout)
+            raw.tcpNoDelay = true
+        } catch (e: Exception) {
+            releaseAndClose(operation, raw)
+            return null
+        }
+
+        if (!canProceed(operation, operation.deadlineNanos)) {
+            releaseAndClose(operation, raw)
+            return null
+        }
+
+        // TLS handshake + ALL application-auth work share this one aggregate auth deadline.
+        val authDeadlineNanos = minOf(
+            operation.deadlineNanos,
+            deadlineFromNowMs(timings.authTimeoutMs),
+        )
+
         val tls = try {
             val context = SSLContext.getInstance("TLS")
             val trustManager = SpkiPinningTrustManager(attempt.phoneSpkiSha256Hex)
             context.init(null, arrayOf(trustManager), null)
-            context.socketFactory.createSocket(raw, locator.address.hostAddress, locator.port, true) as SSLSocket
+            context.socketFactory.createSocket(
+                raw,
+                locator.address.hostAddress,
+                locator.port,
+                true,
+            ) as SSLSocket
         } catch (e: Exception) {
-            closeQuietly(raw)
-            inFlightSocket.compareAndSet(raw, null)
+            releaseAndClose(operation, raw)
             lastFailure = LinkError.WrongPhoneIdentity
             return null
         }
-        inFlightSocket.set(tls)
+
+        if (!replaceOwnedSocket(operation, raw, tls)) {
+            closeQuietly(tls)
+            return null
+        }
+
         try {
             tls.setEnabledProtocols(arrayOf(TLS_V1_3))
             tls.useClientMode = true
-            // Review R3/B4: the auth window is min(per-phase maximum, remaining operation
-            // budget) — the aggregate deadline stays authoritative across handshake and auth.
-            val authWindowMs = minOf(timings.authTimeoutMs, budgetMs).coerceAtLeast(1L)
-            tls.soTimeout = authWindowMs.toInt()
-            try {
-                // Explicit bounded handshake: pin enforcement failures surface here.
-                tls.startHandshake()
-            } catch (e: javax.net.ssl.SSLHandshakeException) {
-                lastFailure = LinkError.WrongPhoneIdentity
-                return null.also { closeQuietly(tls) }
+
+            if (!prepareBlockingRead(tls, operation, authDeadlineNanos)) {
+                lastFailure = LinkError.AuthenticationFailed
+                return null.also { releaseAndClose(operation, tls) }
             }
-            if (stopped) return null.also { closeQuietly(tls) } // cancel boundary pre-proof (R2)
-            listener.onStateChange(PairingState.AUTHENTICATING)
-            if (!authenticate(tls, attempt)) return null.also { closeQuietly(tls) }
-            if (stopped) return null.also { closeQuietly(tls) } // cancel boundary pre-commit (R2)
-            // Identity is authoritative from the pinned TLS peer, never from the IP address.
-            listener.onAuthenticated(
-                tls.session.peerCertificates[0].publicKey.encoded,
-                locator,
-            )
+            lastFailure = LinkError.AuthenticationFailed
+            try {
+                tls.startHandshake()
+            } catch (e: SSLHandshakeException) {
+                lastFailure = LinkError.WrongPhoneIdentity
+                return null.also { releaseAndClose(operation, tls) }
+            }
+
+            if (!canProceed(operation, authDeadlineNanos)) {
+                lastFailure = LinkError.AuthenticationFailed
+                return null.also { releaseAndClose(operation, tls) }
+            }
+            if (!emitStateIfLive(operation, PairingState.AUTHENTICATING)) {
+                return null.also { releaseAndClose(operation, tls) }
+            }
+
+            lastFailure = LinkError.AuthenticationFailed
+            if (!authenticate(tls, attempt, operation, authDeadlineNanos)) {
+                return null.also { releaseAndClose(operation, tls) }
+            }
+
+            beforeFinalCommitForTest?.invoke()
+
+            // Linearization point for Cancel versus local trust persistence + CONNECTED.
+            val phoneSpki = tls.session.peerCertificates[0].publicKey.encoded
+            val committed = synchronized(operationLock) {
+                if (
+                    activeOperation !== operation ||
+                    operation.cancelled ||
+                    remainingMs(operation.deadlineNanos) <= 0 ||
+                    remainingMs(authDeadlineNanos) <= 0
+                ) {
+                    false
+                } else {
+                    listener.onAuthenticated(phoneSpki, locator)
+                    listener.onStateChange(PairingState.CONNECTED)
+                    true
+                }
+            }
+            if (!committed) {
+                releaseAndClose(operation, tls)
+                return null
+            }
+
             return Pair(tls, tls.inputStream.buffered())
         } catch (e: Exception) {
-            closeQuietly(tls)
-            if (lastFailure == LinkError.NetworkUnreachable) lastFailure = LinkError.AuthenticationFailed
+            releaseAndClose(operation, tls)
             return null
         }
     }
@@ -216,25 +300,44 @@ class LinkClientEngine(
         else -> false
     }
 
-    /** Performs hello exchange + proof; returns false (with [lastFailure] set) on failure. */
-    private fun authenticate(tls: SSLSocket, attempt: Attempt): Boolean {
+    /**
+     * Performs hello exchange + proof. Before EVERY blocking auth read, the socket timeout is
+     * recomputed from the same absolute auth deadline (which is itself capped by the operation
+     * deadline). No auth read receives a fresh full timeout window.
+     */
+    private fun authenticate(
+        tls: SSLSocket,
+        attempt: Attempt,
+        operation: Operation,
+        authDeadlineNanos: Long,
+    ): Boolean {
+        if (!canProceed(operation, authDeadlineNanos)) return false
         val output = tls.outputStream.buffered()
         val input = tls.inputStream.buffered()
         sendFrame(output, LinkMessageCodec.encode(attempt.clientHello))
 
+        if (!prepareBlockingRead(tls, operation, authDeadlineNanos)) return false
         val serverHello = readIncoming(input) as? HelloMessage ?: run {
-            lastFailure = LinkError.IncompatibleProtocol; return false
+            lastFailure = LinkError.IncompatibleProtocol
+            return false
         }
         if (serverHello.pmj != LinkProtocol.MAJOR || !serverHello.hasRequiredCapabilities()) {
-            lastFailure = LinkError.IncompatibleProtocol; return false
+            lastFailure = LinkError.IncompatibleProtocol
+            return false
         }
+
+        if (!prepareBlockingRead(tls, operation, authDeadlineNanos)) return false
         val challenge = readIncoming(input) as? ChallengeMessage ?: run {
-            lastFailure = LinkError.IncompatibleProtocol; return false
+            lastFailure = LinkError.IncompatibleProtocol
+            return false
         }
         val nonce = B64URL.decode(challenge.nonce) ?: run {
-            lastFailure = LinkError.AuthenticationFailed; return false
+            lastFailure = LinkError.AuthenticationFailed
+            return false
         }
-        val phoneSpki = (tls.session.peerCertificates[0]).publicKey.encoded
+
+        if (!canProceed(operation, authDeadlineNanos)) return false
+        val phoneSpki = tls.session.peerCertificates[0].publicKey.encoded
         val transcript = ChallengeTranscript.build(
             purpose = if (attempt.invitation != null) ChallengeTranscript.Purpose.INITIAL_PAIRING
             else ChallengeTranscript.Purpose.RECONNECT,
@@ -246,6 +349,8 @@ class LinkClientEngine(
             invitationId = attempt.invitation?.first ?: "",
         )
         val signature = attempt.signer.sign(transcript)
+        if (!canProceed(operation, authDeadlineNanos)) return false
+
         val wire = if (attempt.invitation != null) {
             PairAuthMessage(
                 iid = attempt.invitation.first,
@@ -265,23 +370,26 @@ class LinkClientEngine(
         }
         sendFrame(output, LinkMessageCodec.encode(wire))
 
+        if (!prepareBlockingRead(tls, operation, authDeadlineNanos)) return false
         return when (val result = readIncoming(input)) {
             is AuthOkMessage -> true
             is AuthErrMessage -> {
                 lastFailure = LinkError.fromWireCode(result.code) ?: LinkError.AuthenticationFailed
                 false
             }
-            else -> { lastFailure = LinkError.AuthenticationFailed; false }
+            else -> {
+                lastFailure = LinkError.AuthenticationFailed
+                false
+            }
         }
     }
 
     // ------------------------------------------------------------- authenticated session
 
-    private fun sessionLoop(tls: SSLSocket, input: InputStream) {
-        inFlightSocket.set(tls)
+    private fun sessionLoop(tls: SSLSocket, input: InputStream, operation: Operation) {
         val output = tls.outputStream.buffered()
         val heartbeat = Thread({
-            while (!stopped && tls.isConnected && !tls.isClosed) {
+            while (!isCancelled(operation) && tls.isConnected && !tls.isClosed) {
                 try {
                     sendFrame(output, LinkMessageCodec.encode(PingMessage))
                 } catch (e: Exception) {
@@ -293,10 +401,13 @@ class LinkClientEngine(
                     break
                 }
             }
-        }, "eyebrowse-link-client-heartbeat").apply { isDaemon = true; start() }
+        }, "eyebrowse-link-client-heartbeat").apply {
+            isDaemon = true
+            start()
+        }
         var lastInbound = System.nanoTime()
         try {
-            while (!stopped) {
+            while (!isCancelled(operation)) {
                 tls.soTimeout = timings.heartbeatIntervalMs.toInt()
                 val frame = try {
                     LinkFrameCodec.readOne(input)
@@ -311,25 +422,152 @@ class LinkClientEngine(
                             ?.let { listener.onStatus(it) }
                     }
                     is PingMessage -> sendFrame(output, LinkMessageCodec.encode(PongMessage))
-                    is PongMessage -> Unit // liveness refreshed
-                    is ForgetNoticeMessage -> break // best-effort notice: peer forgot this endpoint
+                    is PongMessage -> Unit
+                    is ForgetNoticeMessage -> break
                     else -> Unit
                 }
             }
         } catch (e: EOFException) {
             // peer closed
         } catch (e: Exception) {
-            if (!stopped) { /* fallthrough: link lost */ }
+            // deliberate cancellation is distinguished below under the operation lock
         } finally {
             heartbeat.interrupt()
-            closeQuietly(tls)
-            inFlightSocket.compareAndSet(tls, null)
-            if (!stopped) {
+            releaseAndClose(operation, tls)
+            notifyLinkLostIfLive(operation)
+        }
+    }
+
+    // ------------------------------------------------------------- cancellation / deadlines / ownership
+
+    private fun connectRaw(socket: Socket, address: InetSocketAddress, timeoutMs: Int) {
+        val seam = tcpConnectForTest
+        if (seam != null) {
+            seam(socket, address, timeoutMs)
+        } else {
+            socket.connect(address, timeoutMs)
+        }
+    }
+
+    private fun publishOwnedSocket(operation: Operation, socket: Socket): Boolean =
+        synchronized(operationLock) {
+            if (activeOperation !== operation || operation.cancelled) {
+                false
+            } else {
+                check(operation.socket == null) { "socket ownership already populated" }
+                operation.socket = socket
+                true
+            }
+        }
+
+    private fun replaceOwnedSocket(operation: Operation, from: Socket, to: Socket): Boolean =
+        synchronized(operationLock) {
+            if (
+                activeOperation !== operation ||
+                operation.cancelled ||
+                operation.socket !== from
+            ) {
+                false
+            } else {
+                operation.socket = to
+                true
+            }
+        }
+
+    private fun releaseAndClose(operation: Operation, socket: Socket) {
+        synchronized(operationLock) {
+            if (activeOperation === operation && operation.socket === socket) {
+                operation.socket = null
+            }
+        }
+        closeQuietly(socket)
+    }
+
+    private fun finishOperation(operation: Operation) {
+        val socketToClose = synchronized(operationLock) {
+            if (activeOperation !== operation) {
+                null
+            } else {
+                operation.socket.also {
+                    operation.socket = null
+                    activeOperation = null
+                }
+            }
+        }
+        socketToClose?.let(::closeQuietly)
+    }
+
+    private fun isCancelled(operation: Operation): Boolean =
+        synchronized(operationLock) {
+            activeOperation !== operation || operation.cancelled
+        }
+
+    private fun canProceed(operation: Operation, deadlineNanos: Long): Boolean =
+        synchronized(operationLock) {
+            activeOperation === operation &&
+                !operation.cancelled &&
+                remainingMs(deadlineNanos) > 0
+        }
+
+    private fun emitStateIfLive(operation: Operation, state: PairingState): Boolean =
+        synchronized(operationLock) {
+            if (activeOperation !== operation || operation.cancelled) {
+                false
+            } else {
+                listener.onStateChange(state)
+                true
+            }
+        }
+
+    private fun reportFailureIfLive(operation: Operation, error: LinkError) {
+        synchronized(operationLock) {
+            if (activeOperation === operation && !operation.cancelled) {
+                listener.onConnectFailed(error)
+            }
+        }
+    }
+
+    private fun notifyLinkLostIfLive(operation: Operation) {
+        synchronized(operationLock) {
+            if (activeOperation === operation && !operation.cancelled) {
                 listener.onStateChange(PairingState.PAIRED_DISCONNECTED)
                 listener.onLinkLost()
             }
         }
     }
+
+    private fun prepareBlockingRead(
+        tls: SSLSocket,
+        operation: Operation,
+        deadlineNanos: Long,
+    ): Boolean {
+        val timeout = synchronized(operationLock) {
+            if (activeOperation !== operation || operation.cancelled) {
+                null
+            } else {
+                boundedTimeoutMs(deadlineNanos, Long.MAX_VALUE)
+            }
+        } ?: return false
+        tls.soTimeout = timeout
+        return true
+    }
+
+    private fun boundedTimeoutMs(deadlineNanos: Long, phaseCapMs: Long): Int? {
+        val remaining = remainingMs(deadlineNanos)
+        if (remaining <= 0) return null
+        return minOf(phaseCapMs, remaining, Int.MAX_VALUE.toLong())
+            .coerceAtLeast(1)
+            .toInt()
+    }
+
+    private fun remainingMs(deadlineNanos: Long): Long {
+        val remainingNanos = deadlineNanos - System.nanoTime()
+        if (remainingNanos <= 0) return 0
+        return TimeUnit.NANOSECONDS.toMillis(remainingNanos).coerceAtLeast(1)
+    }
+
+    private fun deadlineFromNowMs(durationMs: Long): Long =
+        System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(durationMs.coerceAtLeast(0))
 
     // ------------------------------------------------------------- helpers
 
@@ -355,7 +593,11 @@ class LinkClientEngine(
 
     private fun elapsedMs(sinceNanos: Long) = (System.nanoTime() - sinceNanos) / 1_000_000
 
-    internal fun closeQuietly(socket: java.net.Socket) {
-        try { socket.close() } catch (e: Exception) { /* bounded best-effort close */ }
+    internal fun closeQuietly(socket: Socket) {
+        try {
+            socket.close()
+        } catch (e: Exception) {
+            // bounded best-effort close
+        }
     }
 }

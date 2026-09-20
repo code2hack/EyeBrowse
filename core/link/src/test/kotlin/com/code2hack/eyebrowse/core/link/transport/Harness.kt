@@ -17,6 +17,7 @@ import com.code2hack.eyebrowse.core.link.testfix.TestCrypto
 import java.io.InputStream
 import java.net.InetAddress
 import java.security.KeyPair
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingDeque
 import java.util.concurrent.TimeUnit
@@ -54,7 +55,16 @@ object Harness {
 
         /** Review R2/R3 regression seam: when set, serverHello blocks until released. */
         @Volatile
-        var helloGate: java.util.concurrent.CountDownLatch? = null
+        var helloGate: CountDownLatch? = null
+
+        /** Review R3/B4 regression seam: deterministic delay before server Hello is returned. */
+        @Volatile
+        var serverHelloDelayMs: Long = 0
+
+        /** Review R3/B4 regression seam: deterministic delay before invitation consumption/AuthOk. */
+        @Volatile
+        var consumeInvitationDelayMs: Long = 0
+
         val committedPeer = AtomicReference<ByteArray?>(null)
         val committedClientHello = AtomicReference<HelloMessage?>(null)
         val committed = CountDownLatch(1)
@@ -68,10 +78,12 @@ object Harness {
         private val trustController = object : LinkServerEngine.TrustController {
             override fun serverHello(): HelloMessage {
                 helloGate?.await()
+                if (serverHelloDelayMs > 0) Thread.sleep(serverHelloDelayMs)
                 return HelloMessage(LinkProtocol.MAJOR, LinkProtocol.MINOR, LinkProtocol.REQUIRED_CAPABILITIES)
             }
 
             override fun consumeInvitation(id: String, secretB64: String): InvitationLifecycle.ConsumeOutcome {
+                if (consumeInvitationDelayMs > 0) Thread.sleep(consumeInvitationDelayMs)
                 val secret = B64URL.decode(secretB64) ?: return InvitationLifecycle.ConsumeOutcome.Invalid
                 return lifecycle.consume(id, secret)
             }
@@ -80,7 +92,9 @@ object Harness {
                 corruptTrust -> PeerTrustRead.Corrupt
                 storedPeerSpki.get() != null -> PeerTrustRead.Valid(
                     PeerTrustRecord(
-                        peerSpkiSha256Hex = com.code2hack.eyebrowse.core.link.crypto.SpkiFingerprint.sha256Hex(storedPeerSpki.get()!!),
+                        peerSpkiSha256Hex = com.code2hack.eyebrowse.core.link.crypto.SpkiFingerprint.sha256Hex(
+                            storedPeerSpki.get()!!,
+                        ),
                         peerSpkiB64 = B64URL.encode(storedPeerSpki.get()!!),
                         lastLocators = listOf(),
                         protocolMajor = LinkProtocol.MAJOR,
@@ -127,7 +141,9 @@ object Harness {
 
         fun stop() = engine.stop()
 
-        fun generateInvitation(secret: ByteArray = randomBytes(LinkProtocol.INVITATION_SECRET_BYTES)): Pair<String, ByteArray> {
+        fun generateInvitation(
+            secret: ByteArray = randomBytes(LinkProtocol.INVITATION_SECRET_BYTES),
+        ): Pair<String, ByteArray> {
             // Production ids are base64url of 16 random bytes (codec-enforced); mirror that here.
             val id = B64URL.encode(randomBytes(LinkProtocol.INVITATION_ID_BYTES))
             lifecycle.generate(id, secret)
@@ -146,13 +162,17 @@ object Harness {
         val connectFailed = LinkedBlockingDeque<LinkError>()
         val statuses = LinkedBlockingDeque<HostStatusValue>()
         val stateChanges = LinkedBlockingDeque<com.code2hack.eyebrowse.core.link.PairingState>()
+        val stateTimesNanos = ConcurrentHashMap<com.code2hack.eyebrowse.core.link.PairingState, Long>()
         val authenticated = LinkedBlockingDeque<ByteArray>()
 
         private val listener = object : LinkClientEngine.Listener {
             override fun onStateChange(state: com.code2hack.eyebrowse.core.link.PairingState) {
+                stateTimesNanos.putIfAbsent(state, System.nanoTime())
                 stateChanges.add(state)
                 if (state == com.code2hack.eyebrowse.core.link.PairingState.CONNECTED) connected.countDown()
-                if (state == com.code2hack.eyebrowse.core.link.PairingState.PAIRED_DISCONNECTED) disconnected.countDown()
+                if (state == com.code2hack.eyebrowse.core.link.PairingState.PAIRED_DISCONNECTED) {
+                    disconnected.countDown()
+                }
             }
 
             override fun onAuthenticated(phoneSpki: ByteArray, usedLocator: Locator) {
@@ -211,7 +231,10 @@ object Harness {
             val context = SSLContext.getInstance("TLS")
             context.init(null, arrayOf(SpkiPinningTrustManager(phoneSpkiHex)), null)
             socket = context.socketFactory.createSocket(
-                raw, InetAddress.getLoopbackAddress().hostAddress, port, true,
+                raw,
+                InetAddress.getLoopbackAddress().hostAddress,
+                port,
+                true,
             ) as SSLSocket
             socket.setEnabledProtocols(arrayOf(TLS_V1_3))
             socket.soTimeout = 3_000
@@ -298,7 +321,10 @@ object Harness {
                 nonce = nonce,
                 invitationId = invitationId,
             )
-            val signature = com.code2hack.eyebrowse.core.link.crypto.ChallengeTranscript.sign(transcript, signKey.private)
+            val signature = com.code2hack.eyebrowse.core.link.crypto.ChallengeTranscript.sign(
+                transcript,
+                signKey.private,
+            )
             send(
                 com.code2hack.eyebrowse.core.link.messages.PairAuthMessage(
                     iid = invitationId,
@@ -306,7 +332,11 @@ object Harness {
                     rgSpki = B64URL.encode(presentedSpki),
                     nonce = B64URL.encode(nonce),
                     sig = B64URL.encode(signature),
-                    hello = HelloMessage(LinkProtocol.MAJOR, LinkProtocol.MINOR, LinkProtocol.REQUIRED_CAPABILITIES),
+                    hello = HelloMessage(
+                        LinkProtocol.MAJOR,
+                        LinkProtocol.MINOR,
+                        LinkProtocol.REQUIRED_CAPABILITIES,
+                    ),
                 ),
             )
         }

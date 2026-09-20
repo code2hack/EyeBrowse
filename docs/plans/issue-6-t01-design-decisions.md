@@ -57,7 +57,12 @@ Authority: issues/6#issuecomment-5742886185 (ticket plan). All decisions below s
   C:PairAuth|ReconnectAuth → S:AuthOk|AuthErr(code) [+ initial Status on AuthOk].
 - Status values HOST_INACTIVE/HOST_STARTING/HOSTING/HOST_STOPPING — observation only, sent
   strictly after auth (engine enforces; negative test covers pre-auth rejection).
-- Heartbeat 10 s ping; liveness 30 s; connect 3 s/locator; auth window 5 s; cancel quiesce 2 s.
+- Heartbeat 10 s; liveness 30 s; TCP connect ≤3 s/locator. One user-triggered connect/retry
+  operation carries one absolute monotonic ≤10 s deadline from `connect()` invocation across all
+  locator attempts. After a TCP connection succeeds, TLS handshake + application authentication
+  share one absolute ≤5 s auth deadline, additionally capped by the remaining operation deadline;
+  timeout is recomputed before each blocking handshake/auth read. Cancellation owns the raw socket
+  before blocking TCP connect and closes current connection work within ≤2 s.
 
 ## D8 — Peer binding / replacement / Forget (pure BindingPolicy in core:link)
 - One remembered peer per endpoint. Same-identity locator refresh allowed after TLS pin proof;
@@ -65,8 +70,9 @@ Authority: issues/6#issuecomment-5742886185 (ticket plan). All decisions below s
 - Paired Phone receiving initial PairAuth from a different RG key ⇒ PEER_REPLACEMENT_REQUIRED.
 - Second concurrent TLS client while a link is active: closed pre-auth, never receives status.
 - Forget: close link, clear store, cancel local invitation; re-pair via fresh invitation.
-- Store: app-private JSON, atomic tmp+rename, corrupt ⇒ fail closed (treated unpaired);
-  secrets never written.
+- Store: app-private JSON, atomic tmp+rename. Corrupt state is a distinct fail-closed trust state,
+  never treated as unpaired; explicit Forget is required before replacement/re-pair where the
+  endpoint can no longer establish its remembered peer identity. Secrets are never written.
 
 ## D9 — Locators
 - Fixed port 39818 (LinkProtocol.LOCAL_PORT). Reachability metadata only; identity = pinned key.
@@ -98,26 +104,39 @@ written) and required the following corrections, all applied on this branch:
   monitor; the visible active surface is cleared only when the consumed id is still the
   displayed active id. Regressions: stale-consume surface retention + 50-iteration
   generate/consume interleaving loop.
-- **A3 (R2/B3, amends D7):** the in-flight raw/TLS socket is cancellation-owned from creation;
-  `disconnect()` closes it at any stage; cancellation state is re-checked before sending the
-  auth proof and before `onAuthenticated`/CONNECTED, so a cancel can never complete pairing or
-  persist trust. Regressions: stalling-auth cancel (≤2 s quiesce, no trust commit, no CONNECTED,
-  no connect-failure) and established-session cancel.
-- **A4 (R3/B4, amends D7):** one absolute operation deadline is carried through TCP connect,
-  TLS handshake and application auth; every blocking phase uses min(per-phase maximum, remaining
-  budget). Regression: refused-locator + stalling-auth operation completes inside the configured
-  budget although the per-phase auth timeout exceeds it.
+- **A3 (R2/B3, amends D7):** each `LinkClientEngine.connect()` has a distinct
+  cancellation/ownership token guarded by one operation lock. The raw socket is published to that
+  operation **before** blocking `connect()`, ownership transitions raw→TLS only for that same live
+  operation, and every failure/session-exit path clears matching ownership. `disconnect()`
+  atomically marks the operation cancelled and takes/closes its owned socket. The final local
+  `onAuthenticated` trust commit and CONNECTED transition are serialized against Cancel under the
+  same operation lock, removing the prior check→callback race. Regressions deterministically cover
+  cancellation during blocked TCP connect, cancellation at the precommit boundary, stalling
+  application auth, and established-session cancellation; deliberate cancellation quiesces within
+  ≤2 s and cannot produce local trust commit/CONNECTED.
+- **A4 (R3/B4, amends D7):** the client captures one absolute monotonic operation deadline at
+  `connect()` invocation and carries that unchanged through all locator attempts. TCP connect is
+  capped by `min(connectTimeoutMs, current remaining operation time)`. After TCP success, one
+  TLS+application-auth deadline is derived as
+  `min(operation deadline, tcp-success time + authTimeoutMs)`; remaining time is recomputed before
+  TLS handshake and before each blocking application-auth read, so no read receives a fresh full
+  auth allowance. Regressions assert the configured aggregate deadline with bounded scheduling
+  slack and include a materially slow TCP phase followed by stalled authentication, which would
+  fail under the former pre-connect budget snapshot behavior.
 - **A5 (R4/B5, amends D5):** both AndroidKeyStore identities explicitly request
   `secp256r1` via `KeyGenParameterSpec.setAlgorithmParameterSpec(ECGenParameterSpec)`; a
   pre-existing alias is validated against P-256 (`EcKeys.isP256`) and fails closed (explicit
   identity reset required) instead of being silently reused. Regression: `EcKeysTest`
   (P-256 accepts; secp384r1 and RSA reject).
 - **A6 (R5/B6, amends D8/D9):** persisted trust reads are tri-state
-  (`PeerTrustRead.Absent/Valid/Corrupt`). CORRUPT is never reported as unpaired: phone-side
-  initial pairing and RG-side QR acceptance fail closed to PEER_REPLACEMENT_REQUIRED (explicit
-  Forget required), reconnect fails closed to WRONG_RG_IDENTITY. Regressions: store tri-state,
-  policy cases, engine-level corrupt-trust refusal (invitation not burned) + recovery after
-  state clearing, RG wiring corrupt cases.
+  (`PeerTrustRead.Absent/Valid/Corrupt`); CORRUPT is never treated as unpaired.
+  **Phone/server initial pairing + CORRUPT** fails PEER_REPLACEMENT_REQUIRED before invitation
+  consumption; **Phone/server reconnect + CORRUPT remembered RG trust** fails WRONG_RG_IDENTITY.
+  **RG local QR acceptance + CORRUPT remembered Phone trust** fails PEER_REPLACEMENT_REQUIRED
+  without dialing; **RG local reconnect + CORRUPT store** also fails PEER_REPLACEMENT_REQUIRED,
+  because no trustworthy stored Phone identity/locator remains and explicit local Forget is the
+  recovery. Regressions cover store tri-state, binding policy, Phone engine refusal without
+  invitation burn, recovery after explicit state clearing, and RG wrapper corrupt-store cases.
 - **A7 (R6/B7, amends D8):** `sendForgetNotice()` requires LINK_UP (authenticated-only); no
   control frame can reach an unauthenticated peer during TLS/AUTHENTICATING. Regression:
   forget-during-auth is a no-op and the auth result follows the challenge directly.
