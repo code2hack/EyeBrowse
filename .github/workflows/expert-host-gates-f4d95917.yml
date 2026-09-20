@@ -1,4 +1,4 @@
-name: Expert diagnose B4 stages 1fc5e2b7
+name: Expert targeted B3 B4 af92eae2
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  diagnose-b4-stages:
+  targeted-b3-b4:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -19,7 +19,7 @@ jobs:
       - name: Checkout exact implementation candidate
         uses: actions/checkout@v4
         with:
-          ref: 1fc5e2b7e1db8c751805dc880d34389372959dbd
+          ref: af92eae2973b70b05e3434717b1e3a9b80695fe1
           persist-credentials: false
 
       - name: Set up JDK 17
@@ -38,37 +38,11 @@ jobs:
       - name: Verify exact candidate binding
         shell: bash
         run: |
-          test "$(git rev-parse HEAD)" = "1fc5e2b7e1db8c751805dc880d34389372959dbd"
+          test "$(git rev-parse HEAD)" = "af92eae2973b70b05e3434717b1e3a9b80695fe1"
           chmod +x ./gradlew
 
-      - name: Add stage timing to assertion in working tree only
+      - name: Run B3 B4 regression class
         shell: bash
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("core/link/src/test/kotlin/com/code2hack/eyebrowse/core/link/transport/LinkCancellationAndTrustTest.kt")
-          s = p.read_text()
-          anchor = "        val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)\n"
-          insert = anchor + "        val authStartedDeltaMs = client.stateTimesNanos[PairingState.AUTHENTICATING]?.let { TimeUnit.NANOSECONDS.toMillis(it - started) } ?: -1\n"
-          if anchor not in s:
-              raise SystemExit("elapsed anchor missing")
-          s = s.replace(anchor, insert, 1)
-          old = '"elapsed=${elapsedMs}ms budget=${tight.operationBudgetMs}ms tcp=${tcpElapsedMs.get()}ms",'
-          new = '"elapsed=${elapsedMs}ms budget=${tight.operationBudgetMs}ms tcp=${tcpElapsedMs.get()}ms authStart=${authStartedDeltaMs}ms",'
-          if old not in s:
-              raise SystemExit("message anchor missing")
-          p.write_text(s.replace(old, new, 1))
-          PY
-
-      - name: Run B3/B4 class and print failure XML
-        shell: bash
-        run: |
-          set +e
           ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
             :core:link:test --tests 'com.code2hack.eyebrowse.core.link.transport.LinkCancellationAndTrustTest'
-          rc=$?
-          echo "---- JUnit failure XML ----"
-          for f in core/link/build/test-results/test/TEST-*.xml; do
-            grep -n -A10 -B2 '<failure' "$f" || true
-          done
-          exit "$rc"
