@@ -97,6 +97,9 @@ class PhoneLinkServer(
 
     fun isLinkUp(): Boolean = engine?.isLinkUp() ?: false
 
+    /** Usable pairing exists (VALID trust; CORRUPT intentionally reports false and fails closed). */
+    fun isPaired(): Boolean = store.read() is PeerTrustRead.Valid
+
     /** Generates a fresh invitation (cancels any previous one) with current explicit locators. */
     fun generateInvitation(): PairingInvitationManager.ActiveInvitation =
         invitations.generate(locators())

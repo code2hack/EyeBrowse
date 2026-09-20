@@ -8,6 +8,12 @@
     -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- T02 scanner: the RG camera reads the Phone-displayed QR. No network onboarding APIs. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -22,6 +28,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".pairing.RgPairingActivity"
+            android:exported="false"
+            android:label="@string/rg_action_scan" />
     </application>
 
 </manifest>

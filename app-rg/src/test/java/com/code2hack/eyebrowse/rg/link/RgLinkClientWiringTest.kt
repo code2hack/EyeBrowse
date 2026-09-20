@@ -71,6 +71,24 @@ class RgLinkClientWiringTest {
     )
 
     @Test
+    fun `retry without remembered trust maps to invitation-invalid without dialing`() {
+        val listener = RecordingListener()
+        clientWith(listener).reconnect()
+        assertEquals(listOf(LinkError.InvitationInvalid), listener.failures)
+        assertTrue(listener.states.isEmpty())
+    }
+
+    @Test
+    fun `reconnect with a locator-less stored record maps to network-unreachable`() {
+        val listener = RecordingListener()
+        val store = newStore()
+        store.save(pairedRecord("ab".repeat(32)).copy(lastLocators = listOf()))
+        clientWith(listener, store).reconnect()
+        assertEquals(listOf(LinkError.NetworkUnreachable), listener.failures)
+        assertTrue(listener.states.isEmpty())
+    }
+
+    @Test
     fun `malformed qr is refused locally as malformed`() {
         val listener = RecordingListener()
         clientWith(listener).pairFromQr("https://not-an-eyebrowse-payload")

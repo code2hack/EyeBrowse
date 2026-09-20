@@ -55,6 +55,8 @@ dependencies {
         implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22")
     }
 
+    implementation("com.google.zxing:core:3.5.3")
+
     testImplementation("junit:junit:4.13.2")
     testImplementation(testFixtures(project(":core:link")))
 

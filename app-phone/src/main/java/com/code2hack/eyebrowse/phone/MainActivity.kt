@@ -57,6 +57,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var progressBar: ProgressBar
     private lateinit var statusText: TextView
     private lateinit var hostingStatusText: TextView
+    private lateinit var pairRgButton: Button
     private lateinit var webContainer: ViewGroup
 
     private var updatingField = false
@@ -101,6 +102,7 @@ class MainActivity : ComponentActivity() {
         reloadButton = findViewById(R.id.button_reload)
         openButton = findViewById(R.id.button_open)
         hostingButton = findViewById(R.id.button_hosting_toggle)
+        pairRgButton = findViewById(R.id.button_pair_rg)
         progressBar = findViewById(R.id.progress_bar)
         statusText = findViewById(R.id.status_text)
         hostingStatusText = findViewById(R.id.hosting_status)
@@ -126,6 +128,9 @@ class MainActivity : ComponentActivity() {
         forwardButton.setOnClickListener { session.goForward() }
         reloadButton.setOnClickListener { session.reload() }
         hostingButton.setOnClickListener { toggleHosting() }
+        pairRgButton.setOnClickListener {
+            startActivity(android.content.Intent(this, com.code2hack.eyebrowse.phone.pairing.PairingActivity::class.java))
+        }
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
