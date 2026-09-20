@@ -1,0 +1,60 @@
+name: Expert host gates f4d95917
+
+on:
+  push:
+    branches:
+      - expert/gates-f4d95917-20260920
+
+permissions:
+  contents: read
+
+jobs:
+  host-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact implementation candidate
+        uses: actions/checkout@v4
+        with:
+          ref: f4d959174570243cb45cfa2b4432309c1aba2f23
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 35 platform and build tools
+        shell: bash
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Verify exact candidate binding
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "f4d959174570243cb45cfa2b4432309c1aba2f23"
+          java -version
+          ./gradlew --version
+
+      - name: JVM builds and tests
+        shell: bash
+        run: |
+          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
+            :core:browser:build :core:link:build test
+
+      - name: Phone and RG debug plus androidTest assembly
+        shell: bash
+        run: |
+          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
+            :app-phone:assembleDebug :app-rg:assembleDebug \
+            :app-phone:assembleDebugAndroidTest :app-rg:assembleDebugAndroidTest
+
+      - name: Phone and RG lint
+        shell: bash
+        run: |
+          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
+            :app-phone:lintDebug :app-rg:lintDebug
