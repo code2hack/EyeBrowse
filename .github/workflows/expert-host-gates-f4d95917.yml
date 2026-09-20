@@ -1,4 +1,4 @@
-name: Expert host gates 1fc5e2b7
+name: Expert diagnose B4 1fc5e2b7
 
 on:
   push:
@@ -9,9 +9,9 @@ permissions:
   contents: read
 
 jobs:
-  host-gates:
+  diagnose-b4:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 20
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
@@ -40,62 +40,16 @@ jobs:
         run: |
           test "$(git rev-parse HEAD)" = "1fc5e2b7e1db8c751805dc880d34389372959dbd"
           chmod +x ./gradlew
-          java -version
-          ./gradlew --version
 
-      - name: JVM builds and tests
-        id: jvm
-        continue-on-error: true
+      - name: Run B3/B4 class and print failure XML
         shell: bash
         run: |
+          set +e
           ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
-            :core:browser:build :core:link:build test
-
-      - name: Report JVM test totals
-        if: always()
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import xml.etree.ElementTree as ET
-          total = failed = errors = skipped = 0
-          files = list(Path(".").glob("**/build/test-results/test/*.xml"))
-          for p in files:
-              try:
-                  r = ET.parse(p).getroot()
-              except Exception:
-                  continue
-              total += int(r.attrib.get("tests", 0))
-              failed += int(r.attrib.get("failures", 0))
-              errors += int(r.attrib.get("errors", 0))
-              skipped += int(r.attrib.get("skipped", 0))
-          print(f"JVM_TEST_XML files={len(files)} tests={total} failures={failed} errors={errors} skipped={skipped}")
-          PY
-
-      - name: Phone and RG debug plus androidTest assembly
-        id: android_build
-        continue-on-error: true
-        shell: bash
-        run: |
-          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
-            :app-phone:assembleDebug :app-rg:assembleDebug \
-            :app-phone:assembleDebugAndroidTest :app-rg:assembleDebugAndroidTest
-
-      - name: Phone and RG lint
-        id: lint
-        continue-on-error: true
-        shell: bash
-        run: |
-          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
-            :app-phone:lintDebug :app-rg:lintDebug
-
-      - name: Gate summary
-        if: always()
-        shell: bash
-        run: |
-          echo "JVM=${{ steps.jvm.outcome }}"
-          echo "ANDROID_BUILD=${{ steps.android_build.outcome }}"
-          echo "LINT=${{ steps.lint.outcome }}"
-          test "${{ steps.jvm.outcome }}" = "success"
-          test "${{ steps.android_build.outcome }}" = "success"
-          test "${{ steps.lint.outcome }}" = "success"
+            :core:link:test --tests 'com.code2hack.eyebrowse.core.link.transport.LinkCancellationAndTrustTest'
+          rc=$?
+          echo "---- JUnit failure XML ----"
+          for f in core/link/build/test-results/test/TEST-*.xml; do
+            grep -n -A10 -B2 '<failure' "$f" || true
+          done
+          exit "$rc"
