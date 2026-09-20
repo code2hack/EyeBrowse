@@ -97,6 +97,7 @@ class StaleSessionEvictionTest {
                 ),
             )
             assertTrue(a.readMessage() is com.code2hack.eyebrowse.core.link.messages.AuthOkMessage)
+            assertTrue("A must reach LINK_UP before liveness is frozen", Harness.await(server.linkUp))
             assertTrue(server.engine.isLinkUp())
 
             // Keep A's session thread alive and its real inbound fresh (no self-reap) until the
