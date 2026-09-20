@@ -157,3 +157,29 @@ written) and required the following corrections, all applied on this branch:
   pre-dial rejection is deferred as a UX hardening follow-up.
 - `PeerTrustStore.isPaired()` reports usable trust only (`Valid`); callers needing the
   fail-closed distinction use `read()` directly.
+
+## D12 — T02 device-evidence amendments (link identity + UI/camera surfaces)
+
+- **Link identity key spec (device-evidenced):** the Phone TLS identity is generated
+  SIGN-only (no VERIFY purpose) with explicit digests {NONE, SHA256, SHA384, SHA512} on
+  secp256r1. S20+ KeyMint evidence: Conscrypt signs the TLS 1.3 CertificateVerify through a raw
+  NONEwithECDSA upcall; VERIFY in the purpose set breaks that upcall; absent digest
+  authorizations are treated as "none authorized". Existing aliases are validated EMPIRICALLY
+  (`supportsRawEcdsa()` — a real raw signature attempt), because KeyInfo digest metadata proved
+  unreliable on the device. An inadequate alias is regenerated only while no VALID pairing trust
+  exists (identity is stable for the lifetime of a pairing; later changes require the explicit
+  Forget/replacement path and fail closed).
+- **Pairing UI is event-driven** (server link observers), not polling — required for reliable
+  accessibility-tree instrumentation and lower power draw; expiry/link notes are computed on
+  refresh events.
+- **RG scanner surfaces:** one production `QrDecoder` (bitmap + Y-plane entries), CameraX
+  `CameraQrScanner` with synchronous main-thread unbind on cancel (<=2 s), runtime CAMERA
+  permission with denial/recovery UI. The instrumentation image-input seam feeds the SAME
+  decoder + SAME production controller; no pairing shortcut exists outside engine callbacks.
+- **Bounded server diagnostics:** the link engines log failure class + message only (no
+  payloads, no key material) — this proved required for device-field diagnosis.
+- **Device findings (recorded, not silently widened):** cold first camera frame on the RG
+  measures ~7.9 s against the plan's <=5 s target (warm reacquisition is fast); Doze/light
+  network restriction drops inbound SYNs to the phone listener when the app is backgrounded
+  (pairing windows keep the phone UI foreground; a pairing foreground service is a T03
+  concern); Samsung Freecess kills backgrounded apps under the default 30 s screen timeout.

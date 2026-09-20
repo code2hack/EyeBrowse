@@ -20,6 +20,39 @@ class PhoneLinkIdentity() : TlsServerIdentity {
     companion object {
         const val ALIAS: String = "eyebrowse_phone_link_v1"
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
+
+        /**
+         * Digests the platform TLS stack needs from the server identity key (S20+ KeyMint
+         * evidence: Conscrypt signs the TLS 1.3 CertificateVerify through a raw NONEwithECDSA
+         * upcall; absent digest authorizations are treated as "none authorized", so DIGEST_NONE
+         * must be granted explicitly alongside the per-suite SHA-256/384/512 digests, with
+         * SIGN-only purpose — VERIFY in the purpose set breaks the raw upcall).
+         */
+        val TLS_DIGESTS = arrayOf(
+            KeyProperties.DIGEST_NONE,
+            KeyProperties.DIGEST_SHA256,
+            KeyProperties.DIGEST_SHA384,
+            KeyProperties.DIGEST_SHA512,
+        )
+    }
+
+    /**
+     * TLS usability check, verified EMPIRICALLY: Conscrypt's native TLS upcall signs through
+     * raw NONEwithECDSA, so the identity key must be able to produce a raw ECDSA signature.
+     * (KeyInfo digest metadata proved unreliable on the device: a key generated with
+     * DIGEST_NONE authorized may not report it, yet still sign raw — the signature attempt is
+     * the ground truth the TLS stack depends on.) An alias that cannot sign raw is inadequate
+     * and is upgraded only through the pre-pairing regeneration path.
+     */
+    private fun supportsRawEcdsa(): Boolean = try {
+        val key = keyStore.getKey(ALIAS, null) as? java.security.PrivateKey ?: return false
+        val signature = java.security.Signature.getInstance("NONEwithECDSA")
+        signature.initSign(key)
+        signature.update(ByteArray(32))
+        signature.sign()
+        true
+    } catch (e: Exception) {
+        false
     }
 
     private val keyStore: KeyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
@@ -27,17 +60,35 @@ class PhoneLinkIdentity() : TlsServerIdentity {
     /**
      * Idempotently ensures the identity key exists (survives process death, not uninstall).
      * Explicitly requests secp256r1 (review R4/B5) and validates any pre-existing alias against
-     * that curve — a non-P-256 identity fails closed instead of being silently reused.
+     * that curve and the digest policy platform TLS actually needs — an inadequate identity
+     * fails closed instead of being silently reused (device evidence: Conscrypt TLS upcalls
+     * require unrestricted/NONEwithECDSA digests; a digest-restricted alias dies mid-handshake).
      */
     @Synchronized
-    fun ensureKey() {
+    fun ensureKey() = ensureKeyOrUpgrade(regenerateIfInadequate = false)
+
+    /**
+     * As [ensureKey], but an EXISTING alias whose digest specification is inadequate for TLS may
+     * be regenerated only when `regenerateIfInadequate` is set — which the server grants only
+     * while no VALID pairing trust exists (identity is stable for the lifetime of a pairing;
+     * changing it afterwards requires the explicit Forget/replacement path).
+     */
+    @Synchronized
+    fun ensureKeyOrUpgrade(regenerateIfInadequate: Boolean) {
         if (keyStore.containsAlias(ALIAS)) {
             val existing = keyStore.getCertificate(ALIAS)?.publicKey
                 ?: throw IllegalStateException("Phone link identity alias exists without certificate")
             check(EcKeys.isP256(existing)) {
                 "existing Phone link identity is not EC P-256; explicit identity reset required"
             }
-            return
+            if (!supportsRawEcdsa()) {
+                check(regenerateIfInadequate) {
+                    "existing Phone link identity cannot sign raw ECDSA (TLS upcall); explicit identity reset required"
+                }
+                keyStore.deleteEntry(ALIAS)
+            } else {
+                return
+            }
         }
         val generator = java.security.KeyPairGenerator.getInstance(
             KeyProperties.KEY_ALGORITHM_EC,
@@ -45,9 +96,11 @@ class PhoneLinkIdentity() : TlsServerIdentity {
         )
         val spec = KeyGenParameterSpec.Builder(
             ALIAS,
-            KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY,
+            // SIGN only: device evidence (KeyMint spec matrix) shows VERIFY in the purpose set
+            // breaks the raw NONEwithECDSA upcall Conscrypt needs for the TLS 1.3 CertificateVerify.
+            KeyProperties.PURPOSE_SIGN,
         )
-            .setDigests(KeyProperties.DIGEST_SHA256)
+            .setDigests(*TLS_DIGESTS)
             .setAlgorithmParameterSpec(java.security.spec.ECGenParameterSpec(EcKeys.SECP256R1_NAME))
             .setCertificateSubject(javax.security.auth.x500.X500Principal("CN=EyeBrowse Phone Link"))
             .build()

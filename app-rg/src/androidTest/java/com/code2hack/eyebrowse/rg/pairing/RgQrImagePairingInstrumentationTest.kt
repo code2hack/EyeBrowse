@@ -80,8 +80,20 @@ class RgQrImagePairingInstrumentationTest {
             val started = System.currentTimeMillis()
             // Production controller only — the seam has no pairing shortcut.
             client.pairFromQr(payload!!)
-            val authenticated = listener.states.pollFirst(15, TimeUnit.SECONDS)
-            assertEquals(PairingState.CONNECTED, authenticated)
+            // Drain transient states until CONNECTED (any sequence is legal).
+            var connected = false
+            while (System.currentTimeMillis() - started < 15_000) {
+                val state = listener.states.pollFirst(15, TimeUnit.SECONDS) ?: break
+                if (state == PairingState.CONNECTED) {
+                    connected = true
+                    break
+                }
+            }
+            assertTrue(
+                "authenticated CONNECTED within the operation bound; states=${listener.states} " +
+                    "failures=${listener.failures} statuses=${listener.statuses}",
+                connected,
+            )
             val elapsed = System.currentTimeMillis() - started
             assertTrue(
                 "user-triggered pair must meet the <=10s operation bound, took ${elapsed}ms",
@@ -105,8 +117,8 @@ class RgQrImagePairingInstrumentationTest {
             assertTrue(bitmap != null)
             val payload = QrDecoder.decode(bitmap!!)
             if (payload == null) {
-                // Decoder honestly reports unreadable pixels; the client is never started.
-                assertTrue(client.isPaired() || !client.isPaired()) // state untouched either way
+                // Decoder honestly reports unreadable pixels; no connection attempt follows and
+                // no pairing state can exist from a payload that was never parsed.
                 return
             }
             client.pairFromQr("deliberately-malformed-${System.currentTimeMillis()}")
@@ -147,7 +159,15 @@ class RgQrImagePairingInstrumentationTest {
             val payload = QrDecoder.decode(bitmap!!)
             assertTrue(payload != null)
             client.pairFromQr(payload!!)
-            assertEquals(PairingState.CONNECTED, listener.states.pollFirst(15, TimeUnit.SECONDS))
+            val deadline = System.currentTimeMillis() + 15_000
+            var connected = false
+            while (System.currentTimeMillis() < deadline) {
+                if (listener.states.pollFirst(15, TimeUnit.SECONDS) == PairingState.CONNECTED) {
+                    connected = true
+                    break
+                }
+            }
+            assertTrue("authenticated CONNECTED within the operation bound", connected)
             // The ONLY status the RG can ever observe is the read-only projection; pairing
             // itself must observe HOST_INACTIVE — it never starts hosting nor grants control.
             val status = listener.statuses.pollFirst(5, TimeUnit.SECONDS)

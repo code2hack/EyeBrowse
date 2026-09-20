@@ -98,17 +98,19 @@ class PhonePairingUiController(
         }
     }
 
-    fun onLinkStateChanged(): UiState = update {
-        it.copy(linkUp = surface.isLinkUp(), paired = surface.isPaired())
-    }
-
-    fun onTick(): UiState = update { s ->
+    /** Event-driven refresh (server link observers / resume); computes expiry note lazily. */
+    fun onRefresh(): UiState = update { s ->
         val expiry = s.expiresAtMs
-        if (expiry != null && nowMs() > expiry && s.invitationPayload != null) {
-            s.copy(note = INVITATION_EXPIRED_NOTE)
-        } else {
-            s
-        }
+        val expired = expiry != null && nowMs() > expiry && s.invitationPayload != null
+        s.copy(
+            linkUp = surface.isLinkUp(),
+            paired = surface.isPaired(),
+            note = when {
+                expired -> INVITATION_EXPIRED_NOTE
+                surface.isLinkUp() -> LINKED_NOTE
+                else -> s.note
+            },
+        )
     }
 
     companion object {

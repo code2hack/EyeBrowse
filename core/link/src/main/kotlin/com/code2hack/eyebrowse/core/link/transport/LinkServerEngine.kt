@@ -150,6 +150,7 @@ class LinkServerEngine(
             } catch (e: java.net.SocketTimeoutException) {
                 continue
             } catch (e: Exception) {
+                System.err.println("EyeBrowseLink: accept failed: " + e.javaClass.name + ": " + e.message)
                 if (stopped) break else continue
             }
             socket.setEnabledProtocols(arrayOf(TLS_V1_3))
@@ -206,6 +207,8 @@ class LinkServerEngine(
         } catch (e: java.net.SocketTimeoutException) {
             // auth-phase stall or read-loop liveness timeout: bounded close
         } catch (e: Exception) {
+            // Bounded diagnostics: failure class + message only, never payloads or key material.
+            System.err.println("EyeBrowseLink: session failed: " + e.javaClass.name + ": " + e.message)
             if (!stopped && authenticated) listener.onLinkDown()
         } finally {
             closeQuietly(socket)

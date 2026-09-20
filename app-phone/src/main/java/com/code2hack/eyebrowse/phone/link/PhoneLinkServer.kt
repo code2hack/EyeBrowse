@@ -2,6 +2,7 @@ package com.code2hack.eyebrowse.phone.link
 
 import android.content.Context
 import com.code2hack.eyebrowse.core.link.HostStatusValue
+import com.code2hack.eyebrowse.core.link.LinkError
 import com.code2hack.eyebrowse.core.link.LinkProtocol
 import com.code2hack.eyebrowse.core.link.LinkTimings
 import com.code2hack.eyebrowse.core.link.crypto.SpkiFingerprint
@@ -38,7 +39,26 @@ class PhoneLinkServer(
         engine?.pushStatus(currentHostStatus())
     }
 
-    private val engineListener = object : LinkServerEngine.Listener {}
+    private val linkObservers = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
+
+    private val engineListener = object : LinkServerEngine.Listener {
+        override fun onLinkUp() = notifyLinkObservers()
+        override fun onLinkDown() = notifyLinkObservers()
+        override fun onAuthFailed(error: LinkError) = notifyLinkObservers()
+    }
+
+    /** UI surfaces register for link-state changes instead of polling (uiautomator-friendly). */
+    fun addLinkObserver(observer: () -> Unit) {
+        linkObservers.add(observer)
+    }
+
+    fun removeLinkObserver(observer: () -> Unit) {
+        linkObservers.remove(observer)
+    }
+
+    private fun notifyLinkObservers() {
+        linkObservers.forEach { it() }
+    }
 
     private val trustController = object : LinkServerEngine.TrustController {
         override fun serverHello(): HelloMessage =
@@ -134,6 +154,9 @@ class PhoneLinkServer(
 
         private fun create(appContext: Context): PhoneLinkServer {
             val identity = PhoneLinkIdentity()
+            val store = PhonePairingStore(appContext)
+            // Identity regeneration is legal only before a VALID pairing exists (ledger D12).
+            identity.ensureKeyOrUpgrade(regenerateIfInadequate = store.read() !is PeerTrustRead.Valid)
             val invitations = PairingInvitationManager(
                 lifecycle = InvitationLifecycle { android.os.SystemClock.elapsedRealtime() },
                 phoneSpkiSha256Hex = identity.spkiSha256Hex(),
@@ -141,7 +164,7 @@ class PhoneLinkServer(
             val server = PhoneLinkServer(
                 identity = identity,
                 invitations = invitations,
-                store = PhonePairingStore(appContext),
+                store = store,
                 hostingController = runCatching { HostingController.get(appContext) }.getOrNull(),
                 locators = { PhoneLocatorEnumerator.enumerate(appContext) },
             )

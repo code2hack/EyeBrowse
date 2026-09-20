@@ -2,8 +2,6 @@ package com.code2hack.eyebrowse.phone.pairing
 
 import android.graphics.Bitmap
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.TextView
@@ -28,8 +26,12 @@ class PairingActivity : ComponentActivity() {
     private lateinit var cancelButton: Button
     private lateinit var forgetButton: Button
 
-    private val ui = Handler(Looper.getMainLooper())
     private var lastRenderedPayload: String? = null
+
+    private val linkObserver = {
+        runOnUiThread { render(controller.onRefresh()) }
+        Unit
+    }
 
     private val surface = object : PhonePairingUiController.PairingSurface {
         override fun generateInvitation(): PhonePairingUiController.PairingSurface.GeneratedInvitation? {
@@ -58,14 +60,6 @@ class PairingActivity : ComponentActivity() {
         override fun isPaired(): Boolean = server.isPaired()
     }
 
-    private val tick = object : Runnable {
-        override fun run() {
-            render(controller.onTick())
-            render(controller.onLinkStateChanged())
-            ui.postDelayed(this, 500)
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_pairing)
@@ -85,12 +79,13 @@ class PairingActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        ui.post(tick)
+        server.addLinkObserver(linkObserver)
+        render(controller.onRefresh())
     }
 
     override fun onPause() {
         super.onPause()
-        ui.removeCallbacks(tick)
+        server.removeLinkObserver(linkObserver)
     }
 
     override fun onDestroy() {

@@ -97,7 +97,7 @@ class PhonePairingUiControllerTest {
         val controller = PhonePairingUiController(surface) { 0 }
         controller.onScreenShown()
         surface.paired = true
-        controller.onLinkStateChanged()
+        controller.onRefresh()
         controller.onGenerateClicked()
         assertTrue(controller.current().invitationPayload != null)
 
@@ -117,7 +117,7 @@ class PhonePairingUiControllerTest {
         controller.onScreenShown()
         controller.onGenerateClicked()
         now = 15_000L // past expiresAtMs (10_000)
-        val state = controller.onTick()
+        val state = controller.onRefresh()
         assertEquals(PhonePairingUiController.INVITATION_EXPIRED_NOTE, state.note)
         assertEquals(surface.generated!!.id, state.invitationId)
     }
