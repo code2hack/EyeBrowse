@@ -55,7 +55,15 @@ jobs:
           p.write_text(s.replace(old, new))
           PY
 
-      - name: Run core link tests for diagnostic measurement
+      - name: Run B3/B4 regression class and print JUnit failures
         shell: bash
         run: |
-          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g :core:link:test
+          set +e
+          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
+            :core:link:test --tests 'com.code2hack.eyebrowse.core.link.transport.LinkCancellationAndTrustTest'
+          rc=$?
+          echo "---- JUnit failure XML ----"
+          for f in core/link/build/test-results/test/TEST-*.xml; do
+            grep -n -A8 -B2 '<failure' "$f" || true
+          done
+          exit "$rc"
