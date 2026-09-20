@@ -196,7 +196,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "id": "01a0bfbf-8f30-77d1-8c8f-756c51e5d547",
     "model": "GPT-5.6 Sol / gpt-5.6-sol / Extra High",
     "name": "Worker-#6-r2-Codex",
-    "status": "active"
+    "status": "retired"
   },
   {
     "role": "Worker",
@@ -226,6 +226,26 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "id": "01a0bfb9-8fc0-7981-a493-14c6894dc70c",
     "model": "gpt-5.6-luna / max",
     "name": "EyeBrowse-Manager-Codex",
+    "status": "retired"
+  },
+  {
+    "role": "Manager",
+    "scope": "project-wide",
+    "host": "u4090",
+    "runtime": "codex",
+    "id": "01a0bfe8-79d4-73d0-97ce-aac94b7bc438",
+    "model": "gpt-5.6-luna / max",
+    "name": "EyeBrowse-Manager-Codex-r2",
+    "status": "active"
+  },
+  {
+    "role": "Worker",
+    "scope": "v0.0.1; issue #6 RG-chain; sole source writer; candidate-ready pending renewed independent review",
+    "host": "u4090",
+    "runtime": "codex",
+    "id": "01a0bfdf-0ba4-78d0-9eb1-ff54e9ddad16",
+    "model": "gpt-6-astra / medium",
+    "name": "Worker-#6-r3-Codex",
     "status": "active"
   }
 ]
