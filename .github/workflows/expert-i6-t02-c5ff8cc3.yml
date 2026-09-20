@@ -1,0 +1,97 @@
+name: Expert I6-T02 host gates c5ff8cc3
+
+on:
+  push:
+    branches:
+      - expert/gates-c5ff8cc3-20260920
+
+permissions:
+  contents: read
+
+jobs:
+  host-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - name: Checkout exact Expert candidate
+        uses: actions/checkout@v4
+        with:
+          ref: c5ff8cc35b4e192fed34458b0967379d95184782
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Android 35 platform and build tools
+        shell: bash
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Verify exact SHA binding
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "c5ff8cc35b4e192fed34458b0967379d95184782"
+          chmod +x ./gradlew
+          java -version
+          ./gradlew --version
+
+      - name: Targeted Phone recovery regressions
+        id: targeted
+        continue-on-error: true
+        shell: bash
+        run: |
+          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
+            :app-phone:testDebugUnitTest \
+            --tests "com.code2hack.eyebrowse.phone.link.PhoneIdentityRecoveryTest" \
+            --tests "com.code2hack.eyebrowse.phone.link.PhoneInvitationManagerTest"
+
+      - name: Full JVM tests and JVM module builds
+        id: jvm
+        continue-on-error: true
+        shell: bash
+        run: |
+          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
+            :core:browser:build \
+            :core:link:build \
+            :app-phone:testDebugUnitTest \
+            :app-rg:testDebugUnitTest
+
+      - name: Phone and RG debug plus androidTest assembly
+        id: builds
+        continue-on-error: true
+        shell: bash
+        run: |
+          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
+            :app-phone:assembleDebug \
+            :app-rg:assembleDebug \
+            :app-phone:assembleDebugAndroidTest \
+            :app-rg:assembleDebugAndroidTest
+
+      - name: Phone and RG lint
+        id: lint
+        continue-on-error: true
+        shell: bash
+        run: |
+          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
+            :app-phone:lintDebug \
+            :app-rg:lintDebug
+
+      - name: Require all cloud host gates
+        shell: bash
+        run: |
+          echo "TARGETED=${{ steps.targeted.outcome }}"
+          echo "JVM=${{ steps.jvm.outcome }}"
+          echo "BUILDS=${{ steps.builds.outcome }}"
+          echo "LINT=${{ steps.lint.outcome }}"
+          test "${{ steps.targeted.outcome }}" = success
+          test "${{ steps.jvm.outcome }}" = success
+          test "${{ steps.builds.outcome }}" = success
+          test "${{ steps.lint.outcome }}" = success
