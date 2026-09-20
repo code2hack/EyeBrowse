@@ -1,0 +1,76 @@
+name: Expert I6-T03 eviction gates a60e439d
+
+on:
+  push:
+    branches:
+      - expert/gates-i6-t03-evict-20260921
+
+permissions:
+  contents: read
+
+jobs:
+  host-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - name: Checkout exact Expert candidate
+        uses: actions/checkout@v4
+        with:
+          ref: a60e439dbfdf1382b21ee7d12d6568e3edd570a5
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Android 35 platform and build tools
+        shell: bash
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Verify exact SHA binding
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "a60e439dbfdf1382b21ee7d12d6568e3edd570a5"
+          chmod +x ./gradlew
+          java -version
+          ./gradlew --version
+
+      - name: Targeted stale-session eviction regressions
+        shell: bash
+        run: |
+          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
+            :core:link:test \
+            --tests "com.code2hack.eyebrowse.core.link.transport.StaleSessionEvictionTest"
+
+      - name: Full JVM tests and JVM module builds
+        shell: bash
+        run: |
+          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
+            :core:browser:build \
+            :core:link:build \
+            :app-phone:testDebugUnitTest \
+            :app-rg:testDebugUnitTest
+
+      - name: Phone and RG debug plus androidTest assembly
+        shell: bash
+        run: |
+          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
+            :app-phone:assembleDebug \
+            :app-rg:assembleDebug \
+            :app-phone:assembleDebugAndroidTest \
+            :app-rg:assembleDebugAndroidTest
+
+      - name: Phone and RG lint
+        shell: bash
+        run: |
+          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
+            :app-phone:lintDebug \
+            :app-rg:lintDebug
