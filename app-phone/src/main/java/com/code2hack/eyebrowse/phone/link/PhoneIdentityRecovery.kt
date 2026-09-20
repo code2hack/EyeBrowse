@@ -11,7 +11,7 @@ import com.code2hack.eyebrowse.core.link.session.PeerTrustRead
  * is checked only when the listener is started. Explicit Forget clears trust first; only then can
  * this coordinator legally repair/rotate an inadequate alias because the trust read is ABSENT.
  */
-internal class PhoneIdentityRecovery(
+class PhoneIdentityRecovery(
     private val readTrust: () -> PeerTrustRead,
     private val ensureIdentity: (regenerateIfInadequate: Boolean) -> Unit,
     private val readCurrentFingerprint: () -> String,
