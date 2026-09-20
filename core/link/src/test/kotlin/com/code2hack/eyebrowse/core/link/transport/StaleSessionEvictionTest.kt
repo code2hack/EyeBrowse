@@ -242,6 +242,7 @@ class StaleSessionEvictionTest {
                 ),
             )
             assertTrue(a.readMessage() is com.code2hack.eyebrowse.core.link.messages.AuthOkMessage)
+            assertTrue("A must reach LINK_UP before it is marked stale", Harness.await(server.linkUp))
             assertTrue(server.engine.isLinkUp())
 
             // Freeze A as stale, then force the exact close -> cleanup -> install ordering.
