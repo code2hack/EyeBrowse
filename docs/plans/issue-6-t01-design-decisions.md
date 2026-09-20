@@ -61,9 +61,11 @@ Authority: issues/6#issuecomment-5742886185 (ticket plan). All decisions below s
   operation carries one absolute monotonic ≤10 s deadline from `connect()` invocation across all
   locator attempts. After a TCP connection succeeds, TLS handshake + application authentication
   share one absolute ≤5 s auth deadline, additionally capped by the remaining operation deadline;
-  timeout is recomputed before each blocking handshake/auth read. Cancellation owns the raw socket
-  before blocking TCP connect and closes current connection work within ≤2 s. Deadline/cancel
-  teardown is abortive so TLS cleanup does not receive another timeout window.
+  timeout is recomputed before each blocking handshake/auth read. Because socket `SO_TIMEOUT` is
+  per underlying read and JSSE may perform multiple internal reads, a deadline guard also closes
+  the currently owned pre-commit TLS socket at that absolute deadline. Cancellation owns the raw
+  socket before blocking TCP connect and closes current connection work within ≤2 s.
+  Deadline/cancel teardown is abortive so TLS cleanup does not receive another timeout window.
 
 ## D8 — Peer binding / replacement / Forget (pure BindingPolicy in core:link)
 - One remembered peer per endpoint. Same-identity locator refresh allowed after TLS pin proof;
@@ -121,11 +123,13 @@ written) and required the following corrections, all applied on this branch:
   capped by `min(connectTimeoutMs, current remaining operation time)`. After TCP success, one
   TLS+application-auth deadline is derived as
   `min(operation deadline, tcp-success time + authTimeoutMs)`; remaining time is recomputed before
-  TLS handshake and before each blocking application-auth read, so no read receives a fresh full
-  auth allowance. Deadline/failure teardown is abortive and receives no extra cleanup allowance.
-  Regressions assert the configured aggregate deadline with bounded scheduling slack and include a
-  materially slow TCP phase followed by stalled authentication, which would
-  fail under the former pre-connect budget snapshot behavior.
+  TLS handshake and before each blocking application-auth read, so no explicit phase receives a
+  fresh full auth allowance. Because JSSE can perform multiple underlying socket reads within one
+  blocking TLS/application read, an independent deadline guard closes the currently owned
+  pre-commit TLS socket at the same absolute auth/operation deadline. Deadline/failure teardown is
+  abortive and receives no extra cleanup allowance. Regressions assert the configured aggregate
+  deadline with bounded scheduling slack and include a materially slow TCP phase followed by
+  stalled authentication, which would fail under the former pre-connect budget snapshot behavior.
 - **A5 (R4/B5, amends D5):** both AndroidKeyStore identities explicitly request
   `secp256r1` via `KeyGenParameterSpec.setAlgorithmParameterSpec(ECGenParameterSpec)`; a
   pre-existing alias is validated against P-256 (`EcKeys.isP256`) and fails closed (explicit

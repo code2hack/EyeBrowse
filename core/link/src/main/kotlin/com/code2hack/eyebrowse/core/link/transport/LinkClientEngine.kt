@@ -83,6 +83,7 @@ class LinkClientEngine(
     private class Operation(
         val deadlineNanos: Long,
         var cancelled: Boolean = false,
+        var established: Boolean = false,
         var socket: Socket? = null,
     )
 
@@ -227,6 +228,12 @@ class LinkClientEngine(
             return null
         }
 
+        // SO_TIMEOUT is per underlying socket read, and JSSE may perform multiple internal reads
+        // while one TLS/application read is pending (for example post-handshake records). Enforce
+        // the absolute TLS+auth deadline independently by closing the currently owned socket at
+        // that deadline; this prevents internal reads from renewing the aggregate budget.
+        armDeadlineCloser(operation, authDeadlineNanos)
+
         try {
             tls.setEnabledProtocols(arrayOf(TLS_V1_3))
             tls.useClientMode = true
@@ -269,6 +276,7 @@ class LinkClientEngine(
                 ) {
                     false
                 } else {
+                    operation.established = true
                     listener.onAuthenticated(phoneSpki, locator)
                     listener.onStateChange(PairingState.CONNECTED)
                     true
@@ -446,6 +454,41 @@ class LinkClientEngine(
             seam(socket, address, timeoutMs)
         } else {
             socket.connect(address, timeoutMs)
+        }
+    }
+
+    /**
+     * Hard guard for an absolute pre-commit deadline. Socket SO_TIMEOUT remains useful for each
+     * individual blocking call, but cannot by itself bound multiple internal JSSE reads. This
+     * daemon closes whichever socket this operation still owns once [deadlineNanos] is reached.
+     */
+    private fun armDeadlineCloser(operation: Operation, deadlineNanos: Long) {
+        Thread({
+            while (true) {
+                val remaining = deadlineNanos - System.nanoTime()
+                if (remaining <= 0) break
+                try {
+                    TimeUnit.NANOSECONDS.sleep(remaining)
+                } catch (e: InterruptedException) {
+                    return@Thread
+                }
+            }
+            val socketToClose = synchronized(operationLock) {
+                if (
+                    activeOperation !== operation ||
+                    operation.cancelled ||
+                    operation.established ||
+                    System.nanoTime() < deadlineNanos
+                ) {
+                    null
+                } else {
+                    operation.socket.also { operation.socket = null }
+                }
+            }
+            socketToClose?.let(::closeQuietly)
+        }, "eyebrowse-link-auth-deadline").apply {
+            isDaemon = true
+            start()
         }
     }
 
