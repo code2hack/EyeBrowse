@@ -27,9 +27,9 @@ Refresh remote refs and identify the actual baseline before planning, dispatch o
 | Native provider session/history | Provider-native session/history; Paseo owns the local process/controller |
 | Paseo transport binding | Existing runtime records map the native tuple to the verified Paseo host/server, agent ID, project/workspace, cwd and model/effort; Manager procedures resolve the binding before operations |
 | Run approvals, resources, canonical todo metadata and pending requests | Existing run/mission/runtime records; **Manager procedures consume these explicitly** |
-| Message dispatch evidence | The sender's retained intent/body/message ID and Paseo's request receipt; Manager separately verifies recipient acknowledgment, complete report and acceptance |
+| Message dispatch evidence | Paseo intent/receipt for local-agent messages; exact ChatGPT conversation URL, submitted-turn identity and verified reply for browser messages |
 | Local todo checklist | Installed `todo` extension's tool-result details in the selected native Pi session branch; its `session_start`/`session_tree` handlers reconstruct the checklist |
-| ChatGPT browser profile and tab ownership | The dedicated `google-chrome-agent` Chrome profile and each local agent's own CDP tools |
+| ChatGPT route/profile/tab ownership | Codex uses `ask-chatgpt`; Pi uses `pi-chatgpt-use` over `pi-browser-harness`; both use the pinned `google-chrome-agent` profile and owned CDP tabs |
 | Device-screen policy and credential reference | Runtime `screenAccessPolicy`, read by the configured `pi-phone-use` helper |
 | Feishu connection/configuration/routes/outbox | pi-feishu-link's own files, consumed by its daemon; not the project's run records or contributor registry |
 
@@ -51,7 +51,8 @@ For a local provider profile, inspect its provider catalog and non-secret runtim
 
 Record installed versions/hashes and current results in the run/evidence record rather than copying mutable inventories into every article. The current preparation has established:
 
-- **pi-chatgpt-use / pi-browser-harness:** selected agent profile; project-specific create/rename/archive; exact conversation URL IDs; correlated messages/replies; effort selection/restoration; and a real Manager → registered Planner → Manager request/return/ACK. Delayed/duplicate and restart behavior still need their stated qualification before automated reliance.
+- **Codex ChatGPT route (`ask-chatgpt`):** existing ChatGPT UI over CDP; exact project/conversation URL; visible ChatGPT Pro default; `[hostname:codex:threadID]` message prefix; and verified new-turn readback. It does not call private ChatGPT backends.
+- **Pi ChatGPT route (`pi-chatgpt-use` over `pi-browser-harness` 0.11.0):** existing Chrome via the on-demand harness; `/browser-setup`; pinned `google-chrome-agent` profile; `browser_snapshot` for structure; `browser_execute_js` for surgical reads; fresh refs for actions; exact conversation URL and matching user/assistant readback. It does not launch a separate browser or use another profile. Delayed/duplicate and restart behavior still need their stated qualification before automated reliance.
 - **pi-phone-use:** one real guarded S20 normal PIN-unlock/relock cycle and further bounded setup use. This does not qualify every catastrophic-loss condition or make Wi-Fi continuously reachable.
 - **Feishu:** verified private Owner identity/route, daemon replies, and direct installed-SDK text send/readback with Owner receipt. Owner subsequently reported fixing the notification problem. Do not reopen that resolved notification issue merely because its exact setting change was not supplied; do not claim an agent retest or infer unrelated capabilities from it.
 - **Todo tool:** actual checklist operations and session-branch storage are available. Shared governance metadata, transition decisions and request routing are not supplied by the checklist tool itself.
@@ -136,7 +137,7 @@ Do not run this example against a live or retired session without the correspond
 
 ### Remote implementer and local helper
 
-Use the local agent's own CDP tools through the dedicated `google-chrome-agent` Chrome profile for the intended authenticated project and exact registered ChatGPT conversation. Verify the selected session's actual editing, cloud-test, commit/push and return-message capabilities. Register its observed full conversation URL before assignment; do not infer a new session from a title or send bubble.
+Use the ChatGPT route matching the sender: Codex uses `ask-chatgpt`; Pi uses `pi-chatgpt-use` over `pi-browser-harness`. In either route, use the dedicated `google-chrome-agent` profile, the intended authenticated project and the exact registered conversation. Verify the selected session's actual editing, cloud-test, commit/push and return-message capabilities. Register its observed full conversation URL before assignment; do not infer a new session from a title or send bubble.
 
 When `AGENTS.md` §5.4 requires a local helper, assign/register it explicitly and keep it visible. A suitable existing ticket Worker may take the helper assignment within approved resources. The remote implementer and helper refer to the same todo, round and candidate; supporting checklists do not create independent budgets.
 
@@ -173,11 +174,19 @@ Built-in send/finish notifications may be used only if actually injected and qua
 
 ### Local-agent to ChatGPT delivery
 
-Local-agent to ChatGPT communication is a separate browser route, not local-agent messaging. Use only the sending agent's own CDP tools through the dedicated `google-chrome-agent` Chrome profile and the exact registered conversation. Do not use Paseo to deliver into ChatGPT, a shared/default Chrome profile, another agent's CDP session, or a guessed conversation URL. Preserve browser ownership, in-flight request state and correlated conversation turns under the remote-handoff procedure below.
+Local-agent to ChatGPT communication is a separate browser route, not local-agent messaging. Do not use Paseo to deliver into ChatGPT, a shared/default Chrome profile, another agent's CDP session, or a guessed conversation URL. Preserve browser ownership, in-flight request state and correlated conversation turns under the route-specific procedures below.
+
+#### Codex agents: `ask-chatgpt`
+
+Use `$ask-chatgpt` for Codex agents. Operate only the existing ChatGPT UI through CDP in the dedicated `google-chrome-agent` profile. Resolve the exact project and full conversation URL, select the visible ChatGPT Pro option unless explicitly overridden, prefix each outgoing message with `[hostname:codex:threadID]`, submit once, and verify the matching new assistant reply. Never call private ChatGPT backends, use another profile, or infer identity from a title or send bubble.
+
+#### Pi agents: `pi-chatgpt-use` over `pi-browser-harness`
+
+Use the installed `pi-chatgpt-use` workflow over `pi-browser-harness` 0.11.0. If the harness is not connected, run `/browser-setup`; it is idempotent and reuses the selected Chrome connection. Use the pinned `google-chrome-agent` profile from `browser-harness.json`; never launch a separate browser or fall back to the personal Chrome profile. Use `browser_snapshot` for page structure, `browser_fill`/`browser_click` with fresh refs, and `browser_execute_js` for surgical reads. Send once, then verify the exact conversation URL and both the matching new user turn and a new assistant reply. Screenshots are fallback-only for visual questions or DOM/AX ambiguity.
 
 ### Remote conversations and handoffs
 
-For ChatGPT, use the sending agent's verified CDP tools in `google-chrome-agent` and the DOM/AX path. Check the exact conversation, existing draft and in-flight generation before mutation. Submit once and verify the corresponding new turn. A long response can use bounded read-only observation/event notification; do not repeatedly ask an agent for progress. Preserve pending request and last verified message IDs across restart and reconcile possible success before resending. A local watcher, browser response, or GitHub post is not by itself acceptance of the requested work.
+For either route, check the exact conversation, existing draft and in-flight generation before mutation. Submit once and verify the corresponding new turn. A long response can use bounded read-only observation/event notification; do not repeatedly ask an agent for progress. Preserve pending request and last verified message IDs across restart and reconcile possible success before resending. A local watcher, browser response, or GitHub post is not by itself acceptance of the requested work.
 
 For each handoff, record send, receipt, returned evidence and verification separately. When a retry is authorized after reconciliation, retain the logical request's existing correlation identity and unchanged body. Include the applicable assignment revision and reject stale revisions at the receiver. Reject duplicate/stale results as new dispatch, failure, approval or ownership changes. End the Manager dispatch turn after startup/receipt and actionable reports are handled; use meaningful reports/events to resume coordination.
 
