@@ -1,4 +1,4 @@
-name: Expert I6-T03 eviction gates 2d3fb2d3
+name: Expert I6-T03 eviction gates 608f3349
 
 on:
   push:
@@ -19,7 +19,7 @@ jobs:
       - name: Checkout exact Expert candidate
         uses: actions/checkout@v4
         with:
-          ref: 2d3fb2d30fd29a75609013077308da6e4ab3d1f3
+          ref: 608f334957d201c0522ce99ac23e515d26e7844c
           persist-credentials: false
 
       - name: Set up JDK 17
@@ -38,7 +38,7 @@ jobs:
       - name: Verify exact SHA binding
         shell: bash
         run: |
-          test "$(git rev-parse HEAD)" = "2d3fb2d30fd29a75609013077308da6e4ab3d1f3"
+          test "$(git rev-parse HEAD)" = "608f334957d201c0522ce99ac23e515d26e7844c"
           chmod +x ./gradlew
           java -version
           ./gradlew --version
