@@ -303,6 +303,108 @@ class StaleSessionEvictionTest {
             server.stop()
         }
     }
+    /**
+     * E3 deterministic ordinary-handoff regression: authenticated A disconnects normally and its
+     * cleanup wins A -> null, then pauses before clearing phase/auth/liveness while still holding
+     * the ownership lock. B reaches normal null-slot admission during that pause. B must wait for
+     * A's cleanup to finish, then the SAME Retry becomes owner and remains LINK_UP.
+     */
+    @Test
+    fun `normal owner clear paused before global cleanup cannot clobber replacement admission`() {
+        val server = Harness.ServerHarness()
+        val port = server.start()
+        val occupant = com.code2hack.eyebrowse.core.link.testfix.TestCrypto.ecKeyPair()
+        server.storedPeerSpki.set(occupant.public.encoded)
+        val pin = server.identity.spkiSha256Hex()
+
+        val ownerClearedInsideFence = java.util.concurrent.CountDownLatch(1)
+        val releaseOldCleanup = java.util.concurrent.CountDownLatch(1)
+        val bReachedNormalAdmissionFence = java.util.concurrent.CountDownLatch(1)
+        val cleanupHookArmed = java.util.concurrent.atomic.AtomicBoolean(true)
+        var a: Harness.ClientHarness? = null
+        var b: Harness.ClientHarness? = null
+        try {
+            a = Harness.ClientHarness(keyPair = occupant)
+            a.startEngine()
+            a.engine.connect(a.attempt(pin, port, null))
+            assertTrue("A must authenticate before ordinary disconnect", Harness.await(a.connected))
+            assertEquals(
+                com.code2hack.eyebrowse.core.link.HostStatusValue.HOST_INACTIVE,
+                a.statuses.pollFirst(5, java.util.concurrent.TimeUnit.SECONDS),
+            )
+            assertTrue("server must publish A LINK_UP", Harness.await(server.linkUp))
+
+            val trustDownBefore = server.linkLostNotifications.get()
+            val listenerDownBefore = server.listenerLinkDownNotifications.get()
+
+            server.engine.afterSessionOwnerClearedForTest = {
+                if (cleanupHookArmed.compareAndSet(true, false)) {
+                    ownerClearedInsideFence.countDown()
+                    assertTrue(
+                        "test must release A cleanup",
+                        releaseOldCleanup.await(5, java.util.concurrent.TimeUnit.SECONDS),
+                    )
+                }
+            }
+            server.engine.beforeNormalAdmissionOwnershipLockForTest = {
+                bReachedNormalAdmissionFence.countDown()
+            }
+
+            // Ordinary disconnect: A cleanup clears activeSocket to null, then pauses before
+            // finishing the old session's global phase/auth/liveness cleanup.
+            a.engine.disconnect()
+            assertTrue(
+                "A cleanup must win A -> null and pause inside the ownership fence",
+                Harness.await(ownerClearedInsideFence),
+            )
+
+            b = Harness.ClientHarness(keyPair = occupant)
+            b.startEngine()
+            b.engine.connect(b.attempt(pin, port, null))
+            assertTrue(
+                "B acceptor must reach normal admission while A cleanup is paused",
+                Harness.await(bReachedNormalAdmissionFence),
+            )
+            assertFalse(
+                "B cannot become owner before A finishes fenced global cleanup",
+                b.connected.await(250, java.util.concurrent.TimeUnit.MILLISECONDS),
+            )
+
+            releaseOldCleanup.countDown()
+            assertTrue("the SAME B Retry must authenticate", Harness.await(b.connected))
+            assertEquals(
+                com.code2hack.eyebrowse.core.link.HostStatusValue.HOST_INACTIVE,
+                b.statuses.pollFirst(5, java.util.concurrent.TimeUnit.SECONDS),
+            )
+            val bLinkUpDeadline = System.nanoTime() + 2_000_000_000L
+            while (!server.engine.isLinkUp() && System.nanoTime() < bLinkUpDeadline) {
+                Thread.sleep(10)
+            }
+            assertTrue("B must remain LINK_UP after A cleanup completes", server.engine.isLinkUp())
+
+            // Normal A disconnect remains exactly-once at both trust and listener surfaces.
+            assertEquals(trustDownBefore + 1, server.linkLostNotifications.get())
+            assertEquals(listenerDownBefore + 1, server.listenerLinkDownNotifications.get())
+
+            // Protected status still flows after the old cleanup is completely gone.
+            server.engine.pushStatus(com.code2hack.eyebrowse.core.link.HostStatusValue.HOSTING)
+            assertEquals(
+                com.code2hack.eyebrowse.core.link.HostStatusValue.HOSTING,
+                b.statuses.pollFirst(5, java.util.concurrent.TimeUnit.SECONDS),
+            )
+
+            server.engine.afterSessionOwnerClearedForTest = null
+            server.engine.beforeNormalAdmissionOwnershipLockForTest = null
+            b.engine.disconnect()
+        } finally {
+            releaseOldCleanup.countDown()
+            server.engine.afterSessionOwnerClearedForTest = null
+            server.engine.beforeNormalAdmissionOwnershipLockForTest = null
+            runCatching { a?.engine?.disconnect() }
+            runCatching { b?.engine?.disconnect() }
+            server.stop()
+        }
+    }
     /** Healthy non-eviction (integration): a live, refreshing occupant rejects a second client. */
     @Test
     fun `live healthy session is never evicted by a concurrent client`() {

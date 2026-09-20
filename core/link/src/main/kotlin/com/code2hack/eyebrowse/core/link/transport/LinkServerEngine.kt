@@ -91,11 +91,15 @@ class LinkServerEngine(
      */
     private val activeOwnershipLock = Any()
 
-    /** JVM-only deterministic race seams; production leaves both null. */
+    /** JVM-only deterministic race seams; production leaves all null. */
     @Volatile
     internal var staleCloseBeforeInstallForTest: (() -> Unit)? = null
     @Volatile
     internal var beforeSessionOwnerCleanupForTest: (() -> Unit)? = null
+    @Volatile
+    internal var afterSessionOwnerClearedForTest: (() -> Unit)? = null
+    @Volatile
+    internal var beforeNormalAdmissionOwnershipLockForTest: (() -> Unit)? = null
 
     /**
      * Last inbound activity of the active session (nanoTime), 0 when no session runs. A live peer
@@ -184,65 +188,79 @@ class LinkServerEngine(
                 if (stopped) break else continue
             }
             socket.setEnabledProtocols(arrayOf(TLS_V1_3))
-            if (!activeSocket.compareAndSet(null, socket)) {
-                // Exactly one active RG link: reject concurrent clients pre-auth, no status —
-                // UNLESS the occupant is provably dead (no inbound for the liveness window): a
-                // wedged half-open session must not hold the slot indefinitely (T03 recovery).
-                val existing = activeSocket.get()
-                var replacementInstalled = false
-                var evictedWasAuthenticated = false
-                if (existing != null) {
-                    // E2: stale decision, close(A), and CAS(A -> B) form one ownership critical
-                    // section. A's finally uses the same lock, so it cannot clear A to null between
-                    // close and installation and spuriously reject this same Retry attempt.
-                    synchronized(activeOwnershipLock) {
-                        if (!stopped &&
-                            activeSocket.get() === existing &&
-                            shouldEvictStaleSession(
-                                activeSessionLastInboundNanos.get(),
-                                System.nanoTime(),
-                                timings.livenessTimeoutMs,
-                            )
-                        ) {
-                            evictedWasAuthenticated = activeSessionAuthenticated
-                            closeQuietly(existing)
-                            staleCloseBeforeInstallForTest?.invoke()
-                            // Stop may begin while close/test seam is in progress; never install a
-                            // replacement after stopped flips true.
-                            if (!stopped) {
-                                replacementInstalled = activeSocket.compareAndSet(existing, socket)
-                                if (replacementInstalled) {
-                                    activeSessionAuthenticated = false
-                                    activeSessionLastInboundNanos.set(System.nanoTime())
-                                    phase.set(Phase.AUTHENTICATING)
-                                    outbound.clear()
-                                }
+
+            // E3: ordinary empty-slot admission participates in the SAME ownership fence as final
+            // owner cleanup and stale replacement. Once null -> socket succeeds, the associated
+            // auth/liveness/phase initialization is complete before an older cleanup can proceed.
+            var normalAdmissionInstalled = false
+            beforeNormalAdmissionOwnershipLockForTest?.invoke()
+            synchronized(activeOwnershipLock) {
+                if (!stopped && activeSocket.compareAndSet(null, socket)) {
+                    activeSessionAuthenticated = false
+                    activeSessionLastInboundNanos.set(System.nanoTime())
+                    phase.set(Phase.AUTHENTICATING)
+                    outbound.clear()
+                    normalAdmissionInstalled = true
+                }
+            }
+            if (normalAdmissionInstalled) {
+                Thread({ runSession(socket) }, "eyebrowse-link-session").apply {
+                    isDaemon = true
+                    start()
+                }
+                continue
+            }
+
+            // Exactly one active RG link: reject concurrent clients pre-auth, no status —
+            // UNLESS the occupant is provably dead (no inbound for the liveness window): a
+            // wedged half-open session must not hold the slot indefinitely (T03 recovery).
+            val existing = activeSocket.get()
+            var replacementInstalled = false
+            var evictedWasAuthenticated = false
+            if (existing != null) {
+                // E2: stale decision, close(A), and CAS(A -> B) form one ownership critical
+                // section. A's finally uses the same lock, so it cannot clear A to null between
+                // close and installation and spuriously reject this same Retry attempt.
+                synchronized(activeOwnershipLock) {
+                    if (!stopped &&
+                        activeSocket.get() === existing &&
+                        shouldEvictStaleSession(
+                            activeSessionLastInboundNanos.get(),
+                            System.nanoTime(),
+                            timings.livenessTimeoutMs,
+                        )
+                    ) {
+                        evictedWasAuthenticated = activeSessionAuthenticated
+                        closeQuietly(existing)
+                        staleCloseBeforeInstallForTest?.invoke()
+                        // Stop may begin while close/test seam is in progress; never install a
+                        // replacement after stopped flips true.
+                        if (!stopped) {
+                            replacementInstalled = activeSocket.compareAndSet(existing, socket)
+                            if (replacementInstalled) {
+                                activeSessionAuthenticated = false
+                                activeSessionLastInboundNanos.set(System.nanoTime())
+                                phase.set(Phase.AUTHENTICATING)
+                                outbound.clear()
                             }
                         }
                     }
                 }
-                if (replacementInstalled) {
-                    // The evictor owns the one truthful down publication for A. A's session-final
-                    // cleanup can no longer win ownership after B is installed.
-                    if (evictedWasAuthenticated && !stopped) {
-                        trust.onLinkLost()
-                        listener.onLinkDown()
-                    }
-                    Thread({ runSession(socket) }, "eyebrowse-link-session").apply {
-                        isDaemon = true
-                        start()
-                    }
-                    continue
+            }
+            if (replacementInstalled) {
+                // The evictor owns the one truthful down publication for A. A's session-final
+                // cleanup can no longer win ownership after B is installed.
+                if (evictedWasAuthenticated && !stopped) {
+                    trust.onLinkLost()
+                    listener.onLinkDown()
                 }
-                closeQuietly(socket)
+                Thread({ runSession(socket) }, "eyebrowse-link-session").apply {
+                    isDaemon = true
+                    start()
+                }
                 continue
             }
-            phase.set(Phase.AUTHENTICATING)
-            outbound.clear()
-            Thread({ runSession(socket) }, "eyebrowse-link-session").apply {
-                isDaemon = true
-                start()
-            }
+            closeQuietly(socket)
         }
     }
 
@@ -300,6 +318,9 @@ class LinkServerEngine(
             synchronized(activeOwnershipLock) {
                 val stillOwner = activeSocket.compareAndSet(socket, null)
                 if (stillOwner) {
+                    // E3 deterministic seam: owner is already null, but cleanup deliberately holds
+                    // the ownership lock until all old-session global state is finished.
+                    afterSessionOwnerClearedForTest?.invoke()
                     if (authenticated && !stopped) {
                         trust.onLinkLost()
                         listener.onLinkDown()
