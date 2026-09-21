@@ -1,4 +1,4 @@
-name: Expert I6-T04 hosting gates a6ee0a01
+name: Expert I6-T04 hosting gates 2d4800bd
 
 on:
   push:
@@ -19,7 +19,7 @@ jobs:
       - name: Checkout exact Expert candidate
         uses: actions/checkout@v4
         with:
-          ref: a6ee0a01a5c63abb0f458bb3fef55aedbac1eb9a
+          ref: 2d4800bdc7a1f20feb541218f075a3d2ab99748b
           persist-credentials: false
 
       - name: Set up JDK 17
@@ -38,7 +38,7 @@ jobs:
       - name: Verify exact SHA binding
         shell: bash
         run: |
-          test "$(git rev-parse HEAD)" = "a6ee0a01a5c63abb0f458bb3fef55aedbac1eb9a"
+          test "$(git rev-parse HEAD)" = "2d4800bdc7a1f20feb541218f075a3d2ab99748b"
           chmod +x ./gradlew
           java -version
           ./gradlew --version
@@ -49,7 +49,9 @@ jobs:
           ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
             :app-phone:testDebugUnitTest \
             --tests "com.code2hack.eyebrowse.phone.BrowserAttachmentTransferTest" \
-            --tests "com.code2hack.eyebrowse.phone.CaptureDrainSequenceTest"
+            --tests "com.code2hack.eyebrowse.phone.CaptureDrainSequenceTest" \
+            --tests "com.code2hack.eyebrowse.phone.PhoneViewportStabilityTest" \
+            --tests "com.code2hack.eyebrowse.phone.OutputQualificationTest"
 
       - name: Full JVM tests and JVM module builds
         shell: bash
