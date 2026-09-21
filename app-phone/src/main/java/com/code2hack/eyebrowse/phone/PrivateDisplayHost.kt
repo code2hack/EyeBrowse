@@ -109,8 +109,9 @@ class PrivateDisplayHost(
 
     // Capture-path state.
     private var frameSequence: Long = 0
-    private var lastDeliveryElapsedMs: Long = 0
-    private var deliveredAny: Boolean = false
+    private val deliveryThrottle = CaptureDeliveryThrottle(HostingPolicy.MIN_FRAME_INTERVAL_MS)
+    private var pendingFrameTask: Runnable? = null // nativeLock-protected; no Image/Bitmap retained
+    private var pendingFrameHandler: Handler? = null
     private var frameBitmap: Bitmap? = null // nativeLock-protected
     @Volatile private var captureActive: Boolean = false
     @Volatile private var captureReleased: Boolean = false // release requested; no further admissions/copying
@@ -127,6 +128,9 @@ class PrivateDisplayHost(
     @Volatile private var lastAcquiredWidth: Int = 0
     @Volatile private var lastAcquiredHeight: Int = 0
     @Volatile private var displaySurfaceDetached: Boolean = false
+    @Volatile private var deferredWakeupCount: Long = 0
+    @Volatile private var coalescedCallbackCount: Long = 0
+    @Volatile private var deferredDeliveryCount: Long = 0
 
     /**
      * Creates the display, presentation and reader for the measured viewport. Recoverable
@@ -336,13 +340,15 @@ class PrivateDisplayHost(
                 captureThread == null || captureHandler == null) {
             return false
         }
-        resetCaptureDiagnostics()
-        frameSink = boundSink
-        frameSequence = 0
-        deliveredAny = false
-        captureGeneration = hostingGeneration
-        captureActive = true
-        captureReleased = false
+        synchronized(nativeLock) {
+            cancelPendingFrameLocked()
+            resetCaptureDiagnostics()
+            frameSink = boundSink
+            frameSequence = 0
+            captureGeneration = hostingGeneration
+            captureActive = true
+            captureReleased = false
+        }
         imageReader?.setOnImageAvailableListener(::onImageAvailable, captureHandler)
         scheduleDrainThenFreshFrame(freshFrameRequest)
         Log.i(TAG, "rearmCapture gen=$hostingGeneration on rebuilt reader")
@@ -368,13 +374,15 @@ class PrivateDisplayHost(
             Log.i(TAG, "startCapture deferred: owner phase=" + ownerPhase.phase())
             return false
         }
-        resetCaptureDiagnostics()
-        frameSink = boundSink
-        frameSequence = 0
-        deliveredAny = false
-        captureGeneration = hostingGeneration
-        captureActive = true
-        captureReleased = false
+        synchronized(nativeLock) {
+            cancelPendingFrameLocked()
+            resetCaptureDiagnostics()
+            frameSink = boundSink
+            frameSequence = 0
+            captureGeneration = hostingGeneration
+            captureActive = true
+            captureReleased = false
+        }
         Log.i(TAG, "startCapture gen=$hostingGeneration reader=${imageReader != null}" +
                 " threadAlive=${captureThread != null}")
         if (captureThread != null) {
@@ -440,8 +448,19 @@ class PrivateDisplayHost(
      * only through the owning retirement path.
      */
     fun stopCapture() {
-        captureActive = false
-        frameSink = null
+        synchronized(nativeLock) {
+            captureActive = false
+            frameSink = null
+            cancelPendingFrameLocked()
+        }
+    }
+
+    /** Called with nativeLock held; invalidates even an already-dequeued old wakeup. */
+    private fun cancelPendingFrameLocked() {
+        pendingFrameTask?.let { pendingFrameHandler?.removeCallbacks(it) }
+        pendingFrameTask = null
+        pendingFrameHandler = null
+        deliveryThrottle.reset()
     }
 
     fun isCapturing(): Boolean {
@@ -466,8 +485,7 @@ class PrivateDisplayHost(
         }
         // ACTIVE enters RETIRING above; IDLE/QUIESCENT hosts only residual resources (e.g. the
         // never-leased reader) and releases them inline without a phase transition.
-        captureActive = false
-        frameSink = null
+        stopCapture() // Revoke/cancel the metadata-only trailing wakeup before native teardown.
         captureReleased = true
         teardownComplete = false
 
@@ -634,6 +652,9 @@ class PrivateDisplayHost(
         lastReaderCallbackElapsedMs = 0
         lastAcquiredWidth = 0
         lastAcquiredHeight = 0
+        deferredWakeupCount = 0
+        coalescedCallbackCount = 0
+        deferredDeliveryCount = 0
     }
 
     /** Sparse no-content diagnostics used by acceptance failures and log reconciliation. */
@@ -642,6 +663,10 @@ class PrivateDisplayHost(
                 " callbacks=" + readerCallbackCount +
                 " acquired=" + acquiredImageCount +
                 " delivered=" + deliveredFrameCount +
+                " deferredWakeups=" + deferredWakeupCount +
+                " coalesced=" + coalescedCallbackCount +
+                " deferredDeliveries=" + deferredDeliveryCount +
+                " pendingFrame=" + synchronized(nativeLock) { deliveryThrottle.pending != null } +
                 " lastCallbackMs=" + lastReaderCallbackElapsedMs +
                 " image=" + lastAcquiredWidth + "x" + lastAcquiredHeight +
                 " reader=" + hasReader() +
@@ -650,40 +675,72 @@ class PrivateDisplayHost(
     }
 
     private fun onImageAvailable(reader: ImageReader) {
-        readerCallbackCount += 1
-        lastReaderCallbackElapsedMs = SystemClock.elapsedRealtime()
-        val sink = frameSink // Read once; swaps happen only from the main thread.
-        if (!captureActive || sink == null) {
-            return // Latest-only: nothing is acquired while delivery is not live.
+        synchronized(nativeLock) {
+            readerCallbackCount += 1
+            val now = SystemClock.elapsedRealtime()
+            lastReaderCallbackElapsedMs = now
+            val sink = frameSink ?: return
+            val handler = captureHandler ?: return
+            if (!captureActive || captureReleased || reader !== imageReader) return
+            val wakeup = deliveryThrottle.request(now)
+            if (wakeup == null) {
+                coalescedCallbackCount += 1
+                return // One existing wakeup will acquire the latest, not a FIFO of callbacks.
+            }
+            val delay = (wakeup.dueElapsedMs - now).coerceAtLeast(0)
+            val deferred = delay > 0
+            if (deferred) deferredWakeupCount += 1
+            val task = Runnable { deliverLatestAvailable(reader, sink, wakeup, deferred) }
+            pendingFrameTask = task
+            pendingFrameHandler = handler
+            if (!handler.postDelayed(task, delay)) {
+                cancelPendingFrameLocked()
+                Log.w(TAG, "capture wakeup rejected by retiring handler")
+            }
         }
+    }
+
+    /**
+     * Throttle BEFORE acquiring. A final static-navigation frame inside the 200ms window
+     * stays in ImageReader until this one-shot wakeup, even if no more callbacks arrive.
+     * No native Image or borrowed Bitmap is held while waiting; maxImages=2 is unchanged.
+     */
+    private fun deliverLatestAvailable(
+        reader: ImageReader,
+        sink: FrameSink,
+        wakeup: CaptureDeliveryThrottle.Wakeup,
+        deferred: Boolean,
+    ) {
         var frame: HostingFrame? = null
         synchronized(nativeLock) {
-            if (captureReleased || reader !== imageReader) {
-                return // Stale callback for a closed or superseded reader.
-            }
-            val image = reader.acquireLatestImage() ?: return
-            acquiredImageCount += 1
-            lastAcquiredWidth = image.width
-            lastAcquiredHeight = image.height
-            val nowElapsed = SystemClock.elapsedRealtime()
+            if (!deliveryThrottle.consume(wakeup)) return
+            pendingFrameTask = null
+            pendingFrameHandler = null
+            if (!captureActive || captureReleased || reader !== imageReader ||
+                    frameSink !== sink) return
+            var image: Image? = null
             try {
-                if (deliveredAny && HostingPolicy.frameThrottled(nowElapsed, lastDeliveryElapsedMs)) {
-                    return
+                val latest = reader.acquireLatestImage() ?: return
+                image = latest
+                acquiredImageCount += 1
+                lastAcquiredWidth = latest.width
+                lastAcquiredHeight = latest.height
+                frame = copyFrame(latest, SystemClock.elapsedRealtime())
+                if (frame != null) {
+                    deliveryThrottle.delivered(SystemClock.elapsedRealtime())
+                    if (deferred) deferredDeliveryCount += 1
                 }
-                deliveredAny = true
-                lastDeliveryElapsedMs = nowElapsed
-                frame = copyFrame(image, nowElapsed)
             } catch (error: RuntimeException) {
                 Log.w(TAG, "hosting frame capture failed", error)
             } finally {
-                image.close() // The native image never escapes the copy scope.
+                image?.close() // Always closed before consumer admission/delivery.
             }
         }
         val delivered = frame
         if (delivered != null) {
             deliveredFrameCount += 1
-            // Admission and consumer invocation happen outside nativeLock; the sink's bound
-            // identity fences superseded leases without taking any monitor.
+            // Immutable sink remains bound to this lease; FrameGate fences revocation.
+            // Consumer invocation remains outside nativeLock and the controller monitor.
             sink.onFrame(delivered)
         }
     }

@@ -874,20 +874,40 @@ public class HostingInstrumentedTest {
         // the deterministic second-page content, then the counter page again (stale-output
         // negative case: no second-page pixels after the return settles).
         int loadsTwoBefore = loadCount("/hosting-two.html");
+        int secondPageFrom = consumer.count();
+        consumer.expectQualification(expectedSize[0], expectedSize[1], SECOND_PAGE_COLOR);
+        long secondPageNavigationUptime = SystemClock.uptimeMillis();
         runOnMain(() -> session.openAddress(FIXTURE_BASE + "/hosting-two.html"));
         waitUntil("second page loaded while hosted",
                 () -> "Second hosting page".equals(domText("page-title")));
         assertEquals("navigation load recorded once", loadsTwoBefore + 1,
                 loadCount("/hosting-two.html"));
         int loadsTwoAfter = loadsTwoBefore + 1;
-        waitUntil("delivered pixels show the second page", () ->
-                consumer.latestFrameNearColor(SECOND_PAGE_COLOR));
+        try {
+            waitUntil("delivered pixels show the second page", () ->
+                    consumer.latestFrameNearColor(SECOND_PAGE_COLOR));
+        } catch (AssertionError failure) {
+            fail(failure.getMessage() + " secondPageQualification={"
+                    + consumer.qualificationSummary(secondPageFrom, secondPageNavigationUptime)
+                    + "}");
+        }
+        milestones.record("second-page delivery: "
+                + consumer.qualificationSummary(secondPageFrom, secondPageNavigationUptime));
         int loadsHostingBeforeReturn = loadCount("/hosting.html");
+        int returnPageFrom = consumer.count();
+        consumer.expectQualification(expectedSize[0], expectedSize[1], CAPTURE_PAGE_COLOR);
+        long returnNavigationUptime = SystemClock.uptimeMillis();
         runOnMain(() -> session.openAddress(FIXTURE_BASE + "/hosting.html"));
         waitUntil("counter page restored while hosted",
                 () -> "Hosting capture page".equals(domText("page-title")));
-        waitUntil("delivered pixels return to the counter page", () ->
-                consumer.latestFrameNearColor(CAPTURE_PAGE_COLOR));
+        try {
+            waitUntil("delivered pixels return to the counter page", () ->
+                    consumer.latestFrameNearColor(CAPTURE_PAGE_COLOR));
+        } catch (AssertionError failure) {
+            fail(failure.getMessage() + " returnQualification={"
+                    + consumer.qualificationSummary(returnPageFrom, returnNavigationUptime)
+                    + "}");
+        }
         SystemClock.sleep(2_000); // Stale-output negative window.
         assertTrue("no second-page pixels after returning (stale output not replayed)",
                 consumer.recentFramesNearColor(CAPTURE_PAGE_COLOR, 2_000));
