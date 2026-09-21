@@ -117,6 +117,17 @@ class PrivateDisplayHost(
     @Volatile private var teardownComplete: Boolean = true
     @Volatile private var captureGeneration: Int = 0 // hosting generation stamped into produced frames
 
+    // Sparse production diagnostics for the T04 acceptance path. Reset per capture arm/rearm;
+    // no bitmap/pixel payload is retained.
+    @Volatile private var captureArmSerial: Long = 0
+    @Volatile private var readerCallbackCount: Long = 0
+    @Volatile private var acquiredImageCount: Long = 0
+    @Volatile private var deliveredFrameCount: Long = 0
+    @Volatile private var lastReaderCallbackElapsedMs: Long = 0
+    @Volatile private var lastAcquiredWidth: Int = 0
+    @Volatile private var lastAcquiredHeight: Int = 0
+    @Volatile private var displaySurfaceDetached: Boolean = false
+
     /**
      * Creates the display, presentation and reader for the measured viewport. Recoverable
      * platform failures are converted to {@link HostingException} after rolling back the partial
@@ -144,6 +155,7 @@ class PrivateDisplayHost(
             // validation, so the rollback path releases a non-null-but-invalid native object.
             virtualDisplay = factory.createVirtualDisplay(displayManager, DISPLAY_NAME, width,
                     height, measuredDensityDpi, reader.surface)
+            displaySurfaceDetached = false
             val created = virtualDisplay
             if (created == null || created.display == null) {
                 throw HostingException("virtual display creation failed")
@@ -241,6 +253,7 @@ class PrivateDisplayHost(
             synchronized(nativeLock) {
                 try {
                     virtualDisplay!!.setSurface(reader.surface)
+                    displaySurfaceDetached = false
                     imageReader = reader
                 } catch (error: RuntimeException) {
                     reader.close()
@@ -323,6 +336,7 @@ class PrivateDisplayHost(
                 captureThread == null || captureHandler == null) {
             return false
         }
+        resetCaptureDiagnostics()
         frameSink = boundSink
         frameSequence = 0
         deliveredAny = false
@@ -354,6 +368,7 @@ class PrivateDisplayHost(
             Log.i(TAG, "startCapture deferred: owner phase=" + ownerPhase.phase())
             return false
         }
+        resetCaptureDiagnostics()
         frameSink = boundSink
         frameSequence = 0
         deliveredAny = false
@@ -455,6 +470,20 @@ class PrivateDisplayHost(
         frameSink = null
         captureReleased = true
         teardownComplete = false
+
+        // Detach the VirtualDisplay backing Surface BEFORE destroying the ImageReader that owns
+        // it. A surviving display is paused cleanly and can later resume on a fresh reader instead
+        // of remaining bound to an abandoned buffer queue.
+        val display = virtualDisplay
+        if (display != null) {
+            try {
+                display.setSurface(null)
+                displaySurfaceDetached = true
+            } catch (error: RuntimeException) {
+                Log.w(TAG, "could not detach capture surface before reader close", error)
+            }
+        }
+
         val retiringReader: ImageReader?
         val retiringBitmap: Bitmap?
         synchronized(nativeLock) {
@@ -597,7 +626,32 @@ class PrivateDisplayHost(
         return ownerPhase.isActive()
     }
 
+    private fun resetCaptureDiagnostics() {
+        captureArmSerial += 1
+        readerCallbackCount = 0
+        acquiredImageCount = 0
+        deliveredFrameCount = 0
+        lastReaderCallbackElapsedMs = 0
+        lastAcquiredWidth = 0
+        lastAcquiredHeight = 0
+    }
+
+    /** Sparse no-content diagnostics used by acceptance failures and log reconciliation. */
+    fun captureDiagnostics(): String {
+        return "arm=" + captureArmSerial +
+                " callbacks=" + readerCallbackCount +
+                " acquired=" + acquiredImageCount +
+                " delivered=" + deliveredFrameCount +
+                " lastCallbackMs=" + lastReaderCallbackElapsedMs +
+                " image=" + lastAcquiredWidth + "x" + lastAcquiredHeight +
+                " reader=" + hasReader() +
+                " detached=" + displaySurfaceDetached +
+                " owner=" + ownerPhase.phase()
+    }
+
     private fun onImageAvailable(reader: ImageReader) {
+        readerCallbackCount += 1
+        lastReaderCallbackElapsedMs = SystemClock.elapsedRealtime()
         val sink = frameSink // Read once; swaps happen only from the main thread.
         if (!captureActive || sink == null) {
             return // Latest-only: nothing is acquired while delivery is not live.
@@ -608,6 +662,9 @@ class PrivateDisplayHost(
                 return // Stale callback for a closed or superseded reader.
             }
             val image = reader.acquireLatestImage() ?: return
+            acquiredImageCount += 1
+            lastAcquiredWidth = image.width
+            lastAcquiredHeight = image.height
             val nowElapsed = SystemClock.elapsedRealtime()
             try {
                 if (deliveredAny && HostingPolicy.frameThrottled(nowElapsed, lastDeliveryElapsedMs)) {
@@ -624,6 +681,7 @@ class PrivateDisplayHost(
         }
         val delivered = frame
         if (delivered != null) {
+            deliveredFrameCount += 1
             // Admission and consumer invocation happen outside nativeLock; the sink's bound
             // identity fences superseded leases without taking any monitor.
             sink.onFrame(delivered)

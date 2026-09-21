@@ -279,6 +279,13 @@ class HostingController private constructor(private val appContext: Context) {
         return false
     }
 
+    /** Sparse no-content frame-pipeline diagnostics for acceptance failure messages. */
+    @Synchronized
+    fun captureDiagnostics(): String {
+        val host = displayHost
+        return if (host == null) "host=none" else host.captureDiagnostics()
+    }
+
     @Synchronized
     fun hasDisplayResources(): Boolean {
         val host = displayHost

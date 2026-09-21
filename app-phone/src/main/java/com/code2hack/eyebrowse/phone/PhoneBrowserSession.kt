@@ -377,6 +377,10 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
         val settings = view.settings
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
+        // Hosting moves this single authoritative WebView onto an app-owned private Presentation.
+        // Keep Chromium raster tiles live while the physical Phone Activity is offscreen; this is
+        // the same platform setting validated by experiments/locked-webview-spike.
+        settings.offscreenPreRaster = true
         settings.allowFileAccess = false
         settings.allowContentAccess = false
         settings.setSupportMultipleWindows(false)

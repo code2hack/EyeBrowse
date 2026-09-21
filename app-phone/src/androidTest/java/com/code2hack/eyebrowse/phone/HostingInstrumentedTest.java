@@ -674,15 +674,18 @@ public class HostingInstrumentedTest {
         setFieldValue("geometry-value");
         int loadsBefore = loadCount("/hosting.html");
         int[] sizeBefore = currentWebViewSize();
-        int restoreOrientation = sizeBefore[1] >= sizeBefore[0]
-                ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-                : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
+        boolean baselinePortrait = sizeBefore[1] >= sizeBefore[0];
+        int changeOrientation = baselinePortrait
+                ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
+        int restoreOrientation = baselinePortrait
+                ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
         long generationBefore = runOnMainSync(() -> (long) hosting.currentGeneration());
 
         tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
-        // App-scoped window change (reversible; no global display override): recreation applies it.
-        scenario.onActivity(activity -> activity.setRequestedOrientation(
-                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE));
+        // Fixed app-scoped opposite orientation: no sensor/user-rotation ambiguity.
+        scenario.onActivity(activity -> activity.setRequestedOrientation(changeOrientation));
         waitUntil("window changed while hosting", () -> {
             int[] size = currentWebViewSize();
             return size[0] != sizeBefore[0] || size[1] != sizeBefore[1];
@@ -743,7 +746,7 @@ public class HostingInstrumentedTest {
         // orientation. Restore the measured baseline orientation explicitly; the assertions below
         // still require exact original geometry and unchanged live document/page state.
         scenario.onActivity(activity -> activity.setRequestedOrientation(restoreOrientation));
-        waitUntil("window restored", () -> {
+        waitUntil("window restored to " + sizeBefore[0] + "x" + sizeBefore[1], () -> {
             int[] size = currentWebViewSize();
             return size[0] == sizeBefore[0] && size[1] == sizeBefore[1];
         });
@@ -1060,6 +1063,8 @@ public class HostingInstrumentedTest {
     public void allWhiteDocumentDeliversWithinEligibilityBoundWithoutColorDependence()
             throws Exception {
         openFixture("/hosting-white.html", "White capture page");
+        assertTrue("authoritative WebView must preraster while attached offscreen",
+                runOnMainSync(() -> session.view().getSettings().getOffscreenPreRaster()));
         String marker = domText("load-marker");
         tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS);
         scenario.onActivity(activity -> activity.moveTaskToBack(true));
@@ -1574,10 +1579,13 @@ public class HostingInstrumentedTest {
             SystemClock.sleep(100);
         }
         HostingController.Status status = runOnMainSync(hosting::status);
+        int[] webSize = currentWebViewSize();
+        String capture = runOnMainSync(hosting::captureDiagnostics);
         fail("timed out waiting for " + description + " (state=" + status.state + " attachment="
                 + status.attachment + " browserLive=" + status.browserLive + " gen="
                 + status.generation + " reason=" + status.failureReason + " parentless="
-                + webViewParentless() + ")");
+                + webViewParentless() + " webSize=" + webSize[0] + "x" + webSize[1]
+                + " capture={" + capture + "})");
     }
 
     private void runOnMain(Runnable runnable) {
