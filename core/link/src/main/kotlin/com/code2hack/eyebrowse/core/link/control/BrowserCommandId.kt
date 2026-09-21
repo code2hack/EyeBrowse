@@ -1,18 +1,20 @@
 package com.code2hack.eyebrowse.core.link.control
 
 /**
- * Canonical result-correlation key for one ordinal in a browser-lifetime/control epoch.
- * Decimal ordinals come first, so even a lifetime containing ':' cannot alias another key.
- * Document/viewport changes do not create a new ordinal namespace; only a handoff does.
- * This is an encoding, not a hash or a history cache.
+ * Canonical result-correlation key for a full action-target context and its ordinal.
+ * Numeric fields are delimited canonical decimal; null generation is the literal 'n'.
+ * Each opaque string is length-prefixed in Kotlin/UTF-16 code units, so embedded colons,
+ * digits and Unicode cannot alias field boundaries. This is an encoding, not a hash/cache.
  */
 object BrowserCommandId {
-    // "v1:" + two nonnegative Longs (19 chars each) + two ':' + a 128-char lifetime.
-    const val MAX_LENGTH = 171
+    // "v2:" + four (Long + ':') + (length + ':' + text) for lifetime (128) and document (256).
+    const val MAX_LENGTH = 475
 
     fun create(context: ControlContext, commandSequence: Long): String {
         require(commandSequence > 0)
-        return "v1:${context.controlEpoch}:$commandSequence:${context.lifetimeId}"
+        return "v2:${context.controlEpoch}:$commandSequence:${context.viewportEpoch}:" +
+            "${context.hostingGeneration ?: "n"}:${context.lifetimeId.length}:${context.lifetimeId}" +
+            "${context.documentId.length}:${context.documentId}"
     }
 
     fun matches(commandId: String, context: ControlContext, commandSequence: Long): Boolean =

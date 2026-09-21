@@ -153,8 +153,14 @@ class BrowserControlCoordinator(
     @Synchronized fun admitAction(source: ControlOwner, request: BrowserActionRequest): ActionDecision {
         fun reject(reason: ActionRejection) = ActionDecision.Rejected(reason)
         if (request.commandId.isBlank() || request.commandId.length > BrowserCommandId.MAX_LENGTH) return reject(ActionRejection.INVALID_COMMAND_ID)
-        if (source != state.owner) return reject(ActionRejection.WRONG_OWNER)
+        if (request.commandSequence <= 0) return reject(ActionRejection.INVALID_COMMAND_SEQUENCE)
+        if (!BrowserCommandId.matches(request.commandId, request.context, request.commandSequence)) return reject(ActionRejection.INVALID_COMMAND_ID)
         if (request.context != state.context) return reject(ActionRejection.STALE_CONTEXT)
+        if (request.commandSequence <= commandHighWater) return reject(ActionRejection.STALE_COMMAND_SEQUENCE)
+        // Every structurally valid current-context outcome resolves the ordinal, including
+        // policy rejection. Stale/malformed input above cannot poison the current high-water.
+        commandHighWater = request.commandSequence
+        if (source != state.owner) return reject(ActionRejection.WRONG_OWNER)
         if (source == ControlOwner.RG) {
             if (!state.linkAuthenticated) return reject(ActionRejection.LINK_UNAVAILABLE)
             if (!state.sessionCompatible) return reject(ActionRejection.INCOMPATIBLE_SESSION)
@@ -165,10 +171,6 @@ class BrowserControlCoordinator(
             val profile = state.profile ?: return reject(ActionRejection.OUTSIDE_VIEWPORT)
             if (action.x >= profile.width || action.y >= profile.height) return reject(ActionRejection.OUTSIDE_VIEWPORT)
         }
-        if (request.commandSequence <= 0) return reject(ActionRejection.INVALID_COMMAND_SEQUENCE)
-        if (request.commandSequence <= commandHighWater) return reject(ActionRejection.STALE_COMMAND_SEQUENCE)
-        if (!BrowserCommandId.matches(request.commandId, request.context, request.commandSequence)) return reject(ActionRejection.INVALID_COMMAND_ID)
-        commandHighWater = request.commandSequence
         return ActionDecision.Accepted(request.commandId)
     }
 }

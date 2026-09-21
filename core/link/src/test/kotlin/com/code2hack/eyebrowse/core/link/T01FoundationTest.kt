@@ -115,6 +115,8 @@ class T01FoundationTest {
         assertEquals(before,c.snapshot()) // No navigation, viewport change or artificial ownership churn.
         for(sequence in listOf(1L,256L,9_999L,10_000L)) {
             assertEquals(ActionDecision.Rejected(ActionRejection.STALE_COMMAND_SEQUENCE),
+                c.admitAction(ControlOwner.RG,request(sequence)))
+            assertEquals(ActionDecision.Rejected(ActionRejection.INVALID_COMMAND_ID),
                 c.admitAction(ControlOwner.RG,request(sequence,"different-correlation-id")))
         }
         assertTrue(c.admitAction(ControlOwner.RG,request(10_001L)) is ActionDecision.Accepted)
@@ -149,15 +151,24 @@ class T01FoundationTest {
     @Test fun commandIdentityIsCanonicalAndScopedToLifetimeAndControlEpoch() {
         val context=ControlContext("host:with:separators",1,"doc",2,3)
         val id=BrowserCommandId.create(context,23)
-        assertEquals("v1:1:23:host:with:separators",id)
+        assertEquals("v2:1:23:2:3:20:host:with:separators3:doc",id)
         val different=listOf(
             BrowserCommandId.create(context,24),
             BrowserCommandId.create(context.copy(controlEpoch=12),3),
             BrowserCommandId.create(context.copy(lifetimeId="other:host"),23),
+            BrowserCommandId.create(context.copy(documentId="new"),23),
+            BrowserCommandId.create(context.copy(viewportEpoch=9),23),
+            BrowserCommandId.create(context.copy(hostingGeneration=7),23),
+            BrowserCommandId.create(context.copy(hostingGeneration=null),23),
+            BrowserCommandId.create(context.copy(hostingGeneration=0),23),
         )
-        assertEquals(4,(different+id).toSet().size)
-        assertEquals(id,BrowserCommandId.create(context.copy(documentId="new",viewportEpoch=9,hostingGeneration=7),23))
-        for (alias in listOf("v1:01:23:host:with:separators","v1:1:023:host:with:separators","v1:1:+23:host:with:separators","x")) {
+        assertEquals(9,(different+id).toSet().size)
+        val joinedA=context.copy(lifetimeId="a",documentId="12:x")
+        val joinedB=context.copy(lifetimeId="a1",documentId="2:x")
+        assertEquals(joinedA.lifetimeId+joinedA.documentId,joinedB.lifetimeId+joinedB.documentId)
+        assertNotEquals(BrowserCommandId.create(joinedA,23),BrowserCommandId.create(joinedB,23))
+        for (alias in listOf(id.replace("v2:1:","v2:01:"),id.replace(":23:",":023:"),
+            id.replace(":23:",":+23:"),id.replace(":20:",":020:"),"x")) {
             assertFalse(BrowserCommandId.matches(alias,context,23))
         }
         assertFalse(BrowserCommandId.matches(id,context.copy(controlEpoch=2),23))
@@ -184,7 +195,7 @@ class T01FoundationTest {
     }
 
     @Test fun maximumCanonicalCommandIdFitsBoundedActionAndResultWire() {
-        val context=ControlContext("\u03bb:".repeat(64),Long.MAX_VALUE,"doc",0,null)
+        val context=ControlContext("\u03bb:".repeat(64),Long.MAX_VALUE,"\u03bb:".repeat(128),Long.MAX_VALUE,Long.MAX_VALUE)
         val id=BrowserCommandId.create(context,Long.MAX_VALUE)
         assertEquals(BrowserCommandId.MAX_LENGTH,id.length)
         val action=BrowserActionMessage(id,context,BrowserAction.Back,Long.MAX_VALUE)
@@ -195,6 +206,90 @@ class T01FoundationTest {
             assertEquals(message,(LinkMessageCodec.decode(encoded).getOrThrow() as LinkMessageCodec.Incoming.Known).message)
         }
         assertThrows(IllegalArgumentException::class.java) { result.copy(commandId=id+"x") }
+    }
+
+    @Test fun staleContextRejectionDoesNotReserveCurrentSequence() {
+        val c=ready(); val old=c.snapshot().context
+        fun request(context: ControlContext,sequence: Long)=
+            BrowserActionRequest(BrowserCommandId.create(context,sequence),context,BrowserAction.Back,sequence)
+        assertTrue(c.admitAction(ControlOwner.RG,request(old,99)) is ActionDecision.Accepted)
+        c.setDocumentIdentity("doc-2")
+        val current=c.snapshot().context
+        assertEquals(old.controlEpoch,current.controlEpoch)
+        assertTrue(c.markPresentationReady(current))
+        val staleContexts=listOf(old,current.copy(documentId="old"),current.copy(viewportEpoch=0),
+            current.copy(hostingGeneration=null),current.copy(hostingGeneration=6),
+            current.copy(lifetimeId="old"),current.copy(controlEpoch=0))
+        for (context in staleContexts) {
+            assertNotEquals(request(context,100).commandId,request(current,100).commandId)
+            for (sequence in listOf(100L,Long.MAX_VALUE)) {
+                assertEquals(ActionDecision.Rejected(ActionRejection.STALE_CONTEXT),
+                    c.admitAction(ControlOwner.RG,request(context,sequence)))
+            }
+        }
+        assertEquals(ActionDecision.Accepted(request(current,100).commandId),
+            c.admitAction(ControlOwner.RG,request(current,100)))
+        assertTrue(c.admitAction(ControlOwner.RG,request(current,101)) is ActionDecision.Accepted)
+    }
+
+    @Test fun currentReadinessRejectionConsumesOrdinalBeforeReadinessRecovers() {
+        val c=ready(); val context=c.snapshot().context
+        val request=BrowserActionRequest(BrowserCommandId.create(context,100),context,BrowserAction.Back,100)
+        assertTrue(c.markPresentationStale(context))
+        assertEquals(ActionDecision.Rejected(ActionRejection.PRESENTATION_NOT_READY),c.admitAction(ControlOwner.RG,request))
+        assertTrue(c.markPresentationReady(context))
+        assertEquals(context,c.snapshot().context) // Policy changed, not command identity.
+        assertEquals(ActionDecision.Rejected(ActionRejection.STALE_COMMAND_SEQUENCE),c.admitAction(ControlOwner.RG,request))
+        assertEquals(ActionDecision.Rejected(ActionRejection.STALE_COMMAND_SEQUENCE),
+            c.admitAction(ControlOwner.RG,request.copy(action=BrowserAction.Reload)))
+        assertTrue(c.admitAction(ControlOwner.RG,request.copy(
+            commandId=BrowserCommandId.create(context,101),commandSequence=101)) is ActionDecision.Accepted)
+    }
+
+    @Test fun currentPolicyRejectionCannotBeReusedForDifferentEffect() {
+        val c=ready(); val context=c.snapshot().context
+        val request=BrowserActionRequest(BrowserCommandId.create(context,100),context,
+            BrowserAction.ActivateAt(profile.width.toFloat(),0f),100)
+        assertEquals(ActionDecision.Rejected(ActionRejection.OUTSIDE_VIEWPORT),c.admitAction(ControlOwner.RG,request))
+        assertEquals(ActionDecision.Rejected(ActionRejection.STALE_COMMAND_SEQUENCE),c.admitAction(ControlOwner.RG,request))
+        assertEquals(ActionDecision.Rejected(ActionRejection.STALE_COMMAND_SEQUENCE),
+            c.admitAction(ControlOwner.RG,request.copy(action=BrowserAction.ActivateAt(1f,1f))))
+        val next=request.copy(commandId=BrowserCommandId.create(context,101),commandSequence=101,action=BrowserAction.Back)
+        assertEquals(ActionDecision.Rejected(ActionRejection.WRONG_OWNER),c.admitAction(ControlOwner.PHONE,next))
+        assertEquals(ActionDecision.Rejected(ActionRejection.STALE_COMMAND_SEQUENCE),c.admitAction(ControlOwner.RG,next))
+        assertTrue(c.admitAction(ControlOwner.RG,next.copy(
+            commandId=BrowserCommandId.create(context,102),commandSequence=102)) is ActionDecision.Accepted)
+    }
+
+    @Test fun malformedCurrentContextCannotConsumeOrdinal() {
+        val c=ready(); val context=c.snapshot().context
+        val request=BrowserActionRequest(BrowserCommandId.create(context,100),context,BrowserAction.Back,100)
+        assertEquals(ActionDecision.Rejected(ActionRejection.INVALID_COMMAND_ID),
+            c.admitAction(ControlOwner.RG,request.copy(commandSequence=Long.MAX_VALUE)))
+        assertEquals(ActionDecision.Rejected(ActionRejection.INVALID_COMMAND_SEQUENCE),
+            c.admitAction(ControlOwner.RG,request.copy(commandSequence=0)))
+        assertTrue(c.admitAction(ControlOwner.RG,request) is ActionDecision.Accepted)
+    }
+
+    @Test fun wireIdentityIncludesEachActionTargetContextField() {
+        val context=ready().snapshot().context
+        val message=BrowserActionMessage(BrowserCommandId.create(context,100),context,BrowserAction.Back,100)
+        val encoded=LinkMessageCodec.encode(message).toString(Charsets.UTF_8)
+        val changes=listOf(
+            "\"documentId\":\"${context.documentId}\"" to "\"documentId\":\"different\"",
+            "\"viewportEpoch\":${context.viewportEpoch}" to "\"viewportEpoch\":${context.viewportEpoch+1}",
+            "\"hostingGeneration\":${context.hostingGeneration}" to "\"hostingGeneration\":null",
+            "\"hostingGeneration\":${context.hostingGeneration}" to "\"hostingGeneration\":0",
+        )
+        for ((from,to) in changes) {
+            val forged=encoded.replace(from,to)
+            assertNotEquals(encoded,forged)
+            assertTrue(LinkMessageCodec.decode(forged.toByteArray()).isFailure)
+        }
+        for (changed in listOf(context.copy(documentId="other"),context.copy(viewportEpoch=0),
+            context.copy(hostingGeneration=null),context.copy(hostingGeneration=0))) {
+            assertThrows(IllegalArgumentException::class.java) { message.copy(context=changed) }
+        }
     }
 
     @Test fun recordsLargerThan32KiBRoundTrip() {

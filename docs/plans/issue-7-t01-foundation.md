@@ -2,7 +2,7 @@
 
 Worker: Worker-#6-r3-Codex-#7
 
-R2a correction: Expert: Expert-#7 (preserves Planner duplicate-command-ID contract).
+R2a/R2b corrections: Expert: Expert-#7 (preserves Planner duplicate-command-ID contract).
 
 Implements the T01 portion of Planner plan issue #7 comment 5759769926. Rendering,
 WebP encoding, browser effects, and the user-facing handoff journey remain T02/T03.
@@ -48,27 +48,38 @@ and generation, so an old callback cannot revive a successor or a disconnected p
 
 Back/Forward/Reload/ActivateAt/ScrollBy are typed Kotlin actions. Every action carries a
 required positive commandSequence and a canonical commandId produced by BrowserCommandId:
-`v1:<controlEpoch>:<commandSequence>:<lifetimeId>`. The two ordinals are canonical decimal
-(no sign or leading zeroes), followed by the full, unmodified browser lifetime. Delimiters in
-the lifetime cannot alias the two preceding numeric fields. There is no hash/collision tradeoff.
-Document, viewport and hosting-generation changes do not create a new command namespace.
-The shared helper is available to both senders; the wire constructor/decoder and Phone arbiter
-validate the mapping. Reusing a resolved ID with a new ordinal or epoch/lifetime is structurally
-invalid, not another admissible page action. True replay keeps the same ID/ordinal and rejects.
-This preserves the Planner duplicate-ID rule while results remain keyed only by commandId;
-delayed results from other control epochs/browser lifetimes have distinct keys.
 
-The maximum ID length is 171 characters (version prefix, two Longs, separators, and the existing
-128-character lifetime bound); request and result support that same bound. The authenticated
-32 KiB JSON / 1 MiB presentation / 8 KiB metadata record limits are unchanged.
+`v2:<controlEpoch>:<commandSequence>:<viewportEpoch>:<generation-or-n>:<lifetimeLength>:<lifetimeId><documentLength>:<documentId>`
+
+Numeric fields are canonical decimal (no sign/leading zeroes); null hosting generation is the
+literal `n`, distinct from zero. Opaque lifetime/document strings are preserved verbatim and
+length-prefixed in Kotlin/UTF-16 code units. Embedded delimiters/digits/Unicode cannot alias
+field boundaries. This is injective over the full ControlContext plus sequence, not a hash.
+The `v2` prefix versions this ID encoding only; protocol major/minor and capabilities are unchanged.
+The shared helper, wire constructor/decoder and raw Phone arbiter all enforce the same encoding.
+Results remain keyed only by commandId. A rejected old-document/viewport/generation request and
+a current-context request at the same ordinal now have distinct result keys. An ID with a different
+sequence or any changed context field fails structural validation.
+
+The maximum ID length is 475 UTF-16 code units: prefix (3), four Long-plus-delimiter fields
+(4 x 20), length-prefix/text pairs for lifetime (4 + 128) and document (4 + 256).
+Request and result share this bound via BrowserCommandId. The authenticated 32 KiB JSON /
+1 MiB presentation / 8 KiB metadata record limits are unchanged.
+
+Admission is serialized in this order: ID/sequence structural validation; full current-context
+comparison; existing high-water replay comparison; sequence reservation; owner/link/compatibility/
+presentation/coordinate policy checks; acceptance. Thus a definitive current-context policy rejection
+also consumes its ordinal. It cannot become accepted later merely because readiness, source or the
+requested action changes. A stale-context or structurally invalid request does not reserve anything;
+even its Long.MAX_VALUE ordinal cannot poison the current epoch. Structural errors take precedence
+over replay/policy diagnostics. A replay rejection is still correlated to the original command;
+it is not a second admissible effect or a claim about the original website-side effect.
 
 The owner sends increasing ordinals and never assigns a new ordinal to retry an uncertain effect.
-The Phone reserves the ordinal only after validating identity, before any later page effect,
-and stores only an O(1) high-water mark: duplicate or reordered ordinals at or below it are rejected
-even for a malformed raw arbiter request. Gaps are allowed; wraparound and nonpositive ordinals
-are rejected. Explicit ownership transfer starts a new control epoch and resets the mark;
-old-context commands still fail before admission. Stable-page scrolling has no small
-command-count or cache-capacity limit, and no ID cache is introduced.
+Receiver replay state remains one O(1) high-water Long per control epoch, with no ID cache/LRU.
+Gaps are allowed; wraparound/nonpositive ordinals reject. Only accepted ownership transfer resets
+the mark, not document/viewport/generation changes or policy rejection. Stable-page scrolling has
+no small command-count/cache-capacity limit. Admission alone never asserts webpage success.
 
 The Phone adapter reads actual browser document identity on link start, authenticated-session
 publication and each handoff/action admission, as well as on listener events. A missed notification
@@ -82,7 +93,8 @@ No keyboard, script evaluation, page renderer or production test-control receive
 Pure tests exercise invalid profiles, competing handoffs, inactive hosting, stale lifetime/
 control/document/viewport/generation contexts, wrong owner, reconnect, stale callbacks,
 command pressure, duplicate IDs with same/new ordinals, canonical namespace/length validation,
-delayed wire-result correlation across handoff/lifetime changes, record size/malformed
+stale/malformed high-water non-poisoning, consumed policy rejections, delayed wire-result
+correlation across document/viewport/generation and handoff/lifetime changes, record size/malformed
 input/truncation and queue priority/coalescing.
 Real TLS JVM tests exercise old-trust reconnect without a new invitation, negotiated
 control/frame transport, missing capabilities and pre-auth presentation rejection.
