@@ -1,0 +1,168 @@
+name: Expert I6 hybrid profile host gates
+on:
+  push:
+    branches: [expert/stability-hybrid-20260921]
+permissions:
+  contents: read
+concurrency:
+  group: expert-i6-hybrid-host-gates
+  cancel-in-progress: false
+jobs:
+  host-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      BASE: b6818680e6e55a43d532d9d9c09d4c3307ebfb9f
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: orchestration
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: b6818680e6e55a43d532d9d9c09d4c3307ebfb9f
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Required Android SDK packages
+        shell: bash
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+      - name: Apply Expert-authored exact-base patch and freeze candidate
+        working-directory: source
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$BASE"
+          mkdir -p ../evidence
+          for patch in ../orchestration/.expert-hybrid/0*.py; do python3 "$patch"; done
+          git diff --check
+          git config user.name 'Expert: Expert-#6'
+          git config user.email 'code2hack4ever@gmail.com'
+          git switch -c expert-local-candidate
+          git add app-phone docs/plans/issue-6-hybrid-presentation.md
+          git commit -m 'Expert: Expert-#6 — I6 stability: hybrid viewport profile and fenced presentation lifecycle'
+          git rev-parse HEAD | tee ../evidence/candidate-sha.txt
+          git rev-parse HEAD^{tree} | tee ../evidence/candidate-tree.txt
+          git diff "$BASE" HEAD -- > ../evidence/candidate.patch
+          git show --stat --oneline HEAD
+          git bundle create ../evidence/candidate.bundle "$BASE..expert-local-candidate"
+          python3 ../orchestration/.expert-hybrid/inventory.py declare ../evidence
+      - name: Targeted profile and epoch tests
+        working-directory: source
+        shell: bash
+        run: |
+          set -o pipefail
+          bash ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g --rerun-tasks :app-phone:testDebugUnitTest --tests 'com.code2hack.eyebrowse.phone.HostingPresentationProfileTest' |& tee ../evidence/targeted.log
+          cp app-phone/build/test-results/testDebugUnitTest/TEST-com.code2hack.eyebrowse.phone.HostingPresentationProfileTest.xml ../evidence/targeted.xml
+      - name: Execute stale-epoch ablation and restore exact candidate
+        working-directory: source
+        shell: bash
+        run: |
+          set -o pipefail
+          FILE=app-phone/src/main/java/com/code2hack/eyebrowse/phone/HostingPresentationProfile.kt
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('app-phone/src/main/java/com/code2hack/eyebrowse/phone/HostingPresentationProfile.kt')
+          s=p.read_text(); a='fun owns(token: Token): Boolean = current === token'
+          assert s.count(a)==1
+          p.write_text(s.replace(a,'fun owns(token: Token): Boolean = true'))
+          PY
+          set +e
+          bash ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g --rerun-tasks :app-phone:testDebugUnitTest --tests 'com.code2hack.eyebrowse.phone.HostingPresentationProfileTest.staleCallbackCannotOwnSuccessor' |& tee ../evidence/ablation.log
+          result=${PIPESTATUS[0]}
+          set -e
+          git restore --source=HEAD -- "$FILE"
+          git diff --exit-code
+          test "$result" -ne 0
+          cp app-phone/build/test-results/testDebugUnitTest/TEST-com.code2hack.eyebrowse.phone.HostingPresentationProfileTest.xml ../evidence/ablation.xml
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          r=ET.parse('../evidence/ablation.xml').getroot()
+          assert int(r.get('tests','0'))==1 and int(r.get('failures','0'))==1
+          assert int(r.get('errors','0'))==0 and int(r.get('skipped','0'))==0
+          print('EXPECTED_RED_ABLATION_VERIFIED; EXACT_SOURCE_RESTORED')
+          PY
+      - name: Full exact-tree JVM module gate
+        id: jvm
+        continue-on-error: true
+        working-directory: source
+        shell: bash
+        run: |
+          set -o pipefail
+          bash ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g --rerun-tasks --continue :core:browser:build :core:link:build :app-phone:testDebugUnitTest :app-rg:testDebugUnitTest |& tee ../evidence/jvm.log
+      - name: Exact predeclared JVM reconciliation
+        id: inventory
+        continue-on-error: true
+        working-directory: source
+        run: python3 ../orchestration/.expert-hybrid/inventory.py reconcile ../evidence
+      - name: Phone RG debug and androidTest assembly
+        id: builds
+        continue-on-error: true
+        working-directory: source
+        shell: bash
+        run: |
+          set -o pipefail
+          bash ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g --rerun-tasks --continue :app-phone:assembleDebug :app-rg:assembleDebug :app-phone:assembleDebugAndroidTest :app-rg:assembleDebugAndroidTest |& tee ../evidence/builds.log
+      - name: Phone RG lint
+        id: lint
+        continue-on-error: true
+        working-directory: source
+        shell: bash
+        run: |
+          set -o pipefail
+          bash ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g --rerun-tasks --continue :app-phone:lintDebug :app-rg:lintDebug |& tee ../evidence/lint.log
+      - name: Exact tree and aggregate gate
+        working-directory: source
+        shell: bash
+        run: |
+          git diff --exit-code
+          test "$(git rev-parse HEAD)" = "$(cat ../evidence/candidate-sha.txt)"
+          echo 'JVM=${{ steps.jvm.outcome }} INVENTORY=${{ steps.inventory.outcome }} BUILDS=${{ steps.builds.outcome }} LINT=${{ steps.lint.outcome }}'
+          test '${{ steps.jvm.outcome }}' = success
+          test '${{ steps.inventory.outcome }}' = success
+          test '${{ steps.builds.outcome }}' = success
+          test '${{ steps.lint.outcome }}' = success
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hybrid-host-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            evidence/
+            source/**/build/test-results/**/TEST-*.xml
+            source/**/build/reports/lint-results-debug.*
+            orchestration/.expert-hybrid/*.py
+          retention-days: 14
+  publish-verification-candidate:
+    needs: host-gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: b6818680e6e55a43d532d9d9c09d4c3307ebfb9f
+      - uses: actions/download-artifact@v4
+        with:
+          name: hybrid-host-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: receipt
+      - name: Publish only isolated verification candidate
+        shell: bash
+        run: |
+          BASE=b6818680e6e55a43d532d9d9c09d4c3307ebfb9f
+          test "$(git ls-remote origin refs/heads/work/issue-6-pairing | cut -f1)" = "$BASE"
+          BUNDLE=$(find receipt -name candidate.bundle -print -quit)
+          EXPECTED=$(cat "$(find receipt -name candidate-sha.txt -print -quit)")
+          git fetch "$BUNDLE" refs/heads/expert-local-candidate:refs/heads/verified-candidate
+          test "$(git rev-parse verified-candidate)" = "$EXPECTED"
+          test "$(git rev-parse verified-candidate^)" = "$BASE"
+          git push origin verified-candidate:refs/heads/expert/stability-hybrid-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          echo "VERIFIED_CANDIDATE=$EXPECTED"
+          echo 'No work/main branch advanced; Expert reviews the diff and publishes via non-forced ref update.'
