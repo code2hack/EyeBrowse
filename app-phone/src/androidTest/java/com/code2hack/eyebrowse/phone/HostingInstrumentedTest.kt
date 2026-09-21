@@ -1,0 +1,2711 @@
+package com.code2hack.eyebrowse.phone
+
+import android.app.KeyguardManager
+import android.content.Context
+import android.graphics.Color
+import android.hardware.display.DisplayManager
+import android.hardware.display.VirtualDisplay
+import android.media.ImageReader
+import android.os.PowerManager
+import android.os.SystemClock
+import android.view.View
+import android.webkit.WebView
+import androidx.test.core.app.ActivityScenario
+import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.action.ViewActions.click
+import androidx.test.espresso.action.ViewActions.replaceText
+import androidx.test.espresso.matcher.ViewMatchers.withId
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import java.util.ArrayList
+import java.util.HashSet
+import java.util.concurrent.atomic.AtomicReference
+import java.util.function.BooleanSupplier
+import org.json.JSONObject
+import org.junit.AfterClass
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+
+/**
+ * Focused hosting-lifecycle instrumentation (correction rounds 2–3).
+ *
+ * <p>Evidence boundaries: activation uses the real Start/Stop controls through single verified
+ * system-pipeline taps (bounded direct-callback activation is a separately labeled diagnostic);
+ * page reads and fixture field/storage setup use {@link WebView#evaluateJavascript} (fixture setup,
+ * not typing evidence); backgrounding uses {@code moveTaskToBack}, which proves the Activity
+ * lifecycle path but is not a physical Home press or secure-lock observation. Delivered pixels are
+ * sampled per frame in the consumer callback so content correlation uses the actually delivered
+ * bitmap, and state/clock/resource milestones are persisted app-scoped while produced (not from a
+ * rotating logcat tail).
+ */
+@RunWith(AndroidJUnit4::class)
+class HostingInstrumentedTest {
+    private lateinit var scenario: ActivityScenario<MainActivity>
+
+    private lateinit var session: PhoneBrowserSession
+
+    private lateinit var hosting: HostingController
+
+    @Before
+    fun setUp() {
+        val context: Context = InstrumentationRegistry.getInstrumentation().getTargetContext()
+        session = PhoneBrowserSession.get(context)
+        hosting = HostingController.get(context)
+        if (milestones == null) {
+            milestones = MilestoneSink(context, System.currentTimeMillis())
+        }
+        ensureNotificationPermissionSetupForTest()
+        runOnMain(hosting::stop)
+        waitUntilMain(
+            "hosting stopped",
+            { (hosting.status().state == HostingController.State.NOT_HOSTING) },
+        )
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        scenario.onActivity({ activity -> session.resetForTest() })
+    }
+
+    /**
+     * App-scoped permission setup so the POST_NOTIFICATIONS dialog never interrupts the Start
+     * control. Below API 33 that runtime permission is explicitly NOT_APPLICABLE: no check, no
+     * grant/revoke, no GRANTED claim and no restoration obligation. On API 33+ the known original
+     * state is recorded once per class (reported as {@code NOTIF_PERM_BEFORE} in the
+     * instrumentation stream) and a not-granted state is changed only through a verified grant; an
+     * attempted but unverified change is reported as uncertain, never silently treated as unchanged
+     * or as success, and fails the setup.
+     */
+    private fun ensureNotificationPermissionSetupForTest() {
+        val sdkInt: Int = android.os.Build.VERSION.SDK_INT
+        if (!NotificationPermissionPolicy.applicable(sdkInt)) {
+            notificationPermissionOutcome = NotificationPermissionPolicy.SetupOutcome.NOT_APPLICABLE
+            if (!notificationPermissionNotApplicableReported) {
+                notificationPermissionNotApplicableReported = true
+                println(
+                    ("NOTIF_PERM_N/A sdk=" + sdkInt).toString() +
+                        " reason=no-runtime-permission-below-33"
+                )
+            }
+            return
+        }
+        if (
+            (notificationPermissionOutcome ==
+                NotificationPermissionPolicy.SetupOutcome.PRE_GRANTED) ||
+                (notificationPermissionOutcome ==
+                    NotificationPermissionPolicy.SetupOutcome.GRANT_VERIFIED)
+        ) {
+            return
+        }
+        var granted: Boolean = notificationPermissionGranted()
+        if (notificationPermissionOutcome == NotificationPermissionPolicy.SetupOutcome.NOT_RUN) {
+            println("NOTIF_PERM_BEFORE granted=" + granted)
+            if (granted) {
+                notificationPermissionOutcome =
+                    NotificationPermissionPolicy.SetupOutcome.PRE_GRANTED
+                return
+            }
+        }
+        var grantAttempted: Boolean = false
+        if (NotificationPermissionPolicy.needsGrant(sdkInt, granted)) {
+            grantAttempted = true
+            runShellCommandForTest(
+                "pm grant com.code2hack.eyebrowse.phone android.permission.POST_NOTIFICATIONS"
+            )
+            granted = notificationPermissionGranted()
+        }
+        if (NotificationPermissionPolicy.setupFailed(sdkInt, grantAttempted, granted)) {
+            notificationPermissionOutcome =
+                NotificationPermissionPolicy.SetupOutcome.GRANT_FAILED_OR_UNCERTAIN
+            println(
+                "NOTIF_PERM_CHANGED verified=false uncertain=true" +
+                    " (no verified mutation; cleanup must not claim restoration)"
+            )
+            fail("POST_NOTIFICATIONS setup did not take effect; not proceeding as verified success")
+        }
+        if (granted) {
+            notificationPermissionOutcome = NotificationPermissionPolicy.SetupOutcome.GRANT_VERIFIED
+            println("NOTIF_PERM_CHANGED verified=true (restoration owed)")
+        }
+    }
+
+    private fun notificationPermissionGranted(): Boolean {
+        return (androidx.core.content.ContextCompat.checkSelfPermission(
+            InstrumentationRegistry.getInstrumentation().getTargetContext(),
+            android.Manifest.permission.POST_NOTIFICATIONS,
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+    }
+
+    /** Shell-launched return to the foreground reusing the existing instance (SINGLE_TOP). */
+    private fun bringMainActivityToFrontForTest() {
+        runShellCommandForTest(
+            "am start -f 0x20000000 -n com.code2hack.eyebrowse.phone/.MainActivity"
+        )
+    }
+
+    private fun runShellCommandForTest(command: String) {
+        try {
+            val descriptor: android.os.ParcelFileDescriptor =
+                InstrumentationRegistry.getInstrumentation()
+                    .getUiAutomation()
+                    .executeShellCommand(command)
+            descriptor.close()
+        } catch (ignored: RuntimeException) {} catch (ignored: java.io.IOException) {}
+    }
+
+    private fun runShellCommandWithOutputForTest(command: String): String {
+        try {
+            val descriptor: android.os.ParcelFileDescriptor =
+                InstrumentationRegistry.getInstrumentation()
+                    .getUiAutomation()
+                    .executeShellCommand(command)
+            try {
+                java.io.FileInputStream(descriptor.getFileDescriptor()).use { `in` ->
+                    val out: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+                    val buffer: ByteArray = ByteArray(8192)
+                    var read: Int
+                    while (true) {
+                        read = `in`.read(buffer)
+                        if (read == -1) break
+                        out.write(buffer, 0, read)
+                    }
+                    return out.toString("UTF-8")
+                }
+            } finally {
+                descriptor.close()
+            }
+        } catch (e: RuntimeException) {
+            return (("(command failed: " + e).toString() + ")")
+        } catch (e: java.io.IOException) {
+            return (("(command failed: " + e).toString() + ")")
+        }
+    }
+
+    /** Real input injection is only meaningful while this app owns the focused window. */
+    private fun awaitWindowFocusForTest() {
+        val deadline: Long = (SystemClock.uptimeMillis() + 15_000)
+        while (SystemClock.uptimeMillis() < deadline) {
+            val focused: AtomicReference<Boolean> = AtomicReference(false)
+            try {
+                scenario.onActivity({ activity -> focused.set(activity.hasWindowFocus()) })
+            } catch (ignored: RuntimeException) {}
+
+            if (true.equals(focused.get())) {
+                return
+            }
+            SystemClock.sleep(200)
+        }
+        fail("the browser window never regained input focus after the transition")
+    }
+
+    /**
+     * ONE actual tap on the real hosting control via the codebase's validated instrumentation input
+     * route (explicit screen coordinates, {@code sendPointerSync}, touchscreen source), after
+     * verified readiness: focused window, laid-out visible button inside the window on the default
+     * display, and a bounded post-transition settle. No retry — an unchanged state after the tap is
+     * uncertain delivery and fails with diagnosis. A test-only touch observer records whether the
+     * window received the injected events at all.
+     */
+    private fun tapHostingToggleOnce(expectedAfter: HostingController.State, boundMs: Long) {
+        awaitWindowFocusForTest()
+        SystemClock.sleep(800)
+        val centerRef: AtomicReference<IntArray> = AtomicReference()
+        val diagnosis: AtomicReference<String> = AtomicReference()
+        scenario.onActivity({ activity ->
+            val button: View = activity.findViewById<View>(R.id.button_hosting_toggle)
+            val focusedWindow: Boolean = activity.hasWindowFocus()
+            val laidOut: Boolean =
+                ((button.isShown() && (button.getWidth() > 0)) && (button.getHeight() > 0))
+            val location: IntArray = IntArray(2)
+            button.getLocationOnScreen(location)
+            val decor: View = activity.getWindow().getDecorView()
+            val onScreen: Boolean =
+                ((((location[0] >= 0) && (location[1] >= 0)) &&
+                    ((location[0] + button.getWidth()) <= decor.getWidth())) &&
+                    ((location[1] + button.getHeight()) <= decor.getHeight()))
+            val display: android.view.Display? = activity.getDisplay()
+            val defaultDisplayOn: Boolean =
+                (((display != null) &&
+                    (display.getDisplayId() == android.view.Display.DEFAULT_DISPLAY)) &&
+                    (display.getState() == android.view.Display.STATE_ON))
+            if (((focusedWindow && laidOut) && onScreen) && defaultDisplayOn) {
+                centerRef.set(
+                    intArrayOf(
+                        (location[0] + (button.getWidth() / 2)),
+                        (location[1] + (button.getHeight() / 2)),
+                    )
+                )
+                button.setOnTouchListener(
+                    callback5@{ view, event ->
+                        android.util.Log.i(
+                            "EyeBrowseTap",
+                            ("button touch " + event.getActionMasked()),
+                        )
+                        return@callback5 false
+                    }
+                )
+            } else {
+                diagnosis.set(
+                    (((((((((("focus=" + focusedWindow).toString() + " laidOut=") + laidOut)
+                                    .toString() + " onScreen=") + onScreen)
+                                .toString() + " at=") + location[0])
+                            .toString() + ",") + location[1])
+                        .toString() + " display=") +
+                        (if (display == null) "null"
+                        else (((display.getDisplayId()).toString() + "/") + display.getState()))
+                )
+            }
+        })
+        if (diagnosis.get() != null) {
+            fail("hosting control not ready for a single tap: " + diagnosis.get())
+        }
+        val center: IntArray = centerRef.get()
+        val now: Long = SystemClock.uptimeMillis()
+        val down: android.view.MotionEvent =
+            android.view.MotionEvent.obtain(
+                now,
+                now,
+                android.view.MotionEvent.ACTION_DOWN,
+                center[0].toFloat(),
+                center[1].toFloat(),
+                0,
+            )
+        val up: android.view.MotionEvent =
+            android.view.MotionEvent.obtain(
+                now,
+                (now + 60),
+                android.view.MotionEvent.ACTION_UP,
+                center[0].toFloat(),
+                center[1].toFloat(),
+                0,
+            )
+        down.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN)
+        up.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN)
+        try {
+            InstrumentationRegistry.getInstrumentation().sendPointerSync(down)
+            InstrumentationRegistry.getInstrumentation().sendPointerSync(up)
+        } finally {
+            down.recycle()
+            up.recycle()
+        }
+        val deadline: Long = (SystemClock.uptimeMillis() + boundMs)
+        var current: HostingController.Status = runOnMainSync(hosting::status)
+        while (SystemClock.uptimeMillis() < deadline) {
+            current = runOnMainSync(hosting::status)
+            if (current.state == expectedAfter) {
+                return
+            }
+            SystemClock.sleep(50)
+        }
+        fail(
+            ((((((((("injected tap produced no " + expectedAfter).toString() + " within ") +
+                                    boundMs)
+                                .toString() + "ms (last=") + current.state)
+                            .toString() + " reason=") + current.failureReason)
+                        .toString() +
+                        "); focus, geometry and display state were verified before this single attempt; ")
+                    .toString() +
+                    "button touch delivery is in the EyeBrowseTap logcat; cause unknown if no touch ")
+                .toString() + "was logged; no retry performed"
+        )
+    }
+
+    /**
+     * Labeled DIAGNOSTIC, not UI-journey evidence: the hosting toggle's own click listener is wired
+     * and functional when invoked directly. This isolates product-listener defects from input-
+     * injection quirks; it never substitutes the actual Start/Stop tap journey.
+     */
+    @Test
+    fun hostingToggleListenerWiredDirectCallbackDiagnostic() {
+        openFixture("/hosting.html", "Hosting capture page")
+        val generationBefore: Long = runOnMainSync({ (hosting.currentGeneration()).toLong() })
+        scenario.onActivity({ activity ->
+            activity.findViewById<View>(R.id.button_hosting_toggle).performClick()
+        })
+        awaitHostingState(HostingController.State.HOSTING, START_BOUND_MS)
+        assertEquals(
+            (generationBefore + 1).toLong(),
+            ((runOnMainSync({ (hosting.currentGeneration()).toLong() })).toLong()).toLong(),
+        )
+        runOnMain(hosting::stop)
+        awaitHostingState(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
+    }
+
+    /**
+     * The core same-instance continuity check: Phone → private presentation → Phone keeps the load
+     * marker, field value, WebView identity and load count, and Start/Stop stay bounded.
+     */
+    @Test
+    fun hostingStartBackgroundReturnKeepsSamePageStateAndWebViewIdentity() {
+        openFixture("/hosting.html", "Hosting capture page")
+        val marker: String? = domText("load-marker")
+        setFieldValue("continuity-value")
+        val loadsBefore: Int = loadCount("/hosting.html")
+        val webViewIdentity: Int = webViewIdentityHash()
+        val generationBefore: Long = runOnMainSync({ (hosting.currentGeneration()).toLong() })
+        val startBegin: Long = SystemClock.uptimeMillis()
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
+        val started: HostingController.Status = runOnMainSync(hosting::status)
+        val startElapsed: Long = (SystemClock.uptimeMillis() - startBegin)
+        assertEquals((generationBefore + 1).toLong(), ((started.generation).toLong()).toLong())
+        assertEquals(HostingController.Attachment.PHONE_UI, started.attachment)
+        scenario.onActivity({ activity -> activity.moveTaskToBack(true) })
+        waitUntil(
+            "webview hosted offscreen",
+            callback11@{
+                val snapshot: HostViewSnapshot = hostViewSnapshot()
+                return@callback11 ((snapshot.status.attachment ==
+                    HostingController.Attachment.PRIVATE_DISPLAY) && snapshot.viewAttached)
+            },
+        )
+        assertEquals((webViewIdentity).toLong(), (webViewIdentityHash()).toLong())
+        assertEquals(
+            "no reload while hosted",
+            (loadsBefore).toLong(),
+            (loadCount("/hosting.html")).toLong(),
+        )
+        assertEquals(marker, domText("load-marker"))
+        assertEquals("continuity-value", readFieldValue())
+        bringMainActivityToFrontForTest()
+        waitUntil(
+            "webview back on phone ui",
+            callback12@{
+                val snapshot: HostViewSnapshot = hostViewSnapshot()
+                return@callback12 ((snapshot.status.attachment ==
+                    HostingController.Attachment.PHONE_UI) && snapshot.viewAttached)
+            },
+        )
+        assertEquals((webViewIdentity).toLong(), (webViewIdentityHash()).toLong())
+        assertEquals(marker, domText("load-marker"))
+        assertEquals("continuity-value", readFieldValue())
+        assertEquals(
+            "no reload across the private-display round trip",
+            (loadsBefore).toLong(),
+            (loadCount("/hosting.html")).toLong(),
+        )
+        val stopBegin: Long = SystemClock.uptimeMillis()
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
+        val stopElapsed: Long = (SystemClock.uptimeMillis() - stopBegin)
+        assertTrue(
+            (("stop bound " + stopElapsed).toString() + "ms"),
+            (stopElapsed <= STOP_BOUND_MS),
+        )
+        assertTrue(
+            (("stop bound " + startElapsed).toString() + "ms"),
+            (startElapsed <= START_BOUND_MS),
+        )
+        assertEquals("the page survives Stop", marker, domText("load-marker"))
+        assertEquals("the field survives Stop", "continuity-value", readFieldValue())
+        assertEquals((webViewIdentity).toLong(), (webViewIdentityHash()).toLong())
+    }
+
+    /** Activity exit during hosting is not Stop: the host and page survive, relaunch reattaches. */
+    @Test
+    fun activityFinishDuringHostingKeepsHostedPageForRelaunch() {
+        openFixture("/hosting.html", "Hosting capture page")
+        val marker: String? = domText("load-marker")
+        val loadsBefore: Int = loadCount("/hosting.html")
+        val webViewIdentity: Int = webViewIdentityHash()
+        val generationBefore: Long = runOnMainSync({ (hosting.currentGeneration()).toLong() })
+        onView(withId(R.id.button_hosting_toggle)).perform(click())
+        awaitHostingState(HostingController.State.HOSTING, START_BOUND_MS)
+        scenario.onActivity(android.app.Activity::finish)
+        waitUntilMain(
+            "host intact after activity finish",
+            { (hosting.status().state == HostingController.State.HOSTING) },
+        )
+        val generationAfterFinish: Long = runOnMainSync({ (hosting.currentGeneration()).toLong() })
+        assertEquals(
+            "hosting outlives the Activity",
+            (generationBefore + 1).toLong(),
+            (generationAfterFinish).toLong(),
+        )
+        assertEquals(
+            "the hosted page is still the same live document",
+            marker,
+            domText("load-marker"),
+        )
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        waitUntil(
+            "relaunch shows the hosted page on phone ui",
+            callback16@{
+                val snapshot: HostViewSnapshot = hostViewSnapshot()
+                return@callback16 (((snapshot.status.state == HostingController.State.HOSTING) &&
+                    (snapshot.status.attachment == HostingController.Attachment.PHONE_UI)) &&
+                    snapshot.viewAttached)
+            },
+        )
+        val generationAfterRelaunch: Long =
+            runOnMainSync({ (hosting.currentGeneration()).toLong() })
+        assertEquals(
+            "same hosting generation after relaunch",
+            (generationBefore + 1).toLong(),
+            (generationAfterRelaunch).toLong(),
+        )
+        assertEquals(
+            "same live WebView instance",
+            (webViewIdentity).toLong(),
+            (webViewIdentityHash()).toLong(),
+        )
+        assertEquals(
+            "no reload on relaunch",
+            (loadsBefore).toLong(),
+            (loadCount("/hosting.html")).toLong(),
+        )
+        assertEquals(marker, domText("load-marker"))
+    }
+
+    /**
+     * Repeated Start/Stop cycles keep the page, history and WebView identity; equivalent stopped
+     * states, deterministic Stop-during-STARTING, stale-callback fencing after bounded teardown.
+     */
+    @Test
+    fun startStopCyclesKeepPageAndRepeatedStopIsIdempotent() {
+        openFixture("/hosting.html", "Hosting capture page")
+        onView(withId(R.id.address_input))
+            .perform(click(), replaceText((FIXTURE_BASE).toString() + "/hosting-two.html"))
+        onView(withId(R.id.button_open)).perform(click())
+        waitUntil(
+            "second page for history",
+            { "Second hosting page".equals(domText("page-title")) },
+        )
+        onView(withId(R.id.address_input))
+            .perform(click(), replaceText((FIXTURE_BASE).toString() + "/hosting.html"))
+        onView(withId(R.id.button_open)).perform(click())
+        waitUntil(
+            "back on the capture page",
+            { "Hosting capture page".equals(domText("page-title")) },
+        )
+        val historyBefore: Boolean = runOnMainSync(session::canGoBack)
+        assertTrue("representative history exists before hosting", historyBefore)
+        val marker: String? = domText("load-marker")
+        val loadsBefore: Int = loadCount("/hosting.html")
+        val webViewIdentity: Int = webViewIdentityHash()
+        val generationBefore: Long = runOnMainSync({ (hosting.currentGeneration()).toLong() })
+        val stoppedStates: MutableList<String> = java.util.ArrayList()
+        var cycle: Int = 1
+        while (cycle <= 3) {
+            onView(withId(R.id.button_hosting_toggle)).perform(click())
+            val started: HostingController.Status =
+                awaitHostingState(HostingController.State.HOSTING, START_BOUND_MS)
+            assertEquals(
+                "generation advances per cycle",
+                (generationBefore + cycle).toLong(),
+                ((started.generation).toLong()).toLong(),
+            )
+            runOnMain(hosting::stop)
+            awaitHostingState(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
+            stoppedStates.add(
+                runOnMainSync({
+                    (((((hosting.captureResourcesPresent()).toString() + "|") +
+                            hosting.hasDisplayResources())
+                        .toString() + "|") + hosting.isWakeLockHeld())
+                })
+            )
+            cycle++
+        }
+        assertEquals(
+            "all cycles ended in the same stopped resource state",
+            (1).toLong(),
+            (HashSet(stoppedStates).size).toLong(),
+        )
+        runOnMain({
+            assertTrue("stop-during-start start accepted", hosting.start())
+            assertEquals(
+                "stop-during-start exercises STARTING",
+                HostingController.State.STARTING,
+                hosting.status().state,
+            )
+            hosting.stop()
+        })
+        awaitHostingState(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
+        runOnMain(hosting::stop)
+        runOnMain(hosting::stop)
+        awaitHostingState(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
+        onView(withId(R.id.button_hosting_toggle)).perform(click())
+        awaitHostingState(HostingController.State.HOSTING, START_BOUND_MS)
+        scenario.onActivity({ activity -> activity.moveTaskToBack(true) })
+        waitUntil(
+            "webview hosted offscreen",
+            callback24@{
+                val snapshot: HostViewSnapshot = hostViewSnapshot()
+                return@callback24 ((snapshot.status.attachment ==
+                    HostingController.Attachment.PRIVATE_DISPLAY) && snapshot.viewAttached)
+            },
+        )
+        val staleConsumer: CollectingConsumer = CollectingConsumer()
+        val stoppedLease: HostingController.Lease? =
+            runOnMainSync({ hosting.acquireLease(staleConsumer) })
+        assertNotNull("lease before Stop", stoppedLease)
+        waitUntil("frames flow before Stop", { (staleConsumer.count() > 0) })
+        runOnMain(hosting::stop)
+        awaitHostingState(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
+        val teardownDeadline: Long = (SystemClock.uptimeMillis() + STOP_BOUND_MS)
+        while (
+            (SystemClock.uptimeMillis() < teardownDeadline) &&
+                runOnMainSync(hosting::captureResourcesPresent)
+        ) {
+            SystemClock.sleep(100)
+        }
+        assertEquals(
+            "teardown completed within bound (reader closed, thread exited)",
+            false,
+            runOnMainSync(hosting::captureResourcesPresent),
+        )
+        assertEquals("wake lock released by Stop", false, runOnMainSync(hosting::isWakeLockHeld))
+        val staleCount: Int = staleConsumer.count()
+        SystemClock.sleep(2_000)
+        assertEquals(
+            "no stale frames delivered after Stop",
+            (staleCount).toLong(),
+            (staleConsumer.count()).toLong(),
+        )
+        assertEquals(
+            "representative history survives the hosting lifecycle",
+            historyBefore,
+            runOnMainSync(session::canGoBack),
+        )
+        assertEquals("page survives every cycle", marker, domText("load-marker"))
+        assertEquals(
+            "no page reload from hosting cycles",
+            (loadsBefore).toLong(),
+            (loadCount("/hosting.html")).toLong(),
+        )
+        assertEquals(
+            "same live WebView instance",
+            (webViewIdentity).toLong(),
+            (webViewIdentityHash()).toLong(),
+        )
+    }
+
+    /** Injected null and thrown platform allocation failures roll back bounded and idempotently. */
+    @Test
+    fun partialAllocationFailuresRollBackBounded() {
+        openFixture("/hosting.html", "Hosting capture page")
+        val platform: PrivateDisplayHost.Factory = PrivateDisplayHost.PlatformFactory()
+        val generationBefore: Long = runOnMainSync({ (hosting.currentGeneration()).toLong() })
+        hosting.setResourceFactoryForTest(
+            object : PrivateDisplayHost.Factory {
+                override fun createVirtualDisplay(
+                    manager: DisplayManager,
+                    name: String,
+                    width: Int,
+                    height: Int,
+                    densityDpi: Int,
+                    surface: Any?,
+                ): VirtualDisplay? {
+                    return null
+                }
+
+                override fun createImageReader(width: Int, height: Int): ImageReader? {
+                    return platform.createImageReader(width, height)
+                }
+
+                override fun createPresentation(
+                    context: Context,
+                    display: android.view.Display,
+                ): PrivateDisplayHost.PresentationHost {
+                    return platform.createPresentation(context, display)
+                }
+            }
+        )
+        onView(withId(R.id.button_hosting_toggle)).perform(click())
+        awaitStartupOutcome(generationBefore + 1)
+        assertEquals(
+            "display failure rolled back capture resources",
+            false,
+            runOnMainSync(hosting::captureResourcesPresent),
+        )
+        assertEquals(
+            "display failure released display resources",
+            false,
+            runOnMainSync(hosting::hasDisplayResources),
+        )
+        hosting.setResourceFactoryForTest(
+            object : PrivateDisplayHost.Factory {
+                override fun createVirtualDisplay(
+                    manager: DisplayManager,
+                    name: String,
+                    width: Int,
+                    height: Int,
+                    densityDpi: Int,
+                    surface: Any?,
+                ): VirtualDisplay? {
+                    return platform.createVirtualDisplay(
+                        manager,
+                        name,
+                        width,
+                        height,
+                        densityDpi,
+                        surface,
+                    )
+                }
+
+                override fun createImageReader(width: Int, height: Int): ImageReader? {
+                    throw IllegalStateException("injected platform allocation failure")
+                }
+
+                override fun createPresentation(
+                    context: Context,
+                    display: android.view.Display,
+                ): PrivateDisplayHost.PresentationHost {
+                    return platform.createPresentation(context, display)
+                }
+            }
+        )
+        onView(withId(R.id.button_hosting_toggle)).perform(click())
+        awaitStartupOutcome(generationBefore + 2)
+        assertEquals(
+            "thrown failure rolled back capture resources",
+            false,
+            runOnMainSync(hosting::captureResourcesPresent),
+        )
+        assertEquals(
+            "thrown failure released display resources",
+            false,
+            runOnMainSync(hosting::hasDisplayResources),
+        )
+        hosting.setResourceFactoryForTest(platform)
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
+        assertEquals(false, runOnMainSync(hosting::captureResourcesPresent))
+    }
+
+    /** Waits for a failed start: NOT_HOSTING with the generation consumed and a recorded reason. */
+    private fun awaitStartupOutcome(expectedGeneration: Long) {
+        val deadline: Long = (SystemClock.uptimeMillis() + START_BOUND_MS)
+        var status: HostingController.Status = runOnMainSync(hosting::status)
+        while (SystemClock.uptimeMillis() < deadline) {
+            status = runOnMainSync(hosting::status)
+            if (
+                ((status.state == HostingController.State.NOT_HOSTING) &&
+                    (status.generation.toLong() == expectedGeneration)) &&
+                    (status.failureReason != null)
+            ) {
+                return
+            }
+            SystemClock.sleep(50)
+        }
+        fail(
+            ((((((((("failed start did not roll back in " + START_BOUND_MS).toString() +
+                                "ms (state=") + status.state)
+                            .toString() + " gen=") + status.generation)
+                        .toString() + " expected=") + expectedGeneration)
+                    .toString() + " reason=") + status.failureReason)
+                .toString() + ")"
+        )
+    }
+
+    /**
+     * Hosting-active recreation, renderer interruption and site persistence: recreation with the
+     * host live keeps generation/WebView/document; a renderer loss interrupts hosting and requires
+     * the explicit restart; persisted site data survives hosting start/stop.
+     */
+    @Test
+    fun hostingRecreationInterruptionAndPersistenceKeepSessionAndData() {
+        openFixture("/storage.html", "localStorage controls")
+        val storedValue: String = ("persist-check-" + SystemClock.uptimeMillis())
+        evaluateJs(
+            (("(function(){localStorage.setItem('fixture-key'," + JSONObject.quote(storedValue))
+                    .toString() + ");")
+                .toString() + "return localStorage.getItem('fixture-key');})()"
+        )
+        val generationBefore: Long = runOnMainSync({ (hosting.currentGeneration()).toLong() })
+        openFixture("/hosting.html", "Hosting capture page")
+        val marker: String? = domText("load-marker")
+        val webViewIdentity: Int = webViewIdentityHash()
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
+        scenario.recreate()
+        waitUntil(
+            "recreated activity reattached the hosted page",
+            callback29@{
+                val snapshot: HostViewSnapshot = hostViewSnapshot()
+                return@callback29 (((snapshot.status.state == HostingController.State.HOSTING) &&
+                    (snapshot.status.attachment == HostingController.Attachment.PHONE_UI)) &&
+                    snapshot.viewAttached)
+            },
+        )
+        assertEquals(
+            "recreation keeps the hosting generation",
+            (generationBefore + 1).toLong(),
+            ((runOnMainSync({ (hosting.currentGeneration()).toLong() })).toLong()).toLong(),
+        )
+        assertEquals(
+            "same live WebView instance across recreation",
+            (webViewIdentity).toLong(),
+            (webViewIdentityHash()).toLong(),
+        )
+        assertEquals(
+            "document preserved across hosting-active recreation",
+            marker,
+            domText("load-marker"),
+        )
+        runOnMain(session::simulateProcessRestartForTest)
+        waitUntil(
+            "hosting interrupted after renderer loss",
+            callback31@{
+                var status: HostingController.Status = hosting.status()
+                return@callback31 ((status.state == HostingController.State.NOT_HOSTING) &&
+                    (status.failureReason != null))
+            },
+        )
+        assertEquals(
+            "interruption reason recorded",
+            HostingController.State.NOT_HOSTING,
+            runOnMainSync(hosting::status).state,
+        )
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        openFixture("/storage.html", "localStorage controls")
+        assertEquals(
+            "site persistence before hosting cycle",
+            storedValue,
+            decode(evaluateJs("localStorage.getItem('fixture-key')")),
+        )
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
+        onView(withId(R.id.address_input))
+            .perform(click(), replaceText((FIXTURE_BASE).toString() + "/storage.html"))
+        onView(withId(R.id.button_open)).perform(click())
+        waitUntil(
+            "storage page reloaded after hosting cycle",
+            { "localStorage controls".equals(domText("page-title")) },
+        )
+        assertEquals(
+            "site persistence across hosting start/stop",
+            storedValue,
+            decode(evaluateJs("localStorage.getItem('fixture-key')")),
+        )
+    }
+
+    /**
+     * A safe app-scoped window change while hosting reconciles the private geometry to the last
+     * measured Phone content viewport (frames at the size, same document, no reload) and the exact
+     * page state is restored when the window returns.
+     */
+    @Test
+    fun hostingWindowChangeReconcilesGeometryWithExactRestoration() {
+        assertFalse(
+            "blank white presentation must not qualify as the fixture page",
+            nearColor(Color.WHITE, CAPTURE_PAGE_COLOR),
+        )
+        openFixture("/hosting.html", "Hosting capture page")
+        val marker: String? = domText("load-marker")
+        setFieldValue("geometry-value")
+        val loadsBefore: Int = loadCount("/hosting.html")
+        val sizeBefore: IntArray = currentWebViewSize()
+        val baselinePortrait: Boolean = (sizeBefore[1] >= sizeBefore[0])
+        val changeOrientation: Int =
+            (if (baselinePortrait) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
+        val restoreOrientation: Int =
+            (if (baselinePortrait) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
+        val generationBefore: Long = runOnMainSync({ (hosting.currentGeneration()).toLong() })
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
+        scenario.onActivity({ activity -> activity.setRequestedOrientation(changeOrientation) })
+        waitUntil(
+            "window changed while hosting",
+            callback35@{
+                val size: IntArray = currentWebViewSize()
+                return@callback35 ((size[0] != sizeBefore[0]) || (size[1] != sizeBefore[1]))
+            },
+        )
+        val sizeAfterChange: IntArray = currentWebViewSize()
+        scenario.onActivity({ activity -> activity.moveTaskToBack(true) })
+        waitUntil(
+            "hosted offscreen at the reconciled geometry",
+            callback37@{
+                val snapshot: HostViewSnapshot = hostViewSnapshot()
+                return@callback37 ((snapshot.status.attachment ==
+                    HostingController.Attachment.PRIVATE_DISPLAY) && snapshot.viewAttached)
+            },
+        )
+        val consumer: CollectingConsumer = CollectingConsumer()
+        consumer.expectQualification(sizeAfterChange[0], sizeAfterChange[1], CAPTURE_PAGE_COLOR)
+        val eligibleUptime: Long = SystemClock.uptimeMillis()
+        var lease: HostingController.Lease? = runOnMainSync({ hosting.acquireLease(consumer) })
+        assertNotNull("lease after geometry reconciliation", lease)
+        val afterAcquisition: HostViewSnapshot = hostViewSnapshot()
+        assertEquals(
+            "first demand remains privately attached",
+            HostingController.Attachment.PRIVATE_DISPLAY,
+            afterAcquisition.status.attachment,
+        )
+        assertTrue(
+            "the actual WebView is attached AFTER acquisition/rebuild",
+            afterAcquisition.viewAttached,
+        )
+        waitUntil(
+            "first VALID frame at the reconciled geometry",
+            { (consumer.qualifyingCountFrom(0) > 0) },
+        )
+        val firstValid: Int = consumer.earliestQualifyingIndexFrom(0)
+        val firstValidDelayMs: Long = consumer.earliestQualifyingDelayMsFrom(0, eligibleUptime)
+        milestones!!.record(
+            "window-rebuild first-raw/first-valid: " +
+                consumer.qualificationSummary(0, eligibleUptime)
+        )
+        assertTrue(
+            (((("earliest VALID current-document/current-geometry frame within 2s of ORIGINAL ")
+                    .toString() + "eligibility: ") + firstValidDelayMs)
+                .toString() + "ms"),
+            OutputQualification.validWithinBound(firstValidDelayMs),
+        )
+        assertTrue(
+            ((((("frames from the first VALID callback carry the reconciled (saved Phone) ")
+                    .toString() + "viewport ") + sizeAfterChange[0])
+                .toString() + "x") + sizeAfterChange[1]),
+            consumer.tailFramesMatchSize(firstValid, sizeAfterChange[0], sizeAfterChange[1]),
+        )
+        assertTrue(
+            "frames from the first VALID callback show the same document after reconcile",
+            consumer.tailFramesNearColor(firstValid, CAPTURE_PAGE_COLOR),
+        )
+        assertEquals(
+            "no reload from geometry reconciliation",
+            (loadsBefore).toLong(),
+            (loadCount("/hosting.html")).toLong(),
+        )
+        assertEquals(marker, domText("load-marker"))
+        runOnMain(lease!!::release)
+        bringMainActivityToFrontForTest()
+        waitUntil(
+            "webview back on phone ui",
+            callback40@{
+                val snapshot: HostViewSnapshot = hostViewSnapshot()
+                return@callback40 ((snapshot.status.attachment ==
+                    HostingController.Attachment.PHONE_UI) && snapshot.viewAttached)
+            },
+        )
+        scenario.onActivity({ activity -> activity.setRequestedOrientation(restoreOrientation) })
+        waitUntil(
+            ((("window restored to " + sizeBefore[0]).toString() + "x") + sizeBefore[1]),
+            callback42@{
+                val size: IntArray = currentWebViewSize()
+                return@callback42 ((size[0] == sizeBefore[0]) && (size[1] == sizeBefore[1]))
+            },
+        )
+        assertEquals(marker, domText("load-marker"))
+        assertEquals("geometry-value", readFieldValue())
+        assertEquals(
+            "no reload across the window round trip",
+            (loadsBefore).toLong(),
+            (loadCount("/hosting.html")).toLong(),
+        )
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
+    }
+
+    /**
+     * The bounded background-capture acceptance core (corrected round 2): never-leased idle
+     * anchored at readiness, first frame at CONSUMER delivery ≤2s from eligibility, delivered-
+     * pixel content correlation, ≥3 changing frames per 10s, 120s active offscreen capture,
+     * production stop ≤6s TOTAL after the last renewal, wake-lock release in the same bound, idle
+     * release by demand+30s, and final Stop — with device/lock facts and resource milestones
+     * persisted app-scoped while produced.
+     */
+    @Test
+    fun backgroundCaptureMeetsLivenessContentIdleAndStopBounds() {
+        recordLockRecoverabilityAssessment()
+        openFixture("/hosting.html", "Hosting capture page")
+        val marker: String? = domText("load-marker")
+        val loadsHosting: Int = loadCount("/hosting.html")
+        setFieldValue("capture-value")
+        val generationBefore: Long = runOnMainSync({ (hosting.currentGeneration()).toLong() })
+        memoryMilestone("before-start")
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
+        assertEquals(
+            (generationBefore + 1).toLong(),
+            ((runOnMainSync({ (hosting.currentGeneration()).toLong() })).toLong()).toLong(),
+        )
+        val readyElapsed: Long = SystemClock.elapsedRealtime()
+        scenario.onActivity({ activity -> activity.moveTaskToBack(true) })
+        waitUntil(
+            "webview hosted offscreen",
+            callback46@{
+                val snapshot: HostViewSnapshot = hostViewSnapshot()
+                return@callback46 ((snapshot.status.attachment ==
+                    HostingController.Attachment.PRIVATE_DISPLAY) && snapshot.viewAttached)
+            },
+        )
+        recordDeviceState("backgrounded-before-capture")
+        val readinessAnchor: Long = runOnMainSync(hosting::lastDemandAnchorElapsedMs)
+        val neverLeasedDeadline: Long = (readinessAnchor + HostingPolicy.IDLE_RELEASE_MS)
+        var completion: Long = 0
+        val diagnosticLimit: Long = (neverLeasedDeadline + 10_000)
+        while (SystemClock.elapsedRealtime() < diagnosticLimit) {
+            completion = runOnMainSync(hosting::lastIdleReleaseCompletedElapsedMs)
+            if (completion > 0) {
+                break
+            }
+            SystemClock.sleep(50)
+        }
+        assertTrue("idle-release completion was observed on the production path", (completion > 0))
+        assertTrue(
+            (("never-leased completion " + (completion - readinessAnchor)).toString() +
+                "ms after the anchor is within the exact 30s deadline"),
+            (completion <= neverLeasedDeadline),
+        )
+        assertEquals(
+            "capture resources absent after the observed completion",
+            false,
+            runOnMainSync(hosting::captureResourcesPresent),
+        )
+        assertEquals(
+            "never-leased hosting session persists",
+            HostingController.State.HOSTING,
+            runOnMainSync(hosting::status).state,
+        )
+        memoryMilestone(
+            ("after-never-leased-idle completedAt=" + (completion - readinessAnchor)).toString() +
+                "msAfterExactAnchor"
+        )
+        val expectedGeneration: Int = (generationBefore + 1).toInt()
+        val expectedSize: IntArray = currentWebViewSize()
+        val consumer: CollectingConsumer = CollectingConsumer()
+        consumer.expectQualification(expectedSize[0], expectedSize[1], CAPTURE_PAGE_COLOR)
+        val eligibleUptime: Long = SystemClock.uptimeMillis()
+        var lease: HostingController.Lease? = runOnMainSync({ hosting.acquireLease(consumer) })
+        assertNotNull("lease must be acquirable while hosting", lease)
+        val renewal: LeaseRenewal = LeaseRenewal(lease!!)
+        renewal.start()
+        try {
+            waitUntil(
+                "first VALID current-document/current-geometry frame",
+                { (consumer.qualifyingCountFrom(0) > 0) },
+            )
+        } catch (failure: AssertionError) {
+            fail(
+                (((failure.message).toString() + " qualification={") +
+                        consumer.qualificationSummary(0, eligibleUptime))
+                    .toString() + "}"
+            )
+        }
+        val firstValid: Int = consumer.earliestQualifyingIndexFrom(0)
+        val firstValidDelayMs: Long = consumer.earliestQualifyingDelayMsFrom(0, eligibleUptime)
+        milestones!!.record(
+            "background first-raw/first-valid: " + consumer.qualificationSummary(0, eligibleUptime)
+        )
+        assertTrue(
+            (((("first VALID current-token frame at consumer delivery within 2s of ORIGINAL ")
+                    .toString() + "eligibility: ") + firstValidDelayMs)
+                .toString() + "ms"),
+            OutputQualification.validWithinBound(firstValidDelayMs),
+        )
+        assertTrue(
+            "frame carries the hosting generation",
+            consumer.allFramesMatchGeneration(expectedGeneration),
+        )
+        assertTrue(
+            "frames from the first VALID frame match the measured viewport",
+            consumer.tailFramesMatchSize(firstValid, expectedSize[0], expectedSize[1]),
+        )
+        assertTrue("capture stamps are monotonic", consumer.monotonicCaptureStamps())
+        assertTrue(
+            "wake lock is held while the lease is live",
+            runOnMainSync(hosting::isWakeLockHeld),
+        )
+        evaluateJs("window.__eyebrowseFreeze(true)")
+        SystemClock.sleep(3_000)
+        val frozenCount: Int = consumer.count()
+        SystemClock.sleep(2_500)
+        assertEquals(
+            "static page produces no new frames",
+            (frozenCount).toLong(),
+            (consumer.count()).toLong(),
+        )
+        evaluateJs("window.__eyebrowseFreeze(false)")
+        waitUntil("frames resume when the counter resumes", { (consumer.count() > frozenCount) })
+        var distinctBefore: Int = consumer.distinctHashes()
+        var windowStart: Long = SystemClock.elapsedRealtime()
+        while ((SystemClock.elapsedRealtime() - windowStart) < 10_000) {
+            SystemClock.sleep(200)
+        }
+        assertTrue(
+            (("at least 3 content-changing frames in a 10s window (got " +
+                    (consumer.distinctHashes() - distinctBefore))
+                .toString() + ")"),
+            ((consumer.distinctHashes() - distinctBefore) >= 3),
+        )
+        assertTrue(
+            "delivered pixels show the counter page",
+            consumer.latestFrameNearColor(CAPTURE_PAGE_COLOR),
+        )
+        val loadsTwoBefore: Int = loadCount("/hosting-two.html")
+        val secondPageFrom: Int = consumer.count()
+        consumer.expectQualification(expectedSize[0], expectedSize[1], SECOND_PAGE_COLOR)
+        val secondPageNavigationUptime: Long = SystemClock.uptimeMillis()
+        runOnMain({ session.openAddress((FIXTURE_BASE).toString() + "/hosting-two.html") })
+        waitUntil(
+            "second page loaded while hosted",
+            { "Second hosting page".equals(domText("page-title")) },
+        )
+        assertEquals(
+            "navigation load recorded once",
+            (loadsTwoBefore + 1).toLong(),
+            (loadCount("/hosting-two.html")).toLong(),
+        )
+        val loadsTwoAfter: Int = (loadsTwoBefore + 1)
+        try {
+            waitUntil(
+                "delivered pixels show the second page",
+                { consumer.latestFrameNearColor(SECOND_PAGE_COLOR) },
+            )
+        } catch (failure: AssertionError) {
+            fail(
+                (((failure.message).toString() + " secondPageQualification={") +
+                        consumer.qualificationSummary(secondPageFrom, secondPageNavigationUptime))
+                    .toString() + "}"
+            )
+        }
+        milestones!!.record(
+            "second-page delivery: " +
+                consumer.qualificationSummary(secondPageFrom, secondPageNavigationUptime)
+        )
+        val loadsHostingBeforeReturn: Int = loadCount("/hosting.html")
+        val returnPageFrom: Int = consumer.count()
+        consumer.expectQualification(expectedSize[0], expectedSize[1], CAPTURE_PAGE_COLOR)
+        val returnNavigationUptime: Long = SystemClock.uptimeMillis()
+        runOnMain({ session.openAddress((FIXTURE_BASE).toString() + "/hosting.html") })
+        waitUntil(
+            "counter page restored while hosted",
+            { "Hosting capture page".equals(domText("page-title")) },
+        )
+        try {
+            waitUntil(
+                "delivered pixels return to the counter page",
+                { consumer.latestFrameNearColor(CAPTURE_PAGE_COLOR) },
+            )
+        } catch (failure: AssertionError) {
+            fail(
+                (((failure.message).toString() + " returnQualification={") +
+                        consumer.qualificationSummary(returnPageFrom, returnNavigationUptime))
+                    .toString() + "}"
+            )
+        }
+        SystemClock.sleep(2_000)
+        assertTrue(
+            "no second-page pixels after returning (stale output not replayed)",
+            consumer.recentFramesNearColor(CAPTURE_PAGE_COLOR, 2_000),
+        )
+        val firstDeliveryElapsed: Long = consumer.deliveryElapsedAt(0)
+        waitUntil(
+            "120s of active offscreen capture",
+            { ((consumer.latestCaptureElapsed() - firstDeliveryElapsed) >= 120_000) },
+            140_000,
+        )
+        distinctBefore = consumer.distinctHashes()
+        windowStart = SystemClock.elapsedRealtime()
+        while ((SystemClock.elapsedRealtime() - windowStart) < 10_000) {
+            SystemClock.sleep(200)
+        }
+        assertTrue(
+            (("final 10s window still has >=3 changing frames (got " +
+                    (consumer.distinctHashes() - distinctBefore))
+                .toString() + ")"),
+            ((consumer.distinctHashes() - distinctBefore) >= 3),
+        )
+        recordDeviceState("after-120s-active-capture")
+        memoryMilestone("after-120s-active-capture")
+        renewal.stopRenewing()
+        runOnMain(lease!!::renew)
+        val lastRenewElapsed: Long = runOnMainSync(hosting::lastDemandAnchorElapsedMs)
+        val stopDeadline: Long = (lastRenewElapsed + 6_000)
+        var stoppedObservedAt: Long = 0
+        var endpointStatus: HostingController.Status
+        do {
+            endpointStatus = runOnMainSync(hosting::status)
+            val observedAt: Long = SystemClock.elapsedRealtime()
+            if (
+                (!endpointStatus.captureActive && !endpointStatus.wakeLockHeld) &&
+                    (stoppedObservedAt == 0L)
+            ) {
+                stoppedObservedAt = observedAt
+            }
+            if (observedAt >= stopDeadline) {
+                break
+            }
+            SystemClock.sleep(Math.min(50, (stopDeadline - observedAt)))
+        } while (true)
+        assertTrue(
+            "capture and wake lock stopped by last successful renewal +6s",
+            ((stoppedObservedAt > 0) && (stoppedObservedAt <= stopDeadline)),
+        )
+        assertFalse(
+            "capture remains inactive at the six-second endpoint",
+            endpointStatus.captureActive,
+        )
+        assertFalse("wake lock remains released at the endpoint", endpointStatus.wakeLockHeld)
+        val lastDelivery: Long = consumer.latestDeliveryElapsed()
+        assertTrue(
+            "no late consumer delivery beyond the six-second endpoint",
+            (lastDelivery <= stopDeadline),
+        )
+        milestones!!.record(
+            (((((("liveness anchor=" + lastRenewElapsed).toString() + " deadline=") + stopDeadline)
+                    .toString() + " stoppedObserved=") + stoppedObservedAt)
+                .toString() + " lastDelivery=") + lastDelivery
+        )
+        val reacquired: CollectingConsumer = CollectingConsumer()
+        val lease2: HostingController.Lease? = runOnMainSync({ hosting.acquireLease(reacquired) })
+        assertNotNull("lease reacquisition must succeed before idle release", lease2)
+        val renewal2: LeaseRenewal = LeaseRenewal(lease2!!)
+        renewal2.start()
+        waitUntil("frames resume after reacquisition", { (reacquired.count() > 0) })
+        assertEquals(
+            "still the hosted counter document",
+            "Hosting capture page",
+            domText("page-title"),
+        )
+        assertEquals(
+            "no navigation from reacquisition",
+            (loadsTwoAfter).toLong(),
+            (loadCount("/hosting-two.html")).toLong(),
+        )
+        assertEquals(
+            "no reload of the counter page on reacquisition",
+            (loadsHostingBeforeReturn + 1).toLong(),
+            (loadCount("/hosting.html")).toLong(),
+        )
+        renewal2.stopRenewing()
+        runOnMain(lease2!!::renew)
+        val demandAnchor: Long = runOnMainSync(hosting::lastDemandAnchorElapsedMs)
+        runOnMain(lease2!!::release)
+        memoryMilestone("lease-released-idle-window-start")
+        val idleDeadline: Long = (demandAnchor + HostingPolicy.IDLE_RELEASE_MS)
+        var idleCompletion: Long = 0
+        val idleDiagnosticLimit: Long = (idleDeadline + 10_000)
+        while (SystemClock.elapsedRealtime() < idleDiagnosticLimit) {
+            idleCompletion = runOnMainSync(hosting::lastIdleReleaseCompletedElapsedMs)
+            if (idleCompletion > 0) {
+                break
+            }
+            SystemClock.sleep(50)
+        }
+        assertTrue(
+            "idle-release completion was observed on the production path",
+            (idleCompletion > 0),
+        )
+        assertTrue(
+            (("post-demand completion " + (idleCompletion - demandAnchor)).toString() +
+                "ms after the anchor is within the exact 30s deadline"),
+            (idleCompletion <= idleDeadline),
+        )
+        assertEquals(
+            "capture resources absent after the observed completion",
+            false,
+            runOnMainSync(hosting::captureResourcesPresent),
+        )
+        assertEquals(
+            "display/presentation attachment survives idle release",
+            true,
+            runOnMainSync(hosting::hasDisplayResources),
+        )
+        assertEquals(
+            "hosting session survives idle release",
+            HostingController.State.HOSTING,
+            runOnMainSync(hosting::status).state,
+        )
+        memoryMilestone("after-idle-release")
+        val afterIdle: CollectingConsumer = CollectingConsumer()
+        val lease3: HostingController.Lease? = runOnMainSync({ hosting.acquireLease(afterIdle) })
+        assertNotNull("lease must reacquire after idle release", lease3)
+        waitUntil("frames flow after idle-release reacquisition", { (afterIdle.count() > 0) })
+        assertEquals(
+            "document untouched by idle release/reacquire",
+            "Hosting capture page",
+            domText("page-title"),
+        )
+        assertEquals(
+            "no reload across idle release",
+            (loadsHostingBeforeReturn + 1).toLong(),
+            (loadCount("/hosting.html")).toLong(),
+        )
+        runOnMain(lease3!!::release)
+        bringMainActivityToFrontForTest()
+        waitUntil(
+            "webview back on phone ui",
+            callback61@{
+                val snapshot: HostViewSnapshot = hostViewSnapshot()
+                return@callback61 ((snapshot.status.attachment ==
+                    HostingController.Attachment.PHONE_UI) && snapshot.viewAttached)
+            },
+        )
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
+        assertEquals(
+            "capture resources gone after Stop",
+            false,
+            runOnMainSync(hosting::captureResourcesPresent),
+        )
+        assertEquals(
+            "display resources gone after Stop",
+            false,
+            runOnMainSync(hosting::hasDisplayResources),
+        )
+        assertEquals("wake lock released by Stop", false, runOnMainSync(hosting::isWakeLockHeld))
+        assertEquals(
+            "hosting session stopped",
+            HostingController.State.NOT_HOSTING,
+            runOnMainSync(hosting::status).state,
+        )
+        recordDeviceState("after-final-stop")
+        memoryMilestone("after-final-stop")
+        milestones!!.record("capture acceptance sequence complete")
+        milestones!!.flushToStream("capture acceptance session")
+    }
+
+    /** R3: Stop while backgrounded, then return: the surviving live page reattaches, no reload. */
+    @Test
+    fun backgroundStopThenReturnReattachesLivePageWithoutReload() {
+        openFixture("/hosting.html", "Hosting capture page")
+        val loadsBefore: Int = loadCount("/hosting.html")
+        val markerBefore: String? = domText("load-marker")
+        val identityBefore: Int = webViewIdentityHash()
+        setFieldValue("bgstop-value")
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
+        scenario.onActivity({ activity -> activity.moveTaskToBack(true) })
+        waitUntil(
+            "webview hosted offscreen",
+            callback63@{
+                val snapshot: HostViewSnapshot = hostViewSnapshot()
+                return@callback63 ((snapshot.status.attachment ==
+                    HostingController.Attachment.PRIVATE_DISPLAY) && snapshot.viewAttached)
+            },
+        )
+        runOnMain({ hosting.stop() })
+        awaitHostingState(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
+        bringMainActivityToFrontForTest()
+        waitUntil(
+            "live page reattached on return after background Stop",
+            { hostViewSnapshot().viewAttached },
+        )
+        assertEquals(
+            "no reload across background Stop and return",
+            (loadsBefore).toLong(),
+            (loadCount("/hosting.html")).toLong(),
+        )
+        assertEquals(
+            "same document across background Stop and return",
+            markerBefore,
+            domText("load-marker"),
+        )
+        assertEquals(
+            "same WebView across background Stop and return",
+            (identityBefore).toLong(),
+            (webViewIdentityHash()).toLong(),
+        )
+        assertEquals(
+            "field value survived background Stop and return",
+            "bgstop-value",
+            readFieldValue(),
+        )
+        assertEquals(
+            "hosting remains stopped after return",
+            HostingController.State.NOT_HOSTING,
+            runOnMainSync(hosting::status).state,
+        )
+    }
+
+    /**
+     * A: an intentionally ALL-WHITE document delivers as valid current content within the original
+     * 2s eligibility bound. The expectation is white, so no color heuristic may reject a legitimate
+     * white page; the live document marker persists and there is no reload. Raw initialization
+     * callbacks are retained by the consumer, and validity is decided by the callback-time sample
+     * and geometry rather than by a readiness fact.
+     */
+    @Test
+    fun allWhiteDocumentDeliversWithinEligibilityBoundWithoutColorDependence() {
+        openFixture("/hosting-white.html", "White capture page")
+        assertTrue(
+            "authoritative WebView must preraster while attached offscreen",
+            runOnMainSync({ session.view()!!.getSettings().getOffscreenPreRaster() }),
+        )
+        val marker: String? = domText("load-marker")
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
+        scenario.onActivity({ activity -> activity.moveTaskToBack(true) })
+        waitUntil(
+            "webview hosted offscreen",
+            callback68@{
+                val snapshot: HostViewSnapshot = hostViewSnapshot()
+                return@callback68 ((snapshot.status.attachment ==
+                    HostingController.Attachment.PRIVATE_DISPLAY) && snapshot.viewAttached)
+            },
+        )
+        val expectedSize: IntArray = currentWebViewSize()
+        val consumer: CollectingConsumer = CollectingConsumer()
+        consumer.expectQualification(expectedSize[0], expectedSize[1], Color.WHITE)
+        val eligibleUptime: Long = SystemClock.uptimeMillis()
+        var lease: HostingController.Lease? = runOnMainSync({ hosting.acquireLease(consumer) })
+        assertNotNull("white-document lease", lease)
+        try {
+            waitUntil(
+                "first VALID frame of the all-white document",
+                { (consumer.qualifyingCountFrom(0) > 0) },
+            )
+        } catch (failure: AssertionError) {
+            fail(
+                (((failure.message).toString() + " qualification={") +
+                        consumer.qualificationSummary(0, eligibleUptime))
+                    .toString() + "}"
+            )
+        }
+        val firstValid: Int = consumer.earliestQualifyingIndexFrom(0)
+        val firstValidDelayMs: Long = consumer.earliestQualifyingDelayMsFrom(0, eligibleUptime)
+        milestones!!.record(
+            "all-white first-raw/first-valid: " + consumer.qualificationSummary(0, eligibleUptime)
+        )
+        assertTrue(
+            (("first VALID white-document frame within 2s of ORIGINAL eligibility: " +
+                    firstValidDelayMs)
+                .toString() + "ms"),
+            OutputQualification.validWithinBound(firstValidDelayMs),
+        )
+        assertTrue(
+            "white frames from the first VALID callback are the live document",
+            consumer.tailFramesNearColor(firstValid, Color.WHITE),
+        )
+        assertTrue(
+            "white frames from the first VALID callback match the viewport",
+            consumer.tailFramesMatchSize(firstValid, expectedSize[0], expectedSize[1]),
+        )
+        assertEquals(
+            "same document marker (no reload/substitution)",
+            marker,
+            domText("load-marker"),
+        )
+        assertEquals(
+            "no reload of the white page",
+            (1).toLong(),
+            (loadCount("/hosting-white.html")).toLong(),
+        )
+        runOnMain(lease!!::release)
+        bringMainActivityToFrontForTest()
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
+    }
+
+    /** R6: a live lease survives a geometry rebuild; delivery rearms at the rebuilt viewport. */
+    @Test
+    fun liveLeaseSurvivesGeometryRebuildWithRearmedDelivery() {
+        openFixture("/hosting.html", "Hosting capture page")
+        val sizeBefore: IntArray = currentWebViewSize()
+        val generationBefore: Long = runOnMainSync({ (hosting.currentGeneration()).toLong() })
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
+        val consumer: CollectingConsumer = CollectingConsumer()
+        var lease: HostingController.Lease? = runOnMainSync({ hosting.acquireLease(consumer) })
+        assertNotNull("live lease before geometry change", lease)
+        waitUntil("frames flow before geometry change", { (consumer.count() > 0) })
+        scenario.onActivity({ activity ->
+            activity.setRequestedOrientation(
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            )
+        })
+        scenario.onActivity({ activity -> activity.moveTaskToBack(true) })
+        waitUntil(
+            "rebuild completed offscreen with live lease",
+            callback76@{
+                val snapshot: HostViewSnapshot = hostViewSnapshot()
+                return@callback76 ((snapshot.status.attachment ==
+                    HostingController.Attachment.PRIVATE_DISPLAY) && snapshot.viewAttached)
+            },
+        )
+        val sizeAfter: IntArray = currentWebViewSize()
+        assertTrue(
+            "the window change actually changed the geometry",
+            ((sizeAfter[0] != sizeBefore[0]) || (sizeAfter[1] != sizeBefore[1])),
+        )
+        val framesAtRebuild: Int = consumer.count()
+        consumer.expectQualification(sizeAfter[0], sizeAfter[1], CAPTURE_PAGE_COLOR)
+        waitUntil(
+            "a post-rebuild callback qualifies at the rebuilt geometry",
+            { (consumer.qualifyingCountFrom(framesAtRebuild) > 0) },
+        )
+        val firstRebuildValid: Int = consumer.earliestQualifyingIndexFrom(framesAtRebuild)
+        milestones!!.record(
+            (("live-lease rebuild first-raw/first-valid fromIndex=" + framesAtRebuild).toString() +
+                ": ") + consumer.qualificationSummary(framesAtRebuild, 0)
+        )
+        assertTrue(
+            ((("post-rebuild delivery carries the rebuilt viewport " + sizeAfter[0]).toString() +
+                "x") + sizeAfter[1]),
+            consumer.tailFramesMatchSize(firstRebuildValid, sizeAfter[0], sizeAfter[1]),
+        )
+        assertTrue(
+            "rearmed delivery keeps the same hosting generation",
+            consumer.allFramesMatchGeneration((generationBefore + 1).toInt()),
+        )
+        assertTrue(
+            "rearmed delivery shows the same document",
+            consumer.tailFramesNearColor(firstRebuildValid, CAPTURE_PAGE_COLOR),
+        )
+        scenario.onActivity({ activity ->
+            activity.setRequestedOrientation(
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            )
+        })
+        bringMainActivityToFrontForTest()
+        waitUntil(
+            "webview restored to phone ui",
+            callback79@{
+                val snapshot: HostViewSnapshot = hostViewSnapshot()
+                return@callback79 ((snapshot.status.attachment ==
+                    HostingController.Attachment.PHONE_UI) && snapshot.viewAttached)
+            },
+        )
+        runOnMain(lease!!::release)
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
+    }
+
+    /** Real owned renderer loss, explicit recovery in the SAME Activity, then hosting ownership. */
+    @Test
+    fun rendererLossRecoveryInSameActivityRegistersNewUiOwner() {
+        openFixture("/hosting.html", "Hosting capture page")
+        val originalActivity: AtomicReference<MainActivity> = AtomicReference()
+        scenario.onActivity(originalActivity::set)
+        val originalView: WebView? = runOnMainSync(session::view)
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
+        val terminated: Boolean =
+            runOnMainSync(
+                callback80@{
+                    val process: android.webkit.WebViewRenderProcess? =
+                        originalView!!.getWebViewRenderProcess()
+                    assertNotNull("the owned WebView has a renderer process", process)
+                    return@callback80 process!!.terminate()
+                }
+            )
+        assertTrue("owned renderer termination request accepted", terminated)
+        waitUntil(
+            "production renderer-loss callback cleared the old attachment",
+            { runOnMainSync({ ((session.view() == null) && !session.isLive()) }) },
+        )
+        awaitHostingState(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
+        milestones!!.record(
+            "actual owned renderer loss observed; explicit same-Activity recovery follows"
+        )
+        openFixture("/hosting.html", "Hosting capture page")
+        scenario.onActivity({ activity ->
+            assertTrue(
+                "recovery did not replace the Activity",
+                (activity === originalActivity.get()),
+            )
+        })
+        assertTrue(
+            "recovery creates a new WebView after real renderer loss",
+            (runOnMainSync(session::view) !== originalView),
+        )
+        val recoveredMarker: String? = domText("load-marker")
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
+        scenario.onActivity({ activity -> activity.moveTaskToBack(true) })
+        waitUntil(
+            "new UI token permits offscreen transfer after renderer recovery",
+            callback85@{
+                val snapshot: HostViewSnapshot = hostViewSnapshot()
+                return@callback85 ((snapshot.status.attachment ==
+                    HostingController.Attachment.PRIVATE_DISPLAY) && snapshot.viewAttached)
+            },
+        )
+        assertEquals(
+            "recovered document survives transfer",
+            recoveredMarker,
+            domText("load-marker"),
+        )
+        scenario.onActivity(android.app.Activity::finish)
+        waitUntil(
+            "destroyed recovered Activity is no longer retained as UI owner",
+            { !runOnMainSync(hosting::hasPhoneUiOwner) },
+        )
+        assertEquals(
+            "Activity finish is not hosting Stop",
+            HostingController.State.HOSTING,
+            runOnMainSync(hosting::status).state,
+        )
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        waitUntil(
+            "live recovered page reattaches to the successor Phone UI",
+            { (hostViewSnapshot().status.attachment == HostingController.Attachment.PHONE_UI) },
+        )
+        assertEquals(recoveredMarker, domText("load-marker"))
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
+    }
+
+    /** R7: a thrown reader recreation after idle rolls back and surfaces in actual status. */
+    @Test
+    fun thrownReaderRecreationSurfacesFailureAndRollsBack() {
+        val factory: SettableFactory = SettableFactory()
+        runOnMain({ hosting.setResourceFactoryForTest(factory) })
+        openFixture("/hosting.html", "Hosting capture page")
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
+        scenario.onActivity({ activity -> activity.moveTaskToBack(true) })
+        waitUntil(
+            "webview hosted offscreen",
+            callback90@{
+                val snapshot: HostViewSnapshot = hostViewSnapshot()
+                return@callback90 ((snapshot.status.attachment ==
+                    HostingController.Attachment.PRIVATE_DISPLAY) && snapshot.viewAttached)
+            },
+        )
+        val readinessAnchor: Long = runOnMainSync(hosting::lastDemandAnchorElapsedMs)
+        val idleDeadline: Long = (readinessAnchor + HostingPolicy.IDLE_RELEASE_MS)
+        var r7Completion: Long = 0
+        while (SystemClock.elapsedRealtime() < (idleDeadline + 10_000)) {
+            r7Completion = runOnMainSync(hosting::lastIdleReleaseCompletedElapsedMs)
+            if (r7Completion > 0) {
+                break
+            }
+            SystemClock.sleep(50)
+        }
+        assertTrue("idle release completed before the injection", (r7Completion > 0))
+        assertTrue(
+            "idle release within the exact deadline before the injection",
+            (r7Completion <= idleDeadline),
+        )
+        assertEquals(
+            "capture resources absent before the injection",
+            false,
+            runOnMainSync(hosting::captureResourcesPresent),
+        )
+        factory.throwOnNextReader = true
+        val consumer: CollectingConsumer = CollectingConsumer()
+        var lease: HostingController.Lease? = runOnMainSync({ hosting.acquireLease(consumer) })
+        assertNull("acquisition fails explicitly when reader recreation throws", lease)
+        var status: HostingController.Status = runOnMainSync(hosting::status)
+        assertEquals(
+            "hosting session survives the recoverable failure",
+            HostingController.State.HOSTING,
+            status.state,
+        )
+        assertNotNull("failure surfaced in actual status", status.failureReason)
+        assertEquals(
+            "allocation rolled back: no live capture resources",
+            false,
+            runOnMainSync(hosting::captureResourcesPresent),
+        )
+        factory.throwOnNextReader = false
+        lease = runOnMainSync({ hosting.acquireLease(consumer) })
+        assertNotNull("recovery after failed recreation", lease)
+        waitUntil("frames flow after recovery", { (consumer.count() > 0) })
+        assertNull(
+            "successful capture clears its resolved failure",
+            runOnMainSync(hosting::status).failureReason,
+        )
+        runOnMain(lease!!::release)
+        bringMainActivityToFrontForTest()
+        scenario.onActivity({ activity ->
+            val label: String =
+                (activity.findViewById(R.id.hosting_status) as android.widget.TextView)
+                    .getText()
+                    .toString()
+            assertTrue(
+                ("recovered native UI reports active hosting: " + label),
+                label.startsWith("Hosting ·"),
+            )
+        })
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
+    }
+
+    /** R4: after the 5s deadline, a late renewal must not revive delivery or the wake lock. */
+    @Test
+    fun lateRenewalAfterExpiryCannotReviveDelivery() {
+        openFixture("/hosting.html", "Hosting capture page")
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
+        scenario.onActivity({ activity -> activity.moveTaskToBack(true) })
+        waitUntil(
+            "page attached offscreen before lease",
+            callback96@{
+                val snapshot: HostViewSnapshot = hostViewSnapshot()
+                return@callback96 ((snapshot.status.attachment ==
+                    HostingController.Attachment.PRIVATE_DISPLAY) && snapshot.viewAttached)
+            },
+        )
+        val consumer: CollectingConsumer = CollectingConsumer()
+        var lease: HostingController.Lease? = runOnMainSync({ hosting.acquireLease(consumer) })
+        assertNotNull(lease)
+        waitUntil("first frame before expiry", { (consumer.count() > 0) })
+        SystemClock.sleep(HostingPolicy.LEASE_TTL_MS + 1_500)
+        val framesAtExpiry: Int = consumer.count()
+        runOnMain(lease!!::renew)
+        SystemClock.sleep(2_000)
+        assertEquals(
+            "no delivery revived by the late renewal",
+            (framesAtExpiry).toLong(),
+            (consumer.count()).toLong(),
+        )
+        assertEquals(
+            "wake lock released after expiry despite the late renewal",
+            false,
+            runOnMainSync(hosting::isWakeLockHeld),
+        )
+        bringMainActivityToFrontForTest()
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
+    }
+
+    /** R2: a delayed in-flight consumer and a reacquiring consumer never share a borrowed frame. */
+    @Test
+    fun delayedConsumerReleaseReacquireIsolatesBorrowedFrames() {
+        openFixture("/hosting.html", "Hosting capture page")
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
+        scenario.onActivity({ activity -> activity.moveTaskToBack(true) })
+        waitUntil(
+            "webview hosted offscreen",
+            callback100@{
+                val snapshot: HostViewSnapshot = hostViewSnapshot()
+                return@callback100 ((snapshot.status.attachment ==
+                    HostingController.Attachment.PRIVATE_DISPLAY) && snapshot.viewAttached)
+            },
+        )
+        val first: DelayedConsumer = DelayedConsumer()
+        val lease1: HostingController.Lease? = runOnMainSync({ hosting.acquireLease(first) })
+        assertNotNull(lease1)
+        val second: CollectingConsumer = CollectingConsumer()
+        var prematureLease: Array<HostingController.Lease?> = arrayOf(null)
+        var quiescence: Array<String> = arrayOf("not-reached")
+        HarnessProtocol.withFinalEvidence(
+            {
+                HarnessProtocol.withFinalEvidence(
+                    {
+                        assertTrue("consumer entered its callback", first.awaitEntered(5_000))
+                        milestones!!.record("delayed-consumer callback held before revocation")
+                        runOnMain(lease1!!::release)
+                        assertTrue(
+                            "borrowed callback keeps the retiring owner observable",
+                            runOnMainSync(hosting::captureResourcesPresent),
+                        )
+                        prematureLease[0] = runOnMainSync({ hosting.acquireLease(second) })
+                        assertNull(
+                            "no replacement lease while the old callback is held",
+                            prematureLease[0],
+                        )
+                        assertEquals(
+                            "no anonymous delivery after rejected acquisition",
+                            (0).toLong(),
+                            (second.count()).toLong(),
+                        )
+                        milestones!!.record("replacement rejected while old callback held")
+                    },
+                    {
+                        first.releaseHold()
+                        if (prematureLease[0] != null) {
+                            runOnMain(prematureLease[0]!!::release)
+                        }
+                        runOnMain(lease1!!::release)
+                    },
+                )
+                quiescence[0] = "waiting/not-yet-observed"
+                waitUntil(
+                    "old capture owner actually quiescent",
+                    { !runOnMainSync(hosting::captureResourcesPresent) },
+                    STOP_BOUND_MS,
+                )
+                quiescence[0] = "observed"
+                var entry: CallbackIntegrity.Snapshot? = first.entrySnapshot()
+                var postHold: CallbackIntegrity.Snapshot? = first.postHoldSnapshot()
+                assertNull(
+                    ("held callback integrity failure: " + first.integrityFailure()),
+                    first.integrityFailure(),
+                )
+                assertFalse(
+                    "test-controlled callback hold expired or was interrupted",
+                    first.holdFailed(),
+                )
+                assertNotNull("entry integrity snapshot captured before the hold", entry)
+                assertNotNull(
+                    "post-hold integrity snapshot captured in the same callback",
+                    postHold,
+                )
+                assertTrue(
+                    "borrowed contents stable across hold (whole-bitmap fingerprint)",
+                    entry!!.sameContent(postHold!!),
+                )
+                assertTrue(
+                    "held callback completed its own borrowed use",
+                    (first.collector().count() > 0),
+                )
+                assertEquals(
+                    "rejected acquisition created no hidden lease or delivery",
+                    (0).toLong(),
+                    (second.count()).toLong(),
+                )
+            },
+            {
+                var entry: CallbackIntegrity.Snapshot? = first.entrySnapshot()
+                var postHold: CallbackIntegrity.Snapshot? = first.postHoldSnapshot()
+                milestones!!.record(
+                    (((((((((("delayed-consumer outcome quiescence=" + quiescence[0]).toString() +
+                                        " holdFailed=") + first.holdFailed())
+                                    .toString() + " integrityFailure=") + first.integrityFailure())
+                                .toString() + " collected=") + first.collector().count())
+                            .toString() + " entry=") +
+                            (if (entry == null) "missing" else entry.summary()))
+                        .toString() + " postHold=") +
+                        (if (postHold == null) "missing" else postHold.summary())
+                )
+            },
+        )
+        milestones!!.record("old owner quiescent before explicit replacement acquisition")
+        val replacementSize: IntArray = currentWebViewSize()
+        second.expectQualification(replacementSize[0], replacementSize[1], CAPTURE_PAGE_COLOR)
+        val replacementEligibleUptime: Long = SystemClock.uptimeMillis()
+        val replacement: HostingController.Lease? = runOnMainSync({ hosting.acquireLease(second) })
+        assertNotNull("explicit acquisition succeeds after quiescence", replacement)
+        try {
+            waitUntil(
+                "replacement consumer first VALID frame",
+                { (second.qualifyingCountFrom(0) > 0) },
+            )
+            val replacementFirstValid: Int = second.earliestQualifyingIndexFrom(0)
+            val replacementDelayMs: Long =
+                second.earliestQualifyingDelayMsFrom(0, replacementEligibleUptime)
+            milestones!!.record(
+                "replacement first-raw/first-valid: " +
+                    second.qualificationSummary(0, replacementEligibleUptime)
+            )
+            assertTrue(
+                (("replacement earliest VALID frame within 2s of original acquisition: " +
+                        replacementDelayMs)
+                    .toString() + "ms"),
+                OutputQualification.validWithinBound(replacementDelayMs),
+            )
+            assertTrue(
+                ((("replacement frames from the first VALID callback match the viewport " +
+                        replacementSize[0])
+                    .toString() + "x") + replacementSize[1]),
+                second.tailFramesMatchSize(
+                    replacementFirstValid,
+                    replacementSize[0],
+                    replacementSize[1],
+                ),
+            )
+            assertTrue(
+                "replacement frames from the first VALID callback show the same document",
+                second.tailFramesNearColor(replacementFirstValid, CAPTURE_PAGE_COLOR),
+            )
+            milestones!!.record("explicit replacement lease delivered")
+        } finally {
+            runOnMain(replacement!!::release)
+        }
+        assertEquals(
+            "test milestone writes succeeded",
+            (0).toLong(),
+            (milestones!!.failureCount()).toLong(),
+        )
+        bringMainActivityToFrontForTest()
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
+    }
+
+    /** R1: after a never-leased idle release, a private move allocates nothing without demand. */
+    @Test
+    fun homeAfterNeverLeasedIdleDoesNotReallocateWithoutDemand() {
+        openFixture("/hosting.html", "Hosting capture page")
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
+        scenario.onActivity({ activity -> activity.moveTaskToBack(true) })
+        waitUntil(
+            "webview hosted offscreen",
+            callback111@{
+                val snapshot: HostViewSnapshot = hostViewSnapshot()
+                return@callback111 ((snapshot.status.attachment ==
+                    HostingController.Attachment.PRIVATE_DISPLAY) && snapshot.viewAttached)
+            },
+        )
+        val readinessAnchor: Long = runOnMainSync(hosting::lastDemandAnchorElapsedMs)
+        val neverLeasedDeadline: Long = (readinessAnchor + HostingPolicy.IDLE_RELEASE_MS)
+        while (
+            (SystemClock.elapsedRealtime() < neverLeasedDeadline) &&
+                runOnMainSync(hosting::captureResourcesPresent)
+        ) {
+            SystemClock.sleep(50)
+        }
+        assertEquals(
+            "never-leased idle release completed by the exact deadline",
+            false,
+            runOnMainSync(hosting::captureResourcesPresent),
+        )
+        bringMainActivityToFrontForTest()
+        waitUntil("webview back on phone ui", { hostViewSnapshot().viewAttached })
+        scenario.onActivity({ activity -> activity.moveTaskToBack(true) })
+        waitUntil(
+            "hosted offscreen again without capture allocation",
+            callback114@{
+                val snapshot: HostViewSnapshot = hostViewSnapshot()
+                return@callback114 ((snapshot.status.attachment ==
+                    HostingController.Attachment.PRIVATE_DISPLAY) && snapshot.viewAttached)
+            },
+        )
+        SystemClock.sleep(5_000)
+        assertEquals(
+            "no capture resources recreated by the demand-free private move",
+            false,
+            runOnMainSync(hosting::captureResourcesPresent),
+        )
+        assertEquals(
+            "hosting session persists through the demand-free moves",
+            HostingController.State.HOSTING,
+            runOnMainSync(hosting::status).state,
+        )
+        val staleCompletion: Long = runOnMainSync(hosting::lastIdleReleaseCompletedElapsedMs)
+        assertTrue("cycle 1 completion was observed", (staleCompletion > 0))
+        val consumer: CollectingConsumer = CollectingConsumer()
+        var lease: HostingController.Lease? = runOnMainSync({ hosting.acquireLease(consumer) })
+        assertNotNull("genuine demand recreates the capture surface", lease)
+        assertEquals(
+            "new demand invalidates the prior cycle's completion evidence",
+            (0L).toLong(),
+            (runOnMainSync(hosting::lastIdleReleaseCompletedElapsedMs).toLong()).toLong(),
+        )
+        waitUntil("frames flow after genuine demand", { (consumer.count() > 0) })
+        val anchor2: Long = runOnMainSync(hosting::lastDemandAnchorElapsedMs)
+        assertTrue("cycle 2 anchor postdates the stale completion", (anchor2 > staleCompletion))
+        runOnMain(lease!!::release)
+        val cycle2Deadline: Long = (anchor2 + HostingPolicy.IDLE_RELEASE_MS)
+        var cycle2Completion: Long = 0
+        while (SystemClock.elapsedRealtime() < (cycle2Deadline + 10_000)) {
+            cycle2Completion = runOnMainSync(hosting::lastIdleReleaseCompletedElapsedMs)
+            if (cycle2Completion >= anchor2) {
+                break
+            }
+            SystemClock.sleep(50)
+        }
+        assertTrue(
+            "cycle 2 completion observed for the current release only",
+            (cycle2Completion >= anchor2),
+        )
+        assertTrue(
+            "cycle 2 completion within the exact deadline",
+            (cycle2Completion <= cycle2Deadline),
+        )
+        assertEquals(
+            "capture resources absent after cycle 2 completion",
+            false,
+            runOnMainSync(hosting::captureResourcesPresent),
+        )
+        runOnMain(lease!!::release)
+        bringMainActivityToFrontForTest()
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
+    }
+
+    /**
+     * Records the contemporaneous interactive/keyguard/device-secure/recovery facts that ground the
+     * display-off/lock coverage decision, app-scoped, while produced.
+     */
+    private fun recordLockRecoverabilityAssessment() {
+        val context: Context = InstrumentationRegistry.getInstrumentation().getTargetContext()
+        val power: PowerManager = (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
+        val keyguard: KeyguardManager =
+            (context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager)
+        val assessment: String =
+            (((((((((((((("LOCK_ASSESSMENT interactive=" + power.isInteractive()).toString() +
+                                                " deviceLocked=") + keyguard.isDeviceLocked())
+                                            .toString() + " keyguardRestricted=") +
+                                            keyguard.inKeyguardRestrictedInputMode())
+                                        .toString() + " deviceSecure=") + keyguard.isDeviceSecure())
+                                    .toString() + " keyguardSecure=") + keyguard.isKeyguardSecure())
+                                .toString() +
+                                " externalGuardedHelperRecovery=not-attested-in-process; see current phase record")
+                            .toString() +
+                            " displayOffSecureLockExercise=NOT EXERCISED — unattended profile: ")
+                        .toString() + "no qualified mid-invocation guard recovery handshake; ")
+                    .toString() +
+                    "deviceSecure is a lock fact, not a recovery-availability decision. ")
+                .toString() + "Guarded entry/final relock alone is not locked-capture evidence.")
+        println(assessment)
+        milestones!!.record(assessment)
+    }
+
+    private fun currentWebViewSize(): IntArray {
+        return runOnMainSync(
+            callback117@{
+                val view: WebView? = session.view()
+                return@callback117 (if (view == null) intArrayOf(0, 0)
+                else intArrayOf(view.getWidth(), view.getHeight()))
+            }
+        )
+    }
+
+    private fun openFixture(path: String, expectedTitle: String) {
+        val url: String = (FIXTURE_BASE + path)
+        onView(withId(R.id.address_input)).perform(click(), replaceText(url))
+        onView(withId(R.id.button_open)).perform(click())
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        try {
+            waitUntil(("fixture page " + path), { expectedTitle.equals(domText("page-title")) })
+        } catch (failure: AssertionError) {
+            var status: HostingController.Status = runOnMainSync(hosting::status)
+            fail(
+                (((((((((((((failure.message).toString() + " (displayUrl=") +
+                                            runOnMainSync(session::displayUrl))
+                                        .toString() + " loading=") +
+                                        runOnMainSync(session::isLoading))
+                                    .toString() + " error=") + runOnMainSync(session::errorMessage))
+                                .toString() + " title=") + domTextOrNull("page-title"))
+                            .toString() + " state=") + status.state)
+                        .toString() + " attachment=") + status.attachment)
+                    .toString() + ")"
+            )
+        }
+    }
+
+    private fun domTextOrNull(elementId: String): String? {
+        try {
+            return domText(elementId)
+        } catch (e: RuntimeException) {
+            return "(unreadable)"
+        } catch (e: AssertionError) {
+            return "(unreadable)"
+        }
+    }
+
+    private fun awaitHostingState(
+        state: HostingController.State,
+        boundMs: Long,
+    ): HostingController.Status {
+        val deadline: Long = (SystemClock.uptimeMillis() + boundMs)
+        val reached: AtomicReference<HostingController.Status> = AtomicReference()
+        while (SystemClock.uptimeMillis() < deadline) {
+            var status: HostingController.Status = runOnMainSync(hosting::status)
+            if (status.state == state) {
+                reached.set(status)
+                return status
+            }
+            SystemClock.sleep(50)
+        }
+        val last: HostingController.Status = runOnMainSync(hosting::status)
+        fail(
+            ((((((("hosting never reached " + state).toString() + " within ") + boundMs)
+                        .toString() + "ms (last: ") + last.state)
+                    .toString() + ", reason: ") + last.failureReason)
+                .toString() + ")"
+        )
+        return reached.get()
+    }
+
+    private fun waitUntilMain(description: String, condition: BooleanSupplier) {
+        waitUntil(description, { runOnMainSync(condition::getAsBoolean) })
+    }
+
+    /** One coherent main-thread snapshot; never call this from inside a main-sync block. */
+    private fun hostViewSnapshot(): HostViewSnapshot {
+        return runOnMainSync(
+            callback120@{
+                val view: WebView? = session.view()
+                return@callback120 HostViewSnapshot(
+                    hosting.status(),
+                    ((view != null) && (view.getParent() != null)),
+                )
+            }
+        )
+    }
+
+    private class HostViewSnapshot {
+        val status: HostingController.Status
+
+        val viewAttached: Boolean
+
+        constructor(status: HostingController.Status, viewAttached: Boolean) {
+            this.status = status
+            this.viewAttached = viewAttached
+        }
+    }
+
+    private fun waitUntil(description: String, condition: BooleanSupplier) {
+        waitUntil(description, condition, TIMEOUT_MS)
+    }
+
+    private fun waitUntil(description: String, condition: BooleanSupplier, timeoutMs: Long) {
+        val deadline: Long = (SystemClock.uptimeMillis() + timeoutMs)
+        while (SystemClock.uptimeMillis() < deadline) {
+            try {
+                if (condition.getAsBoolean()) {
+                    return
+                }
+            } catch (ignored: RuntimeException) {} catch (ignored: AssertionError) {}
+
+            SystemClock.sleep(100)
+        }
+        var status: HostingController.Status = runOnMainSync(hosting::status)
+        val webSize: IntArray = currentWebViewSize()
+        val capture: String = runOnMainSync(hosting::captureDiagnostics)
+        val windowFacts: String =
+            runOnMainSync(
+                callback121@{
+                    val view: WebView? = session.view()
+                    if (view == null) {
+                        return@callback121 "view=none"
+                    }
+                    val orientation: Int = view.getResources().getConfiguration().orientation
+                    val rotation: Int =
+                        (if (view.getDisplay() == null) -1 else view.getDisplay().getRotation())
+                    return@callback121 ((("configOrientation=" + orientation).toString() +
+                        " displayRotation=") + rotation)
+                }
+            )
+        fail(
+            ((((((((((((((((((((("timed out waiting for " + description).toString() + " (state=") +
+                                                        status.state)
+                                                    .toString() + " attachment=") +
+                                                    status.attachment)
+                                                .toString() + " browserLive=") + status.browserLive)
+                                            .toString() + " gen=") + status.generation)
+                                        .toString() + " reason=") + status.failureReason)
+                                    .toString() + " parentless=") + webViewParentless())
+                                .toString() + " webSize=") + webSize[0])
+                            .toString() + "x") + webSize[1])
+                        .toString() + " window={") + windowFacts)
+                    .toString() + "} capture={") + capture)
+                .toString() + "})"
+        )
+    }
+
+    private fun runOnMain(runnable: Runnable) {
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(runnable)
+    }
+
+    private fun <T> runOnMainSync(supplier: java.util.function.Supplier<T>): T {
+        val result: AtomicReference<T> = AtomicReference()
+        InstrumentationRegistry.getInstrumentation().runOnMainSync({ result.set(supplier.get()) })
+        return result.get()
+    }
+
+    private fun webViewIdentityHash(): Int {
+        val identity: Int? =
+            runOnMainSync(
+                callback123@{
+                    val view: WebView? = session.view()
+                    return@callback123 (if (view == null) 0 else System.identityHashCode(view))
+                }
+            )
+        assertNotNull(identity)
+        assertTrue("no live WebView to track", (identity != 0))
+        return identity!!
+    }
+
+    private fun webViewParentless(): Boolean {
+        val parentless: Boolean =
+            runOnMainSync(
+                callback124@{
+                    val view: WebView? = session.view()
+                    return@callback124 ((view == null) || (view.getParent() == null))
+                }
+            )
+        return true.equals(parentless)
+    }
+
+    private fun domText(elementId: String): String? {
+        val result: String? =
+            evaluateJs(
+                ("(function(){var el=document.getElementById('" + elementId).toString() +
+                    "');return el ? el.textContent : null;})()"
+            )
+        return decode(result)
+    }
+
+    private fun readFieldValue(): String? {
+        return decode(evaluateJs("document.getElementById('hosting-field').value"))
+    }
+
+    private fun setFieldValue(value: String) {
+        evaluateJs(
+            ((("(function(){var el=document.getElementById('hosting-field');" + "el.value=") +
+                        JSONObject.quote(value))
+                    .toString() + ";")
+                .toString() +
+                "el.dispatchEvent(new Event('input',{bubbles:true}));return el.value;})()"
+        )
+    }
+
+    private fun evaluateJs(expression: String): String? {
+        val view: WebView? = runOnMainSync(session::view)
+        if (view == null) {
+            throw IllegalStateException("no live WebView to evaluate against")
+        }
+        val raw: AtomicReference<String> = AtomicReference()
+        val latch: java.util.concurrent.CountDownLatch = java.util.concurrent.CountDownLatch(1)
+        InstrumentationRegistry.getInstrumentation()
+            .runOnMainSync({
+                view.evaluateJavascript(
+                    expression,
+                    { value ->
+                        raw.set(value)
+                        latch.countDown()
+                    },
+                )
+            })
+        try {
+            assertTrue(
+                "javascript evaluation timed out",
+                latch.await(10_000, java.util.concurrent.TimeUnit.MILLISECONDS),
+            )
+        } catch (interrupted: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw IllegalStateException("interrupted while evaluating javascript", interrupted)
+        }
+        return raw.get()
+    }
+
+    private fun loadCount(path: String): Int {
+        val url: java.net.URL = java.net.URL((FIXTURE_BASE).toString() + "/api/observations")
+        url.openStream().use { `in` ->
+            val out: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+            val buffer: ByteArray = ByteArray(4096)
+            var read: Int
+            while (true) {
+                read = `in`.read(buffer)
+                if (read == -1) break
+                out.write(buffer, 0, read)
+            }
+            val observations: JSONObject = JSONObject(out.toString("UTF-8"))
+            val loads: JSONObject? = observations.optJSONObject("loads")
+            return (if (loads == null) 0 else loads.optInt(path, 0))
+        }
+    }
+
+    /**
+     * Collects per-frame delivery metadata and one sampled delivered pixel (never bitmaps) from the
+     * capture thread. The pixel sample is read from the delivered borrowed bitmap during the
+     * callback, tying the oracle to actual delivered content, and each callback is classified
+     * through {@link OutputQualification} against the expected current document/geometry: raw
+     * initialization callbacks may be non-qualifying, and the earliest VALID callback is selected
+     * from the retained observations.
+     */
+    private class CollectingConsumer : HostingController.FrameConsumer {
+        private val frames: MutableList<LongArray> = java.util.ArrayList()
+
+        private val observations: MutableList<OutputQualification.Observation> = ArrayList()
+
+        private var expectedWidth: Int = 0
+
+        private var expectedHeight: Int = 0
+
+        private var expectedColor: Int = 0
+
+        /**
+         * Sets the expected current document/geometry used to qualify each callback as it arrives;
+         * call before the callbacks that should be classified.
+         */
+        @Synchronized
+        fun expectQualification(width: Int, height: Int, color: Int) {
+            expectedWidth = width
+            expectedHeight = height
+            expectedColor = color
+        }
+
+        override fun onFrame(frame: HostingFrame) {
+            onFrameAt(frame, SystemClock.uptimeMillis(), SystemClock.elapsedRealtime())
+        }
+
+        /**
+         * Records one delivered callback with an explicit delivery time. The delayed consumer
+         * passes the actual callback ENTRY time so a test-controlled hold never restamps delivery
+         * after the fact.
+         */
+        @Synchronized
+        fun onFrameAt(frame: HostingFrame, deliveryUptimeMs: Long, deliveryElapsedMs: Long) {
+            val sampledColor: Int = frame.bitmap.getPixel(10, 10)
+            frames.add(
+                longArrayOf(
+                    (frame.sequence).toLong(),
+                    (frame.contentHash).toLong(),
+                    (frame.captureElapsedMs).toLong(),
+                    (frame.generation).toLong(),
+                    (frame.width).toLong(),
+                    (frame.height).toLong(),
+                    (sampledColor).toLong(),
+                    (deliveryElapsedMs).toLong(),
+                )
+            )
+            observations.add(
+                OutputQualification.observe(
+                    deliveryUptimeMs,
+                    deliveryElapsedMs,
+                    frame.width,
+                    frame.height,
+                    frame.generation,
+                    frame.sequence,
+                    frame.contentHash,
+                    sampledColor,
+                    expectedWidth,
+                    expectedHeight,
+                    expectedColor,
+                )
+            )
+        }
+
+        @Synchronized
+        fun count(): Int {
+            return frames.size
+        }
+
+        @Synchronized
+        fun qualifyingCountFrom(fromIndex: Int): Int {
+            var count: Int = 0
+            var i: Int = Math.max(0, fromIndex)
+            while (i < observations.size) {
+                if (observations.get(i).qualified) {
+                    count++
+                }
+                i++
+            }
+            return count
+        }
+
+        @Synchronized
+        fun earliestQualifyingIndexFrom(fromIndex: Int): Int {
+            return OutputQualification.earliestQualifyingIndex(observations, fromIndex)
+        }
+
+        @Synchronized
+        fun earliestQualifyingDelayMsFrom(fromIndex: Int, eligibleUptimeMs: Long): Long {
+            return OutputQualification.earliestQualifyingDelayMs(
+                observations,
+                fromIndex,
+                eligibleUptimeMs,
+            )
+        }
+
+        @Synchronized
+        fun qualificationSummary(fromIndex: Int, eligibleUptimeMs: Long): String {
+            return OutputQualification.summary(observations, fromIndex, eligibleUptimeMs)
+        }
+
+        @Synchronized
+        fun deliveryElapsedAt(index: Int): Long {
+            return frames.get(index)[7]
+        }
+
+        @Synchronized
+        fun latestCaptureElapsed(): Long {
+            return (if (frames.isEmpty()) Long.MIN_VALUE else frames.get(frames.size - 1)[2])
+        }
+
+        @Synchronized
+        fun latestDeliveryElapsed(): Long {
+            return (if (frames.isEmpty()) Long.MIN_VALUE else frames.get(frames.size - 1)[7])
+        }
+
+        @Synchronized
+        fun distinctHashes(): Int {
+            return (frames.stream().mapToLong({ f -> f[1] }).distinct().count()).toInt()
+        }
+
+        @Synchronized
+        fun allFramesMatchGeneration(generation: Int): Boolean {
+            return frames.stream().allMatch({ f -> (f[3] == generation.toLong()) })
+        }
+
+        @Synchronized
+        fun allFramesMatchSize(width: Int, height: Int): Boolean {
+            return frames
+                .stream()
+                .allMatch({ f -> ((f[4] == width.toLong()) && (f[5] == height.toLong())) })
+        }
+
+        /** True when frames from {@code fromIndex} on all match the given viewport. */
+        @Synchronized
+        fun tailFramesMatchSize(fromIndex: Int, width: Int, height: Int): Boolean {
+            var i: Int = Math.max(0, fromIndex)
+            while (i < frames.size) {
+                val frame: LongArray = frames.get(i)
+                if ((frame[4] != width.toLong()) || (frame[5] != height.toLong())) {
+                    return false
+                }
+                i++
+            }
+            return true
+        }
+
+        @Synchronized
+        fun monotonicCaptureStamps(): Boolean {
+            var i: Int = 1
+            while (i < frames.size) {
+                if (frames.get(i)[2] < frames.get(i - 1)[2]) {
+                    return false
+                }
+                i++
+            }
+            return true
+        }
+
+        /** True when frames from {@code fromIndex} on all match the expected sampled pixel. */
+        @Synchronized
+        fun tailFramesNearColor(fromIndex: Int, expectedColor: Int): Boolean {
+            var any: Boolean = false
+            var i: Int = Math.max(0, fromIndex)
+            while (i < frames.size) {
+                any = true
+                if (!nearColor((frames.get(i)[6]).toInt(), expectedColor)) {
+                    return false
+                }
+                i++
+            }
+            return any
+        }
+
+        /** True when the latest delivered frame's sampled pixel matches the expected color. */
+        @Synchronized
+        fun latestFrameNearColor(expectedColor: Int): Boolean {
+            if (frames.isEmpty()) {
+                return false
+            }
+            return nearColor((frames.get(frames.size - 1)[6]).toInt(), expectedColor)
+        }
+
+        /** True when every frame delivered in the last {@code windowMs} matches the color. */
+        @Synchronized
+        fun recentFramesNearColor(expectedColor: Int, windowMs: Long): Boolean {
+            val cutoff: Long = (SystemClock.elapsedRealtime() - windowMs)
+            var any: Boolean = false
+            for (frame in frames) {
+                if (frame[7] >= cutoff) {
+                    any = true
+                    if (!nearColor((frame[6]).toInt(), expectedColor)) {
+                        return false
+                    }
+                }
+            }
+            return any
+        }
+
+        @Synchronized
+        fun allFramesNearColor(expectedColor: Int): Boolean {
+            return frames.stream().allMatch({ f -> nearColor((f[6]).toInt(), expectedColor) })
+        }
+
+        @Synchronized
+        fun distinctHashSet(): MutableSet<Long> {
+            val hashes: MutableSet<Long> = HashSet()
+            for (frame in frames) {
+                hashes.add(frame[1])
+            }
+            return hashes
+        }
+    }
+
+    /**
+     * Wraps a {@link CollectingConsumer} with an in-callback hold, occupying the borrowed bitmap
+     * across release/reacquire so the isolation property is exercised, not assumed (R2). The
+     * entered latch is a controlled barrier: the test observes that the consumer actually entered
+     * its callback before driving the ownership transition.
+     */
+    private class DelayedConsumer : HostingController.FrameConsumer {
+        private val collector: CollectingConsumer = CollectingConsumer()
+
+        private val entered: java.util.concurrent.CountDownLatch =
+            java.util.concurrent.CountDownLatch(1)
+
+        private val released: java.util.concurrent.CountDownLatch =
+            java.util.concurrent.CountDownLatch(1)
+
+        private val entrySnapshot:
+            java.util.concurrent.atomic.AtomicReference<CallbackIntegrity.Snapshot> =
+            java.util.concurrent.atomic.AtomicReference()
+
+        private val postHoldSnapshot:
+            java.util.concurrent.atomic.AtomicReference<CallbackIntegrity.Snapshot> =
+            java.util.concurrent.atomic.AtomicReference()
+
+        private @Volatile var holdFailed: Boolean = false
+
+        private @Volatile var integrityFailure: String? = null
+
+        override fun onFrame(frame: HostingFrame) {
+            val entryUptimeMs: Long = SystemClock.uptimeMillis()
+            val entryElapsedMs: Long = SystemClock.elapsedRealtime()
+            var entry: CallbackIntegrity.Snapshot?
+            try {
+                entry = sample(frame, entryUptimeMs, entryElapsedMs)
+            } catch (sampleError: RuntimeException) {
+                integrityFailure = ("entry sample failed: " + sampleError)
+                holdFailed = true
+                entered.countDown()
+                released.countDown()
+                return
+            }
+            if (entry == null) {
+                integrityFailure = "entry sample unavailable (missing/zero-size/recycled bitmap)"
+                holdFailed = true
+                entered.countDown()
+                released.countDown()
+                return
+            }
+            entrySnapshot.set(entry)
+            entered.countDown()
+            try {
+                if (!released.await(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                    holdFailed = true
+                    integrityFailure = "hold timeout after 2000ms (post-hold sample not taken)"
+                    return
+                }
+            } catch (interrupted: InterruptedException) {
+                holdFailed = true
+                integrityFailure = "hold interrupted before the post-hold sample"
+                Thread.currentThread().interrupt()
+                return
+            }
+            var postHold: CallbackIntegrity.Snapshot?
+            try {
+                postHold = sample(frame, entryUptimeMs, entryElapsedMs)
+            } catch (sampleError: RuntimeException) {
+                integrityFailure = ("post-hold sample failed: " + sampleError)
+                holdFailed = true
+                return
+            }
+            if (postHold == null) {
+                integrityFailure = "post-hold sample unavailable"
+                holdFailed = true
+                return
+            }
+            postHoldSnapshot.set(postHold)
+            if (!entry!!.sameContent(postHold!!)) {
+                integrityFailure =
+                    (((("borrowed bitmap changed while held: entry [" + entry.summary())
+                            .toString() + "] vs post-hold [") + postHold.summary())
+                        .toString() + "]")
+                holdFailed = true
+                return
+            }
+            collector.onFrameAt(frame, entryUptimeMs, entryElapsedMs)
+        }
+
+        fun collector(): CollectingConsumer {
+            return collector
+        }
+
+        fun entrySnapshot(): CallbackIntegrity.Snapshot? {
+            return entrySnapshot.get()
+        }
+
+        fun postHoldSnapshot(): CallbackIntegrity.Snapshot? {
+            return postHoldSnapshot.get()
+        }
+
+        fun integrityFailure(): String? {
+            return integrityFailure
+        }
+
+        fun awaitEntered(timeoutMs: Long): Boolean {
+            return entered.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+        }
+
+        fun releaseHold() {
+            released.countDown()
+        }
+
+        fun holdFailed(): Boolean {
+            return holdFailed
+        }
+
+        companion object {
+            /**
+             * Copies whole-valid-bitmap facts from the actual borrowed bitmap; never retains it.
+             */
+            @JvmStatic
+            private fun sample(
+                frame: HostingFrame,
+                entryUptimeMs: Long,
+                entryElapsedMs: Long,
+            ): CallbackIntegrity.Snapshot? {
+                val bitmap: android.graphics.Bitmap? = frame.bitmap
+                if (
+                    (((bitmap == null) || bitmap.isRecycled()) || (bitmap.getWidth() <= 0)) ||
+                        (bitmap.getHeight() <= 0)
+                ) {
+                    return null
+                }
+                val width: Int = bitmap.getWidth()
+                val height: Int = bitmap.getHeight()
+                val pixels: IntArray = IntArray(width * height)
+                bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+                return CallbackIntegrity.of(
+                    entryUptimeMs,
+                    entryElapsedMs,
+                    frame.generation,
+                    frame.sequence,
+                    frame.width,
+                    frame.height,
+                    width,
+                    height,
+                    java.lang.String.valueOf(bitmap.getConfig()),
+                    pixels,
+                    pixels.size,
+                )
+            }
+        }
+    }
+
+    /**
+     * Platform factory with an injectable, recoverable reader-recreation failure for the R7
+     * rollback/failure-surfacing case; otherwise fully delegating.
+     */
+    private class SettableFactory : PrivateDisplayHost.Factory {
+        val platform: PrivateDisplayHost.PlatformFactory = PrivateDisplayHost.PlatformFactory()
+
+        @Volatile var throwOnNextReader: Boolean = false
+
+        override fun createVirtualDisplay(
+            manager: DisplayManager,
+            name: String,
+            width: Int,
+            height: Int,
+            densityDpi: Int,
+            surface: Any?,
+        ): VirtualDisplay? {
+            return platform.createVirtualDisplay(manager, name, width, height, densityDpi, surface)
+        }
+
+        override fun createImageReader(width: Int, height: Int): ImageReader? {
+            if (throwOnNextReader) {
+                throw IllegalStateException("injected reader recreation failure")
+            }
+            return platform.createImageReader(width, height)
+        }
+
+        override fun createPresentation(
+            context: Context,
+            display: android.view.Display,
+        ): PrivateDisplayHost.PresentationHost {
+            return platform.createPresentation(context, display)
+        }
+    }
+
+    /**
+     * Renews the lease every second from a test thread; {@code renew()} posts to the main thread.
+     */
+    private class LeaseRenewal : Thread {
+        private val lease: HostingController.Lease
+
+        private @Volatile var running: Boolean = true
+
+        constructor(lease: HostingController.Lease) : super() {
+            this.lease = lease
+            setDaemon(true)
+        }
+
+        override fun run() {
+            while (running) {
+                lease.renew()
+                try {
+                    Thread.sleep(1_000)
+                } catch (e: InterruptedException) {
+                    break
+                }
+            }
+        }
+
+        fun stopRenewing() {
+            running = false
+            interrupt()
+            join(2_000)
+            assertFalse("renewal producer terminated before the final anchor", isAlive())
+        }
+    }
+
+    /** Records the actual interactive/lock state; screen-off is never claimed as secure lock. */
+    private fun recordDeviceState(label: String) {
+        val context: Context = InstrumentationRegistry.getInstrumentation().getTargetContext()
+        val power: PowerManager = (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
+        val keyguard: KeyguardManager =
+            (context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager)
+        val line: String =
+            ((((((("DEVICE_STATE " + label).toString() + " interactive=") + power.isInteractive())
+                    .toString() + " deviceLocked=") + keyguard.isDeviceLocked())
+                .toString() + " keyguardRestricted=") + keyguard.inKeyguardRestrictedInputMode())
+        println(line)
+        milestones!!.record(line)
+    }
+
+    /** Same-process memory milestone; no process reset occurs between milestones!!. */
+    private fun memoryMilestone(label: String) {
+        val nativeHeap: Long = (android.os.Debug.getNativeHeapAllocatedSize() / 1_048_576)
+        val runtime: Runtime = Runtime.getRuntime()
+        val javaUsed: Long = ((runtime.totalMemory() - runtime.freeMemory()) / 1_048_576)
+        val line: String =
+            ((((("MEMORY_MILESTONE " + label).toString() + " nativeHeapMB=") + nativeHeap)
+                .toString() + " javaUsedMB=") + javaUsed)
+        println(line)
+        milestones!!.record(line)
+    }
+
+    companion object {
+        private val DEFAULT_FIXTURE_BASE: String = "http://127.0.0.1:25341"
+
+        private val FIXTURE_BASE: String =
+            trimTrailingSlash(
+                InstrumentationRegistry.getArguments()
+                    .getString("fixtureBaseUrl", DEFAULT_FIXTURE_BASE)
+            )
+
+        private val START_BOUND_MS: Long = 5_000
+
+        private val STOP_BOUND_MS: Long = 5_000
+
+        private val TIMEOUT_MS: Long = 20_000
+
+        /** Fixture page background colors, used for delivered-pixel content correlation. */
+        private val CAPTURE_PAGE_COLOR: Int = Color.parseColor("#f6f3ea")
+
+        private val SECOND_PAGE_COLOR: Int = Color.parseColor("#2e5f8a")
+
+        private var milestones: MilestoneSink? = null
+
+        /** Explicit NOT_APPLICABLE report guard for API<33 (once per class). */
+        private var notificationPermissionNotApplicableReported: Boolean = false
+
+        /**
+         * Recorded setup outcome for this class: applicability/original-state/changed/uncertain.
+         */
+        private var notificationPermissionOutcome: NotificationPermissionPolicy.SetupOutcome =
+            NotificationPermissionPolicy.SetupOutcome.NOT_RUN
+
+        /**
+         * Cleanup applicability: only a verified grant mutation made by this class is restored.
+         * Below API 33 there is no runtime permission to restore; a failed/uncertain change is
+         * reported through {@link #notificationPermissionSetupUncertain()} but is never claimed as
+         * a verified mutation.
+         */
+        @JvmStatic
+        fun notificationPermissionNeedsCleanupRestore(): Boolean {
+            return NotificationPermissionPolicy.needsRestore(
+                android.os.Build.VERSION.SDK_INT,
+                notificationPermissionOutcome,
+            )
+        }
+
+        /** True when a setup attempt could not be verified; callers must report, never assume. */
+        @JvmStatic
+        fun notificationPermissionSetupUncertain(): Boolean {
+            return NotificationPermissionPolicy.isUncertain(notificationPermissionOutcome)
+        }
+
+        @AfterClass
+        @JvmStatic
+        fun flushMilestoneSink() {
+            if (milestones != null) {
+                milestones!!.flushToStream("hosting correction round 3 execution")
+            }
+        }
+
+        @JvmStatic
+        private fun decode(raw: String?): String? {
+            if ((raw == null) || "null".equals(raw)) {
+                return null
+            }
+            try {
+                val value: Any = JSONObject(("{\"v\":" + raw).toString() + "}").get("v")
+                return (if (value === JSONObject.NULL) null else java.lang.String.valueOf(value))
+            } catch (e: org.json.JSONException) {
+                return raw
+            }
+        }
+
+        @JvmStatic
+        private fun trimTrailingSlash(value: String): String {
+            return (if (value.endsWith("/")) value.substring(0, (value.length - 1)) else value)
+        }
+
+        /** Channel-wise comparison with tolerance (same helper used by callback qualification). */
+        @JvmStatic
+        private fun nearColor(actual: Int, expected: Int): Boolean {
+            return OutputQualification.nearColor(actual, expected)
+        }
+    }
+}
