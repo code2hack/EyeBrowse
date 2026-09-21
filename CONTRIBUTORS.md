@@ -250,12 +250,23 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Worker",
-    "scope": "v0.0.1; issue #6 RG-chain; sole source writer; candidate-ready pending renewed independent review",
+    "scope": "v0.0.1; issue #6 RG-chain (completed: accepted, merged e8eb3cd); continues as qualified local executor for issue #7 (worktree/scratch/harness/device tooling retained)",
     "host": "u4090",
     "runtime": "codex",
     "id": "01a0bfdf-0ba4-78d0-9eb1-ff54e9ddad16",
     "model": "gpt-6-astra / medium",
-    "name": "Worker-#6-r3-Codex",
+    "name": "Worker-#6-r3-Codex-#7",
+    "status": "active"
+  },
+
+  {
+    "role": "Expert",
+    "scope": "v0.0.1; RG-chain issues #7..#12 escalated corrections; successor to retired Expert-#6; inherits standing directives (physical S20+ testing, TCP5555 priority, T02/T03 seam QR bypass, hybrid owner-scoped viewport architecture per #issuecomment-5757375322); bootstrap ACKed, HOLDING for first assignment",
+    "host": "chatgpt.com",
+    "runtime": "chatgpt",
+    "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70-eyebrowse/c/6ab111f3-423c-83ea-8d94-1a818786289a",
+    "model": "gpt-6-pro (ChatGPT '6 Pro')",
+    "name": "Expert-#7",
     "status": "active"
   }
 ]
