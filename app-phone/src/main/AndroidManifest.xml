@@ -42,6 +42,10 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Offscreen hosting of the user's own browser session for presentation on a private virtual display" />
         </service>
+            <activity
+            android:name=".pairing.PairingActivity"
+            android:exported="false"
+            android:label="@string/pairing_title" />
     </application>
 
 </manifest>

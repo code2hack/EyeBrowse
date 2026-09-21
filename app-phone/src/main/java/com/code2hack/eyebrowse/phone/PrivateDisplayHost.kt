@@ -82,6 +82,10 @@ class PrivateDisplayHost(
         fun dismiss()
 
         fun container(): FrameLayout
+
+        /** Optional for fake factories; platform implementation checks its window/display. */
+        fun isAvailable(): Boolean = true
+        fun setUnavailableListener(listener: Runnable?) {}
     }
 
     /** Immutable per-lease delivery sink; the capture pipeline invokes exactly this object. */
@@ -94,7 +98,34 @@ class PrivateDisplayHost(
     /** One capture owner at a time: ACTIVE → RETIRING → QUIESCENT is real and observable (R2). */
     private val ownerPhase = CaptureOwnerPhase()
 
+    private var unavailableListener: Runnable? = null
+    private var resourceSerial: Long = 0
     private var virtualDisplay: VirtualDisplay? = null // main-thread only
+
+    fun setUnavailableListener(listener: Runnable?) { unavailableListener = listener }
+
+    data class DisplaySnapshot(
+        val serial: Long, val displayId: Int, val valid: Boolean, val state: Int,
+        val width: Int, val height: Int, val actualWidth: Int, val actualHeight: Int,
+        val densityDpi: Int, val readerWidth: Int, val readerHeight: Int,
+        val presentationContextDisplayId: Int, val surfaceDetached: Boolean,
+    )
+
+    fun displaySnapshot(): DisplaySnapshot {
+        val display = virtualDisplay?.display
+        val size = android.graphics.Point()
+        if (display?.isValid == true) display.getRealSize(size)
+        val readerSize = synchronized(nativeLock) {
+            (imageReader?.width ?: 0) to (imageReader?.height ?: 0)
+        }
+        val contextDisplay = runCatching {
+            presentation?.container()?.context?.display?.displayId ?: -1
+        }.getOrDefault(-1)
+        return DisplaySnapshot(resourceSerial, display?.displayId ?: -1,
+            display?.isValid == true, display?.state ?: Display.STATE_UNKNOWN,
+            width, height, size.x, size.y, densityDpi, readerSize.first, readerSize.second,
+            contextDisplay, displaySurfaceDetached)
+    }
     private var presentation: PresentationHost? = null // main-thread only
     private var imageReader: ImageReader? = null // nativeLock-protected
     private var captureThread: HandlerThread? = null // main-thread lifecycle
@@ -109,13 +140,28 @@ class PrivateDisplayHost(
 
     // Capture-path state.
     private var frameSequence: Long = 0
-    private var lastDeliveryElapsedMs: Long = 0
-    private var deliveredAny: Boolean = false
+    private val deliveryThrottle = CaptureDeliveryThrottle(HostingPolicy.MIN_FRAME_INTERVAL_MS)
+    private var pendingFrameTask: Runnable? = null // nativeLock-protected; no Image/Bitmap retained
+    private var pendingFrameHandler: Handler? = null
     private var frameBitmap: Bitmap? = null // nativeLock-protected
     @Volatile private var captureActive: Boolean = false
     @Volatile private var captureReleased: Boolean = false // release requested; no further admissions/copying
     @Volatile private var teardownComplete: Boolean = true
     @Volatile private var captureGeneration: Int = 0 // hosting generation stamped into produced frames
+
+    // Sparse production diagnostics for the T04 acceptance path. Reset per capture arm/rearm;
+    // no bitmap/pixel payload is retained.
+    @Volatile private var captureArmSerial: Long = 0
+    @Volatile private var readerCallbackCount: Long = 0
+    @Volatile private var acquiredImageCount: Long = 0
+    @Volatile private var deliveredFrameCount: Long = 0
+    @Volatile private var lastReaderCallbackElapsedMs: Long = 0
+    @Volatile private var lastAcquiredWidth: Int = 0
+    @Volatile private var lastAcquiredHeight: Int = 0
+    @Volatile private var displaySurfaceDetached: Boolean = false
+    @Volatile private var deferredWakeupCount: Long = 0
+    @Volatile private var coalescedCallbackCount: Long = 0
+    @Volatile private var deferredDeliveryCount: Long = 0
 
     /**
      * Creates the display, presentation and reader for the measured viewport. Recoverable
@@ -129,6 +175,7 @@ class PrivateDisplayHost(
         if (sizeError != null) {
             throw HostingException(sizeError)
         }
+        resourceSerial++
         width = measuredWidth
         height = measuredHeight
         densityDpi = measuredDensityDpi
@@ -144,12 +191,20 @@ class PrivateDisplayHost(
             // validation, so the rollback path releases a non-null-but-invalid native object.
             virtualDisplay = factory.createVirtualDisplay(displayManager, DISPLAY_NAME, width,
                     height, measuredDensityDpi, reader.surface)
+            displaySurfaceDetached = false
             val created = virtualDisplay
             if (created == null || created.display == null) {
                 throw HostingException("virtual display creation failed")
             }
             val presentationHost = factory.createPresentation(serviceContext, created.display)
             presentation = presentationHost
+            val createdSerial = resourceSerial
+            presentationHost.setUnavailableListener(Runnable {
+                // Retired Presentation events cannot invalidate a replacement in the same host.
+                if (presentation === presentationHost && resourceSerial == createdSerial) {
+                    unavailableListener?.run()
+                }
+            })
             presentationHost.show()
         } catch (error: HostingException) {
             rollbackDisplayAllocation()
@@ -181,6 +236,7 @@ class PrivateDisplayHost(
         val shown = presentation
         if (shown != null) {
             try {
+                shown.setUnavailableListener(null)
                 shown.dismiss()
             } catch (ignored: RuntimeException) {
                 // Rollback best effort.
@@ -218,6 +274,10 @@ class PrivateDisplayHost(
         if (sizeError != null) {
             throw HostingException(sizeError)
         }
+        if (virtualDisplay?.display?.isValid != true || presentation?.isAvailable() != true) {
+            rebuildAtSize(serviceContext, desiredWidth, desiredHeight, desiredDensityDpi, session)
+            return
+        }
         synchronized(nativeLock) {
             if (imageReader != null && width == desiredWidth && height == desiredHeight &&
                     densityDpi == desiredDensityDpi) {
@@ -237,17 +297,31 @@ class PrivateDisplayHost(
             if (reader == null) {
                 throw HostingException("image reader creation failed")
             }
+            var surfaceReattachFailure: RuntimeException? = null
             synchronized(nativeLock) {
                 try {
-                    // Java original: REQUIRED virtualDisplay.setSurface(...) — an absent display
-                    // NPEs here, the new reader is closed and the recoverable failure is
-                    // surfaced; it must never be silently skipped or published live-unattached.
                     virtualDisplay!!.setSurface(reader.surface)
+                    displaySurfaceDetached = false
+                    imageReader = reader
                 } catch (error: RuntimeException) {
                     reader.close()
-                    throw HostingException("surface reattach failed: " + error.message)
+                    surfaceReattachFailure = error
                 }
-                imageReader = reader
+            }
+            if (surfaceReattachFailure != null) {
+                // Some platform/WebView combinations do not reliably accept a fresh reader
+                // surface on a surviving VirtualDisplay after the prior reader was closed.
+                // Recover by rebuilding the same private display geometry through the existing
+                // navigation-preserving path instead of making explicit Retry fail forever.
+                Log.w(TAG, "surface reattach failed; rebuilding private display",
+                        surfaceReattachFailure)
+                rebuildAtSize(
+                    serviceContext,
+                    desiredWidth,
+                    desiredHeight,
+                    desiredDensityDpi,
+                    session,
+                )
             }
             return
         }
@@ -267,6 +341,7 @@ class PrivateDisplayHost(
         detachSessionView(session) // The live view leaves the old container; the document stays.
         if (presentation != null) {
             try {
+                presentation?.setUnavailableListener(null)
                 presentation?.dismiss()
             } catch (ignored: RuntimeException) {
                 // Teardown continues.
@@ -304,19 +379,23 @@ class PrivateDisplayHost(
      * when the owner is not actively capturable — the caller must surface that, never display a
      * healthy capturing state over an unarmed reader.
      */
-    fun rearmCapture(hostingGeneration: Int, boundSink: FrameSink?): Boolean {
+    fun rearmCapture(hostingGeneration: Int, boundSink: FrameSink?,
+            freshFrameRequest: Runnable?): Boolean {
         if (!ownerPhase.isActive() || imageReader == null || boundSink == null ||
                 captureThread == null || captureHandler == null) {
             return false
         }
-        frameSink = boundSink
-        frameSequence = 0
-        deliveredAny = false
-        captureGeneration = hostingGeneration
-        captureActive = true
-        captureReleased = false
+        synchronized(nativeLock) {
+            cancelPendingFrameLocked()
+            resetCaptureDiagnostics()
+            frameSink = boundSink
+            frameSequence = 0
+            captureGeneration = hostingGeneration
+            captureActive = true
+            captureReleased = false
+        }
         imageReader?.setOnImageAvailableListener(::onImageAvailable, captureHandler)
-        scheduleDrain()
+        scheduleDrainThenFreshFrame(freshFrameRequest)
         Log.i(TAG, "rearmCapture gen=$hostingGeneration on rebuilt reader")
         return true
     }
@@ -331,7 +410,8 @@ class PrivateDisplayHost(
      * teardown. The caller retries explicitly after quiescence — a null acquisition has no
      * hidden side effects.
      */
-    fun startCapture(hostingGeneration: Int, boundSink: FrameSink?): Boolean {
+    fun startCapture(hostingGeneration: Int, boundSink: FrameSink?,
+            freshFrameRequest: Runnable?): Boolean {
         if (imageReader == null || boundSink == null) {
             return false
         }
@@ -339,18 +419,21 @@ class PrivateDisplayHost(
             Log.i(TAG, "startCapture deferred: owner phase=" + ownerPhase.phase())
             return false
         }
-        frameSink = boundSink
-        frameSequence = 0
-        deliveredAny = false
-        captureGeneration = hostingGeneration
-        captureActive = true
-        captureReleased = false
+        synchronized(nativeLock) {
+            cancelPendingFrameLocked()
+            resetCaptureDiagnostics()
+            frameSink = boundSink
+            frameSequence = 0
+            captureGeneration = hostingGeneration
+            captureActive = true
+            captureReleased = false
+        }
         Log.i(TAG, "startCapture gen=$hostingGeneration reader=${imageReader != null}" +
                 " threadAlive=${captureThread != null}")
         if (captureThread != null) {
             // Reacquisition after lease loss: the capture thread survived; rearm the listener.
             imageReader?.setOnImageAvailableListener(::onImageAvailable, captureHandler)
-            scheduleDrain()
+            scheduleDrainThenFreshFrame(freshFrameRequest)
             return true
         }
         val thread = HandlerThread("EyeBrowseHostingCapture")
@@ -359,18 +442,22 @@ class PrivateDisplayHost(
         captureHandler = Handler(thread.looper)
         retainedCaptureThread = thread
         imageReader?.setOnImageAvailableListener(::onImageAvailable, captureHandler)
-        scheduleDrain()
+        scheduleDrainThenFreshFrame(freshFrameRequest)
         return true
     }
 
     /**
-     * Images queued before the listener was armed do not reliably fire the callback; acquire and
-     * close them so the producer cannot stay blocked on a full (maxImages=2) queue and stale
-     * frames are dropped, latest-only. Runs on the capture handler, serialized with callback
-     * acquisitions, and is bounded.
+     * Drain any pre-arm buffers first, then request a fresh render. The ordering is intentional:
+     * a static current document may otherwise have its only rendered frame consumed as "stale"
+     * and never produce another callback after the listener is armed.
      */
-    private fun scheduleDrain() {
-        captureHandler?.post { drainPendingImages() }
+    private fun scheduleDrainThenFreshFrame(freshFrameRequest: Runnable?) {
+        captureHandler?.post {
+            CaptureDrainSequence.run(
+                drain = { drainPendingImages() },
+                requestFresh = { freshFrameRequest?.run() },
+            )
+        }
     }
 
     private fun drainPendingImages() {
@@ -406,8 +493,19 @@ class PrivateDisplayHost(
      * only through the owning retirement path.
      */
     fun stopCapture() {
-        captureActive = false
-        frameSink = null
+        synchronized(nativeLock) {
+            captureActive = false
+            frameSink = null
+            cancelPendingFrameLocked()
+        }
+    }
+
+    /** Called with nativeLock held; invalidates even an already-dequeued old wakeup. */
+    private fun cancelPendingFrameLocked() {
+        pendingFrameTask?.let { pendingFrameHandler?.removeCallbacks(it) }
+        pendingFrameTask = null
+        pendingFrameHandler = null
+        deliveryThrottle.reset()
     }
 
     fun isCapturing(): Boolean {
@@ -432,10 +530,23 @@ class PrivateDisplayHost(
         }
         // ACTIVE enters RETIRING above; IDLE/QUIESCENT hosts only residual resources (e.g. the
         // never-leased reader) and releases them inline without a phase transition.
-        captureActive = false
-        frameSink = null
+        stopCapture() // Revoke/cancel the metadata-only trailing wakeup before native teardown.
         captureReleased = true
         teardownComplete = false
+
+        // Detach the VirtualDisplay backing Surface BEFORE destroying the ImageReader that owns
+        // it. A surviving display is paused cleanly and can later resume on a fresh reader instead
+        // of remaining bound to an abandoned buffer queue.
+        val display = virtualDisplay
+        if (display != null) {
+            try {
+                display.setSurface(null)
+                displaySurfaceDetached = true
+            } catch (error: RuntimeException) {
+                Log.w(TAG, "could not detach capture surface before reader close", error)
+            }
+        }
+
         val retiringReader: ImageReader?
         val retiringBitmap: Bitmap?
         synchronized(nativeLock) {
@@ -511,6 +622,7 @@ class PrivateDisplayHost(
         val shown = presentation
         if (shown != null) {
             try {
+                shown.setUnavailableListener(null)
                 shown.dismiss()
             } catch (ignored: RuntimeException) {
                 // A dismissed presentation must not block teardown.
@@ -578,35 +690,103 @@ class PrivateDisplayHost(
         return ownerPhase.isActive()
     }
 
+    private fun resetCaptureDiagnostics() {
+        captureArmSerial += 1
+        readerCallbackCount = 0
+        acquiredImageCount = 0
+        deliveredFrameCount = 0
+        lastReaderCallbackElapsedMs = 0
+        lastAcquiredWidth = 0
+        lastAcquiredHeight = 0
+        deferredWakeupCount = 0
+        coalescedCallbackCount = 0
+        deferredDeliveryCount = 0
+    }
+
+    /** Sparse no-content diagnostics used by acceptance failures and log reconciliation. */
+    fun captureDiagnostics(): String {
+        return "arm=" + captureArmSerial +
+                " callbacks=" + readerCallbackCount +
+                " acquired=" + acquiredImageCount +
+                " delivered=" + deliveredFrameCount +
+                " deferredWakeups=" + deferredWakeupCount +
+                " coalesced=" + coalescedCallbackCount +
+                " deferredDeliveries=" + deferredDeliveryCount +
+                " pendingFrame=" + synchronized(nativeLock) { deliveryThrottle.pending != null } +
+                " lastCallbackMs=" + lastReaderCallbackElapsedMs +
+                " image=" + lastAcquiredWidth + "x" + lastAcquiredHeight +
+                " reader=" + hasReader() +
+                " detached=" + displaySurfaceDetached +
+                " owner=" + ownerPhase.phase() + " display={" + displaySnapshot() + "}"
+    }
+
     private fun onImageAvailable(reader: ImageReader) {
-        val sink = frameSink // Read once; swaps happen only from the main thread.
-        if (!captureActive || sink == null) {
-            return // Latest-only: nothing is acquired while delivery is not live.
+        synchronized(nativeLock) {
+            readerCallbackCount += 1
+            val now = SystemClock.elapsedRealtime()
+            lastReaderCallbackElapsedMs = now
+            val sink = frameSink ?: return
+            val handler = captureHandler ?: return
+            if (!captureActive || captureReleased || reader !== imageReader) return
+            val wakeup = deliveryThrottle.request(now)
+            if (wakeup == null) {
+                coalescedCallbackCount += 1
+                return // One existing wakeup will acquire the latest, not a FIFO of callbacks.
+            }
+            val delay = (wakeup.dueElapsedMs - now).coerceAtLeast(0)
+            val deferred = delay > 0
+            if (deferred) deferredWakeupCount += 1
+            val task = Runnable { deliverLatestAvailable(reader, sink, wakeup, deferred) }
+            pendingFrameTask = task
+            pendingFrameHandler = handler
+            if (!handler.postDelayed(task, delay)) {
+                cancelPendingFrameLocked()
+                Log.w(TAG, "capture wakeup rejected by retiring handler")
+            }
         }
+    }
+
+    /**
+     * Throttle BEFORE acquiring. A final static-navigation frame inside the 200ms window
+     * stays in ImageReader until this one-shot wakeup, even if no more callbacks arrive.
+     * No native Image or borrowed Bitmap is held while waiting; maxImages=2 is unchanged.
+     */
+    private fun deliverLatestAvailable(
+        reader: ImageReader,
+        sink: FrameSink,
+        wakeup: CaptureDeliveryThrottle.Wakeup,
+        deferred: Boolean,
+    ) {
         var frame: HostingFrame? = null
         synchronized(nativeLock) {
-            if (captureReleased || reader !== imageReader) {
-                return // Stale callback for a closed or superseded reader.
-            }
-            val image = reader.acquireLatestImage() ?: return
-            val nowElapsed = SystemClock.elapsedRealtime()
+            if (!deliveryThrottle.consume(wakeup)) return
+            pendingFrameTask = null
+            pendingFrameHandler = null
+            if (!captureActive || captureReleased || reader !== imageReader ||
+                    frameSink !== sink) return
+            var image: Image? = null
             try {
-                if (deliveredAny && HostingPolicy.frameThrottled(nowElapsed, lastDeliveryElapsedMs)) {
-                    return
+                val latest = reader.acquireLatestImage() ?: return
+                image = latest
+                acquiredImageCount += 1
+                lastAcquiredWidth = latest.width
+                lastAcquiredHeight = latest.height
+                frame = copyFrame(latest, SystemClock.elapsedRealtime())
+                if (frame != null) {
+                    deliveryThrottle.delivered(SystemClock.elapsedRealtime())
+                    if (deferred) deferredDeliveryCount += 1
                 }
-                deliveredAny = true
-                lastDeliveryElapsedMs = nowElapsed
-                frame = copyFrame(image, nowElapsed)
             } catch (error: RuntimeException) {
                 Log.w(TAG, "hosting frame capture failed", error)
             } finally {
-                image.close() // The native image never escapes the copy scope.
+                image?.close() // Always closed before consumer admission/delivery.
             }
         }
         val delivered = frame
         if (delivered != null) {
-            // Admission and consumer invocation happen outside nativeLock; the sink's bound
-            // identity fences superseded leases without taking any monitor.
+            deliveredFrameCount += 1
+            // Immutable sink remains bound to this lease; FrameGate fences revocation.
+            // Consumer invocation remains outside nativeLock and the controller monitor.
             sink.onFrame(delivered)
         }
     }
@@ -679,21 +859,33 @@ class PrivateDisplayHost(
         }
     }
 
-    private class HostingPresentation(context: Context, display: Display) :
-            android.app.Presentation(context, display), PresentationHost {
+    private class HostingPresentation(outerContext: Context, display: Display) :
+            android.app.Presentation(outerContext, display), PresentationHost {
 
-        private val container: FrameLayout = FrameLayout(context).apply {
-            setBackgroundColor(Color.WHITE)
-        }
+        // Presentation.getContext(): a display/window context on API31+, NOT the outer service.
+        private val content = FrameLayout(this.context).apply { setBackgroundColor(Color.WHITE) }
 
         override fun onCreate(savedInstanceState: android.os.Bundle?) {
             super.onCreate(savedInstanceState)
-            setContentView(container, ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+            window?.apply {
+                addFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.WHITE))
+                setDecorFitsSystemWindows(false)
+                attributes = attributes.apply { setFitInsetsTypes(0) }
+                setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            }
+            setContentView(content, ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }
 
-        override fun container(): FrameLayout {
-            return container
+        override fun container(): FrameLayout = content
+        override fun isAvailable(): Boolean = isShowing && display.isValid
+        override fun setUnavailableListener(listener: Runnable?) {
+            setOnDismissListener(if (listener == null) null else
+                android.content.DialogInterface.OnDismissListener { listener.run() })
         }
     }
 

@@ -1,7 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- The unconnected RG launcher requests no network, camera or sensor permission. -->
+    <!--
+      The paired RG link client needs ordinary outbound network access to the explicitly
+      advertised Phone locator(s). No Wi-Fi/hotspot configuration permission exists: this slice
+      configures no network. CAMERA is added by the T02 scanner slice, not before.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- T02 scanner: the RG camera reads the Phone-displayed QR. No network onboarding APIs. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -16,6 +28,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".pairing.RgPairingActivity"
+            android:exported="false"
+            android:label="@string/rg_action_scan" />
     </application>
 
 </manifest>

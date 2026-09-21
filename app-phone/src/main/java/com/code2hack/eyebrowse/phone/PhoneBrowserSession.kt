@@ -197,7 +197,7 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
 
     /**
      * Moves the live WebView into the hosting presentation's container. The base context becomes
-     * {@code baseContext} (the alive hosting service), releasing any Activity reference so a
+     * {@code baseContext} (the presentation display/window context), releasing any Activity reference so a
      * backgrounded or destroyed Activity cannot leak through the wrapper.
      */
     fun attachExternal(container: ViewGroup?, baseContext: Context?) {
@@ -243,25 +243,61 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
         return webView
     }
 
+    /**
+     * Requests a fresh draw after the capture path armed a new/recreated reader and drained
+     * pre-arm buffers. May be invoked from the capture thread; View.post performs the actual
+     * invalidation on the WebView/UI thread and fences renderer replacement.
+     */
+    fun requestFreshCaptureFrame(isCurrentOwner: () -> Boolean = { true }) {
+        val target = webView ?: return
+        target.post {
+            if (webView !== target || rendererGone || !isCurrentOwner()) {
+                return@post
+            }
+            target.requestLayout()
+            target.invalidate()
+            target.postInvalidateOnAnimation()
+        }
+    }
+
     /** True when {@code attachment} is still the current owner of the WebView. */
     fun isCurrentAttachment(attachment: Attachment?): Boolean {
         return attachment != null && attachment === currentAttachment
     }
 
     private fun attachToContainer(baseContext: Context?, container: ViewGroup?) {
-        if (baseContext != null) {
-            contextWrapper.setBaseContext(baseContext)
-        }
-        attachedContainer = container
-        container!!.removeAllViews()
+        val target = container!!
         val view = webView
-        if (view != null) {
-            val parent = view.parent as? ViewGroup
-            if (parent != null && parent !== container) {
-                parent.removeView(view)
+        val oldParent = view?.parent as? ViewGroup
+        val alreadyInTarget = view != null && oldParent === target
+
+        for (step in BrowserAttachmentTransfer.plan(view != null, alreadyInTarget)) {
+            when (step) {
+                BrowserAttachmentTransfer.Step.DETACH_OLD_PARENT -> {
+                    // WebView.onDetachedFromWindow must still observe the OLD owner/display
+                    // context. Switching the MutableContextWrapper first can break Chromium's
+                    // detach path while crossing Activity/private-display ownership.
+                    oldParent?.removeView(view)
+                }
+                BrowserAttachmentTransfer.Step.UPDATE_CONTEXT -> {
+                    if (baseContext != null) {
+                        contextWrapper.setBaseContext(baseContext)
+                    }
+                    attachedContainer = target
+                }
+                BrowserAttachmentTransfer.Step.CLEAR_TARGET -> target.removeAllViews()
+                BrowserAttachmentTransfer.Step.ATTACH_TARGET -> {
+                    target.addView(
+                        view!!,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    )
+                }
             }
-            container.addView(view, ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT)
+        }
+
+        if (view != null) {
+            // A same-parent claim must reconcile layout without a gratuitous detach/re-add cycle.
             view.requestLayout()
             view.invalidate()
         }
@@ -341,6 +377,10 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
         val settings = view.settings
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
+        // Hosting moves this single authoritative WebView onto an app-owned private Presentation.
+        // Keep Chromium raster tiles live while the physical Phone Activity is offscreen; this is
+        // the same platform setting validated by experiments/locked-webview-spike.
+        settings.offscreenPreRaster = true
         settings.allowFileAccess = false
         settings.allowContentAccess = false
         settings.setSupportMultipleWindows(false)

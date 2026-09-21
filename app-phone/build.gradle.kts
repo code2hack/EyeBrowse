@@ -40,6 +40,7 @@ android {
 
 dependencies {
     implementation(project(":core:browser"))
+    implementation(project(":core:link"))
     implementation("androidx.activity:activity:1.9.3")
     implementation("androidx.core:core:1.15.0")
     // Keep the pre-existing runtime stdlib line while using a newer compatible compiler plugin.
@@ -54,7 +55,10 @@ dependencies {
         implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22")
     }
 
+    implementation("com.google.zxing:core:3.5.3")
+
     testImplementation("junit:junit:4.13.2")
+    testImplementation(testFixtures(project(":core:link")))
 
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test:core:1.6.1")

@@ -126,6 +126,16 @@
             android:paddingStart="10dp"
             android:paddingEnd="10dp"
             android:text="@string/action_hosting_start" />
+
+        <Button
+            android:id="@+id/button_pair_rg"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="0dp"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:text="@string/action_pair_rg" />
     </LinearLayout>
 
     <FrameLayout

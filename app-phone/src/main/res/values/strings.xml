@@ -32,4 +32,11 @@
     <string name="hosting_notification_channel">Hosting</string>
     <string name="hosting_notification_title">EyeBrowse hosting active</string>
     <string name="hosting_notification_text">The current page is hosted while EyeBrowse is in the background.</string>
+    <string name="action_pair_rg">Pair RG</string>
+    <string name="pairing_title">Pair Reading Glasses</string>
+    <string name="action_generate_qr">Generate QR</string>
+    <string name="action_cancel_invitation">Cancel</string>
+    <string name="action_forget_pairing">Forget</string>
+    <string name="pairing_link_down">No RG linked.</string>
+    <string name="pairing_qr_description">Pairing QR code</string>
 </resources>
