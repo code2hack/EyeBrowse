@@ -43,15 +43,13 @@ class HostingStopRecoveryInstrumentedTest {
                 // Preserve trust; this local lifecycle case is not the paired-wire companion.
                 server.stop()
                 assertEquals(HostingController.State.NOT_HOSTING, host.status().state)
-                assertTrue(browser.openAddress(InstrumentationRegistry.getArguments()
-                    .getString("fixtureBaseUrl", "http://127.0.0.1:26341") + "/hosting.html").accepted())
             }
-            StopRecoveryAssertions.await("fixture ready", 10_000) {
-                !browser.isLoading() && browser.pageTitle() == "Hosting capture page"
-            }
+            val fixture = StopRecoveryAssertions.openFixture(scenario, browser)
+            // Freeze once, at completion of this request. Never rebase after a lifecycle action.
+            originalView = fixture.view
+            originalDocument = fixture.documentId
             scenario.onActivity {
-                originalView = checkNotNull(browser.view())
-                originalDocument = browser.documentIdentity()
+                StopRecoveryAssertions.sameDocument("before_start", browser, originalView, originalDocument)
                 predecessor = it
                 predecessorContainer = it.findViewById(R.id.web_container)
                 predecessorToken = StopRecoveryAssertions.token(it)
@@ -61,7 +59,9 @@ class HostingStopRecoveryInstrumentedTest {
             StopRecoveryAssertions.await("hosting active", 5_000) { host.status().state == HostingController.State.HOSTING }
             scenario.onActivity {
                 // Existing in-process production API, not a protocol/paired-state bypass assertion.
+                StopRecoveryAssertions.sameDocument("before_rg_attach", browser, originalView, originalDocument)
                 assertTrue(host.presentOnRg(HostingPresentationProfile(480, 527, 204)))
+                StopRecoveryAssertions.sameDocument("after_rg_attach", browser, originalView, originalDocument)
                 assertTrue(host.isRgPresentationOwned())
                 assertSame(originalView, browser.view())
                 assertNotSame(predecessorContainer, originalView.parent)
@@ -72,8 +72,12 @@ class HostingStopRecoveryInstrumentedTest {
                 assertTrue(host.status().captureActive)
                 assertTrue(host.isWakeLockHeld())
             }
+            scenario.onActivity {
+                StopRecoveryAssertions.sameDocument("before_recreate", browser, originalView, originalDocument)
+            }
             scenario.recreate()
             scenario.onActivity {
+                StopRecoveryAssertions.sameDocument("after_recreate", browser, originalView, originalDocument)
                 server.stop() // onStart may reconnect a remembered peer; no trust is cleared.
                 assertNotSame("successor Activity", predecessor, it)
                 assertTrue("recreation must not steal RG ownership", host.isRgPresentationOwned())
@@ -83,6 +87,7 @@ class HostingStopRecoveryInstrumentedTest {
             if (hidden) {
                 scenario.moveToState(Lifecycle.State.CREATED)
                 instrumentation.runOnMainSync {
+                    StopRecoveryAssertions.sameDocument("before_hidden_stop", browser, originalView, originalDocument)
                     host.stop()
                     assertEquals(HostingController.State.NOT_HOSTING, host.status().state)
                     assertFalse(host.isRgPresentationOwned())
@@ -95,11 +100,15 @@ class HostingStopRecoveryInstrumentedTest {
                 scenario.moveToState(Lifecycle.State.RESUMED)
             } else {
                 scenario.onActivity {
+                    StopRecoveryAssertions.sameDocument("before_visible_stop", browser, originalView, originalDocument)
                     it.findViewById<Button>(R.id.button_hosting_toggle).performClick()
                     StopRecoveryAssertions.afterStop(it, browser, host, originalView, originalDocument)
                 }
             }
-            StopRecoveryAssertions.await("private/capture/wake cleanup", 5_000) { StopRecoveryAssertions.resourcesGone(host) }
+            StopRecoveryAssertions.await("private/capture/wake cleanup", 5_000) {
+                StopRecoveryAssertions.sameDocument("stop_cleanup", browser, originalView, originalDocument, log = false)
+                StopRecoveryAssertions.resourcesGone(host)
+            }
             scenario.onActivity {
                 server.stop()
                 StopRecoveryAssertions.afterStop(it, browser, host, originalView, originalDocument)
@@ -138,6 +147,58 @@ class HostingStopRecoveryInstrumentedTest {
 
 /** Instrumentation-only observations. No product attachment, ownership or input bypass. */
 internal object StopRecoveryAssertions {
+    data class LoadedFixture(val view: WebView, val documentId: String)
+
+    /** Binds readiness to this navigation even when an earlier test left the same fixture live. */
+    fun openFixture(scenario: ActivityScenario<MainActivity>, browser: PhoneBrowserSession): LoadedFixture {
+        val nonce = java.util.UUID.randomUUID().toString()
+        val base = InstrumentationRegistry.getArguments()
+            .getString("fixtureBaseUrl", "http://127.0.0.1:26341")
+        lateinit var barrier: FixtureNavigationBarrier
+        scenario.onActivity {
+            barrier = FixtureNavigationBarrier(browser.documentIdentity(), "$base/hosting.html?t2r1=$nonce")
+            Log.i("EyeBrowseT2R1", "FIXTURE_REQUEST nonce=$nonce previousDocument=${barrier.previousDocumentId}")
+            assertTrue("fixture navigation accepted", browser.openAddress(barrier.requestedUrl).accepted())
+        }
+        var loaded: LoadedFixture? = null
+        var lastObserved: FixtureNavigationBarrier.Observation? = null
+        await("requested fixture navigation complete", 10_000) {
+            val observed = FixtureNavigationBarrier.Observation(
+                browser.documentIdentity(), browser.displayUrl(), browser.lastCommittedUrl(),
+                browser.pageTitle(), browser.isLoading(), browser.isLive(), browser.errorMessage(),
+            )
+            val ready = barrier.isReady(observed)
+            if (observed != lastObserved) {
+                // Only generated identities and booleans, never page URLs/content or error text.
+                Log.i("EyeBrowseT2R1", "FIXTURE_OBSERVED nonce=$nonce document=${observed.documentId}" +
+                    " newDocument=${observed.documentId != barrier.previousDocumentId}" +
+                    " targetDisplayed=${observed.displayedUrl == barrier.requestedUrl}" +
+                    " targetCommitted=${observed.committedUrl == barrier.requestedUrl}" +
+                    " loading=${observed.loading} ready=$ready")
+                lastObserved = observed
+            }
+            if (ready) {
+                // Observe readiness and freeze identity in the SAME main-thread callback.
+                loaded = LoadedFixture(checkNotNull(browser.view()), observed.documentId)
+                Log.i("EyeBrowseT2R1", "FIXTURE_BASELINE nonce=$nonce document=${observed.documentId}" +
+                    " view=${System.identityHashCode(loaded!!.view)}")
+            }
+            ready
+        }
+        return checkNotNull(loaded)
+    }
+
+    fun sameDocument(stage: String, browser: PhoneBrowserSession, originalView: WebView,
+                     originalDocument: String, log: Boolean = true) {
+        val actualDocument = browser.documentIdentity()
+        if (log) Log.i("EyeBrowseT2R1", "DOCUMENT_PHASE=$stage expected=$originalDocument actual=$actualDocument" +
+            " sameView=${originalView === browser.view()} loading=${browser.isLoading()}")
+        assertSame("$stage: same WebView, not a replacement", originalView, browser.view())
+        assertEquals("$stage: reattachment must not reload", originalDocument, actualDocument)
+        assertFalse("$stage: no post-baseline navigation in progress", browser.isLoading())
+        assertNull("$stage: fixture remains error-free", browser.errorMessage())
+    }
+
     fun token(activity: MainActivity): PhoneBrowserSession.Attachment? =
         MainActivity::class.java.getDeclaredField("attachment").let {
             it.isAccessible = true
@@ -147,8 +208,7 @@ internal object StopRecoveryAssertions {
     fun phoneUi(activity: MainActivity, browser: PhoneBrowserSession, host: HostingController,
                 originalView: WebView, originalDocument: String) {
         assertFalse("Stop/restart must not retain RG exclusion", host.isRgPresentationOwned())
-        assertSame("same WebView, not a replacement", originalView, browser.view())
-        assertEquals("reattachment must not reload", originalDocument, browser.documentIdentity())
+        sameDocument("phone_ui", browser, originalView, originalDocument)
         val container = activity.findViewById<ViewGroup>(R.id.web_container)
         assertSame("actual current Phone parent, not just object identity", container, originalView.parent)
         assertTrue("Phone container is live", container.isAttachedToWindow)
@@ -178,6 +238,7 @@ internal object StopRecoveryAssertions {
 
     fun restartAndStop(scenario: ActivityScenario<MainActivity>, browser: PhoneBrowserSession,
                        host: HostingController, originalView: WebView, originalDocument: String) {
+        scenario.onActivity { sameDocument("before_restart", browser, originalView, originalDocument) }
         val previousGeneration = host.currentGeneration()
         // Teardown may have released its reader/thread before its main-thread retirement signal.
         // Retry only this explicit Start request within the existing completion bound.
