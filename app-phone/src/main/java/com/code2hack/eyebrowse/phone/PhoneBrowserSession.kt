@@ -197,7 +197,7 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
 
     /**
      * Moves the live WebView into the hosting presentation's container. The base context becomes
-     * {@code baseContext} (the alive hosting service), releasing any Activity reference so a
+     * {@code baseContext} (the presentation display/window context), releasing any Activity reference so a
      * backgrounded or destroyed Activity cannot leak through the wrapper.
      */
     fun attachExternal(container: ViewGroup?, baseContext: Context?) {
@@ -248,10 +248,10 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
      * pre-arm buffers. May be invoked from the capture thread; View.post performs the actual
      * invalidation on the WebView/UI thread and fences renderer replacement.
      */
-    fun requestFreshCaptureFrame() {
+    fun requestFreshCaptureFrame(isCurrentOwner: () -> Boolean = { true }) {
         val target = webView ?: return
         target.post {
-            if (webView !== target || rendererGone) {
+            if (webView !== target || rendererGone || !isCurrentOwner()) {
                 return@post
             }
             target.requestLayout()

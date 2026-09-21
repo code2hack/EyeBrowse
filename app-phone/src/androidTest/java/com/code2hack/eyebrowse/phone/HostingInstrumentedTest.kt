@@ -22,11 +22,13 @@ import java.util.HashSet
 import java.util.concurrent.atomic.AtomicReference
 import java.util.function.BooleanSupplier
 import org.json.JSONObject
+import org.junit.After
 import org.junit.AfterClass
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -48,6 +50,38 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class HostingInstrumentedTest {
     private lateinit var scenario: ActivityScenario<MainActivity>
+    private val ownedScenarios = mutableListOf<ActivityScenario<MainActivity>>()
+    private val ownedRenewals = mutableListOf<LeaseRenewal>()
+
+    private fun launchScenario(): ActivityScenario<MainActivity> =
+        ActivityScenario.launch(MainActivity::class.java).also { ownedScenarios.add(it) }
+
+    @After
+    fun releaseTestOwnership() {
+        // Preserve the original JUnit failure. Cleanup failures are additional failures, not a
+        // substitute for it. No process/app-data/trust reset or hidden foreground rescue.
+        val failures = mutableListOf<Throwable>()
+        fun attempt(action: () -> Unit) {
+            try { action() } catch (failure: Throwable) { failures.add(failure) }
+        }
+        if (::hosting.isInitialized) {
+            println("HYBRID_CLEANUP_BEFORE " + runOnMainSync(hosting::captureDiagnostics))
+        }
+        for (renewal in ownedRenewals) attempt { renewal.stopRenewing() }
+        if (::hosting.isInitialized) attempt { runOnMain(hosting::stop) }
+        for (owned in ownedScenarios.asReversed()) attempt { owned.close() }
+        ownedScenarios.clear()
+        if (::hosting.isInitialized) {
+            attempt {
+                waitUntilMain("test-owned resources retired", {
+                    !hosting.captureResourcesPresent() && !hosting.hasDisplayResources() &&
+                        !hosting.isWakeLockHeld() && !hosting.hasPhoneUiOwner()
+                })
+            }
+            attempt { runOnMain { hosting.setResourceFactoryForTest(PrivateDisplayHost.PlatformFactory()) } }
+        }
+        org.junit.runners.model.MultipleFailureException.assertEmpty(failures)
+    }
 
     private lateinit var session: PhoneBrowserSession
 
@@ -67,7 +101,7 @@ class HostingInstrumentedTest {
             "hosting stopped",
             { (hosting.status().state == HostingController.State.NOT_HOSTING) },
         )
-        scenario = ActivityScenario.launch(MainActivity::class.java)
+        scenario = launchScenario()
         scenario.onActivity({ activity -> session.resetForTest() })
     }
 
@@ -142,9 +176,13 @@ class HostingInstrumentedTest {
 
     /** Shell-launched return to the foreground reusing the existing instance (SINGLE_TOP). */
     private fun bringMainActivityToFrontForTest() {
-        runShellCommandForTest(
-            "am start -f 0x20000000 -n com.code2hack.eyebrowse.phone/.MainActivity"
+        val result = runShellCommandWithOutputForTest(
+            "am start -W --display 0 -f 0x20000000 -n com.code2hack.eyebrowse.phone/.MainActivity"
         )
+        println("PHONE_RETURN_RESULT " + result)
+        assertTrue("single foreground request must succeed: " + result,
+            result.contains("Status: ok") && !result.contains("Error:"))
+        // One real launch, followed by the original attachment/focus checks and single tap.
     }
 
     private fun runShellCommandForTest(command: String) {
@@ -429,7 +467,7 @@ class HostingInstrumentedTest {
             marker,
             domText("load-marker"),
         )
-        scenario = ActivityScenario.launch(MainActivity::class.java)
+        scenario = launchScenario()
         waitUntil(
             "relaunch shows the hosted page on phone ui",
             callback16@{
@@ -758,7 +796,7 @@ class HostingInstrumentedTest {
             HostingController.State.NOT_HOSTING,
             runOnMainSync(hosting::status).state,
         )
-        scenario = ActivityScenario.launch(MainActivity::class.java)
+        scenario = launchScenario()
         openFixture("/storage.html", "localStorage controls")
         assertEquals(
             "site persistence before hosting cycle",
@@ -782,120 +820,66 @@ class HostingInstrumentedTest {
     }
 
     /**
-     * A safe app-scoped window change while hosting reconciles the private geometry to the last
-     * measured Phone content viewport (frames at the size, same document, no reload) and the exact
-     * page state is restored when the window returns.
+     * Hybrid contract: Phone rotation cannot mutate the private epoch profile. Return uses fresh
+     * Phone content bounds; exact document/form/history continuity is preserved across reflow.
      */
     @Test
     fun hostingWindowChangeReconcilesGeometryWithExactRestoration() {
-        assertFalse(
-            "blank white presentation must not qualify as the fixture page",
-            nearColor(Color.WHITE, CAPTURE_PAGE_COLOR),
-        )
         openFixture("/hosting.html", "Hosting capture page")
-        val marker: String? = domText("load-marker")
+        val marker = domText("load-marker")
         setFieldValue("geometry-value")
-        val loadsBefore: Int = loadCount("/hosting.html")
-        val sizeBefore: IntArray = currentWebViewSize()
-        val baselinePortrait: Boolean = (sizeBefore[1] >= sizeBefore[0])
-        val changeOrientation: Int =
-            (if (baselinePortrait) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
-        val restoreOrientation: Int =
-            (if (baselinePortrait) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
-        val generationBefore: Long = runOnMainSync({ (hosting.currentGeneration()).toLong() })
+        val loadsBefore = loadCount("/hosting.html")
+        val viewIdentity = webViewIdentityHash()
+        val phoneBefore = currentWebViewSize()
+        val originalPortrait = phoneBefore[1] >= phoneBefore[0]
+        val opposite = if (originalPortrait) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        val restore = if (originalPortrait) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
-        scenario.onActivity({ activity -> activity.setRequestedOrientation(changeOrientation) })
-        waitUntil(
-            "window changed while hosting",
-            callback35@{
-                val size: IntArray = currentWebViewSize()
-                return@callback35 ((size[0] != sizeBefore[0]) || (size[1] != sizeBefore[1]))
-            },
-        )
-        val sizeAfterChange: IntArray = currentWebViewSize()
-        scenario.onActivity({ activity -> activity.moveTaskToBack(true) })
-        waitUntil(
-            "hosted offscreen at the reconciled geometry",
-            callback37@{
-                val snapshot: HostViewSnapshot = hostViewSnapshot()
-                return@callback37 ((snapshot.status.attachment ==
-                    HostingController.Attachment.PRIVATE_DISPLAY) && snapshot.viewAttached)
-            },
-        )
-        val consumer: CollectingConsumer = CollectingConsumer()
-        consumer.expectQualification(sizeAfterChange[0], sizeAfterChange[1], CAPTURE_PAGE_COLOR)
-        val eligibleUptime: Long = SystemClock.uptimeMillis()
-        var lease: HostingController.Lease? = runOnMainSync({ hosting.acquireLease(consumer) })
-        assertNotNull("lease after geometry reconciliation", lease)
-        val afterAcquisition: HostViewSnapshot = hostViewSnapshot()
-        assertEquals(
-            "first demand remains privately attached",
-            HostingController.Attachment.PRIVATE_DISPLAY,
-            afterAcquisition.status.attachment,
-        )
-        assertTrue(
-            "the actual WebView is attached AFTER acquisition/rebuild",
-            afterAcquisition.viewAttached,
-        )
-        waitUntil(
-            "first VALID frame at the reconciled geometry",
-            { (consumer.qualifyingCountFrom(0) > 0) },
-        )
-        val firstValid: Int = consumer.earliestQualifyingIndexFrom(0)
-        val firstValidDelayMs: Long = consumer.earliestQualifyingDelayMsFrom(0, eligibleUptime)
-        milestones!!.record(
-            "window-rebuild first-raw/first-valid: " +
-                consumer.qualificationSummary(0, eligibleUptime)
-        )
-        assertTrue(
-            (((("earliest VALID current-document/current-geometry frame within 2s of ORIGINAL ")
-                    .toString() + "eligibility: ") + firstValidDelayMs)
-                .toString() + "ms"),
-            OutputQualification.validWithinBound(firstValidDelayMs),
-        )
-        assertTrue(
-            ((((("frames from the first VALID callback carry the reconciled (saved Phone) ")
-                    .toString() + "viewport ") + sizeAfterChange[0])
-                .toString() + "x") + sizeAfterChange[1]),
-            consumer.tailFramesMatchSize(firstValid, sizeAfterChange[0], sizeAfterChange[1]),
-        )
-        assertTrue(
-            "frames from the first VALID callback show the same document after reconcile",
-            consumer.tailFramesNearColor(firstValid, CAPTURE_PAGE_COLOR),
-        )
-        assertEquals(
-            "no reload from geometry reconciliation",
-            (loadsBefore).toLong(),
-            (loadCount("/hosting.html")).toLong(),
-        )
-        assertEquals(marker, domText("load-marker"))
-        runOnMain(lease!!::release)
+        val profile = runOnMainSync(hosting::presentationProfile)
+        val generation = runOnMainSync(hosting::currentGeneration)
+        scenario.onActivity { it.moveTaskToBack(true) }
+        waitUntil("private owner before Phone rotation", {
+            hostViewSnapshot().status.attachment == HostingController.Attachment.PRIVATE_DISPLAY
+        })
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(profile.width, profile.height, CAPTURE_PAGE_COLOR)
+        val eligible = SystemClock.uptimeMillis()
+        val lease = runOnMainSync { hosting.acquireLease(consumer) }
+        assertNotNull(lease)
+        val renewal = LeaseRenewal(lease!!); renewal.start()
+        try {
+            val before = awaitPrivateProfile()
+            waitUntil("first valid RG-profile frame", { consumer.qualifyingCountFrom(0) > 0 })
+            val first = consumer.earliestQualifyingIndexFrom(0)
+            assertTrue(OutputQualification.validWithinBound(consumer.earliestQualifyingDelayMsFrom(0, eligible)))
+            scenario.onActivity { it.requestedOrientation = opposite }
+            SystemClock.sleep(1_000)
+            val during = awaitPrivateProfile()
+            assertEquals(before.displayId, during.displayId)
+            assertEquals(before.serial, during.serial)
+            assertEquals(profile, runOnMainSync(hosting::presentationProfile))
+            assertEquals(generation, runOnMainSync(hosting::currentGeneration))
+            assertTrue(consumer.tailFramesMatchSize(first, profile.width, profile.height))
+            assertTrue(consumer.tailFramesNearColor(first, CAPTURE_PAGE_COLOR))
+            assertEquals(viewIdentity, webViewIdentityHash())
+            milestones!!.record("hybrid Phone rotation preserved private profile " + during)
+        } finally { renewal.stopRenewing(); runOnMain(lease::release) }
         bringMainActivityToFrontForTest()
-        waitUntil(
-            "webview back on phone ui",
-            callback40@{
-                val snapshot: HostViewSnapshot = hostViewSnapshot()
-                return@callback40 ((snapshot.status.attachment ==
-                    HostingController.Attachment.PHONE_UI) && snapshot.viewAttached)
-            },
-        )
-        scenario.onActivity({ activity -> activity.setRequestedOrientation(restoreOrientation) })
-        waitUntil(
-            ((("window restored to " + sizeBefore[0]).toString() + "x") + sizeBefore[1]),
-            callback42@{
-                val size: IntArray = currentWebViewSize()
-                return@callback42 ((size[0] == sizeBefore[0]) && (size[1] == sizeBefore[1]))
-            },
-        )
+        awaitPhoneContent()
+        scenario.onActivity { it.requestedOrientation = restore }
+        waitUntil("Phone returned to original orientation class", {
+            val size = currentWebViewSize()
+            (size[1] >= size[0]) == originalPortrait
+        })
+        awaitPhoneContent()
+        val restored = currentWebViewSize()
+        assertEquals(originalPortrait, restored[1] >= restored[0])
+        assertEquals(viewIdentity, webViewIdentityHash())
         assertEquals(marker, domText("load-marker"))
         assertEquals("geometry-value", readFieldValue())
-        assertEquals(
-            "no reload across the window round trip",
-            (loadsBefore).toLong(),
-            (loadCount("/hosting.html")).toLong(),
-        )
+        assertEquals("no reload across owner handoff", loadsBefore, loadCount("/hosting.html"))
         tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
     }
 
@@ -964,7 +948,7 @@ class HostingInstrumentedTest {
                 "msAfterExactAnchor"
         )
         val expectedGeneration: Int = (generationBefore + 1).toInt()
-        val expectedSize: IntArray = currentWebViewSize()
+        val expectedSize: IntArray = expectedPrivateSize()
         val consumer: CollectingConsumer = CollectingConsumer()
         consumer.expectQualification(expectedSize[0], expectedSize[1], CAPTURE_PAGE_COLOR)
         val eligibleUptime: Long = SystemClock.uptimeMillis()
@@ -1334,7 +1318,7 @@ class HostingInstrumentedTest {
                     HostingController.Attachment.PRIVATE_DISPLAY) && snapshot.viewAttached)
             },
         )
-        val expectedSize: IntArray = currentWebViewSize()
+        val expectedSize: IntArray = expectedPrivateSize()
         val consumer: CollectingConsumer = CollectingConsumer()
         consumer.expectQualification(expectedSize[0], expectedSize[1], Color.WHITE)
         val eligibleUptime: Long = SystemClock.uptimeMillis()
@@ -1386,75 +1370,55 @@ class HostingInstrumentedTest {
         tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
     }
 
-    /** R6: a live lease survives a geometry rebuild; delivery rearms at the rebuilt viewport. */
+    /** Hybrid R6: a live lease survives owner handoff without Phone-driven private resizing. */
     @Test
     fun liveLeaseSurvivesGeometryRebuildWithRearmedDelivery() {
         openFixture("/hosting.html", "Hosting capture page")
-        val sizeBefore: IntArray = currentWebViewSize()
-        val generationBefore: Long = runOnMainSync({ (hosting.currentGeneration()).toLong() })
+        val originalSize = currentWebViewSize()
+        val marker = domText("load-marker")
         tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
-        val consumer: CollectingConsumer = CollectingConsumer()
-        var lease: HostingController.Lease? = runOnMainSync({ hosting.acquireLease(consumer) })
-        assertNotNull("live lease before geometry change", lease)
-        waitUntil("frames flow before geometry change", { (consumer.count() > 0) })
-        scenario.onActivity({ activity ->
-            activity.setRequestedOrientation(
-                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            )
+        val profile = runOnMainSync(hosting::presentationProfile)
+        val generation = runOnMainSync(hosting::currentGeneration)
+        scenario.onActivity { it.moveTaskToBack(true) }
+        waitUntil("private owner for live lease", {
+            hostViewSnapshot().status.attachment == HostingController.Attachment.PRIVATE_DISPLAY
         })
-        scenario.onActivity({ activity -> activity.moveTaskToBack(true) })
-        waitUntil(
-            "rebuild completed offscreen with live lease",
-            callback76@{
-                val snapshot: HostViewSnapshot = hostViewSnapshot()
-                return@callback76 ((snapshot.status.attachment ==
-                    HostingController.Attachment.PRIVATE_DISPLAY) && snapshot.viewAttached)
-            },
-        )
-        val sizeAfter: IntArray = currentWebViewSize()
-        assertTrue(
-            "the window change actually changed the geometry",
-            ((sizeAfter[0] != sizeBefore[0]) || (sizeAfter[1] != sizeBefore[1])),
-        )
-        val framesAtRebuild: Int = consumer.count()
-        consumer.expectQualification(sizeAfter[0], sizeAfter[1], CAPTURE_PAGE_COLOR)
-        waitUntil(
-            "a post-rebuild callback qualifies at the rebuilt geometry",
-            { (consumer.qualifyingCountFrom(framesAtRebuild) > 0) },
-        )
-        val firstRebuildValid: Int = consumer.earliestQualifyingIndexFrom(framesAtRebuild)
-        milestones!!.record(
-            (("live-lease rebuild first-raw/first-valid fromIndex=" + framesAtRebuild).toString() +
-                ": ") + consumer.qualificationSummary(framesAtRebuild, 0)
-        )
-        assertTrue(
-            ((("post-rebuild delivery carries the rebuilt viewport " + sizeAfter[0]).toString() +
-                "x") + sizeAfter[1]),
-            consumer.tailFramesMatchSize(firstRebuildValid, sizeAfter[0], sizeAfter[1]),
-        )
-        assertTrue(
-            "rearmed delivery keeps the same hosting generation",
-            consumer.allFramesMatchGeneration((generationBefore + 1).toInt()),
-        )
-        assertTrue(
-            "rearmed delivery shows the same document",
-            consumer.tailFramesNearColor(firstRebuildValid, CAPTURE_PAGE_COLOR),
-        )
-        scenario.onActivity({ activity ->
-            activity.setRequestedOrientation(
-                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-            )
-        })
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(profile.width, profile.height, CAPTURE_PAGE_COLOR)
+        val lease = runOnMainSync { hosting.acquireLease(consumer) }
+        assertNotNull(lease)
+        val renewal = LeaseRenewal(lease!!); renewal.start()
+        try {
+            val before = awaitPrivateProfile()
+            waitUntil("real current-document frames before handoff", { consumer.qualifyingCountFrom(0) > 0 })
+            bringMainActivityToFrontForTest()
+            awaitPhoneContent()
+            val opposite = if (originalSize[1] >= originalSize[0])
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            scenario.onActivity { it.requestedOrientation = opposite }
+            waitUntil("actual Phone layout changed", {
+                val size = currentWebViewSize()
+                size[0] != originalSize[0] || size[1] != originalSize[1]
+            })
+            awaitPhoneContent()
+            assertEquals(profile, runOnMainSync(hosting::presentationProfile))
+            val from = consumer.count()
+            scenario.onActivity { it.moveTaskToBack(true) }
+            val after = awaitPrivateProfile()
+            assertEquals(before.displayId, after.displayId)
+            assertEquals(before.serial, after.serial)
+            waitUntil("same live lease resumes current page on immutable RG profile", {
+                consumer.qualifyingCountFrom(from) > 0
+            })
+            val first = consumer.earliestQualifyingIndexFrom(from)
+            assertTrue(consumer.tailFramesMatchSize(first, profile.width, profile.height))
+            assertTrue(consumer.tailFramesNearColor(first, CAPTURE_PAGE_COLOR))
+            assertTrue(consumer.allFramesMatchGeneration(generation))
+            assertEquals(marker, domText("load-marker"))
+        } finally { renewal.stopRenewing(); runOnMain(lease::release) }
         bringMainActivityToFrontForTest()
-        waitUntil(
-            "webview restored to phone ui",
-            callback79@{
-                val snapshot: HostViewSnapshot = hostViewSnapshot()
-                return@callback79 ((snapshot.status.attachment ==
-                    HostingController.Attachment.PHONE_UI) && snapshot.viewAttached)
-            },
-        )
-        runOnMain(lease!!::release)
+        awaitPhoneContent()
         tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
     }
 
@@ -1521,7 +1485,7 @@ class HostingInstrumentedTest {
             HostingController.State.HOSTING,
             runOnMainSync(hosting::status).state,
         )
-        scenario = ActivityScenario.launch(MainActivity::class.java)
+        scenario = launchScenario()
         waitUntil(
             "live recovered page reattaches to the successor Phone UI",
             { (hostViewSnapshot().status.attachment == HostingController.Attachment.PHONE_UI) },
@@ -1744,7 +1708,7 @@ class HostingInstrumentedTest {
             },
         )
         milestones!!.record("old owner quiescent before explicit replacement acquisition")
-        val replacementSize: IntArray = currentWebViewSize()
+        val replacementSize: IntArray = expectedPrivateSize()
         second.expectQualification(replacementSize[0], replacementSize[1], CAPTURE_PAGE_COLOR)
         val replacementEligibleUptime: Long = SystemClock.uptimeMillis()
         val replacement: HostingController.Lease? = runOnMainSync({ hosting.acquireLease(second) })
@@ -1910,6 +1874,127 @@ class HostingInstrumentedTest {
                 .toString() + "Guarded entry/final relock alone is not locked-capture evidence.")
         println(assessment)
         milestones!!.record(assessment)
+    }
+
+    @Test
+    fun stalePresentationCallbackCannotStopFreshGeneration() {
+        val callbacks = mutableListOf<Runnable>()
+        val platform = PrivateDisplayHost.PlatformFactory()
+        runOnMain { hosting.setResourceFactoryForTest(object : PrivateDisplayHost.Factory by platform {
+            override fun createPresentation(context: Context, display: android.view.Display): PrivateDisplayHost.PresentationHost {
+                val delegate = platform.createPresentation(context, display)
+                return object : PrivateDisplayHost.PresentationHost by delegate {
+                    override fun setUnavailableListener(listener: Runnable?) {
+                        if (listener != null) callbacks.add(listener)
+                        delegate.setUnavailableListener(listener)
+                    }
+                }
+            }
+        }) }
+        openFixture("/hosting.html", "Hosting capture page")
+        val marker = domText("load-marker")
+        val viewId = webViewIdentityHash()
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
+        val old = runOnMainSync { hosting.privateDisplaySnapshot()!! }
+        val staleCallback = runOnMainSync { callbacks.first() }
+        val oldActivity = AtomicReference<MainActivity>()
+        val oldContainer = AtomicReference<android.view.ViewGroup>()
+        val oldToken = AtomicReference<PhoneBrowserSession.Attachment>()
+        scenario.onActivity { activity ->
+            oldActivity.set(activity)
+            oldContainer.set(activity.findViewById(R.id.web_container))
+            // Read the real token without minting test-only product ownership.
+            val field = MainActivity::class.java.getDeclaredField("attachment")
+            field.isAccessible = true
+            oldToken.set(field.get(activity) as PhoneBrowserSession.Attachment)
+        }
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
+        waitUntilMain("prior display and capture released", {
+            !hosting.hasDisplayResources() && !hosting.captureResourcesPresent()
+        })
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
+        val gen = runOnMainSync(hosting::currentGeneration)
+        scenario.recreate()
+        awaitPhoneContent()
+        val successorParent = runOnMainSync { session.view()!!.parent }
+        runOnMain {
+            val token = oldToken.get()
+            hosting.onPhoneUiHidden(token)
+            hosting.moveWebViewToPrivateDisplay(token)
+            hosting.onPhoneUiDestroyed(token)
+            hosting.ensurePhoneUiAttachment(oldActivity.get(), oldContainer.get(), token)
+            assertNull("stale Activity cannot reclaim Phone presentation",
+                hosting.moveWebViewToPhoneUi(oldActivity.get(), oldContainer.get()))
+            session.detach(token)
+            assertTrue("old Activity cleanup cannot detach successor", session.view()!!.parent === successorParent)
+            assertTrue("successor UI registration survives old callback", hosting.hasPhoneUiOwner())
+            assertEquals(gen, hosting.currentGeneration())
+        }
+        scenario.onActivity { it.moveTaskToBack(true) }
+        waitUntil("successor privately attached", {
+            hostViewSnapshot().status.attachment == HostingController.Attachment.PRIVATE_DISPLAY
+        })
+        val profile = runOnMainSync(hosting::presentationProfile)
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(profile.width, profile.height, CAPTURE_PAGE_COLOR)
+        val eligible = SystemClock.uptimeMillis()
+        val lease = runOnMainSync { hosting.acquireLease(consumer) }
+        assertNotNull(lease)
+        val renewal = LeaseRenewal(lease!!); renewal.start()
+        try {
+            val fresh = awaitPrivateProfile()
+            assertNotEquals("next generation cannot inherit old/OFF display", old.displayId, fresh.displayId)
+            runOnMain { staleCallback.run() }
+            runOnMain { }
+            waitUntil("successor still produces qualified frames", { consumer.qualifyingCountFrom(0) > 0 })
+            assertTrue(OutputQualification.validWithinBound(consumer.earliestQualifyingDelayMsFrom(0, eligible)))
+            assertEquals(HostingController.State.HOSTING, runOnMainSync(hosting::status).state)
+            assertEquals(gen, runOnMainSync(hosting::currentGeneration))
+            assertEquals(fresh.displayId, awaitPrivateProfile().displayId)
+            assertEquals(viewId, webViewIdentityHash())
+            assertEquals(marker, domText("load-marker"))
+            milestones!!.record("fresh private generation after stale callback " + fresh)
+        } finally { renewal.stopRenewing(); runOnMain(lease::release) }
+        bringMainActivityToFrontForTest()
+        tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
+    }
+
+    private fun expectedPrivateSize(): IntArray = runOnMainSync {
+        val profile = hosting.presentationProfile()
+        intArrayOf(profile.width, profile.height)
+    }
+
+    private fun awaitPrivateProfile(): PrivateDisplayHost.DisplaySnapshot {
+        val profile = runOnMainSync(hosting::presentationProfile)
+        waitUntil("private display, reader and WebView match epoch profile", {
+            runOnMainSync {
+                val snapshot = hosting.privateDisplaySnapshot()
+                val view = session.view()
+                hosting.status().attachment == HostingController.Attachment.PRIVATE_DISPLAY &&
+                    snapshot != null && snapshot.valid && snapshot.state == android.view.Display.STATE_ON &&
+                    snapshot.width == profile.width && snapshot.height == profile.height &&
+                    snapshot.actualWidth == profile.width && snapshot.actualHeight == profile.height &&
+                    snapshot.readerWidth == profile.width && snapshot.readerHeight == profile.height &&
+                    snapshot.presentationContextDisplayId == snapshot.displayId &&
+                    view != null && view.width == profile.width && view.height == profile.height &&
+                    view.display?.displayId == snapshot.displayId
+            }
+        })
+        return runOnMainSync { hosting.privateDisplaySnapshot()!! }
+    }
+
+    private fun awaitPhoneContent() {
+        waitUntil("Phone owner uses fresh Phone content bounds", {
+            runOnMainSync {
+                val view = session.view()
+                val container = view?.parent as? android.view.ViewGroup
+                view != null && container != null && view.display?.displayId == 0 &&
+                    hosting.status().attachment == HostingController.Attachment.PHONE_UI &&
+                    !view.isLayoutRequested && !container.isLayoutRequested &&
+                    view.width == container.width - container.paddingLeft - container.paddingRight &&
+                    view.height == container.height - container.paddingTop - container.paddingBottom
+            }
+        })
     }
 
     private fun currentWebViewSize(): IntArray {
@@ -2570,13 +2655,14 @@ class HostingInstrumentedTest {
     /**
      * Renews the lease every second from a test thread; {@code renew()} posts to the main thread.
      */
-    private class LeaseRenewal : Thread {
+    private inner class LeaseRenewal : Thread {
         private val lease: HostingController.Lease
 
         private @Volatile var running: Boolean = true
 
         constructor(lease: HostingController.Lease) : super() {
             this.lease = lease
+            ownedRenewals.add(this)
             setDaemon(true)
         }
 

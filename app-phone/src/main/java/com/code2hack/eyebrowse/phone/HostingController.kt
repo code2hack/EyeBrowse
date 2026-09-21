@@ -186,11 +186,10 @@ class HostingController private constructor(private val appContext: Context) {
     private var phoneUiContainer: ViewGroup? = null
     private var uiOwnerToken: PhoneBrowserSession.Attachment? = null
 
-    // Last STABLE VISIBLE Phone content viewport (F6): the geometry private output reconciles to.
-    // One-pixel same-shape jitter is canonicalized independently for portrait/landscape so a
-    // round trip cannot silently change browser/capture geometry.
+    // Phone-only observation, never the private display/reader profile.
+    // Phone geometry is freshly framework-measured; no pixel-tolerance workaround.
     private var lastViewport = WebViewMetric(0, 0, 0)
-    private val phoneViewportStability = PhoneViewportStability()
+    private val presentationEpochs = PresentationEpochs()
 
     private val startTimeout = Runnable { onStartTimeout() }
     private val idleRelease = Runnable { runIdleRelease() }
@@ -338,6 +337,7 @@ class HostingController private constructor(private val appContext: Context) {
         stopRequestedDuringStart = false
         state = State.STARTING
         generation++
+        presentationEpochs.begin(generation, HostingPresentationProfile.RG_DESIGN_FALLBACK.copy())
         pendingStartGeneration = generation
         notifyHostingChanged()
         val intent = Intent(appContext, HostingService::class.java)
@@ -371,23 +371,17 @@ class HostingController private constructor(private val appContext: Context) {
             completeStop()
             return
         }
-        var metric = lastViewport
-        if (metric.width <= 0 || metric.height <= 0) {
-            metric = WebViewMetric.measure(session)
-        }
-        val sizeError = HostingPolicy.viewportError(metric.width, metric.height)
-        if (sizeError != null) {
-            failStart(sizeError)
-            return
-        }
+        val epoch = checkNotNull(presentationEpochs.current)
+        val metric = epoch.profile
         val previousHost = displayHost
         if (previousHost != null && !previousHost.isQuiescent()) {
             // A previous owner's teardown is still outstanding (R2): retain it — it closes only
             // its own snapshots — and replace it only when its thread has actually exited.
             retiringHosts.add(previousHost)
         }
-        val host = PrivateDisplayHost(resourceFactory, Runnable { onRetirementSignal() })
+        val host = PrivateDisplayHost(resourceFactory, Runnable { onRetirementSignal(epoch) })
         displayHost = host
+        host.setUnavailableListener(Runnable { onPresentationUnavailable(epoch, host) })
         pruneQuiescedRetiringHostsLocked()
         try {
             host.create(service!!, metric.width, metric.height, metric.densityDpi)
@@ -399,7 +393,6 @@ class HostingController private constructor(private val appContext: Context) {
             failStart("display platform failure: " + error.message)
             return
         }
-        lastViewport = metric
         reconcileAttachmentAfterReadiness()
         state = State.HOSTING
         notifyHostingChanged()
@@ -444,6 +437,7 @@ class HostingController private constructor(private val appContext: Context) {
      * notifying listeners (F7).
      */
     private fun failStart(reason: String?) {
+        presentationEpochs.retire()
         mainHandler.removeCallbacks(startTimeout)
         pendingStartGeneration = -1
         revokeLease()
@@ -497,6 +491,7 @@ class HostingController private constructor(private val appContext: Context) {
 
     /** Publishes the settled final state BEFORE notifying listeners (F7). */
     private fun completeStop() {
+        presentationEpochs.retire()
         mainHandler.removeCallbacks(watchdog)
         mainHandler.removeCallbacks(idleRelease)
         mainHandler.removeCallbacks(startTimeout)
@@ -584,10 +579,8 @@ class HostingController private constructor(private val appContext: Context) {
     }
 
     /**
-     * Records one layout of the CURRENT STARTED Phone UI. MainActivity calls this only while its
-     * lifecycle is STARTED; identity checks reject stale predecessor callbacks. This is the sole
-     * authority for normal Phone viewport updates, preventing onStop/inset jitter from replacing
-     * the last stable visible viewport.
+     * Records current Phone content bounds only. Owner identity rejects predecessor callbacks.
+     * Private geometry always comes from the immutable generation profile, never these metrics.
      */
     @Synchronized
     fun onPhoneViewportChanged(
@@ -597,31 +590,14 @@ class HostingController private constructor(private val appContext: Context) {
         measuredHeight: Int,
         densityDpi: Int,
     ) {
-        if (!phoneUiAvailable || phoneUiActivity !== activity || phoneUiContainer !== container) {
-            return
+        if (!phoneUiAvailable || phoneUiActivity !== activity || phoneUiContainer !== container ||
+                container == null) return
+        val size = PhoneContentViewport.size(measuredWidth, measuredHeight,
+            container.paddingLeft, container.paddingTop, container.paddingRight, container.paddingBottom)
+        if (size.first > 0 && size.second > 0) {
+            lastViewport = WebViewMetric(size.first, size.second, densityDpi)
         }
-        val stable = phoneViewportStability.canonicalize(
-            measuredWidth,
-            measuredHeight,
-            densityDpi,
-        )
-        if (HostingPolicy.viewportError(stable.width, stable.height) != null) {
-            return
-        }
-        lastViewport = WebViewMetric(stable.width, stable.height, stable.densityDpi)
-
-        // If the platform returned to the same logical viewport with a one-pixel rounding/inset
-        // asymmetry, keep the authoritative WebView itself at the canonical size. Material window
-        // changes are never snapped because PhoneViewportStability only absorbs ±1 px jitter.
-        val view = session.view()
-        if (view != null && view.parent === container &&
-                (view.width != stable.width || view.height != stable.height)) {
-            val params = view.layoutParams
-            params.width = stable.width
-            params.height = stable.height
-            view.layoutParams = params
-            view.requestLayout()
-        }
+        // Phone callbacks never resize PRIVATE display/reader/WebView or rewrite its epoch profile.
     }
 
     /**
@@ -664,59 +640,31 @@ class HostingController private constructor(private val appContext: Context) {
 
     // ------------------------------------------------------ attachment moves
 
-    /**
-     * Moves the live WebView from the Phone UI into the private presentation, reconciling the
-     * private geometry to the last measured Phone content viewport (F6): a changed window
-     * rebuilds the display/presentation/reader at the new measured size without navigation; an
-     * unsupported size is reported explicitly instead of silently keeping the old geometry.
-     */
+    /** Moves the live view onto the generation's immutable private profile, without navigation. */
     private fun hostOffscreenWithReconciledGeometry() {
-        // onPhoneUiHidden runs after Activity.onStop(), where platform insets/layout can already
-        // differ by one pixel from the last stable visible viewport. Use the STARTED/UI-tracked
-        // authority first; measure only as a bootstrap fallback when no stable viewport exists.
-        var metric = lastViewport
-        if (metric.width <= 0 || metric.height <= 0) {
-            metric = WebViewMetric.measure(session)
-            if (HostingPolicy.viewportError(metric.width, metric.height) == null) {
-                lastViewport = metric
-            }
-        }
-        val sizeError = HostingPolicy.viewportError(metric.width, metric.height)
-        if (sizeError != null) {
-            failureReason = sizeError
-            notifyHostingChanged()
-            return // The view stays with the (hidden) Phone UI; the condition is explicit.
-        }
-        val demandLive = lease != null && frameConsumer != null
-        if (demandLive) {
-            // Only live demand justifies capture-surface allocation/reconciliation here (R1):
-            // rebuild for width/height/density and REARM the same active owner on the new reader.
-            val rebuildHost = displayHost!!
+        val epoch = presentationEpochs.current ?: return
+        val host = displayHost ?: return
+        val profile = epoch.profile
+        val demand = lease
+        val consumer = frameConsumer
+        if (demand != null && consumer != null) {
             try {
-                rebuildHost.ensureCaptureSurface(hostingContext!!, metric.width, metric.height,
-                        metric.densityDpi, session)
+                host.ensureCaptureSurface(hostingContext!!, profile.width, profile.height,
+                    profile.densityDpi, session)
+                if (!host.rearmCapture(generation, BoundSink(demand, generation, consumer),
+                        freshFrameRequest(epoch, host))) {
+                    throw HostingException("capture rearm failed on private handoff")
+                }
             } catch (error: HostingException) {
                 failureReason = error.message
-                rebuildHost.stopCapture() // No surviving reader: report not-capturing honestly.
+                host.stopCapture()
                 notifyHostingChanged()
                 return
             }
-            if (!rebuildHost.rearmCapture(
-                    generation,
-                    BoundSink(lease!!, generation, frameConsumer!!),
-                    Runnable { session.requestFreshCaptureFrame() },
-                )) {
-                // A checked rearm failure must not leave a healthy capturing label (R6).
-                failureReason = "capture rearm failed after geometry rebuild"
-                rebuildHost.stopCapture()
-                notifyHostingChanged()
-                return
-            }
-            failureReason = null // This successful rebuild/rearm resolved the capture failure.
         }
-        // Without live demand: the private move attaches the surviving browser WITHOUT capture
-        // allocation or deadline changes — post-idle moves recreate nothing (R1 corrected).
-        displayHost!!.attachSessionView(session)
+        // Demand-free handoff never recreates a reader or changes the idle deadline. The
+        // surviving Presentation has the SAME profile as the next capture acquisition.
+        host.attachSessionView(session)
         attachment = Attachment.PRIVATE_DISPLAY
         notifyHostingChanged()
     }
@@ -754,8 +702,9 @@ class HostingController private constructor(private val appContext: Context) {
     fun moveWebViewToPhoneUi(activity: android.app.Activity,
             container: ViewGroup?): PhoneBrowserSession.Attachment? {
         Log.i(TAG, "moveToPhoneUi state=$state attachment=$attachment")
-        if (state != State.HOSTING) {
-            return null
+        if (state != State.HOSTING || !phoneUiAvailable || phoneUiActivity !== activity ||
+                phoneUiContainer !== container) {
+            return null // A stale Activity cannot reclaim a successor's presentation.
         }
         // PHONE_UI metadata is not sufficient ownership after Activity recreation. session.attach
         // performs the ordered old-parent detach and mints the fresh identity token.
@@ -786,28 +735,8 @@ class HostingController private constructor(private val appContext: Context) {
                 idleReleasePendingOwner = null
             }
         }
-        // Viewport authority: while the view is attached to the private presentation, its laid-out
-        // dimensions are the OLD private geometry (a layout pass can overwrite them before the
-        // first demand) — the last measured PHONE viewport/density is authoritative for this
-        // transition. On the Phone UI the live measurement is the current geometry.
-        val metric: WebViewMetric
-        if (attachment == Attachment.PRIVATE_DISPLAY) {
-            metric = lastViewport
-        } else {
-            // Visible Phone UI geometry is tracked/canonicalized by onPhoneViewportChanged().
-            // Fall back to a direct measurement only if that authority has not been established.
-            metric = if (lastViewport.width > 0 && lastViewport.height > 0) {
-                lastViewport
-            } else {
-                WebViewMetric.measure(session)
-            }
-        }
-        val sizeError = HostingPolicy.viewportError(metric.width, metric.height)
-        if (sizeError != null) {
-            failureReason = sizeError
-            notifyHostingChanged()
-            return null // Unsupported viewport reported explicitly (F6).
-        }
+        val epoch = presentationEpochs.current ?: return null
+        val metric = epoch.profile
         try {
             host.ensureCaptureSurface(hostingContext!!, metric.width, metric.height,
                     metric.densityDpi, session)
@@ -822,7 +751,7 @@ class HostingController private constructor(private val appContext: Context) {
         // Same-owner rearm vs new-owner start: revocation retains the capture owner (thread and
         // reader stay for reacquisition), so a new lease after expiry/release rearms the SAME
         // active owner with the new bound sink; only a quiescent host starts a fresh owner (R2).
-        val freshFrameRequest = Runnable { session.requestFreshCaptureFrame() }
+        val freshFrameRequest = freshFrameRequest(epoch, host)
         val started = if (host.isOwnerActive()) {
             host.rearmCapture(
                 generation,
@@ -957,8 +886,21 @@ class HostingController private constructor(private val appContext: Context) {
      * main and evaluate actual completion. Replacement is never auto-started here — callers
      * retry explicitly once quiescence is observed.
      */
-    private fun onRetirementSignal() {
-        mainHandler.post(Runnable { evaluateRetirements() })
+    private fun onRetirementSignal(epoch: PresentationEpochs.Token) {
+        mainHandler.post {
+            if (presentationEpochs.owns(epoch)) {
+                evaluateRetirements()
+            } else {
+                // Old callbacks may complete ONLY retired resources, not the current host.
+                synchronized(this) {
+                    for (host in retiringHosts.toList()) host.evaluateRetirementCompletion()
+                    pruneQuiescedRetiringHostsLocked()
+                    if (retiringHosts.any { it.isRetiring() }) {
+                        mainHandler.postDelayed({ onRetirementSignal(epoch) }, RETIREMENT_RECHECK_MS)
+                    }
+                }
+            }
+        }
     }
 
     /** Main-thread retirement evaluation: quiescence requires the thread to have exited (R2). */
@@ -1034,6 +976,41 @@ class HostingController private constructor(private val appContext: Context) {
         wakeLockKeeper?.release()
     }
 
+    private fun freshFrameRequest(epoch: PresentationEpochs.Token, host: PrivateDisplayHost): Runnable =
+        Runnable {
+            mainHandler.post {
+                if (presentationEpochs.owns(epoch) && displayHost === host && state == State.HOSTING) {
+                    session.requestFreshCaptureFrame {
+                        presentationEpochs.owns(epoch) && displayHost === host &&
+                            state == State.HOSTING && attachment == Attachment.PRIVATE_DISPLAY
+                    }
+                }
+            }
+        }
+
+    private fun onPresentationUnavailable(epoch: PresentationEpochs.Token, host: PrivateDisplayHost) {
+        mainHandler.post {
+            synchronized(this) {
+                if (!presentationEpochs.owns(epoch) || displayHost !== host) return@post
+                if (state == State.STARTING) {
+                    failStart("private presentation became unavailable")
+                } else if (state == State.HOSTING) {
+                    failureReason = "private presentation became unavailable; explicit restart required"
+                    state = State.STOPPING
+                    completeStop()
+                }
+            }
+        }
+    }
+
+    /** Read-only generation contract, shared by display, reader and test qualification. */
+    @Synchronized
+    fun presentationProfile(): HostingPresentationProfile =
+        checkNotNull(presentationEpochs.current) { "no hosting presentation generation" }.profile
+
+    @Synchronized
+    fun privateDisplaySnapshot(): PrivateDisplayHost.DisplaySnapshot? = displayHost?.displaySnapshot()
+
     // ---------------------------------------------------- lifecycle events
 
     private fun onSessionChanged(changed: PhoneBrowserSession) {
@@ -1095,7 +1072,7 @@ class HostingController private constructor(private val appContext: Context) {
         }
     }
 
-    /** The measured WebView content viewport used as the private-display geometry. */
+    /** Fallback measurement of Phone geometry only. */
     private class WebViewMetric(
         val width: Int,
         val height: Int,

@@ -82,6 +82,10 @@ class PrivateDisplayHost(
         fun dismiss()
 
         fun container(): FrameLayout
+
+        /** Optional for fake factories; platform implementation checks its window/display. */
+        fun isAvailable(): Boolean = true
+        fun setUnavailableListener(listener: Runnable?) {}
     }
 
     /** Immutable per-lease delivery sink; the capture pipeline invokes exactly this object. */
@@ -94,7 +98,34 @@ class PrivateDisplayHost(
     /** One capture owner at a time: ACTIVE → RETIRING → QUIESCENT is real and observable (R2). */
     private val ownerPhase = CaptureOwnerPhase()
 
+    private var unavailableListener: Runnable? = null
+    private var resourceSerial: Long = 0
     private var virtualDisplay: VirtualDisplay? = null // main-thread only
+
+    fun setUnavailableListener(listener: Runnable?) { unavailableListener = listener }
+
+    data class DisplaySnapshot(
+        val serial: Long, val displayId: Int, val valid: Boolean, val state: Int,
+        val width: Int, val height: Int, val actualWidth: Int, val actualHeight: Int,
+        val densityDpi: Int, val readerWidth: Int, val readerHeight: Int,
+        val presentationContextDisplayId: Int, val surfaceDetached: Boolean,
+    )
+
+    fun displaySnapshot(): DisplaySnapshot {
+        val display = virtualDisplay?.display
+        val size = android.graphics.Point()
+        if (display?.isValid == true) display.getRealSize(size)
+        val readerSize = synchronized(nativeLock) {
+            (imageReader?.width ?: 0) to (imageReader?.height ?: 0)
+        }
+        val contextDisplay = runCatching {
+            presentation?.container()?.context?.display?.displayId ?: -1
+        }.getOrDefault(-1)
+        return DisplaySnapshot(resourceSerial, display?.displayId ?: -1,
+            display?.isValid == true, display?.state ?: Display.STATE_UNKNOWN,
+            width, height, size.x, size.y, densityDpi, readerSize.first, readerSize.second,
+            contextDisplay, displaySurfaceDetached)
+    }
     private var presentation: PresentationHost? = null // main-thread only
     private var imageReader: ImageReader? = null // nativeLock-protected
     private var captureThread: HandlerThread? = null // main-thread lifecycle
@@ -144,6 +175,7 @@ class PrivateDisplayHost(
         if (sizeError != null) {
             throw HostingException(sizeError)
         }
+        resourceSerial++
         width = measuredWidth
         height = measuredHeight
         densityDpi = measuredDensityDpi
@@ -166,6 +198,13 @@ class PrivateDisplayHost(
             }
             val presentationHost = factory.createPresentation(serviceContext, created.display)
             presentation = presentationHost
+            val createdSerial = resourceSerial
+            presentationHost.setUnavailableListener(Runnable {
+                // Retired Presentation events cannot invalidate a replacement in the same host.
+                if (presentation === presentationHost && resourceSerial == createdSerial) {
+                    unavailableListener?.run()
+                }
+            })
             presentationHost.show()
         } catch (error: HostingException) {
             rollbackDisplayAllocation()
@@ -197,6 +236,7 @@ class PrivateDisplayHost(
         val shown = presentation
         if (shown != null) {
             try {
+                shown.setUnavailableListener(null)
                 shown.dismiss()
             } catch (ignored: RuntimeException) {
                 // Rollback best effort.
@@ -233,6 +273,10 @@ class PrivateDisplayHost(
         val sizeError = HostingPolicy.viewportError(desiredWidth, desiredHeight)
         if (sizeError != null) {
             throw HostingException(sizeError)
+        }
+        if (virtualDisplay?.display?.isValid != true || presentation?.isAvailable() != true) {
+            rebuildAtSize(serviceContext, desiredWidth, desiredHeight, desiredDensityDpi, session)
+            return
         }
         synchronized(nativeLock) {
             if (imageReader != null && width == desiredWidth && height == desiredHeight &&
@@ -297,6 +341,7 @@ class PrivateDisplayHost(
         detachSessionView(session) // The live view leaves the old container; the document stays.
         if (presentation != null) {
             try {
+                presentation?.setUnavailableListener(null)
                 presentation?.dismiss()
             } catch (ignored: RuntimeException) {
                 // Teardown continues.
@@ -577,6 +622,7 @@ class PrivateDisplayHost(
         val shown = presentation
         if (shown != null) {
             try {
+                shown.setUnavailableListener(null)
                 shown.dismiss()
             } catch (ignored: RuntimeException) {
                 // A dismissed presentation must not block teardown.
@@ -671,7 +717,7 @@ class PrivateDisplayHost(
                 " image=" + lastAcquiredWidth + "x" + lastAcquiredHeight +
                 " reader=" + hasReader() +
                 " detached=" + displaySurfaceDetached +
-                " owner=" + ownerPhase.phase()
+                " owner=" + ownerPhase.phase() + " display={" + displaySnapshot() + "}"
     }
 
     private fun onImageAvailable(reader: ImageReader) {
@@ -813,21 +859,33 @@ class PrivateDisplayHost(
         }
     }
 
-    private class HostingPresentation(context: Context, display: Display) :
-            android.app.Presentation(context, display), PresentationHost {
+    private class HostingPresentation(outerContext: Context, display: Display) :
+            android.app.Presentation(outerContext, display), PresentationHost {
 
-        private val container: FrameLayout = FrameLayout(context).apply {
-            setBackgroundColor(Color.WHITE)
-        }
+        // Presentation.getContext(): a display/window context on API31+, NOT the outer service.
+        private val content = FrameLayout(this.context).apply { setBackgroundColor(Color.WHITE) }
 
         override fun onCreate(savedInstanceState: android.os.Bundle?) {
             super.onCreate(savedInstanceState)
-            setContentView(container, ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+            window?.apply {
+                addFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.WHITE))
+                setDecorFitsSystemWindows(false)
+                attributes = attributes.apply { setFitInsetsTypes(0) }
+                setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            }
+            setContentView(content, ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }
 
-        override fun container(): FrameLayout {
-            return container
+        override fun container(): FrameLayout = content
+        override fun isAvailable(): Boolean = isShowing && display.isValid
+        override fun setUnavailableListener(listener: Runnable?) {
+            setOnDismissListener(if (listener == null) null else
+                android.content.DialogInterface.OnDismissListener { listener.run() })
         }
     }
 
