@@ -124,6 +124,7 @@ class LinkServerEngine(
 
     val currentPhase: Phase get() = phase.get()
 
+    @Synchronized
     fun start(port: Int = LinkProtocol.LOCAL_PORT) {
         check(serverSocket.get() == null) { "server already started" }
         stopped = false
@@ -134,23 +135,43 @@ class LinkServerEngine(
         server.setNeedClientAuth(false)
         server.soTimeout = ACCEPT_POLL_MS
         serverSocket.set(server)
-        Thread({ acceptLoop() }, "eyebrowse-link-acceptor").apply {
+        Thread({ acceptLoop(server) }, "eyebrowse-link-acceptor").apply {
             isDaemon = true
             start()
         }
     }
 
-    /** Bounded stop: closes sockets; worker threads exit within the cancel-quiesce bound. */
+    @Volatile internal var beforeStopTlsCloseForTest: (() -> Unit)? = null
+
+    @Volatile internal var beforePairingCommitForTest: (() -> Unit)? = null
+
+    /** State retirement is synchronous; TLS close_notify must never execute on a UI caller. */
+    @Synchronized
     fun stop() {
         stopped = true
-        serverSocket.get()?.close()
-        // Coordinate socket close with stale replacement/install so Stop cannot race a new owner
-        // into the active slot while the eviction critical section is in progress.
-        synchronized(activeOwnershipLock) {
-            activeSocket.get()?.close()
+        // A listening ServerSocket has no TLS session/close_notify. Release its bind before a
+        // synchronous restart; only accepted SSLSockets require the asynchronous network close.
+        serverSocket.getAndSet(null)?.let { runCatching { it.close() } }
+        val retired = synchronized(activeOwnershipLock) {
+            val socket = activeSocket.getAndSet(null)
+            val session = controlSession
+            controlSession = null
+            activeSessionAuthenticated = false
+            activeSessionLastInboundNanos.set(0)
+            phase.set(Phase.IDLE)
+            socket to session
         }
-        serverSocket.set(null)
-        phase.set(Phase.IDLE)
+        if (retired.first != null || retired.second != null) {
+            val beforeClose = beforeStopTlsCloseForTest
+            Thread({
+                try { beforeClose?.invoke() } finally {
+                    // Normal TLS close (not abortive shutdown): preserve close_notify semantics.
+                    // Only captured objects are touched; late cleanup cannot close a successor.
+                    retired.second?.close()
+                    retired.first?.let(::closeQuietly)
+                }
+            }, "eyebrowse-link-stop").apply { isDaemon = true; start() }
+        }
     }
 
     /**
@@ -174,9 +195,8 @@ class LinkServerEngine(
 
     // ------------------------------------------------------------- accept / session
 
-    private fun acceptLoop() {
-        while (!stopped) {
-            val server = serverSocket.get() ?: break
+    private fun acceptLoop(server: ServerSocket) {
+        while (!stopped && serverSocket.get() === server) {
             val socket = try {
                 server.accept() as? SSLSocket ?: continue
             } catch (e: java.net.SocketTimeoutException) {
@@ -193,7 +213,7 @@ class LinkServerEngine(
             var normalAdmissionInstalled = false
             beforeNormalAdmissionOwnershipLockForTest?.invoke()
             synchronized(activeOwnershipLock) {
-                if (!stopped && activeSocket.compareAndSet(null, socket)) {
+                if (!stopped && serverSocket.get() === server && activeSocket.compareAndSet(null, socket)) {
                     activeSessionAuthenticated = false
                     activeSessionLastInboundNanos.set(System.nanoTime())
                     phase.set(Phase.AUTHENTICATING)
@@ -221,7 +241,7 @@ class LinkServerEngine(
                 // section. A's finally uses the same lock, so it cannot clear A to null between
                 // close and installation and spuriously reject this same Retry attempt.
                 synchronized(activeOwnershipLock) {
-                    if (!stopped &&
+                    if (!stopped && serverSocket.get() === server &&
                         activeSocket.get() === existing &&
                         shouldEvictStaleSession(
                             activeSessionLastInboundNanos.get(),
@@ -234,7 +254,7 @@ class LinkServerEngine(
                         staleCloseBeforeInstallForTest?.invoke()
                         // Stop may begin while close/test seam is in progress; never install a
                         // replacement after stopped flips true.
-                        if (!stopped) {
+                        if (!stopped && serverSocket.get() === server) {
                             replacementInstalled = activeSocket.compareAndSet(existing, socket)
                             if (replacementInstalled) {
                                 activeSessionAuthenticated = false
@@ -267,8 +287,11 @@ class LinkServerEngine(
     private fun runSession(socket: SSLSocket) {
         var authenticated = false
         var session: AuthenticatedControlSession? = null
-        activeSessionLastInboundNanos.set(System.nanoTime())
         try {
+            synchronized(activeOwnershipLock) {
+                if (stopped || activeSocket.get() !== socket) return
+                activeSessionLastInboundNanos.set(System.nanoTime())
+            }
             socket.soTimeout = timings.authTimeoutMs.toInt()
             val input = socket.inputStream.buffered()
             val output = socket.outputStream.buffered()
@@ -287,7 +310,7 @@ class LinkServerEngine(
             // 3. Initial pairing or reconnect proof.
             val authFrame = LinkFrameCodec.readOne(input)
             val error = when (val incoming = readIncoming(authFrame)) {
-                is PairAuthMessage -> authenticateInitial(clientHello, incoming, nonce)
+                is PairAuthMessage -> authenticateInitial(socket, clientHello, incoming, nonce)
                 is ReconnectAuthMessage -> authenticateReconnect(clientHello, incoming, nonce)
                 else -> LinkError.AuthenticationFailed
             }
@@ -346,6 +369,7 @@ class LinkServerEngine(
 
     /** Returns the protocol error to reject with, or null when authentication succeeded. */
     private fun authenticateInitial(
+        socket: SSLSocket,
         clientHello: HelloMessage,
         auth: PairAuthMessage,
         nonce: ByteArray,
@@ -373,8 +397,13 @@ class LinkServerEngine(
             return LinkError.AuthenticationFailed
         }
         // Atomic one-time consume, after proof-of-possession (plan §4.2 step 5).
-        val outcome = trust.consumeInvitation(auth.iid, auth.sec)
-        return outcome.toLinkErrorOrNull() ?: run { trust.commitPairedPeer(rgSpki, clientHello); null }
+        beforePairingCommitForTest?.invoke()
+        return synchronized(activeOwnershipLock) {
+            // A stopped/retired authenticator cannot restore trust after synchronous Forget.
+            if (stopped || activeSocket.get() !== socket) return@synchronized LinkError.AuthenticationFailed
+            val outcome = trust.consumeInvitation(auth.iid, auth.sec)
+            outcome.toLinkErrorOrNull() ?: run { trust.commitPairedPeer(rgSpki, clientHello); null }
+        }
     }
 
     private fun authenticateReconnect(

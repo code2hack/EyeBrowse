@@ -37,3 +37,14 @@ Phone configuration isolation, same-WebView continuity and Stop cleanup. Instrum
 uses production APIs and a fixture-only reverse; product traffic stays direct LAN.
 A compiled device test is not device acceptance; execution/evidence status lives in the
 mission receipt. Fold6/optical/wearer conditions are not claimed.
+
+## Round 2
+
+The physical first round retained a black initial frame before later fixture-qualified frames,
+and a main-thread TLS-close exception in Phone cleanup that masked a possible primary assertion.
+Stop now retires state synchronously and closes captured accepted TLS sockets off the caller
+thread, preserving normal close_notify and same-engine restart fencing. Initial trust commit is
+owner-fenced against Stop/Forget. ServerStopTest adds three identities (47 suites / 311 total).
+The two device identity names are unchanged: Phone logs configuration facts and preserves primary
+failures with suppressed cleanup errors; RG checks background/content pixels from frame one and
+times the first qualified frame rather than the first transport frame. Old adverse evidence stays.

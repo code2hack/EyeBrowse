@@ -24,8 +24,11 @@ class LivePresentationInstrumentedTest {
         val server = PhoneLinkServer.obtain(app)
         var originalView: android.webkit.WebView? = null
         val scenario = ActivityScenario.launch<MainActivity>(Intent(app, MainActivity::class.java))
+        var primaryFailure: Throwable? = null
+        var originalOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         try {
             scenario.onActivity {
+                originalOrientation = it.requestedOrientation
                 originalView = browser.view()
                 browser.openAddress(InstrumentationRegistry.getArguments().getString("fixtureBaseUrl", "http://127.0.0.1:26341") + "/hosting.html")
                 server.start()
@@ -43,22 +46,46 @@ class LivePresentationInstrumentedTest {
             SystemClock.sleep(5_000)
             scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
             SystemClock.sleep(2_000)
-            assertEquals(profile,host.presentationProfile())
-            assertEquals(context,server.controlCoordinator.authority.snapshot().context)
-            assertSame(originalView,browser.view())
-            val snapshot = host.privateDisplaySnapshot()!!
-            assertEquals(profile.width,snapshot.actualWidth)
-            assertEquals(profile.height,snapshot.actualHeight)
-            assertEquals(android.view.Display.STATE_ON,snapshot.state)
-            Log.i("EyeBrowseT02", "CONFIGURATION_PRESERVED $snapshot")
+            scenario.onActivity {
+                val snapshot = host.privateDisplaySnapshot()!!
+                Log.i("EyeBrowseT02", "CONFIGURATION_FACTS expected=$profile actual=${host.presentationProfile()} expectedContext=$context actualContext=${server.controlCoordinator.authority.snapshot().context} sameView=${originalView === browser.view()} display=$snapshot")
+                assertEquals("immutable RG profile",profile,host.presentationProfile())
+                assertEquals("control context",context,server.controlCoordinator.authority.snapshot().context)
+                assertSame("same live WebView",originalView,browser.view())
+                assertEquals("private display width",profile.width,snapshot.actualWidth)
+                assertEquals("private display height",profile.height,snapshot.actualHeight)
+                assertEquals("private display ON",android.view.Display.STATE_ON,snapshot.state)
+            }
+            Log.i("EyeBrowseT02", "CONFIGURATION_PRESERVED ${host.privateDisplaySnapshot()}")
             SystemClock.sleep(10_000)
             scenario.onActivity { it.findViewById<Button>(R.id.button_hosting_toggle).performClick() }
             await("Stop cleanup", 5_000) { !host.hasDisplayResources() && !host.captureResourcesPresent() && !host.isWakeLockHeld() }
             assertSame(originalView,browser.view())
+            scenario.onActivity {
+                val before = SystemClock.elapsedRealtime()
+                server.stop() // Actual Activity-lifecycle call shape, under normal StrictMode.
+                assertFalse(server.isLinkUp())
+                assertTrue("main-thread stop returns within bound",SystemClock.elapsedRealtime()-before < 1_000)
+                Log.i("EyeBrowseT02", "LINK_STOP_MAIN_MS=${SystemClock.elapsedRealtime()-before}")
+            }
             Log.i("EyeBrowseT02", "STOP_CLEAN")
+        } catch (failure: Throwable) {
+            primaryFailure = failure
+            Log.e("EyeBrowseT02", "PRIMARY_FAILURE",failure)
+            throw failure
         } finally {
-            scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED; host.stop(); server.stop() }
-            scenario.close()
+            val cleanup = listOf<() -> Unit>(
+                { scenario.onActivity { it.requestedOrientation = originalOrientation } },
+                { instrumentation.runOnMainSync { host.stop() } },
+                { instrumentation.runOnMainSync { server.stop() } },
+                { scenario.close() },
+            ).mapNotNull { step -> runCatching(step).exceptionOrNull() }
+            cleanup.forEach { Log.e("EyeBrowseT02","CLEANUP_FAILURE",it) }
+            if (primaryFailure != null) cleanup.forEach { primaryFailure.addSuppressed(it) }
+            else if (cleanup.isNotEmpty()) {
+                cleanup.drop(1).forEach { cleanup.first().addSuppressed(it) }
+                throw cleanup.first()
+            }
         }
     }
     private fun await(label: String, bound: Long, predicate: () -> Boolean) {
