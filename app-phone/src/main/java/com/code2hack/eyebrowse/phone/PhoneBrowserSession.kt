@@ -63,6 +63,8 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
     private var attachedContainer: ViewGroup? = null
     private var currentAttachment: Attachment? = null
     private var rendererGone = false
+    private var documentId = java.util.UUID.randomUUID().toString()
+    fun documentIdentity(): String = documentId
 
     private var displayUrl: String? = null
     private var lastCommittedUrl: String? =
@@ -435,6 +437,7 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
         }
 
         override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+            documentId = java.util.UUID.randomUUID().toString()
             if (NavigationPolicy.isAllowed(url)) {
                 displayUrl = url
                 // A new main-frame navigation supersedes earlier refusal/error feedback, so a stale
@@ -484,6 +487,7 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
         override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
             disposeWebView()
             rendererGone = true
+            documentId = java.util.UUID.randomUUID().toString()
             currentAttachment = null
             attachedContainer = null
             loading = false

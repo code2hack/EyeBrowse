@@ -1,5 +1,9 @@
 package com.code2hack.eyebrowse.core.link.transport
 
+import com.code2hack.eyebrowse.core.link.framing.LinkRecord
+import com.code2hack.eyebrowse.core.link.framing.PresentationFrame
+import com.code2hack.eyebrowse.core.link.messages.*
+import com.code2hack.eyebrowse.core.link.control.ControlOwner
 import com.code2hack.eyebrowse.core.link.HostStatusValue
 import com.code2hack.eyebrowse.core.link.LinkError
 import com.code2hack.eyebrowse.core.link.LinkProtocol
@@ -63,6 +67,9 @@ class LinkClientEngine(
          * locator that actually carried the session; persistence happens only after this.
          */
         fun onAuthenticated(phoneSpki: ByteArray, usedLocator: Locator) {}
+        fun onAuthenticatedSession(session: AuthenticatedControlSession, peer: HelloMessage) {}
+        fun onControl(message: BrowserControlMessage) {}
+        fun onPresentation(frame: PresentationFrame) {}
     }
 
     /** One bounded connection operation. */
@@ -85,6 +92,8 @@ class LinkClientEngine(
         var cancelled: Boolean = false,
         var established: Boolean = false,
         var socket: Socket? = null,
+        var peerHello: HelloMessage? = null,
+        var session: AuthenticatedControlSession? = null,
     )
 
     private val running = AtomicBoolean(false)
@@ -106,6 +115,10 @@ class LinkClientEngine(
     internal var beforeFinalCommitForTest: (() -> Unit)? = null
 
     val isBusy: Boolean get() = running.get()
+
+    fun sendControl(message: BrowserControlMessage): Boolean = synchronized(operationLock) {
+        activeOperation?.takeIf { it.established && !it.cancelled }?.session?.sendControl(message) ?: false
+    }
 
     /** Starts one bounded connect operation on a worker thread. */
     fun connect(attempt: Attempt) {
@@ -153,7 +166,7 @@ class LinkClientEngine(
                 }
                 if (established != null) {
                     // CONNECTED was emitted atomically with the trust callback in establishSession.
-                    sessionLoop(established.first, established.second, operation)
+                    sessionLoop(established.first, operation)
                     System.err.println(
                         "EyeBrowseLink: client session ended after connect: " +
                             lastFailure.wireCode,
@@ -285,7 +298,8 @@ class LinkClientEngine(
             }
 
             lastFailure = LinkError.AuthenticationFailed
-            if (!authenticate(tls, attempt, operation, authDeadlineNanos)) {
+            val input = tls.inputStream.buffered()
+            if (!authenticate(tls, input, attempt, operation, authDeadlineNanos)) {
                 System.err.println(
                     "EyeBrowseLink: client auth rejected by " + locator.toWire() +
                         ": " + lastFailure.wireCode,
@@ -308,6 +322,11 @@ class LinkClientEngine(
                 } else {
                     operation.established = true
                     listener.onAuthenticated(phoneSpki, locator)
+                    val peer = checkNotNull(operation.peerHello)
+                    val session = AuthenticatedControlSession(tls, input,
+                        peer.hasPresentationCapabilities() && attempt.clientHello.hasPresentationCapabilities(), true)
+                    operation.session = session
+                    listener.onAuthenticatedSession(session, peer)
                     listener.onStateChange(PairingState.CONNECTED)
                     true
                 }
@@ -317,7 +336,7 @@ class LinkClientEngine(
                 return null
             }
 
-            return Pair(tls, tls.inputStream.buffered())
+            return Pair(tls, input)
         } catch (e: Exception) {
             releaseAndClose(operation, tls)
             return null
@@ -346,7 +365,8 @@ class LinkClientEngine(
         LinkError.WrongPhoneIdentity,
         LinkError.WrongRgIdentity,
         LinkError.PeerReplacementRequired,
-        LinkError.IncompatibleProtocol -> true
+        LinkError.IncompatibleProtocol,
+        LinkError.UpdateRequired -> true
         else -> false
     }
 
@@ -357,13 +377,13 @@ class LinkClientEngine(
      */
     private fun authenticate(
         tls: SSLSocket,
+        input: InputStream,
         attempt: Attempt,
         operation: Operation,
         authDeadlineNanos: Long,
     ): Boolean {
         if (!canProceed(operation, authDeadlineNanos)) return false
         val output = tls.outputStream.buffered()
-        val input = tls.inputStream.buffered()
         sendFrame(output, LinkMessageCodec.encode(attempt.clientHello))
 
         if (!prepareBlockingRead(tls, operation, authDeadlineNanos)) return false
@@ -422,7 +442,7 @@ class LinkClientEngine(
 
         if (!prepareBlockingRead(tls, operation, authDeadlineNanos)) return false
         return when (val result = readIncoming(input)) {
-            is AuthOkMessage -> true
+            is AuthOkMessage -> { operation.peerHello = serverHello; true }
             is AuthErrMessage -> {
                 lastFailure = LinkError.fromWireCode(result.code) ?: LinkError.AuthenticationFailed
                 false
@@ -436,53 +456,53 @@ class LinkClientEngine(
 
     // ------------------------------------------------------------- authenticated session
 
-    private fun sessionLoop(tls: SSLSocket, input: InputStream, operation: Operation) {
-        val output = tls.outputStream.buffered()
+    private fun sessionLoop(tls: SSLSocket, operation: Operation) {
+        val session = checkNotNull(operation.session)
         val heartbeat = Thread({
-            while (!isCancelled(operation) && tls.isConnected && !tls.isClosed) {
-                try {
-                    sendFrame(output, LinkMessageCodec.encode(PingMessage))
-                } catch (e: Exception) {
-                    break
-                }
-                try {
-                    Thread.sleep(timings.heartbeatIntervalMs)
-                } catch (e: InterruptedException) {
-                    break
-                }
+            while (!isCancelled(operation) && !tls.isClosed) {
+                if (!session.sendControl(PingMessage)) break
+                try { Thread.sleep(timings.heartbeatIntervalMs) } catch (_: InterruptedException) { break }
             }
-        }, "eyebrowse-link-client-heartbeat").apply {
-            isDaemon = true
-            start()
-        }
+        }, "eyebrowse-link-client-heartbeat").apply { isDaemon = true; start() }
         var lastInbound = System.nanoTime()
         try {
             while (!isCancelled(operation)) {
                 tls.soTimeout = timings.heartbeatIntervalMs.toInt()
-                val frame = try {
-                    LinkFrameCodec.readOne(input)
-                } catch (e: java.net.SocketTimeoutException) {
+                val record = session.readNext()
+                if (record == null) {
                     if (elapsedMs(lastInbound) > timings.livenessTimeoutMs) break
                     continue
                 }
                 lastInbound = System.nanoTime()
-                when (val incoming = readIncoming(frame)) {
-                    is StatusMessage -> {
-                        HostStatusValue.entries.firstOrNull { it.name == incoming.state }
-                            ?.let { listener.onStatus(it) }
+                when (record) {
+                    is LinkRecord.Presentation -> listener.onPresentation(record.frame)
+                    is LinkRecord.Control -> when (val incoming = record.message) {
+                        is StatusMessage -> HostStatusValue.entries.firstOrNull { it.name == incoming.state }?.let { listener.onStatus(it) }
+                        is PingMessage -> session.sendControl(PongMessage)
+                        is ForgetNoticeMessage -> break
+                        is BrowserControlMessage -> {
+                            if (!session.presentationCompatible) throw java.io.IOException("presentation update required")
+                            when (incoming) {
+                                is HandoffResultMessage -> if (incoming.accepted) session.setPresentation(
+                                    incoming.context.takeIf { incoming.owner == ControlOwner.RG },
+                                    incoming.profile.takeIf { incoming.owner == ControlOwner.RG })
+                                is BrowserStateMessage -> session.setPresentation(
+                                    incoming.context.takeIf { incoming.owner == ControlOwner.RG && !incoming.stale },
+                                    incoming.profile.takeIf { incoming.owner == ControlOwner.RG && !incoming.stale })
+                                is PresentationStopMessage, is PresentationStaleMessage -> session.setPresentation(null,null)
+                                else -> Unit
+                            }
+                            listener.onControl(incoming)
+                        }
+                        else -> Unit
                     }
-                    is PingMessage -> sendFrame(output, LinkMessageCodec.encode(PongMessage))
-                    is PongMessage -> Unit
-                    is ForgetNoticeMessage -> break
-                    else -> Unit
                 }
             }
-        } catch (e: EOFException) {
-            // peer closed
-        } catch (e: Exception) {
-            // deliberate cancellation is distinguished below under the operation lock
+        } catch (_: Exception) {
+            // A partial record is terminal; never restart framing at an arbitrary body byte.
         } finally {
             heartbeat.interrupt()
+            session.close()
             releaseAndClose(operation, tls)
             notifyLinkLostIfLive(operation)
         }

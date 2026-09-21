@@ -1,6 +1,10 @@
 package com.code2hack.eyebrowse.phone.link
 
 import android.content.Context
+import com.code2hack.eyebrowse.phone.PhoneControlCoordinator
+import com.code2hack.eyebrowse.phone.PhoneBrowserSession
+import com.code2hack.eyebrowse.core.link.messages.BrowserControlMessage
+import com.code2hack.eyebrowse.core.link.transport.AuthenticatedControlSession
 import com.code2hack.eyebrowse.core.link.HostStatusValue
 import com.code2hack.eyebrowse.core.link.LinkError
 import com.code2hack.eyebrowse.core.link.LinkProtocol
@@ -30,12 +34,29 @@ class PhoneLinkServer(
     private val store: PhonePairingStore,
     private val hostingController: HostingController?,
     private val locators: () -> List<Locator>,
+    private val browserSession: PhoneBrowserSession? = null,
 ) {
 
     @Volatile
     private var engine: LinkServerEngine? = null
 
+    private val pendingControls = java.util.concurrent.Semaphore(LinkProtocol.OUTBOUND_QUEUE_MAX)
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    @Volatile private var authenticatedSession: AuthenticatedControlSession? = null
+    val controlCoordinator = PhoneControlCoordinator(browserSession?.documentIdentity() ?: java.util.UUID.randomUUID().toString()) {
+        hostingController?.measurePhoneControlProfile()
+    }
+    private val browserListener = PhoneBrowserSession.Listener { session ->
+        val before = controlCoordinator.authority.snapshot().context
+        val after = controlCoordinator.authority.setDocumentIdentity(session.documentIdentity()).context
+        if (before != after) authenticatedSession?.setPresentation(null,null)
+    }
     private val hostingListener = HostingController.Listener {
+        val before = controlCoordinator.authority.snapshot().context
+        hostingController?.status()?.let {
+            controlCoordinator.authority.setHostingGeneration(it.generation.toLong(), it.state == HostingController.State.HOSTING)
+        }
+        if (before != controlCoordinator.authority.snapshot().context) authenticatedSession?.setPresentation(null,null)
         // Hosting state transition (main thread): push the latest-state observation if linked.
         engine?.pushStatus(currentHostStatus())
     }
@@ -44,9 +65,59 @@ class PhoneLinkServer(
 
     private val engineListener = object : LinkServerEngine.Listener {
         override fun onLinkUp() = notifyLinkObservers()
-        override fun onLinkDown() = notifyLinkObservers()
+        override fun onLinkDown() {
+            synchronized(controlCoordinator.authority) {
+                authenticatedSession = null
+                controlCoordinator.authority.setAuthenticated(false)
+            }
+            notifyLinkObservers()
+        }
+        override fun onAuthenticatedSession(session: AuthenticatedControlSession, peer: HelloMessage) {
+            synchronized(controlCoordinator.authority) {
+                authenticatedSession = session
+                controlCoordinator.authority.setAuthenticated(true, session.presentationCompatible)
+            }
+        }
+        override fun onControl(session: AuthenticatedControlSession, message: BrowserControlMessage) {
+            if (!pendingControls.tryAcquire()) { session.close(); return }
+            val posted = main.post {
+                try {
+                    synchronized(controlCoordinator.authority) {
+                        if (authenticatedSession !== session) return@post
+                        hostingController?.status()?.let {
+                            controlCoordinator.authority.setHostingGeneration(it.generation.toLong(), it.state == HostingController.State.HOSTING)
+                        }
+                        val before = controlCoordinator.authority.snapshot().context
+                        controlCoordinator.receive(message)?.let { response ->
+                            if (before != controlCoordinator.authority.snapshot().context) session.setPresentation(null, null)
+                            if (!session.sendControl(response)) session.close()
+                        }
+                    }
+                } finally { pendingControls.release() }
+            }
+            if (!posted) { pendingControls.release(); session.close() }
+        }
         override fun onAuthFailed(error: LinkError) = notifyLinkObservers()
     }
+
+    /** T02's real producer reports readiness only for its exact immutable presentation context. */
+    fun publishPresentationReady(context: com.code2hack.eyebrowse.core.link.control.ControlContext): Boolean =
+        synchronized(controlCoordinator.authority) {
+            val session = authenticatedSession ?: return false
+            if (!controlCoordinator.authority.markPresentationReady(context)) return false
+            val state = controlCoordinator.authority.snapshot()
+            session.setPresentation(state.context, state.profile)
+            session.sendControl(com.code2hack.eyebrowse.core.link.messages.BrowserStateMessage(
+                state.owner, state.context, state.profile, stale=false))
+        }
+
+    fun sendPresentation(frame: com.code2hack.eyebrowse.core.link.framing.PresentationFrame): Boolean =
+        synchronized(controlCoordinator.authority) {
+            val state = controlCoordinator.authority.snapshot()
+            if (state.context != frame.header.context || state.owner != com.code2hack.eyebrowse.core.link.control.ControlOwner.RG ||
+                state.presentationStatus != com.code2hack.eyebrowse.core.link.control.PresentationStatus.READY || !state.linkAuthenticated) return false
+            authenticatedSession?.sendPresentation(frame) ?: false
+        }
 
     /** UI surfaces register for link-state changes instead of polling (uiautomator-friendly). */
     fun addLinkObserver(observer: () -> Unit) {
@@ -63,7 +134,7 @@ class PhoneLinkServer(
 
     private val trustController = object : LinkServerEngine.TrustController {
         override fun serverHello(): HelloMessage =
-            HelloMessage(LinkProtocol.MAJOR, LinkProtocol.MINOR, LinkProtocol.REQUIRED_CAPABILITIES)
+            HelloMessage(LinkProtocol.MAJOR, LinkProtocol.MINOR, LinkProtocol.ALL_CAPABILITIES)
 
         override fun consumeInvitation(id: String, secretB64: String): InvitationLifecycle.ConsumeOutcome =
             invitations.consumeForServer(id, secretB64)
@@ -104,6 +175,7 @@ class PhoneLinkServer(
         // alias so PairingActivity can still expose the explicit Forget recovery control.
         identityRecovery.ensureUsableIdentity()
         hostingController?.addListener(hostingListener)
+        browserSession?.addListener(browserListener)
         val newEngine = LinkServerEngine(identity, trustController, LinkTimings.PRODUCT, engineListener)
         newEngine.start(LinkProtocol.LOCAL_PORT)
         engine = newEngine
@@ -112,6 +184,9 @@ class PhoneLinkServer(
     @Synchronized
     fun stop(sendForgetNotice: Boolean = false) {
         hostingController?.removeListener(hostingListener)
+        browserSession?.removeListener(browserListener)
+        authenticatedSession = null
+        controlCoordinator.authority.setAuthenticated(false)
         engine?.let {
             if (sendForgetNotice) it.sendForgetNotice()
             it.stop()
@@ -184,6 +259,7 @@ class PhoneLinkServer(
                 store = store,
                 hostingController = runCatching { HostingController.get(appContext) }.getOrNull(),
                 locators = { PhoneLocatorEnumerator.enumerate(appContext) },
+                browserSession = PhoneBrowserSession.get(appContext),
             )
             return server
         }

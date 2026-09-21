@@ -36,6 +36,9 @@ sealed class LinkError(val wireCode: String) {
     /** Protocol major mismatch or missing required capability. */
     object IncompatibleProtocol : LinkError("INCOMPATIBLE_PROTOCOL")
 
+    /** The authenticated peer is valid but lacks the optional #7 presentation capability set. */
+    object UpdateRequired : LinkError("UPDATE_REQUIRED")
+
     /** RG camera permission not granted (T02 scanner). */
     object CameraPermissionDenied : LinkError("CAMERA_PERMISSION_DENIED")
 
@@ -60,6 +63,7 @@ sealed class LinkError(val wireCode: String) {
             WrongRgIdentity.wireCode -> WrongRgIdentity
             PeerReplacementRequired.wireCode -> PeerReplacementRequired
             IncompatibleProtocol.wireCode -> IncompatibleProtocol
+            UpdateRequired.wireCode -> UpdateRequired
             CameraPermissionDenied.wireCode -> CameraPermissionDenied
             CameraUnavailable.wireCode -> CameraUnavailable
             ScanCancelled.wireCode -> ScanCancelled

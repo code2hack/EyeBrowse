@@ -41,12 +41,19 @@ class RgPairingActivity : ComponentActivity() {
             if (granted) startScanning() else show(CAMERA_DENIED_NOTE)
         }
 
+    private var presentationUpdateRequired = false
+
     private val clientListener = object : RgLinkClient.Listener {
         // Engine callbacks arrive on engine threads; every UI touch is marshalled to the main
         // thread (T03 device finding: setText from an engine thread raised
         // CalledFromWrongThreadException in the accessibility path).
         override fun onStateChange(state: PairingState) = runOnUiThread { show(describe(state)) }
-        override fun onStatus(status: HostStatusValue) = runOnUiThread { show(describe(status)) }
+        override fun onStatus(status: HostStatusValue) = runOnUiThread {
+            show(describe(status) + if (presentationUpdateRequired) " · Update apps to use presentation." else "")
+        }
+        override fun onPresentationCompatibility(result: com.code2hack.eyebrowse.core.link.CapabilityNegotiation) = runOnUiThread {
+            presentationUpdateRequired = result != com.code2hack.eyebrowse.core.link.CapabilityNegotiation.Accepted
+        }
         override fun onLinkLost() = runOnUiThread { show(LINK_LOST_NOTE) }
         override fun onConnectFailed(error: LinkError) = runOnUiThread { show(describe(error)) }
     }
@@ -149,6 +156,7 @@ class RgPairingActivity : ComponentActivity() {
         LinkError.InvitationCancelled -> INVITATION_CANCELLED_NOTE
         LinkError.InvitationReused -> INVITATION_REUSED_NOTE
         LinkError.IncompatibleProtocol -> PROTOCOL_NOTE
+        LinkError.UpdateRequired -> "Update Phone and glasses apps to use presentation."
         LinkError.AuthenticationFailed -> AUTH_FAILED_NOTE
         LinkError.CameraPermissionDenied -> CAMERA_DENIED_NOTE
         LinkError.CameraUnavailable -> CAMERA_UNAVAILABLE_NOTE

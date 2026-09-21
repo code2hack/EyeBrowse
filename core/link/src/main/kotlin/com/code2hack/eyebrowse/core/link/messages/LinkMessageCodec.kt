@@ -42,6 +42,13 @@ object LinkMessageCodec {
             is PingMessage -> "ping" to buildJsonObject { }
             is PongMessage -> "pong" to buildJsonObject { }
             is ForgetNoticeMessage -> "forget" to buildJsonObject { }
+            is HandoffRequestMessage -> "handoff_request" to json.encodeToJsonElement(HandoffRequestMessage.serializer(), message)
+            is HandoffResultMessage -> "handoff_result" to json.encodeToJsonElement(HandoffResultMessage.serializer(), message)
+            is BrowserStateMessage -> "browser_state" to json.encodeToJsonElement(BrowserStateMessage.serializer(), message)
+            is BrowserActionMessage -> "browser_action" to json.encodeToJsonElement(BrowserActionMessage.serializer(), message)
+            is BrowserActionResultMessage -> "browser_action_result" to json.encodeToJsonElement(BrowserActionResultMessage.serializer(), message)
+            is PresentationStopMessage -> "presentation_stop" to json.encodeToJsonElement(PresentationStopMessage.serializer(), message)
+            is PresentationStaleMessage -> "presentation_stale" to json.encodeToJsonElement(PresentationStaleMessage.serializer(), message)
             else -> throw IllegalArgumentException("unsupported message type ${message::class.simpleName}")
         }
         val envelope = buildJsonObject {
@@ -68,6 +75,13 @@ object LinkMessageCodec {
                 "ping" -> json.decodeFromJsonElement(PingMessage.serializer(), obj)
                 "pong" -> json.decodeFromJsonElement(PongMessage.serializer(), obj)
                 "forget" -> json.decodeFromJsonElement(ForgetNoticeMessage.serializer(), obj)
+                "handoff_request" -> json.decodeFromJsonElement(HandoffRequestMessage.serializer(), obj)
+                "handoff_result" -> json.decodeFromJsonElement(HandoffResultMessage.serializer(), obj)
+                "browser_state" -> json.decodeFromJsonElement(BrowserStateMessage.serializer(), obj)
+                "browser_action" -> json.decodeFromJsonElement(BrowserActionMessage.serializer(), obj)
+                "browser_action_result" -> json.decodeFromJsonElement(BrowserActionResultMessage.serializer(), obj)
+                "presentation_stop" -> json.decodeFromJsonElement(PresentationStopMessage.serializer(), obj)
+                "presentation_stale" -> json.decodeFromJsonElement(PresentationStaleMessage.serializer(), obj)
                 else -> null
             }
             if (message == null) Result.success(Incoming.Unknown(type))

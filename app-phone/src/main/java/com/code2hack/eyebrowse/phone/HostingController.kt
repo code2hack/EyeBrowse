@@ -578,6 +578,17 @@ class HostingController private constructor(private val appContext: Context) {
         return currentToken
     }
 
+    /** Fresh local measurement for Phone takeover; never substitute a private display profile. */
+    @Synchronized
+    fun measurePhoneControlProfile(): com.code2hack.eyebrowse.core.link.presentation.PresentationProfile? {
+        val container = phoneUiContainer ?: return null
+        if (!phoneUiAvailable || !container.isAttachedToWindow) return null
+        val size = PhoneContentViewport.size(container.width, container.height,
+            container.paddingLeft, container.paddingTop, container.paddingRight, container.paddingBottom)
+        return com.code2hack.eyebrowse.core.link.presentation.PresentationProfile.fromMeasured(
+            size.first,size.second,container.resources.displayMetrics.densityDpi)
+    }
+
     /**
      * Records current Phone content bounds only. Owner identity rejects predecessor callbacks.
      * Private geometry always comes from the immutable generation profile, never these metrics.

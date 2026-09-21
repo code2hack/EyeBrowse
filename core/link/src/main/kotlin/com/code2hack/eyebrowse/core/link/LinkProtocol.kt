@@ -5,15 +5,30 @@ package com.code2hack.eyebrowse.core.link
  * not agent work-time budgets.
  */
 object LinkProtocol {
-    /** Application protocol major/minor at initial implementation. */
+    /** Application protocol major/minor. Minor 1 adds the #7 control/presentation contract. */
     const val MAJOR: Int = 1
-    const val MINOR: Int = 0
+    const val MINOR: Int = 1
 
     const val CAP_PAIRING_V1: String = "PAIRING_V1"
     const val CAP_STATUS_V1: String = "STATUS_V1"
+    const val CAP_PRESENTATION_V1: String = "PRESENTATION_V1"
+    const val CAP_HANDOFF_V1: String = "HANDOFF_V1"
+    const val CAP_BROWSER_ACTIONS_V1: String = "BROWSER_ACTIONS_V1"
 
-    /** Capability strings every v1 endpoint must advertise and require. */
-    val REQUIRED_CAPABILITIES: List<String> = listOf(CAP_PAIRING_V1, CAP_STATUS_V1)
+    /** Capability strings every v1 endpoint must advertise and require for the base link. */
+    val REQUIRED_CAPABILITIES: List<String> = listOf(
+        CAP_PAIRING_V1,
+        CAP_STATUS_V1,
+    )
+
+    /** #7 capabilities negotiated after authentication; absent means update-required for #7. */
+    val PRESENTATION_CAPABILITIES: List<String> = listOf(
+        CAP_PRESENTATION_V1,
+        CAP_HANDOFF_V1,
+        CAP_BROWSER_ACTIONS_V1,
+    )
+
+    val ALL_CAPABILITIES: List<String> = REQUIRED_CAPABILITIES + PRESENTATION_CAPABILITIES
 
     /** The one documented fixed application port for v0.0.1. */
     const val LOCAL_PORT: Int = 39818
@@ -35,6 +50,12 @@ object LinkProtocol {
 
     /** Maximum decoded application frame (bytes). */
     const val FRAME_MAX_BYTES: Int = 32 * 1024
+
+    /** Maximum post-auth encoded presentation record, including its metadata header. */
+    const val PRESENTATION_RECORD_MAX_BYTES: Int = 1 * 1024 * 1024
+
+    /** Maximum serialized metadata prefix carried before encoded presentation pixels. */
+    const val PRESENTATION_METADATA_MAX_BYTES: Int = 8 * 1024
 
     /** Bounded outbound queue depth. */
     const val OUTBOUND_QUEUE_MAX: Int = 16

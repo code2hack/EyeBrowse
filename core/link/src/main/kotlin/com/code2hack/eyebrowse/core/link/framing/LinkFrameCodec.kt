@@ -20,8 +20,8 @@ object LinkFrameCodec {
 
     class ZeroLengthFrameException : IOException("zero-length frame")
 
-    fun encodeLength(payloadBytes: Int): ByteArray {
-        require(payloadBytes in 1..LinkProtocol.FRAME_MAX_BYTES)
+    fun encodeLength(payloadBytes: Int, maxPayloadBytes: Int = LinkProtocol.FRAME_MAX_BYTES): ByteArray {
+        require(payloadBytes in 1..maxPayloadBytes)
         return byteArrayOf(
             ((payloadBytes ushr 24) and 0xFF).toByte(),
             ((payloadBytes ushr 16) and 0xFF).toByte(),
@@ -32,33 +32,47 @@ object LinkFrameCodec {
 
     /** Validates a 4-byte header; returns the declared payload length or throws. */
     fun parseHeader(header: ByteArray): Int {
+        return parseHeader(header, LinkProtocol.FRAME_MAX_BYTES)
+    }
+
+    /** Validates a header against a caller-selected bounded record maximum. */
+    fun parseHeader(header: ByteArray, maxPayloadBytes: Int): Int {
         require(header.size == HEADER_BYTES)
+        require(maxPayloadBytes in 1..Int.MAX_VALUE)
         val declared =
             ((header[0].toInt() and 0xFF) shl 24) or
                 ((header[1].toInt() and 0xFF) shl 16) or
                 ((header[2].toInt() and 0xFF) shl 8) or
                 (header[3].toInt() and 0xFF)
         if (declared == 0) throw ZeroLengthFrameException()
-        if (declared > LinkProtocol.FRAME_MAX_BYTES) throw FrameTooLargeException(declared)
+        if (declared < 0 || declared > maxPayloadBytes) throw FrameTooLargeException(declared)
         return declared
     }
 
     fun encode(payloadUtf8Json: ByteArray): ByteArray {
+        return encode(payloadUtf8Json, LinkProtocol.FRAME_MAX_BYTES)
+    }
+
+    fun encode(payloadUtf8Json: ByteArray, maxPayloadBytes: Int): ByteArray {
         require(payloadUtf8Json.isNotEmpty())
-        require(payloadUtf8Json.size <= LinkProtocol.FRAME_MAX_BYTES) {
+        require(payloadUtf8Json.size <= maxPayloadBytes) {
             "payload exceeds frame cap"
         }
         val out = ByteArrayOutputStream(HEADER_BYTES + payloadUtf8Json.size)
-        out.write(encodeLength(payloadUtf8Json.size))
+        out.write(encodeLength(payloadUtf8Json.size, maxPayloadBytes))
         out.write(payloadUtf8Json)
         return out.toByteArray()
     }
 
     /** Reads exactly one frame from [input]; every failure mode is bounded and pre-validated. */
     fun readOne(input: java.io.InputStream): ByteArray {
+        return readOne(input, LinkProtocol.FRAME_MAX_BYTES)
+    }
+
+    fun readOne(input: java.io.InputStream, maxPayloadBytes: Int): ByteArray {
         val header = ByteArray(HEADER_BYTES)
         readFully(input, header)
-        val declared = parseHeader(header)
+        val declared = parseHeader(header, maxPayloadBytes)
         val payload = ByteArray(declared)
         readFully(input, payload)
         return payload
@@ -70,6 +84,19 @@ object LinkFrameCodec {
             .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
             .decode(java.nio.ByteBuffer.wrap(payload))
             .toString()
+
+    /** Reads a header without allocating its payload; record codecs use this for auth gating. */
+    fun readHeader(input: java.io.InputStream): Int {
+        val header = ByteArray(HEADER_BYTES)
+        readFully(input, header)
+        return parseHeader(header)
+    }
+
+    fun readHeader(input: java.io.InputStream, maxPayloadBytes: Int): Int {
+        val header = ByteArray(HEADER_BYTES)
+        readFully(input, header)
+        return parseHeader(header, maxPayloadBytes)
+    }
 
     private fun readFully(input: java.io.InputStream, buffer: ByteArray) {
         var off = 0
