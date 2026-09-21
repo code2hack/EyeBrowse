@@ -437,6 +437,7 @@ class HostingController private constructor(private val appContext: Context) {
      * notifying listeners (F7).
      */
     private fun failStart(reason: String?) {
+        rgPresentationOwned = false
         presentationEpochs.retire()
         mainHandler.removeCallbacks(startTimeout)
         pendingStartGeneration = -1
@@ -543,7 +544,7 @@ class HostingController private constructor(private val appContext: Context) {
     @Synchronized
     fun ensurePhoneUiAttachment(activity: android.app.Activity, container: ViewGroup?,
             currentToken: PhoneBrowserSession.Attachment?): PhoneBrowserSession.Attachment? {
-        if (!phoneUiAvailable || phoneUiActivity !== activity || phoneUiContainer !== container) {
+        if (rgPresentationOwned || !phoneUiAvailable || phoneUiActivity !== activity || phoneUiContainer !== container) {
             return currentToken
         }
         if (state == State.HOSTING && displayHost != null) {
@@ -576,6 +577,45 @@ class HostingController private constructor(private val appContext: Context) {
         }
         uiOwnerToken = currentToken
         return currentToken
+    }
+
+    /** T02: real RG measurement owns this immutable epoch, even while Phone is visible. */
+    private var rgPresentationOwned = false
+
+    @Synchronized
+    fun isRgPresentationOwned(): Boolean = rgPresentationOwned
+
+    @Synchronized
+    fun presentOnRg(profile: HostingPresentationProfile): Boolean {
+        check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
+        if (state != State.HOSTING) return false
+        if (rgPresentationOwned && presentationEpochs.current?.profile == profile) return true
+        if (lease != null || displayHost?.isOwnerActive() == true || displayHost?.isRetiring() == true) return false
+        val old = displayHost ?: return false
+        // Retire callbacks by epoch BEFORE releasing the prior presentation. No new WebView/load.
+        val epoch = presentationEpochs.begin(generation, profile)
+        rgPresentationOwned = true
+        old.release(session)
+        if (!old.isQuiescent()) retiringHosts.add(old)
+        val host = PrivateDisplayHost(resourceFactory, Runnable { onRetirementSignal(epoch) })
+        displayHost = host
+        host.setUnavailableListener(Runnable { onPresentationUnavailable(epoch, host) })
+        return try {
+            host.create(checkNotNull(hostingContext), profile.width, profile.height, profile.densityDpi)
+            host.attachSessionView(session)
+            attachment = Attachment.PRIVATE_DISPLAY
+            notifyHostingChanged()
+            Log.i(TAG, "RG profile=${profile.width}x${profile.height}@${profile.densityDpi} gen=$generation")
+            true
+        } catch (error: RuntimeException) {
+            failureReason = "RG presentation allocation failed"
+            stop()
+            false
+        } catch (error: HostingException) {
+            failureReason = "RG presentation allocation failed"
+            stop()
+            false
+        }
     }
 
     /** Fresh local measurement for Phone takeover; never substitute a private display profile. */
@@ -620,8 +660,8 @@ class HostingController private constructor(private val appContext: Context) {
      * for a visible successor.
      */
     @Synchronized
-    fun onPhoneUiHidden(token: PhoneBrowserSession.Attachment?): PhoneBrowserSession.Attachment? {
-        if (token == null || token !== uiOwnerToken) {
+    fun onPhoneUiHidden(token: PhoneBrowserSession.Attachment?, activity: android.app.Activity? = null): PhoneBrowserSession.Attachment? {
+        if (!(activity != null && activity === phoneUiActivity) && (token == null || token !== uiOwnerToken)) {
             return token // Not the registered UI owner; a successor (or nobody) owns the slot.
         }
         phoneUiAvailable = false
@@ -639,8 +679,8 @@ class HostingController private constructor(private val appContext: Context) {
      * {@link #moveWebViewToPrivateDisplay}.
      */
     @Synchronized
-    fun onPhoneUiDestroyed(token: PhoneBrowserSession.Attachment?): PhoneBrowserSession.Attachment? {
-        if (token != null && token === uiOwnerToken) {
+    fun onPhoneUiDestroyed(token: PhoneBrowserSession.Attachment?, activity: android.app.Activity? = null): PhoneBrowserSession.Attachment? {
+        if ((activity != null && activity === phoneUiActivity) || (token != null && token === uiOwnerToken)) {
             phoneUiAvailable = false
             phoneUiActivity = null
             phoneUiContainer = null
@@ -713,7 +753,7 @@ class HostingController private constructor(private val appContext: Context) {
     fun moveWebViewToPhoneUi(activity: android.app.Activity,
             container: ViewGroup?): PhoneBrowserSession.Attachment? {
         Log.i(TAG, "moveToPhoneUi state=$state attachment=$attachment")
-        if (state != State.HOSTING || !phoneUiAvailable || phoneUiActivity !== activity ||
+        if (rgPresentationOwned || state != State.HOSTING || !phoneUiAvailable || phoneUiActivity !== activity ||
                 phoneUiContainer !== container) {
             return null // A stale Activity cannot reclaim a successor's presentation.
         }

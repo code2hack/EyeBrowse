@@ -1,6 +1,9 @@
 package com.code2hack.eyebrowse.phone.link
 
 import android.content.Context
+import com.code2hack.eyebrowse.phone.PhonePresentationPublisher
+import com.code2hack.eyebrowse.core.link.control.*
+import com.code2hack.eyebrowse.core.link.messages.*
 import com.code2hack.eyebrowse.phone.PhoneControlCoordinator
 import com.code2hack.eyebrowse.phone.PhoneBrowserSession
 import com.code2hack.eyebrowse.core.link.messages.BrowserControlMessage
@@ -21,8 +24,8 @@ import com.code2hack.eyebrowse.phone.HostingController
 
 /**
  * The Phone-side link: bounded TLS 1.3 server, invitation/reconnect authentication and the one
- * active RG link (ticket plan §6 PhoneLinkServer). Hosting remains an independent, explicitly
- * started session; this class only READS its status — never start()/stop()/leases.
+ * active RG link. Hosting starts explicitly on Phone. T02 owns a frame lease only after the
+ * authenticated arbiter grants RG presentation; pairing/status alone never acquires a lease.
  *
  * Process-scoped lifecycle: starting from Phone UI is sufficient for inactive-host pairing and
  * retry; while the existing HostingService keeps the process alive the singleton stays alive.
@@ -49,8 +52,41 @@ class PhoneLinkServer(
         invalidatePresentation = { authenticatedSession?.setPresentation(null, null) },
         measurePhone = { hostingController?.measurePhoneControlProfile() },
     )
+    private val publisher by lazy {
+        hostingController?.let { PhonePresentationPublisher(it, ::publishPresentationReady, ::sendPresentation,
+            { browserSession?.requestFreshCaptureFrame() }) { context, reason ->
+            synchronized(controlCoordinator.authority) {
+                if (controlCoordinator.authority.markPresentationStale(context)) {
+                    authenticatedSession?.setPresentation(null, null)
+                    authenticatedSession?.sendControl(PresentationStaleMessage(context, reason))
+                }
+            }
+        } }
+    }
+    private val reconcilePresentation = Runnable {
+        synchronized(controlCoordinator.authority) {
+            controlCoordinator.reconcileDocument()
+            publisher?.reconcile(controlCoordinator.authority.snapshot())
+            publishBrowserState()
+        }
+    }
+    private fun schedulePresentation() {
+        main.removeCallbacks(reconcilePresentation)
+        main.post(reconcilePresentation)
+    }
     private val browserListener = PhoneBrowserSession.Listener {
         controlCoordinator.reconcileDocument()
+        schedulePresentation()
+    }
+
+    private fun publishBrowserState() {
+        val state = controlCoordinator.authority.snapshot()
+        val session = authenticatedSession ?: return
+        if (!session.sendControl(BrowserStateMessage(state.owner, state.context, state.profile,
+            url=browserSession?.displayUrl()?.take(2048), title=browserSession?.pageTitle()?.take(512),
+            canGoBack=browserSession?.canGoBack() ?: false, canGoForward=browserSession?.canGoForward() ?: false,
+            loading=browserSession?.isLoading() ?: false, stale=state.presentationStatus != PresentationStatus.READY,
+            error=browserSession?.errorMessage()?.take(512)))) session.close()
     }
     private val hostingListener = HostingController.Listener {
         val before = controlCoordinator.authority.snapshot().context
@@ -60,6 +96,7 @@ class PhoneLinkServer(
         if (before != controlCoordinator.authority.snapshot().context) authenticatedSession?.setPresentation(null,null)
         // Hosting state transition (main thread): push the latest-state observation if linked.
         engine?.pushStatus(currentHostStatus())
+        schedulePresentation()
     }
 
     private val linkObservers = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
@@ -71,6 +108,7 @@ class PhoneLinkServer(
                 controlCoordinator.onLinkStopped()
                 authenticatedSession = null
             }
+            schedulePresentation()
             notifyLinkObservers()
         }
         override fun onAuthenticatedSession(session: AuthenticatedControlSession, peer: HelloMessage) {
@@ -78,6 +116,7 @@ class PhoneLinkServer(
                 controlCoordinator.onAuthenticatedSession(session.presentationCompatible)
                 authenticatedSession = session
             }
+            schedulePresentation()
         }
         override fun onControl(session: AuthenticatedControlSession, message: BrowserControlMessage) {
             if (!pendingControls.tryAcquire()) { session.close(); return }
@@ -92,6 +131,7 @@ class PhoneLinkServer(
                         controlCoordinator.receive(message)?.let { response ->
                             if (before != controlCoordinator.authority.snapshot().context) session.setPresentation(null, null)
                             if (!session.sendControl(response)) session.close()
+                            schedulePresentation()
                         }
                     }
                 } finally { pendingControls.release() }
@@ -106,11 +146,14 @@ class PhoneLinkServer(
         synchronized(controlCoordinator.authority) {
             val session = authenticatedSession ?: return false
             controlCoordinator.reconcileDocument()
+            if (controlCoordinator.authority.snapshot().presentationStatus == PresentationStatus.READY &&
+                controlCoordinator.authority.snapshot().context == context) return true
             if (!controlCoordinator.authority.markPresentationReady(context)) return false
             val state = controlCoordinator.authority.snapshot()
             session.setPresentation(state.context, state.profile)
+            schedulePresentation()
             session.sendControl(com.code2hack.eyebrowse.core.link.messages.BrowserStateMessage(
-                state.owner, state.context, state.profile, stale=false))
+                state.owner, state.context, state.profile, stale=false)).also { if (!it) session.close() }
         }
 
     fun sendPresentation(frame: com.code2hack.eyebrowse.core.link.framing.PresentationFrame): Boolean =
@@ -193,6 +236,7 @@ class PhoneLinkServer(
             controlCoordinator.onLinkStopped()
             authenticatedSession = null
         }
+        main.post { publisher?.stop() }
         engine?.let {
             if (sendForgetNotice) it.sendForgetNotice()
             it.stop()

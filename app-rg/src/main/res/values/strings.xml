@@ -9,4 +9,7 @@
     <string name="rg_action_forget">Forget</string>
     <string name="rg_action_scan_pair">Pair with Phone</string>
     <string name="rg_camera_permission_rationale">Camera access is required to scan the Phone pairing QR.</string>
+    <string name="rg_location_empty">No live page</string>
+    <string name="rg_retry">Retry</string>
+    <string name="rg_page_description">Live Phone page</string>
 </resources>

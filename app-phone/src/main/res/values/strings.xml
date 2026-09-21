@@ -39,4 +39,5 @@
     <string name="action_forget_pairing">Forget</string>
     <string name="pairing_link_down">No RG linked.</string>
     <string name="pairing_qr_description">Pairing QR code</string>
+    <string name="browsing_on_glasses">Browsing on glasses</string>
 </resources>
