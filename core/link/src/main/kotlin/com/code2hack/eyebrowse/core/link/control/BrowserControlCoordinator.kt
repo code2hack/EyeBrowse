@@ -152,7 +152,7 @@ class BrowserControlCoordinator(
 
     @Synchronized fun admitAction(source: ControlOwner, request: BrowserActionRequest): ActionDecision {
         fun reject(reason: ActionRejection) = ActionDecision.Rejected(reason)
-        if (request.commandId.isBlank() || request.commandId.length > 128) return reject(ActionRejection.INVALID_COMMAND_ID)
+        if (request.commandId.isBlank() || request.commandId.length > BrowserCommandId.MAX_LENGTH) return reject(ActionRejection.INVALID_COMMAND_ID)
         if (source != state.owner) return reject(ActionRejection.WRONG_OWNER)
         if (request.context != state.context) return reject(ActionRejection.STALE_CONTEXT)
         if (source == ControlOwner.RG) {
@@ -167,6 +167,7 @@ class BrowserControlCoordinator(
         }
         if (request.commandSequence <= 0) return reject(ActionRejection.INVALID_COMMAND_SEQUENCE)
         if (request.commandSequence <= commandHighWater) return reject(ActionRejection.STALE_COMMAND_SEQUENCE)
+        if (!BrowserCommandId.matches(request.commandId, request.context, request.commandSequence)) return reject(ActionRejection.INVALID_COMMAND_ID)
         commandHighWater = request.commandSequence
         return ActionDecision.Accepted(request.commandId)
     }

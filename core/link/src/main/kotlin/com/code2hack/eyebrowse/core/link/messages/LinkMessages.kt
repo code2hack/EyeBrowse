@@ -1,6 +1,7 @@
 package com.code2hack.eyebrowse.core.link.messages
 
 import kotlinx.serialization.Serializable
+import com.code2hack.eyebrowse.core.link.control.BrowserCommandId
 import com.code2hack.eyebrowse.core.link.presentation.PresentationProfile
 
 /**
@@ -116,8 +117,8 @@ data class BrowserActionMessage(
     val commandSequence: Long,
 ) : BrowserControlMessage {
     init {
-        require(commandId.isNotBlank() && commandId.length <= 128)
         require(commandSequence > 0)
+        require(BrowserCommandId.matches(commandId, context, commandSequence))
     }
 }
 
@@ -130,7 +131,7 @@ data class BrowserActionResultMessage(
     val reason: String? = null,
 ) : BrowserControlMessage {
     init {
-        require(commandId.isNotBlank() && commandId.length <= 128)
+        require(commandId.isNotBlank() && commandId.length <= BrowserCommandId.MAX_LENGTH)
         require(reason == null || reason.length <= 128)
     }
 }

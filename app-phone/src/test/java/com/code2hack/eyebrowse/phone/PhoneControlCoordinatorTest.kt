@@ -12,7 +12,7 @@ class PhoneControlCoordinatorTest {
         val remote=PresentationProfile(440,570,160)
         val adapter=PhoneControlCoordinator({ "doc" }) { local }
         val initial=adapter.authority.snapshot()
-        val denied=adapter.receive(BrowserActionMessage("1",initial.context,BrowserAction.Back,1)) as BrowserActionResultMessage
+        val denied=adapter.receive(BrowserActionMessage(BrowserCommandId.create(initial.context,1),initial.context,BrowserAction.Back,1)) as BrowserActionResultMessage
         assertFalse(denied.accepted)
         assertEquals("WRONG_OWNER",denied.reason)
         adapter.authority.setHostingGeneration(1,true);adapter.authority.setAuthenticated(true,true)
@@ -21,7 +21,7 @@ class PhoneControlCoordinatorTest {
         assertEquals(HostingPresentationProfile(440,570,160),adapter.privateProfile())
         assertFalse(adapter.authority.updatePhoneViewport(local))
         assertTrue(adapter.authority.markPresentationReady(handoff.context))
-        val admitted=adapter.receive(BrowserActionMessage("2",handoff.context,BrowserAction.Back,2)) as BrowserActionResultMessage
+        val admitted=adapter.receive(BrowserActionMessage(BrowserCommandId.create(handoff.context,2),handoff.context,BrowserAction.Back,2)) as BrowserActionResultMessage
         assertTrue(admitted.accepted);assertNull(admitted.effectSucceeded)
         val takeover=adapter.receive(HandoffRequestMessage(HandoffTargetWire.PHONE,handoff.context.controlEpoch,remote)) as HandoffResultMessage
         assertEquals(local,takeover.profile);assertNull(adapter.privateProfile())
@@ -56,15 +56,15 @@ class PhoneControlCoordinatorTest {
         assertTrue(first.accepted)
         assertEquals("B",first.context.documentId)
         assertTrue(adapter.authority.markPresentationReady(first.context))
-        val rejected=adapter.receive(BrowserActionMessage("old-A",oldA,BrowserAction.Back,1)) as BrowserActionResultMessage
+        val rejected=adapter.receive(BrowserActionMessage(BrowserCommandId.create(oldA,1),oldA,BrowserAction.Back,1)) as BrowserActionResultMessage
         assertFalse(rejected.accepted)
         assertEquals("STALE_CONTEXT",rejected.reason)
         assertNull(rejected.effectSucceeded)
-        val wrongDocument=adapter.receive(BrowserActionMessage("A-with-new-epochs",
+        val wrongDocument=adapter.receive(BrowserActionMessage(BrowserCommandId.create(first.context,1),
             first.context.copy(documentId="A"),BrowserAction.Back,1)) as BrowserActionResultMessage
         assertFalse(wrongDocument.accepted)
         assertEquals("STALE_CONTEXT",wrongDocument.reason)
-        val current=adapter.receive(BrowserActionMessage("actual-B",first.context,BrowserAction.Back,1)) as BrowserActionResultMessage
+        val current=adapter.receive(BrowserActionMessage(BrowserCommandId.create(first.context,1),first.context,BrowserAction.Back,1)) as BrowserActionResultMessage
         assertTrue(current.accepted) // Rejected A actions never reached the admission/effect boundary.
 
         // Cover a change after start but before authenticated-session publication.
@@ -77,11 +77,60 @@ class PhoneControlCoordinatorTest {
         val prior=adapter.authority.snapshot().context
         adapter.authority.markPresentationReady(prior)
         browserDocument="D"; pendingGrant=true
-        val stale=adapter.receive(BrowserActionMessage("old-C",prior,BrowserAction.ScrollBy(0f,1f),2)) as BrowserActionResultMessage
+        val stale=adapter.receive(BrowserActionMessage(BrowserCommandId.create(prior,2),prior,BrowserAction.ScrollBy(0f,1f),2)) as BrowserActionResultMessage
         assertEquals("STALE_CONTEXT",stale.reason)
         assertFalse(stale.accepted)
         assertEquals("D",adapter.authority.snapshot().documentId)
         assertFalse(pendingGrant)
+    }
+
+    @Test fun delayedResultsStayCorrelatedAcrossHandoffAndBrowserLifetime() {
+        val profile=PresentationProfile(440,570,160)
+        fun readyAdapter()=PhoneControlCoordinator({ "doc" }) { profile }.apply {
+            authority.setHostingGeneration(1,true)
+            onLinkStarting()
+            onAuthenticatedSession(true)
+            val handoff=receive(HandoffRequestMessage(HandoffTargetWire.RG,0,profile)) as HandoffResultMessage
+            assertTrue(handoff.accepted)
+            assertTrue(authority.markPresentationReady(handoff.context))
+        }
+        val requests=mutableListOf<BrowserActionMessage>()
+        val results=mutableListOf<BrowserActionResultMessage>()
+        fun admit(adapter: PhoneControlCoordinator,sequence: Long,action: BrowserAction) {
+            val context=adapter.authority.snapshot().context
+            val message=BrowserActionMessage(BrowserCommandId.create(context,sequence),context,action,sequence)
+            val result=adapter.receive(message) as BrowserActionResultMessage
+            assertTrue(result.accepted)
+            assertNull(result.effectSucceeded) // T01 admission is not evidence of a page effect.
+            requests.add(message)
+            results.add(result)
+        }
+        val adapter=readyAdapter()
+        admit(adapter,100,BrowserAction.Back)
+        admit(adapter,101,BrowserAction.Forward)
+        val old=adapter.authority.snapshot().context
+        val phone=adapter.receive(HandoffRequestMessage(HandoffTargetWire.PHONE,old.controlEpoch)) as HandoffResultMessage
+        assertTrue(phone.accepted)
+        val glasses=adapter.receive(HandoffRequestMessage(HandoffTargetWire.RG,phone.context.controlEpoch,profile)) as HandoffResultMessage
+        assertTrue(glasses.accepted)
+        assertTrue(adapter.authority.markPresentationReady(glasses.context))
+        admit(adapter,100,BrowserAction.Reload) // Same ordinal, distinct control epoch.
+        val replacement=readyAdapter()
+        assertNotEquals(old.lifetimeId,replacement.authority.snapshot().context.lifetimeId)
+        admit(replacement,100,BrowserAction.ScrollBy(0f,1f)) // Same epoch/ordinal, distinct lifetime.
+
+        val pending=requests.associateBy { it.commandId }.toMutableMap()
+        assertEquals(4,pending.size)
+        // Deliver later actions first, including results from the previous epoch/lifetime.
+        for ((index,result) in results.reversed().withIndex()) {
+            val encoded=LinkMessageCodec.encode(result)
+            assertFalse(encoded.toString(Charsets.UTF_8).contains("commandSequence"))
+            val decoded=(LinkMessageCodec.decode(encoded).getOrThrow() as LinkMessageCodec.Incoming.Known).message as BrowserActionResultMessage
+            val request=pending.remove(decoded.commandId)
+            assertNotNull(request)
+            assertEquals(requests[requests.lastIndex-index],request)
+        }
+        assertTrue(pending.isEmpty())
     }
 
     @Test fun peerStatePublicationCannotGrantOwnership() {
