@@ -169,13 +169,13 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
 
   {
     "role": "Expert",
-    "scope": "v0.0.1; RG-chain issues #6..#12 escalated corrections; successor to retired issue-#5 Expert; bootstrap ACKed, HOLDing for first assignment",
+    "scope": "v0.0.1; RG-chain escalated corrections; completed issue #6 stabilization (handback accepted, verification 36/36 on S20+ at f5bdab3); retired at Owner direction after issue #6 closeout; conversation preserved",
     "host": "chatgpt.com",
     "runtime": "chatgpt",
     "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70-eyebrowse/c/6aae9eb3-2024-83e9-9377-0cb913bab243",
     "model": "gpt-6-pro (ChatGPT '6 Pro')",
     "name": "Expert-#6",
-    "status": "active"
+    "status": "retired"
   },
 
   {
