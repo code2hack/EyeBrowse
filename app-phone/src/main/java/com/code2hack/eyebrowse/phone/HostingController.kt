@@ -186,8 +186,11 @@ class HostingController private constructor(private val appContext: Context) {
     private var phoneUiContainer: ViewGroup? = null
     private var uiOwnerToken: PhoneBrowserSession.Attachment? = null
 
-    // Last measured Phone content viewport (F6): the geometry private output reconciles to.
+    // Last STABLE VISIBLE Phone content viewport (F6): the geometry private output reconciles to.
+    // One-pixel same-shape jitter is canonicalized independently for portrait/landscape so a
+    // round trip cannot silently change browser/capture geometry.
     private var lastViewport = WebViewMetric(0, 0, 0)
+    private val phoneViewportStability = PhoneViewportStability()
 
     private val startTimeout = Runnable { onStartTimeout() }
     private val idleRelease = Runnable { runIdleRelease() }
@@ -283,7 +286,9 @@ class HostingController private constructor(private val appContext: Context) {
     @Synchronized
     fun captureDiagnostics(): String {
         val host = displayHost
-        return if (host == null) "host=none" else host.captureDiagnostics()
+        val viewport = " phoneViewport=" + lastViewport.width + "x" + lastViewport.height +
+                "@" + lastViewport.densityDpi
+        return (if (host == null) "host=none" else host.captureDiagnostics()) + viewport
     }
 
     @Synchronized
@@ -366,9 +371,9 @@ class HostingController private constructor(private val appContext: Context) {
             completeStop()
             return
         }
-        var metric = WebViewMetric.measure(session)
+        var metric = lastViewport
         if (metric.width <= 0 || metric.height <= 0) {
-            metric = lastViewport // Fall back to the last measured Phone content viewport (F6).
+            metric = WebViewMetric.measure(session)
         }
         val sizeError = HostingPolicy.viewportError(metric.width, metric.height)
         if (sizeError != null) {
@@ -579,6 +584,47 @@ class HostingController private constructor(private val appContext: Context) {
     }
 
     /**
+     * Records one layout of the CURRENT STARTED Phone UI. MainActivity calls this only while its
+     * lifecycle is STARTED; identity checks reject stale predecessor callbacks. This is the sole
+     * authority for normal Phone viewport updates, preventing onStop/inset jitter from replacing
+     * the last stable visible viewport.
+     */
+    @Synchronized
+    fun onPhoneViewportChanged(
+        activity: android.app.Activity,
+        container: ViewGroup?,
+        measuredWidth: Int,
+        measuredHeight: Int,
+        densityDpi: Int,
+    ) {
+        if (!phoneUiAvailable || phoneUiActivity !== activity || phoneUiContainer !== container) {
+            return
+        }
+        val stable = phoneViewportStability.canonicalize(
+            measuredWidth,
+            measuredHeight,
+            densityDpi,
+        )
+        if (HostingPolicy.viewportError(stable.width, stable.height) != null) {
+            return
+        }
+        lastViewport = WebViewMetric(stable.width, stable.height, stable.densityDpi)
+
+        // If the platform returned to the same logical viewport with a one-pixel rounding/inset
+        // asymmetry, keep the authoritative WebView itself at the canonical size. Material window
+        // changes are never snapped because PhoneViewportStability only absorbs ±1 px jitter.
+        val view = session.view()
+        if (view != null && view.parent === container &&
+                (view.width != stable.width || view.height != stable.height)) {
+            val params = view.layoutParams
+            params.width = stable.width
+            params.height = stable.height
+            view.layoutParams = params
+            view.requestLayout()
+        }
+    }
+
+    /**
      * Records hidden Phone UI. During HOSTING the live view moves offscreen (geometry
      * reconciled); during STARTING the transition is deferred and readiness reconciles (F3).
      *
@@ -625,9 +671,15 @@ class HostingController private constructor(private val appContext: Context) {
      * unsupported size is reported explicitly instead of silently keeping the old geometry.
      */
     private fun hostOffscreenWithReconciledGeometry() {
-        var metric = WebViewMetric.measure(session)
+        // onPhoneUiHidden runs after Activity.onStop(), where platform insets/layout can already
+        // differ by one pixel from the last stable visible viewport. Use the STARTED/UI-tracked
+        // authority first; measure only as a bootstrap fallback when no stable viewport exists.
+        var metric = lastViewport
         if (metric.width <= 0 || metric.height <= 0) {
-            metric = lastViewport
+            metric = WebViewMetric.measure(session)
+            if (HostingPolicy.viewportError(metric.width, metric.height) == null) {
+                lastViewport = metric
+            }
         }
         val sizeError = HostingPolicy.viewportError(metric.width, metric.height)
         if (sizeError != null) {
@@ -635,7 +687,6 @@ class HostingController private constructor(private val appContext: Context) {
             notifyHostingChanged()
             return // The view stays with the (hidden) Phone UI; the condition is explicit.
         }
-        lastViewport = metric
         val demandLive = lease != null && frameConsumer != null
         if (demandLive) {
             // Only live demand justifies capture-surface allocation/reconciliation here (R1):
@@ -743,11 +794,12 @@ class HostingController private constructor(private val appContext: Context) {
         if (attachment == Attachment.PRIVATE_DISPLAY) {
             metric = lastViewport
         } else {
-            val measured = WebViewMetric.measure(session)
-            metric = if (measured.width <= 0 || measured.height <= 0) {
-                lastViewport // A hosted/parentless view falls back to the last measurement.
+            // Visible Phone UI geometry is tracked/canonicalized by onPhoneViewportChanged().
+            // Fall back to a direct measurement only if that authority has not been established.
+            metric = if (lastViewport.width > 0 && lastViewport.height > 0) {
+                lastViewport
             } else {
-                measured
+                WebViewMetric.measure(session)
             }
         }
         val sizeError = HostingPolicy.viewportError(metric.width, metric.height)

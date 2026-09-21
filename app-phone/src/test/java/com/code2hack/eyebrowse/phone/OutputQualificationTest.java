@@ -107,6 +107,20 @@ public class OutputQualificationTest {
     }
 
     @Test
+    public void summaryShowsExpectedGeometryColorAndSeparatePredicateVerdicts() {
+        List<OutputQualification.Observation> observations = new ArrayList<>();
+        observations.add(OutputQualification.observe(
+                500, 500, WIDTH - 1, HEIGHT, 1, 1, 0x1234L,
+                WHITE, WIDTH, HEIGHT, CREAM));
+        String summary = OutputQualification.summary(observations, 0, 100);
+        assertTrue(summary.contains("expected=" + WIDTH + "x" + HEIGHT));
+        assertTrue(summary.contains("expectedSample=#fff6f3ea"));
+        assertTrue(summary.contains("gm=N"));
+        assertTrue(summary.contains("cm=N"));
+        assertTrue(summary.contains("q=N"));
+    }
+
+    @Test
     public void intentionallyWhiteDocumentQualifiesOnlyWhenWhiteIsExpected() {
         OutputQualification.Observation whiteDocument = OutputQualification.observe(
                 500, 500, WIDTH, HEIGHT, 1, 1, 0L, WHITE, WIDTH, HEIGHT, WHITE);

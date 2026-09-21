@@ -62,6 +62,11 @@ class MainActivity : ComponentActivity() {
 
     private var updatingField = false
 
+    private val webViewportLayoutListener = View.OnLayoutChangeListener {
+            _, left, top, right, bottom, _, _, _, _ ->
+        recordPhoneViewport(right - left, bottom - top)
+    }
+
     private val sessionListener = object : PhoneBrowserSession.Listener {
         override fun onSessionChanged(session: PhoneBrowserSession) {
             ensureAttached()
@@ -108,6 +113,7 @@ class MainActivity : ComponentActivity() {
         hostingStatusText = findViewById(R.id.hosting_status)
         webContainer = findViewById(R.id.web_container)
         hosting = HostingController.get(applicationContext)
+        webContainer.addOnLayoutChangeListener(webViewportLayoutListener)
 
         if (savedInstanceState != null) {
             val draft = savedInstanceState.getString(STATE_DRAFT, "")
@@ -187,6 +193,7 @@ class MainActivity : ComponentActivity() {
         // the controller decides between reattach-from-presentation, parentless reattach, and
         // no-op, and returns the ownership token this Activity must keep.
         attachment = hosting.onPhoneUiAvailable(this, webContainer, attachment)
+        recordPhoneViewport(webContainer.width, webContainer.height)
     }
 
     override fun onStop() {
@@ -202,6 +209,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         Log.i("EyeBrowseHost", "activity onDestroy " + identityHash())
+        webContainer.removeOnLayoutChangeListener(webViewportLayoutListener)
         hosting.removeListener(hostingListener)
         session.removeListener(sessionListener)
         // A destroyed Activity must not steal the view from a successor; only when this Activity
@@ -216,6 +224,25 @@ class MainActivity : ComponentActivity() {
 
     private fun identityHash(): String {
         return "act=" + System.identityHashCode(this)
+    }
+
+    /**
+     * Publishes only STARTED/current-Activity Phone viewport measurements. Once onStop() has run,
+     * late inset/layout changes are intentionally ignored so the private host never learns a
+     * hidden-transition one-pixel geometry as if it were the visible browser viewport.
+     */
+    private fun recordPhoneViewport(width: Int, height: Int) {
+        if (!::hosting.isInitialized || !::webContainer.isInitialized ||
+                !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            return
+        }
+        hosting.onPhoneViewportChanged(
+            this,
+            webContainer,
+            width,
+            height,
+            resources.configuration.densityDpi,
+        )
     }
 
     private fun toggleHosting() {

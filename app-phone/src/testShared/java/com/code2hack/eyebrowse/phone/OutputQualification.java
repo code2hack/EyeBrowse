@@ -40,6 +40,9 @@ final class OutputQualification {
         final long sequence;
         final long contentHash;
         final int sampledColor;
+        final int expectedWidth;
+        final int expectedHeight;
+        final int expectedColor;
         final boolean geometryMatches;
         final boolean contentMatches;
         /** Callback-time qualification outcome; computed only from the facts above. */
@@ -47,6 +50,7 @@ final class OutputQualification {
 
         private Observation(long deliveryUptimeMs, long deliveryElapsedMs, int width, int height,
                 int generation, long sequence, long contentHash, int sampledColor,
+                int expectedWidth, int expectedHeight, int expectedColor,
                 boolean geometryMatches, boolean contentMatches, boolean qualified) {
             this.deliveryUptimeMs = deliveryUptimeMs;
             this.deliveryElapsedMs = deliveryElapsedMs;
@@ -56,6 +60,9 @@ final class OutputQualification {
             this.sequence = sequence;
             this.contentHash = contentHash;
             this.sampledColor = sampledColor;
+            this.expectedWidth = expectedWidth;
+            this.expectedHeight = expectedHeight;
+            this.expectedColor = expectedColor;
             this.geometryMatches = geometryMatches;
             this.contentMatches = contentMatches;
             this.qualified = qualified;
@@ -79,8 +86,8 @@ final class OutputQualification {
                 && width == expectedWidth && height == expectedHeight;
         boolean contentMatches = nearColor(sampledColor, expectedColor);
         return new Observation(deliveryUptimeMs, deliveryElapsedMs, width, height, generation,
-                sequence, contentHash, sampledColor, geometryMatches, contentMatches,
-                geometryMatches && contentMatches);
+                sequence, contentHash, sampledColor, expectedWidth, expectedHeight, expectedColor,
+                geometryMatches, contentMatches, geometryMatches && contentMatches);
     }
 
     /** Channel-wise comparison with tolerance; robust to renderer color-management drift. */
@@ -155,8 +162,14 @@ final class OutputQualification {
             Observation observation = observations.get(i);
             text.append(i).append(':').append(observation.width).append('x')
                     .append(observation.height)
+                    .append(" expected=").append(observation.expectedWidth).append('x')
+                    .append(observation.expectedHeight)
                     .append(" #").append(Long.toHexString(observation.contentHash))
                     .append(" sample=#").append(String.format("%08x", observation.sampledColor))
+                    .append(" expectedSample=#")
+                    .append(String.format("%08x", observation.expectedColor))
+                    .append(" gm=").append(observation.geometryMatches ? "Y" : "N")
+                    .append(" cm=").append(observation.contentMatches ? "Y" : "N")
                     .append(" q=").append(observation.qualified ? "Y" : "N");
         }
         if (observations.size() - from > shown) {
