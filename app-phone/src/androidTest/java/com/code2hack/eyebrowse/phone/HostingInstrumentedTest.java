@@ -828,8 +828,13 @@ public class HostingInstrumentedTest {
         assertNotNull("lease must be acquirable while hosting", lease);
         LeaseRenewal renewal = new LeaseRenewal(lease);
         renewal.start();
-        waitUntil("first VALID current-document/current-geometry frame",
-                () -> consumer.qualifyingCountFrom(0) > 0);
+        try {
+            waitUntil("first VALID current-document/current-geometry frame",
+                    () -> consumer.qualifyingCountFrom(0) > 0);
+        } catch (AssertionError failure) {
+            fail(failure.getMessage() + " qualification={"
+                    + consumer.qualificationSummary(0, eligibleUptime) + "}");
+        }
         int firstValid = consumer.earliestQualifyingIndexFrom(0);
         long firstValidDelayMs = consumer.earliestQualifyingDelayMsFrom(0, eligibleUptime);
         milestones.record("background first-raw/first-valid: "
@@ -1079,8 +1084,13 @@ public class HostingInstrumentedTest {
         long eligibleUptime = SystemClock.uptimeMillis();
         HostingController.Lease lease = runOnMainSync(() -> hosting.acquireLease(consumer));
         assertNotNull("white-document lease", lease);
-        waitUntil("first VALID frame of the all-white document",
-                () -> consumer.qualifyingCountFrom(0) > 0);
+        try {
+            waitUntil("first VALID frame of the all-white document",
+                    () -> consumer.qualifyingCountFrom(0) > 0);
+        } catch (AssertionError failure) {
+            fail(failure.getMessage() + " qualification={"
+                    + consumer.qualificationSummary(0, eligibleUptime) + "}");
+        }
         int firstValid = consumer.earliestQualifyingIndexFrom(0);
         long firstValidDelayMs = consumer.earliestQualifyingDelayMsFrom(0, eligibleUptime);
         milestones.record("all-white first-raw/first-valid: "
@@ -1581,11 +1591,20 @@ public class HostingInstrumentedTest {
         HostingController.Status status = runOnMainSync(hosting::status);
         int[] webSize = currentWebViewSize();
         String capture = runOnMainSync(hosting::captureDiagnostics);
+        String windowFacts = runOnMainSync(() -> {
+            WebView view = session.view();
+            if (view == null) {
+                return "view=none";
+            }
+            int orientation = view.getResources().getConfiguration().orientation;
+            int rotation = view.getDisplay() == null ? -1 : view.getDisplay().getRotation();
+            return "configOrientation=" + orientation + " displayRotation=" + rotation;
+        });
         fail("timed out waiting for " + description + " (state=" + status.state + " attachment="
                 + status.attachment + " browserLive=" + status.browserLive + " gen="
                 + status.generation + " reason=" + status.failureReason + " parentless="
                 + webViewParentless() + " webSize=" + webSize[0] + "x" + webSize[1]
-                + " capture={" + capture + "})");
+                + " window={" + windowFacts + "} capture={" + capture + "})");
     }
 
     private void runOnMain(Runnable runnable) {
