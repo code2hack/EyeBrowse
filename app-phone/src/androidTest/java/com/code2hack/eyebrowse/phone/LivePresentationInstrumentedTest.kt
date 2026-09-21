@@ -29,12 +29,16 @@ class LivePresentationInstrumentedTest {
         try {
             scenario.onActivity {
                 originalOrientation = it.requestedOrientation
-                originalView = browser.view()
                 browser.openAddress(InstrumentationRegistry.getArguments().getString("fixtureBaseUrl", "http://127.0.0.1:26341") + "/hosting.html")
                 server.start()
             }
             await("fixture ready", 10_000) { !browser.isLoading() && browser.pageTitle() == "Hosting capture page" }
-            scenario.onActivity { it.findViewById<Button>(R.id.button_hosting_toggle).performClick() }
+            scenario.onActivity {
+                originalView = browser.view()
+                assertNotNull("fixture must have a live baseline WebView",originalView)
+                Log.i("EyeBrowseT02","LIVE_WEBVIEW_BASELINE=${System.identityHashCode(originalView)}")
+                it.findViewById<Button>(R.id.button_hosting_toggle).performClick()
+            }
             await("hosting active", 5_000) { host.status().state == HostingController.State.HOSTING }
             Log.i("EyeBrowseT02", "PHONE_READY")
             await("explicit RG request and capture", 30_000) { host.isRgPresentationOwned() && host.status().captureActive }
@@ -57,7 +61,8 @@ class LivePresentationInstrumentedTest {
                 assertEquals("private display ON",android.view.Display.STATE_ON,snapshot.state)
             }
             Log.i("EyeBrowseT02", "CONFIGURATION_PRESERVED ${host.privateDisplaySnapshot()}")
-            SystemClock.sleep(10_000)
+            // Stop while the RG companion is still connected (its observation window is 15 s).
+            SystemClock.sleep(5_000)
             scenario.onActivity { it.findViewById<Button>(R.id.button_hosting_toggle).performClick() }
             await("Stop cleanup", 5_000) { !host.hasDisplayResources() && !host.captureResourcesPresent() && !host.isWakeLockHeld() }
             assertSame(originalView,browser.view())
