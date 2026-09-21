@@ -1,101 +1,567 @@
-name: Expert I6-T04 hosting gates 2d4800bd
+name: Expert I6-T04 trailing-frame correction
 
 on:
   push:
     branches:
       - expert/gates-i6-t04-hosting-20260921
+    paths:
+      - .github/workflows/expert-i6-t04-hosting-a58a464a.yml
 
 permissions:
   contents: read
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: write
+    outputs:
+      candidate: ${{ steps.candidate.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 2d4800bdc7a1f20feb541218f075a3d2ab99748b
+          fetch-depth: 1
+      - name: Apply Expert-authored correction and push only the assigned branch
+        id: candidate
+        shell: bash
+        env:
+          BASE: 2d4800bdc7a1f20feb541218f075a3d2ab99748b
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$BASE"
+          test "$(git ls-remote origin refs/heads/work/issue-6-pairing | cut -f1)" = "$BASE"
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('app-phone/src')
+          main = root / 'main/java/com/code2hack/eyebrowse/phone'
+          tests = root / 'test/java/com/code2hack/eyebrowse/phone'
+          helper = main / 'CaptureDeliveryThrottle.kt'
+          test = tests / 'CaptureDeliveryThrottleTest.kt'
+          assert not helper.exists() and not test.exists()
+          helper.write_text('''package com.code2hack.eyebrowse.phone
+
+          /**
+           * A bounded trailing-edge throttle: one identity-bound wakeup, never a frame queue.
+           * The caller leaves pixels in ImageReader until the due time, then acquires the LATEST
+           * image. A final static frame inside the interval must not need another producer event.
+           * All access is serialized by PrivateDisplayHost.nativeLock; this class is Android-free.
+           */
+          internal class CaptureDeliveryThrottle(private val intervalMs: Long) {
+              init {
+                  require(intervalMs > 0)
+              }
+
+              internal class Wakeup internal constructor(val dueElapsedMs: Long)
+
+              private var lastDeliveryMs: Long? = null
+              internal var pending: Wakeup? = null
+                  private set
+
+              /** Null means an existing wakeup already covers this event; its due time never slides. */
+              internal fun request(nowMs: Long): Wakeup? {
+                  if (pending != null) return null
+                  val previous = lastDeliveryMs
+                  val due = if (previous == null) nowMs else maxOf(nowMs, previous + intervalMs)
+                  return Wakeup(due).also { pending = it }
+              }
+
+              /** A cancelled/replaced owner's already-dequeued runnable cannot consume a new ticket. */
+              internal fun consume(wakeup: Wakeup): Boolean {
+                  if (pending !== wakeup) return false
+                  pending = null
+                  return true
+              }
+
+              /** Empty acquisition or failed copy does not spend the delivery budget. */
+              internal fun delivered(nowMs: Long) {
+                  lastDeliveryMs = nowMs
+              }
+
+              internal fun reset() {
+                  pending = null
+                  lastDeliveryMs = null
+              }
+          }
+          ''')
+          test.write_text('''package com.code2hack.eyebrowse.phone
+
+          import org.junit.Assert.*
+          import org.junit.Test
+
+          class CaptureDeliveryThrottleTest {
+              /** Fake native latest-image slot and fake handler; no Android, sleeps, or repaint loop. */
+              private class Pump {
+                  val throttle = CaptureDeliveryThrottle(200)
+                  val tasks = mutableListOf<CaptureDeliveryThrottle.Wakeup>()
+                  val output = mutableListOf<Pair<Long, String>>()
+                  var latest: String? = null
+
+                  fun surface(at: Long, pixels: String) {
+                      latest = pixels
+                      throttle.request(at)?.let { tasks += it }
+                  }
+
+                  fun advance(to: Long) {
+                      for (task in tasks.filter { it.dueElapsedMs <= to }.toList()) {
+                          tasks.remove(task)
+                          if (!throttle.consume(task)) continue
+                          val pixels = latest ?: continue
+                          latest = null
+                          output += to to pixels
+                          throttle.delivered(to)
+                      }
+                  }
+              }
+
+              @Test
+              fun staticSecondPageIsDeliveredWithoutAnotherProducerCallback() {
+                  val pump = Pump()
+                  pump.surface(0, "old-document")
+                  pump.advance(0)
+                  pump.surface(50, "static-second-page")
+                  pump.advance(199)
+                  assertEquals(listOf(0L to "old-document"), pump.output)
+                  // No further surface event: the trailing wakeup must deliver the second page.
+                  pump.advance(200)
+                  assertEquals(listOf(0L to "old-document", 200L to "static-second-page"), pump.output)
+              }
+
+              @Test
+              fun burstCoalescesToLatestAtOriginalDeadline() {
+                  val pump = Pump()
+                  pump.surface(0, "old")
+                  pump.advance(0)
+                  pump.surface(10, "white-startup")
+                  val ticket = pump.tasks.single()
+                  pump.surface(80, "partial")
+                  pump.surface(199, "final-blue")
+                  assertSame(ticket, pump.tasks.single())
+                  assertEquals(200L, ticket.dueElapsedMs)
+                  pump.advance(200)
+                  assertEquals(200L to "final-blue", pump.output.last())
+                  assertEquals(2, pump.output.size)
+              }
+
+              @Test
+              fun idleDoesNotReplayFramesOrCreatePeriodicWork() {
+                  val pump = Pump()
+                  pump.surface(0, "static")
+                  pump.advance(0)
+                  pump.advance(200)
+                  pump.advance(20_000)
+                  assertEquals(listOf(0L to "static"), pump.output)
+                  assertTrue(pump.tasks.isEmpty())
+                  assertNull(pump.throttle.pending)
+              }
+
+              @Test
+              fun resetRejectsDequeuedOldOwnerWakeup() {
+                  val throttle = CaptureDeliveryThrottle(200)
+                  val old = throttle.request(0)!!
+                  throttle.reset()
+                  val replacement = throttle.request(0)!!
+                  assertFalse(throttle.consume(old))
+                  assertSame(replacement, throttle.pending)
+                  assertTrue(throttle.consume(replacement))
+              }
+
+              @Test
+              fun newArmReceivesImmediateFirstFrame() {
+                  val throttle = CaptureDeliveryThrottle(200)
+                  throttle.delivered(100)
+                  assertEquals(300L, throttle.request(101)!!.dueElapsedMs)
+                  throttle.reset()
+                  assertEquals(102L, throttle.request(102)!!.dueElapsedMs)
+              }
+
+              @Test
+              fun failedAcquireDoesNotSpendDeliveryBudget() {
+                  val throttle = CaptureDeliveryThrottle(200)
+                  val empty = throttle.request(100)!!
+                  assertTrue(throttle.consume(empty))
+                  // No delivered() call: acquisition/copy did not yield a frame.
+                  assertEquals(101L, throttle.request(101)!!.dueElapsedMs)
+              }
+
+              @Test
+              fun exactBoundaryAndSpacingArePreserved() {
+                  val pump = Pump()
+                  pump.surface(0, "a")
+                  pump.advance(0)
+                  pump.surface(200, "b")
+                  pump.advance(200)
+                  pump.surface(201, "c")
+                  pump.advance(399)
+                  assertEquals(2, pump.output.size)
+                  pump.advance(400)
+                  assertEquals(listOf(0L, 200L, 400L), pump.output.map { it.first })
+              }
+
+              @Test(expected = IllegalArgumentException::class)
+              fun invalidIntervalIsRejected() {
+                  CaptureDeliveryThrottle(0)
+              }
+          }
+          ''')
+          path = main / 'PrivateDisplayHost.kt'
+          src = path.read_text()
+          def replace(old, new, count=1):
+              global src
+              assert src.count(old) == count, ('host anchor count', old[:100], src.count(old))
+              src = src.replace(old, new)
+          replace('    private var lastDeliveryElapsedMs: Long = 0\n    private var deliveredAny: Boolean = false\n', '''    private val deliveryThrottle = CaptureDeliveryThrottle(HostingPolicy.MIN_FRAME_INTERVAL_MS)
+              private var pendingFrameTask: Runnable? = null // nativeLock-protected; no Image/Bitmap retained
+              private var pendingFrameHandler: Handler? = null
+          ''')
+          replace('    @Volatile private var displaySurfaceDetached: Boolean = false\n', '''    @Volatile private var displaySurfaceDetached: Boolean = false
+              @Volatile private var deferredWakeupCount: Long = 0
+              @Volatile private var coalescedCallbackCount: Long = 0
+              @Volatile private var deferredDeliveryCount: Long = 0
+          ''')
+          replace('''        resetCaptureDiagnostics()
+                  frameSink = boundSink
+                  frameSequence = 0
+                  deliveredAny = false
+                  captureGeneration = hostingGeneration
+                  captureActive = true
+                  captureReleased = false''', '''        synchronized(nativeLock) {
+                      cancelPendingFrameLocked()
+                      resetCaptureDiagnostics()
+                      frameSink = boundSink
+                      frameSequence = 0
+                      captureGeneration = hostingGeneration
+                      captureActive = true
+                      captureReleased = false
+                  }''', 2)
+          replace('''    fun stopCapture() {
+                  captureActive = false
+                  frameSink = null
+              }''', '''    fun stopCapture() {
+                  synchronized(nativeLock) {
+                      captureActive = false
+                      frameSink = null
+                      cancelPendingFrameLocked()
+                  }
+              }
+
+              /** Called with nativeLock held; invalidates even an already-dequeued old wakeup. */
+              private fun cancelPendingFrameLocked() {
+                  pendingFrameTask?.let { pendingFrameHandler?.removeCallbacks(it) }
+                  pendingFrameTask = null
+                  pendingFrameHandler = null
+                  deliveryThrottle.reset()
+              }''')
+          replace('''        captureActive = false
+                  frameSink = null
+                  captureReleased = true
+                  teardownComplete = false''', '''        stopCapture() // Revoke/cancel the metadata-only trailing wakeup before native teardown.
+                  captureReleased = true
+                  teardownComplete = false''')
+          replace('''        lastAcquiredHeight = 0
+              }
+
+              /** Sparse no-content diagnostics''', '''        lastAcquiredHeight = 0
+                  deferredWakeupCount = 0
+                  coalescedCallbackCount = 0
+                  deferredDeliveryCount = 0
+              }
+
+              /** Sparse no-content diagnostics''')
+          replace('''                " delivered=" + deliveredFrameCount +
+                          " lastCallbackMs="''', '''                " delivered=" + deliveredFrameCount +
+                          " deferredWakeups=" + deferredWakeupCount +
+                          " coalesced=" + coalescedCallbackCount +
+                          " deferredDeliveries=" + deferredDeliveryCount +
+                          " pendingFrame=" + synchronized(nativeLock) { deliveryThrottle.pending != null } +
+                          " lastCallbackMs="''')
+          start = src.index('    private fun onImageAvailable(reader: ImageReader) {')
+          end = src.index('    /** Copies the acquired image', start)
+          src = src[:start] + '''    private fun onImageAvailable(reader: ImageReader) {
+                  synchronized(nativeLock) {
+                      readerCallbackCount += 1
+                      val now = SystemClock.elapsedRealtime()
+                      lastReaderCallbackElapsedMs = now
+                      val sink = frameSink ?: return
+                      val handler = captureHandler ?: return
+                      if (!captureActive || captureReleased || reader !== imageReader) return
+                      val wakeup = deliveryThrottle.request(now)
+                      if (wakeup == null) {
+                          coalescedCallbackCount += 1
+                          return // One existing wakeup will acquire the latest, not a FIFO of callbacks.
+                      }
+                      val delay = (wakeup.dueElapsedMs - now).coerceAtLeast(0)
+                      val deferred = delay > 0
+                      if (deferred) deferredWakeupCount += 1
+                      val task = Runnable { deliverLatestAvailable(reader, sink, wakeup, deferred) }
+                      pendingFrameTask = task
+                      pendingFrameHandler = handler
+                      if (!handler.postDelayed(task, delay)) {
+                          cancelPendingFrameLocked()
+                          Log.w(TAG, "capture wakeup rejected by retiring handler")
+                      }
+                  }
+              }
+
+              /**
+               * Throttle BEFORE acquiring. A final static-navigation frame inside the 200ms window
+               * stays in ImageReader until this one-shot wakeup, even if no more callbacks arrive.
+               * No native Image or borrowed Bitmap is held while waiting; maxImages=2 is unchanged.
+               */
+              private fun deliverLatestAvailable(
+                  reader: ImageReader,
+                  sink: FrameSink,
+                  wakeup: CaptureDeliveryThrottle.Wakeup,
+                  deferred: Boolean,
+              ) {
+                  var frame: HostingFrame? = null
+                  synchronized(nativeLock) {
+                      if (!deliveryThrottle.consume(wakeup)) return
+                      pendingFrameTask = null
+                      pendingFrameHandler = null
+                      if (!captureActive || captureReleased || reader !== imageReader ||
+                              frameSink !== sink) return
+                      var image: Image? = null
+                      try {
+                          val latest = reader.acquireLatestImage() ?: return
+                          image = latest
+                          acquiredImageCount += 1
+                          lastAcquiredWidth = latest.width
+                          lastAcquiredHeight = latest.height
+                          frame = copyFrame(latest, SystemClock.elapsedRealtime())
+                          if (frame != null) {
+                              deliveryThrottle.delivered(SystemClock.elapsedRealtime())
+                              if (deferred) deferredDeliveryCount += 1
+                          }
+                      } catch (error: RuntimeException) {
+                          Log.w(TAG, "hosting frame capture failed", error)
+                      } finally {
+                          image?.close() // Always closed before consumer admission/delivery.
+                      }
+                  }
+                  val delivered = frame
+                  if (delivered != null) {
+                      deliveredFrameCount += 1
+                      // Immutable sink remains bound to this lease; FrameGate fences revocation.
+                      // Consumer invocation remains outside nativeLock and the controller monitor.
+                      sink.onFrame(delivered)
+                  }
+              }
+
+          ''' + src[end:]
+          assert 'HostingPolicy.frameThrottled(nowElapsed' not in src
+          assert 'deliveredAny' not in src and 'lastDeliveryElapsedMs' not in src
+          path.write_text(src)
+          path = root / 'androidTest/java/com/code2hack/eyebrowse/phone/HostingInstrumentedTest.java'
+          src = path.read_text()
+          def change(old, new):
+              global src
+              assert src.count(old) == 1, ('instrumentation anchor', old[:100], src.count(old))
+              src = src.replace(old, new)
+          change('''        int loadsTwoBefore = loadCount("/hosting-two.html");
+                  runOnMain(() -> session.openAddress(FIXTURE_BASE + "/hosting-two.html"));''', '''        int loadsTwoBefore = loadCount("/hosting-two.html");
+                  int secondPageFrom = consumer.count();
+                  consumer.expectQualification(expectedSize[0], expectedSize[1], SECOND_PAGE_COLOR);
+                  long secondPageNavigationUptime = SystemClock.uptimeMillis();
+                  runOnMain(() -> session.openAddress(FIXTURE_BASE + "/hosting-two.html"));''')
+          change('''        waitUntil("delivered pixels show the second page", () ->
+                          consumer.latestFrameNearColor(SECOND_PAGE_COLOR));''', '''        try {
+                      waitUntil("delivered pixels show the second page", () ->
+                              consumer.latestFrameNearColor(SECOND_PAGE_COLOR));
+                  } catch (AssertionError failure) {
+                      fail(failure.getMessage() + " secondPageQualification={"
+                              + consumer.qualificationSummary(secondPageFrom, secondPageNavigationUptime)
+                              + "}");
+                  }
+                  milestones.record("second-page delivery: "
+                          + consumer.qualificationSummary(secondPageFrom, secondPageNavigationUptime));''')
+          change('''        int loadsHostingBeforeReturn = loadCount("/hosting.html");
+                  runOnMain(() -> session.openAddress(FIXTURE_BASE + "/hosting.html"));''', '''        int loadsHostingBeforeReturn = loadCount("/hosting.html");
+                  int returnPageFrom = consumer.count();
+                  consumer.expectQualification(expectedSize[0], expectedSize[1], CAPTURE_PAGE_COLOR);
+                  long returnNavigationUptime = SystemClock.uptimeMillis();
+                  runOnMain(() -> session.openAddress(FIXTURE_BASE + "/hosting.html"));''')
+          change('''        waitUntil("delivered pixels return to the counter page", () ->
+                          consumer.latestFrameNearColor(CAPTURE_PAGE_COLOR));''', '''        try {
+                      waitUntil("delivered pixels return to the counter page", () ->
+                              consumer.latestFrameNearColor(CAPTURE_PAGE_COLOR));
+                  } catch (AssertionError failure) {
+                      fail(failure.getMessage() + " returnQualification={"
+                              + consumer.qualificationSummary(returnPageFrom, returnNavigationUptime)
+                              + "}");
+                  }''')
+          path.write_text(src)
+          PY
+          git diff --check
+          git add app-phone/src/main/java/com/code2hack/eyebrowse/phone/PrivateDisplayHost.kt \
+            app-phone/src/main/java/com/code2hack/eyebrowse/phone/CaptureDeliveryThrottle.kt \
+            app-phone/src/test/java/com/code2hack/eyebrowse/phone/CaptureDeliveryThrottleTest.kt \
+            app-phone/src/androidTest/java/com/code2hack/eyebrowse/phone/HostingInstrumentedTest.java
+          test "$(git diff --cached --name-only | wc -l)" -eq 4
+          git diff --cached --stat
+          git config user.name 'Expert: Expert-#6'
+          git config user.email '24849198+code2hack@users.noreply.github.com'
+          git commit -m 'Expert: Expert-#6 — I6-T04 deliver the final throttled navigation frame with one fenced latest-image wakeup'
+          test "$(git rev-parse HEAD^)" = "$BASE"
+          test "$(git ls-remote origin refs/heads/work/issue-6-pairing | cut -f1)" = "$BASE"
+          git push origin HEAD:refs/heads/work/issue-6-pairing
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "EXPERT_CANDIDATE=$(git rev-parse HEAD)"
+
   host-gates:
+    needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      CANDIDATE: ${{ needs.prepare.outputs.candidate }}
     steps:
-      - name: Checkout exact Expert candidate
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          ref: 2d4800bdc7a1f20feb541218f075a3d2ab99748b
+          ref: ${{ needs.prepare.outputs.candidate }}
+          fetch-depth: 2
           persist-credentials: false
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
-
-      - name: Install Android 35 platform and build tools
+          java-version: '17'
+      - name: Toolchain and exact binding
         shell: bash
         run: |
+          test "$(git rev-parse HEAD)" = "$CANDIDATE"
+          mkdir -p evidence
+          git rev-parse HEAD | tee evidence/candidate-head.txt
+          git diff HEAD^ HEAD > evidence/candidate.patch
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
-
-      - name: Verify exact SHA binding
-        shell: bash
-        run: |
-          test "$(git rev-parse HEAD)" = "2d4800bdc7a1f20feb541218f075a3d2ab99748b"
-          chmod +x ./gradlew
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
           java -version
-          ./gradlew --version
-
-      - name: Targeted hosting lifecycle regressions
+          bash ./gradlew --version
+      - name: Targeted trailing-frame regressions
+        id: targeted
+        continue-on-error: true
         shell: bash
         run: |
-          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
-            :app-phone:testDebugUnitTest \
-            --tests "com.code2hack.eyebrowse.phone.BrowserAttachmentTransferTest" \
-            --tests "com.code2hack.eyebrowse.phone.CaptureDrainSequenceTest" \
-            --tests "com.code2hack.eyebrowse.phone.PhoneViewportStabilityTest" \
-            --tests "com.code2hack.eyebrowse.phone.OutputQualificationTest"
-
-      - name: Full JVM tests and JVM module builds
+          bash ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
+            :app-phone:testDebugUnitTest --tests 'com.code2hack.eyebrowse.phone.CaptureDeliveryThrottleTest' \
+            | tee evidence/targeted.log
+          cp app-phone/build/test-results/testDebugUnitTest/TEST-*CaptureDeliveryThrottleTest.xml evidence/targeted.xml
+      - name: Ablate trailing wakeup and require deterministic red regression
+        id: ablation
+        continue-on-error: true
         shell: bash
         run: |
-          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
-            :core:browser:build \
-            :core:link:build \
+          set -euo pipefail
+          P=app-phone/src/main/java/com/code2hack/eyebrowse/phone/CaptureDeliveryThrottle.kt
+          cp "$P" "$RUNNER_TEMP/throttle-original.kt"
+          trap 'cp "$RUNNER_TEMP/throttle-original.kt" "$P"' EXIT
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('app-phone/src/main/java/com/code2hack/eyebrowse/phone/CaptureDeliveryThrottle.kt')
+          s=p.read_text()
+          a='                  if (pending != null) return null'
+          # Kotlin source indentation is independent of YAML indentation after heredoc parsing.
+          a='        if (pending != null) return null'
+          assert s.count(a)==1
+          p.write_text(s.replace(a, a+'\n        if (lastDeliveryMs != null && nowMs < lastDeliveryMs!! + intervalMs) return null'))
+          PY
+          set +e
+          bash ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
             :app-phone:testDebugUnitTest \
-            :app-rg:testDebugUnitTest
-
-      - name: Count JUnit results
+            --tests 'com.code2hack.eyebrowse.phone.CaptureDeliveryThrottleTest.staticSecondPageIsDeliveredWithoutAnotherProducerCallback' \
+            > evidence/ablation.log 2>&1
+          result=$?
+          set -e
+          test "$result" -ne 0
+          python3 - <<'PY'
+          import xml.etree.ElementTree as E
+          from pathlib import Path
+          p=Path('app-phone/build/test-results/testDebugUnitTest/TEST-com.code2hack.eyebrowse.phone.CaptureDeliveryThrottleTest.xml')
+          root=E.parse(p).getroot()
+          assert int(root.attrib['tests'])==1 and int(root.attrib['failures'])==1
+          assert int(root.attrib.get('errors',0))==0 and int(root.attrib.get('skipped',0))==0
+          assert root.find('testcase').attrib['name']=='staticSecondPageIsDeliveredWithoutAnotherProducerCallback'
+          Path('evidence/ablation.xml').write_bytes(p.read_bytes())
+          print('ABLATION=expected-red; static final frame lost without trailing wakeup')
+          PY
+      - name: Full exact-tree JVM gate
+        id: jvm
+        continue-on-error: true
+        shell: bash
+        run: |
+          git diff --exit-code
+          bash ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g --rerun-tasks --continue \
+            :core:browser:build :core:link:build :app-phone:testDebugUnitTest :app-rg:testDebugUnitTest \
+            | tee evidence/jvm.log
+      - name: Exact-tree XML identity accounting
+        id: counts
+        if: always()
+        continue-on-error: true
         shell: bash
         run: |
           python3 - <<'PY'
-          import glob, xml.etree.ElementTree as ET
-          files = glob.glob('**/build/test-results/**/TEST-*.xml', recursive=True)
-          tests = failures = errors = skipped = 0
-          for p in files:
-              root = ET.parse(p).getroot()
-              tests += int(root.attrib.get('tests', 0))
-              failures += int(root.attrib.get('failures', 0))
-              errors += int(root.attrib.get('errors', 0))
-              skipped += int(root.attrib.get('skipped', 0))
-          print(f'JVM_TEST_XML_FILES={len(files)}')
-          print(f'JVM_TESTS={tests}')
-          print(f'JVM_FAILURES={failures}')
-          print(f'JVM_ERRORS={errors}')
-          print(f'JVM_SKIPPED={skipped}')
-          assert files
-          assert failures == 0 and errors == 0 and skipped == 0
+          import json, xml.etree.ElementTree as E
+          from pathlib import Path
+          folders=['core/browser/build/test-results/test','core/link/build/test-results/test',
+                   'app-phone/build/test-results/testDebugUnitTest','app-rg/build/test-results/testDebugUnitTest']
+          totals=dict(tests=0,failures=0,errors=0,skipped=0)
+          rows=[]
+          identities=[]
+          for folder in folders:
+              files=sorted(Path(folder).glob('TEST-*.xml'))
+              assert files, folder
+              for p in files:
+                  r=E.parse(p).getroot()
+                  row={k:int(r.attrib.get(k,0)) for k in totals}
+                  assert row['tests']==len(r.findall('testcase'))
+                  rows.append(dict(path=str(p),**row))
+                  for k in totals: totals[k]+=row[k]
+                  identities.extend((folder,t.attrib.get('classname'),t.attrib.get('name')) for t in r.findall('testcase'))
+          assert len(identities)==len(set(identities))
+          out=dict(suites=len(rows),nonempty_suites=sum(r['tests']>0 for r in rows),**totals,inventory=rows,identities=identities)
+          Path('evidence/junit-inventory.json').write_text(json.dumps(out,indent=2))
+          print('JVM_ACCOUNTING='+json.dumps({k:v for k,v in out.items() if k not in ('inventory','identities')}))
+          assert totals['failures']==totals['errors']==totals['skipped']==0
           PY
-
-      - name: Phone and RG debug plus androidTest assembly
+      - name: Debug and androidTest assemblies
+        id: builds
+        if: always()
+        continue-on-error: true
         shell: bash
         run: |
-          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
-            :app-phone:assembleDebug \
-            :app-rg:assembleDebug \
-            :app-phone:assembleDebugAndroidTest \
-            :app-rg:assembleDebugAndroidTest
-
+          bash ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g --continue \
+            :app-phone:assembleDebug :app-rg:assembleDebug \
+            :app-phone:assembleDebugAndroidTest :app-rg:assembleDebugAndroidTest | tee evidence/builds.log
       - name: Phone and RG lint
+        id: lint
+        if: always()
+        continue-on-error: true
         shell: bash
         run: |
-          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
-            :app-phone:lintDebug \
-            :app-rg:lintDebug
+          bash ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g --continue \
+            :app-phone:lintDebug :app-rg:lintDebug | tee evidence/lint.log
+      - name: Retain exact-head evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: i6-t04-trailing-frame-${{ needs.prepare.outputs.candidate }}
+          path: |
+            evidence/
+            **/build/test-results/**/TEST-*.xml
+          retention-days: 14
+      - name: Require every gate
+        if: always()
+        shell: bash
+        env:
+          TARGETED: ${{ steps.targeted.outcome }}
+          ABLATION: ${{ steps.ablation.outcome }}
+          JVM: ${{ steps.jvm.outcome }}
+          COUNTS: ${{ steps.counts.outcome }}
+          BUILDS: ${{ steps.builds.outcome }}
+          LINT: ${{ steps.lint.outcome }}
+        run: |
+          git diff --exit-code
+          echo "TARGETED=$TARGETED ABLATION=$ABLATION JVM=$JVM COUNTS=$COUNTS BUILDS=$BUILDS LINT=$LINT"
+          for status in "$TARGETED" "$ABLATION" "$JVM" "$COUNTS" "$BUILDS" "$LINT"; do test "$status" = success; done
