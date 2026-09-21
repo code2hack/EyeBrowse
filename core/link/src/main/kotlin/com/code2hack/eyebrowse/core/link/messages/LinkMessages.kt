@@ -113,8 +113,12 @@ data class BrowserActionMessage(
     val commandId: String,
     val context: com.code2hack.eyebrowse.core.link.control.ControlContext,
     val action: com.code2hack.eyebrowse.core.link.control.BrowserAction,
+    val commandSequence: Long,
 ) : BrowserControlMessage {
-    init { require(commandId.isNotBlank() && commandId.length <= 128) }
+    init {
+        require(commandId.isNotBlank() && commandId.length <= 128)
+        require(commandSequence > 0)
+    }
 }
 
 /** Accepted is admission only. Unknown page effect stays null and is never blindly replayed. */

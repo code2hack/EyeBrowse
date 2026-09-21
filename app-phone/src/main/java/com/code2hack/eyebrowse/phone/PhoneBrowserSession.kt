@@ -63,7 +63,7 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
     private var attachedContainer: ViewGroup? = null
     private var currentAttachment: Attachment? = null
     private var rendererGone = false
-    private var documentId = java.util.UUID.randomUUID().toString()
+    @Volatile private var documentId = java.util.UUID.randomUUID().toString()
     fun documentIdentity(): String = documentId
 
     private var displayUrl: String? = null

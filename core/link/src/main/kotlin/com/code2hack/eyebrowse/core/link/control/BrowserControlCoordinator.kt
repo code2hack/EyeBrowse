@@ -59,8 +59,8 @@ sealed class BrowserAction {
         init { require(dx.isFinite() && dy.isFinite() && kotlin.math.abs(dx) <= 4096 && kotlin.math.abs(dy) <= 4096) }
     }
 }
-data class BrowserActionRequest(val commandId: String, val context: ControlContext, val action: BrowserAction)
-enum class ActionRejection { INVALID_COMMAND_ID, WRONG_OWNER, STALE_CONTEXT, PRESENTATION_NOT_READY, LINK_UNAVAILABLE, INCOMPATIBLE_SESSION, DUPLICATE_COMMAND, COMMAND_LIMIT_REACHED, OUTSIDE_VIEWPORT }
+data class BrowserActionRequest(val commandId: String, val context: ControlContext, val action: BrowserAction, val commandSequence: Long)
+enum class ActionRejection { INVALID_COMMAND_ID, WRONG_OWNER, STALE_CONTEXT, PRESENTATION_NOT_READY, LINK_UNAVAILABLE, INCOMPATIBLE_SESSION, STALE_COMMAND_SEQUENCE, INVALID_COMMAND_SEQUENCE, OUTSIDE_VIEWPORT }
 sealed class ActionDecision {
     data class Accepted(val commandId: String) : ActionDecision()
     data class Rejected(val reason: ActionRejection) : ActionDecision()
@@ -73,12 +73,12 @@ sealed class ActionDecision {
  */
 class BrowserControlCoordinator(
     initialDocumentId: String,
-    private val resolvedCommandCapacity: Int = 256,
     lifetimeId: String = UUID.randomUUID().toString(),
 ) {
-    init { require(initialDocumentId.isNotBlank() && initialDocumentId.length <= 256); require(resolvedCommandCapacity > 0) }
+    init { require(initialDocumentId.isNotBlank() && initialDocumentId.length <= 256) }
     private var state = ControlSnapshot(ControlContext(lifetimeId, 0, initialDocumentId, 0, null))
-    private val admitted = HashSet<String>()
+    // Per-control-epoch ordering, not a cache: old/uncertain sequences never become admissible.
+    private var commandHighWater = 0L
 
     @Synchronized fun snapshot(): ControlSnapshot = state
 
@@ -133,7 +133,7 @@ class BrowserControlCoordinator(
         state = state.copy(owner = owner, profile = profile,
             context = state.context.copy(controlEpoch = state.controlEpoch + 1, viewportEpoch = state.viewportEpoch + 1),
             presentationStatus = if (owner == ControlOwner.RG) PresentationStatus.STALE else PresentationStatus.INACTIVE)
-        admitted.clear() // Previous commands cannot pass the new control epoch.
+        commandHighWater = 0L // Previous commands cannot pass the new control epoch.
         return HandoffDecision.Accepted(state)
     }
 
@@ -165,10 +165,9 @@ class BrowserControlCoordinator(
             val profile = state.profile ?: return reject(ActionRejection.OUTSIDE_VIEWPORT)
             if (action.x >= profile.width || action.y >= profile.height) return reject(ActionRejection.OUTSIDE_VIEWPORT)
         }
-        if (request.commandId in admitted) return reject(ActionRejection.DUPLICATE_COMMAND)
-        // Fail closed at capacity; evicting old IDs would permit an uncertain action to replay.
-        if (admitted.size == resolvedCommandCapacity) return reject(ActionRejection.COMMAND_LIMIT_REACHED)
-        admitted.add(request.commandId)
+        if (request.commandSequence <= 0) return reject(ActionRejection.INVALID_COMMAND_SEQUENCE)
+        if (request.commandSequence <= commandHighWater) return reject(ActionRejection.STALE_COMMAND_SEQUENCE)
+        commandHighWater = request.commandSequence
         return ActionDecision.Accepted(request.commandId)
     }
 }

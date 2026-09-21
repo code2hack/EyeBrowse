@@ -43,13 +43,14 @@ class PhoneLinkServer(
     private val pendingControls = java.util.concurrent.Semaphore(LinkProtocol.OUTBOUND_QUEUE_MAX)
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
     @Volatile private var authenticatedSession: AuthenticatedControlSession? = null
-    val controlCoordinator = PhoneControlCoordinator(browserSession?.documentIdentity() ?: java.util.UUID.randomUUID().toString()) {
-        hostingController?.measurePhoneControlProfile()
-    }
-    private val browserListener = PhoneBrowserSession.Listener { session ->
-        val before = controlCoordinator.authority.snapshot().context
-        val after = controlCoordinator.authority.setDocumentIdentity(session.documentIdentity()).context
-        if (before != after) authenticatedSession?.setPresentation(null,null)
+    private val fallbackDocumentId = java.util.UUID.randomUUID().toString()
+    val controlCoordinator = PhoneControlCoordinator(
+        readDocumentIdentity = { browserSession?.documentIdentity() ?: fallbackDocumentId },
+        invalidatePresentation = { authenticatedSession?.setPresentation(null, null) },
+        measurePhone = { hostingController?.measurePhoneControlProfile() },
+    )
+    private val browserListener = PhoneBrowserSession.Listener {
+        controlCoordinator.reconcileDocument()
     }
     private val hostingListener = HostingController.Listener {
         val before = controlCoordinator.authority.snapshot().context
@@ -67,15 +68,15 @@ class PhoneLinkServer(
         override fun onLinkUp() = notifyLinkObservers()
         override fun onLinkDown() {
             synchronized(controlCoordinator.authority) {
+                controlCoordinator.onLinkStopped()
                 authenticatedSession = null
-                controlCoordinator.authority.setAuthenticated(false)
             }
             notifyLinkObservers()
         }
         override fun onAuthenticatedSession(session: AuthenticatedControlSession, peer: HelloMessage) {
             synchronized(controlCoordinator.authority) {
+                controlCoordinator.onAuthenticatedSession(session.presentationCompatible)
                 authenticatedSession = session
-                controlCoordinator.authority.setAuthenticated(true, session.presentationCompatible)
             }
         }
         override fun onControl(session: AuthenticatedControlSession, message: BrowserControlMessage) {
@@ -104,6 +105,7 @@ class PhoneLinkServer(
     fun publishPresentationReady(context: com.code2hack.eyebrowse.core.link.control.ControlContext): Boolean =
         synchronized(controlCoordinator.authority) {
             val session = authenticatedSession ?: return false
+            controlCoordinator.reconcileDocument()
             if (!controlCoordinator.authority.markPresentationReady(context)) return false
             val state = controlCoordinator.authority.snapshot()
             session.setPresentation(state.context, state.profile)
@@ -113,6 +115,7 @@ class PhoneLinkServer(
 
     fun sendPresentation(frame: com.code2hack.eyebrowse.core.link.framing.PresentationFrame): Boolean =
         synchronized(controlCoordinator.authority) {
+            controlCoordinator.reconcileDocument()
             val state = controlCoordinator.authority.snapshot()
             if (state.context != frame.header.context || state.owner != com.code2hack.eyebrowse.core.link.control.ControlOwner.RG ||
                 state.presentationStatus != com.code2hack.eyebrowse.core.link.control.PresentationStatus.READY || !state.linkAuthenticated) return false
@@ -170,6 +173,7 @@ class PhoneLinkServer(
     /** Starts the TLS listener on the fixed application port. Idempotent while running. */
     @Synchronized
     fun start() {
+        controlCoordinator.onLinkStarting()
         if (engine != null) return
         // Validate/repair only at use time. Construction must survive an inadequate VALID/CORRUPT
         // alias so PairingActivity can still expose the explicit Forget recovery control.
@@ -185,8 +189,10 @@ class PhoneLinkServer(
     fun stop(sendForgetNotice: Boolean = false) {
         hostingController?.removeListener(hostingListener)
         browserSession?.removeListener(browserListener)
-        authenticatedSession = null
-        controlCoordinator.authority.setAuthenticated(false)
+        synchronized(controlCoordinator.authority) {
+            controlCoordinator.onLinkStopped()
+            authenticatedSession = null
+        }
         engine?.let {
             if (sendForgetNotice) it.sendForgetNotice()
             it.stop()

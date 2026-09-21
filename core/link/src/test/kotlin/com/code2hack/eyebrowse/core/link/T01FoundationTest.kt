@@ -85,7 +85,7 @@ class T01FoundationTest {
 
     @Test fun wrongOwnerAndEachStaleContextAreRejected() {
         val c=ready();val ctx=c.snapshot().context
-        fun request(x: ControlContext)=BrowserActionRequest("c",x,BrowserAction.Back)
+        fun request(x: ControlContext)=BrowserActionRequest("c",x,BrowserAction.Back,1)
         assertEquals(ActionDecision.Rejected(ActionRejection.WRONG_OWNER),c.admitAction(ControlOwner.PHONE,request(ctx)))
         for (x in listOf(ctx.copy(controlEpoch=0),ctx.copy(documentId="old"),ctx.copy(viewportEpoch=0),ctx.copy(lifetimeId="old"),ctx.copy(hostingGeneration=2))) {
             assertEquals(ActionDecision.Rejected(ActionRejection.STALE_CONTEXT),c.admitAction(ControlOwner.RG,request(x)))
@@ -93,12 +93,31 @@ class T01FoundationTest {
     }
 
     @Test fun commandPressureCannotEvictIdsAndPermitReplay() {
-        val c=BrowserControlCoordinator("doc",2)
-        fun req(id:String)=BrowserActionRequest(id,c.snapshot().context,BrowserAction.Back)
+        val c=BrowserControlCoordinator("doc")
+        fun req(id:String)=BrowserActionRequest(id,c.snapshot().context,BrowserAction.Back,id.toLong())
         assertTrue(c.admitAction(ControlOwner.PHONE,req("1")) is ActionDecision.Accepted)
         assertTrue(c.admitAction(ControlOwner.PHONE,req("2")) is ActionDecision.Accepted)
-        assertEquals(ActionDecision.Rejected(ActionRejection.COMMAND_LIMIT_REACHED),c.admitAction(ControlOwner.PHONE,req("3")))
-        assertEquals(ActionDecision.Rejected(ActionRejection.DUPLICATE_COMMAND),c.admitAction(ControlOwner.PHONE,req("1")))
+        for (sequence in 3L..512L) assertTrue(c.admitAction(ControlOwner.PHONE,req(sequence.toString())) is ActionDecision.Accepted)
+        assertEquals(ActionDecision.Rejected(ActionRejection.STALE_COMMAND_SEQUENCE),c.admitAction(ControlOwner.PHONE,req("1")))
+    }
+
+    @Test fun stableRgScrollingHasNoLedgerCeilingAndOldSequencesStayRejected() {
+        val c=ready()
+        val before=c.snapshot()
+        fun request(sequence:Long,id:String="scroll-$sequence") =
+            BrowserActionRequest(id,before.context,BrowserAction.ScrollBy(0f,1f),sequence)
+        for (sequence in 1L..10_000L) {
+            assertTrue("sequence $sequence",c.admitAction(ControlOwner.RG,request(sequence)) is ActionDecision.Accepted)
+        }
+        assertEquals(before,c.snapshot()) // No navigation, viewport change or artificial ownership churn.
+        for(sequence in listOf(1L,256L,9_999L,10_000L)) {
+            assertEquals(ActionDecision.Rejected(ActionRejection.STALE_COMMAND_SEQUENCE),
+                c.admitAction(ControlOwner.RG,request(sequence,"different-correlation-id")))
+        }
+        assertTrue(c.admitAction(ControlOwner.RG,request(10_001L)) is ActionDecision.Accepted)
+        assertTrue(c.admitAction(ControlOwner.RG,request(Long.MAX_VALUE)) is ActionDecision.Accepted)
+        assertEquals(ActionDecision.Rejected(ActionRejection.INVALID_COMMAND_SEQUENCE),c.admitAction(ControlOwner.RG,request(Long.MIN_VALUE)))
+        assertEquals(ActionDecision.Rejected(ActionRejection.STALE_COMMAND_SEQUENCE),c.admitAction(ControlOwner.RG,request(Long.MAX_VALUE)))
     }
 
     @Test fun recordsLargerThan32KiBRoundTrip() {
@@ -180,8 +199,11 @@ class T01FoundationTest {
     @Test fun typedActionMessagesRoundTrip() {
         val ctx=ready().snapshot().context
         for(action in listOf(BrowserAction.Back,BrowserAction.Forward,BrowserAction.Reload,BrowserAction.ActivateAt(1f,2f),BrowserAction.ScrollBy(0f,4f))) {
-            val message=BrowserActionMessage("c",ctx,action)
+            val message=BrowserActionMessage("c",ctx,action,1)
             assertEquals(message,(LinkMessageCodec.decode(LinkMessageCodec.encode(message)).getOrThrow() as LinkMessageCodec.Incoming.Known).message)
+            val encoded=LinkMessageCodec.encode(message).toString(Charsets.UTF_8)
+            assertTrue(LinkMessageCodec.decode(encoded.replace("\"commandSequence\":1", "\"commandSequence\":0").toByteArray()).isFailure)
+            assertTrue(LinkMessageCodec.decode(encoded.replace(",\"commandSequence\":1", "").toByteArray()).isFailure)
         }
     }
 }

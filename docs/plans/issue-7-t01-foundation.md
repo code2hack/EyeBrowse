@@ -44,11 +44,20 @@ presentation attachment and same-WebView control transition. Admission alone nev
 presentation ready. Readiness/staleness callbacks carry the complete context, including lifetime
 and generation, so an old callback cannot revive a successor or a disconnected presentation.
 
-Back/Forward/Reload/ActivateAt/ScrollBy are typed Kotlin actions. Admission reserves a command ID
-before any later page effect. Duplicate IDs are rejected; uncertain effects are never replayed.
-The bounded ledger fails closed at 256 commands per control epoch; it never evicts an old ID to
-admit a replay. The caller receives COMMAND_LIMIT_REACHED and must not silently retry. A later
-explicit handoff creates a new epoch and fresh ledger; all prior-epoch commands remain invalid.
+Back/Forward/Reload/ActivateAt/ScrollBy are typed Kotlin actions. Every action carries a
+required positive commandSequence in its control epoch, in addition to commandId for result
+correlation. The owner sends increasing ordinals and never assigns a new ordinal to retry an
+uncertain effect. The Phone reserves the ordinal before any later page effect and stores only
+an O(1) high-water mark: duplicate or reordered ordinals at or below it are rejected regardless
+of correlation ID. Gaps are allowed; wraparound and nonpositive ordinals are rejected. Explicit
+ownership transfer starts a new control epoch and resets the mark; old-context commands still
+fail before admission. Stable-page scrolling has no small command-count or cache-capacity limit.
+
+The Phone adapter reads actual browser document identity on link start, authenticated-session
+publication and each handoff/action admission, as well as on listener events. A missed notification
+while the listener was detached cannot publish old document authority. Reconciliation that changes
+the context invalidates any pending presentation grant/frame. The browser's document ID is volatile
+for authentication-thread reads; all multi-step adapter operations use the authority monitor.
 No keyboard, script evaluation, page renderer or production test-control receiver is added.
 
 ## Verification and limits
