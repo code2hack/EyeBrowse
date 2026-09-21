@@ -16,13 +16,19 @@ import org.junit.runner.RunWith
 /** Paired physical-device fixture companion. No trust/data mutation or production test receiver. */
 @RunWith(AndroidJUnit4::class)
 class LivePresentationInstrumentedTest {
-    @Test fun measuredRgProfileSurvivesPhoneConfigurationAndStopsCleanly() {
+    @Test fun measuredRgProfileSurvivesPhoneConfigurationAndStopsCleanly() = runCompanion(true)
+
+    /** Narrow T2-R1 rerun: real connected RG Stop, without repeating configuration evidence. */
+    @Test fun rgConnectedStopRestoresPhoneAttachment() = runCompanion(false)
+
+    private fun runCompanion(verifyConfiguration: Boolean) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext
         val browser = PhoneBrowserSession.get(app)
         val host = HostingController.get(app)
         val server = PhoneLinkServer.obtain(app)
         var originalView: android.webkit.WebView? = null
+        var originalDocument: String? = null
         val scenario = ActivityScenario.launch<MainActivity>(Intent(app, MainActivity::class.java))
         var primaryFailure: Throwable? = null
         var originalOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
@@ -35,6 +41,7 @@ class LivePresentationInstrumentedTest {
             await("fixture ready", 10_000) { !browser.isLoading() && browser.pageTitle() == "Hosting capture page" }
             scenario.onActivity {
                 originalView = browser.view()
+                originalDocument = browser.documentIdentity()
                 assertNotNull("fixture must have a live baseline WebView",originalView)
                 Log.i("EyeBrowseT02","LIVE_WEBVIEW_BASELINE=${System.identityHashCode(originalView)}")
                 it.findViewById<Button>(R.id.button_hosting_toggle).performClick()
@@ -47,33 +54,46 @@ class LivePresentationInstrumentedTest {
             assertEquals(profile.width,server.controlCoordinator.authority.snapshot().profile!!.width)
             assertEquals(profile.height,server.controlCoordinator.authority.snapshot().profile!!.height)
             Log.i("EyeBrowseT02", "PHONE_PROFILE ${profile.width}x${profile.height}@${profile.densityDpi}")
-            SystemClock.sleep(5_000)
-            scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
-            SystemClock.sleep(2_000)
             scenario.onActivity {
-                val snapshot = host.privateDisplaySnapshot()!!
-                Log.i("EyeBrowseT02", "CONFIGURATION_FACTS expected=$profile actual=${host.presentationProfile()} expectedContext=$context actualContext=${server.controlCoordinator.authority.snapshot().context} sameView=${originalView === browser.view()} display=$snapshot")
-                assertEquals("immutable RG profile",profile,host.presentationProfile())
-                assertEquals("control context",context,server.controlCoordinator.authority.snapshot().context)
-                assertSame("same live WebView",originalView,browser.view())
-                assertEquals("private display width",profile.width,snapshot.actualWidth)
-                assertEquals("private display height",profile.height,snapshot.actualHeight)
-                assertEquals("private display ON",android.view.Display.STATE_ON,snapshot.state)
+                assertFalse("RG ownership excludes Phone input", it.findViewById<Button>(R.id.button_open).isEnabled)
+                assertNotSame(it.findViewById<android.view.ViewGroup>(R.id.web_container), browser.view()!!.parent)
             }
-            Log.i("EyeBrowseT02", "CONFIGURATION_PRESERVED ${host.privateDisplaySnapshot()}")
+            if (verifyConfiguration) {
+                SystemClock.sleep(5_000)
+                scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
+                SystemClock.sleep(2_000)
+                scenario.onActivity {
+                    val snapshot = host.privateDisplaySnapshot()!!
+                    Log.i("EyeBrowseT02", "CONFIGURATION_FACTS expected=$profile actual=${host.presentationProfile()} expectedContext=$context actualContext=${server.controlCoordinator.authority.snapshot().context} sameView=${originalView === browser.view()} display=$snapshot")
+                    assertEquals("immutable RG profile",profile,host.presentationProfile())
+                    assertEquals("control context",context,server.controlCoordinator.authority.snapshot().context)
+                    assertSame("same live WebView",originalView,browser.view())
+                    assertEquals("private display width",profile.width,snapshot.actualWidth)
+                    assertEquals("private display height",profile.height,snapshot.actualHeight)
+                    assertEquals("private display ON",android.view.Display.STATE_ON,snapshot.state)
+                }
+                Log.i("EyeBrowseT02", "CONFIGURATION_PRESERVED ${host.privateDisplaySnapshot()}")
+            }
             // Stop while the RG companion is still connected (its observation window is 15 s).
             SystemClock.sleep(5_000)
-            scenario.onActivity { it.findViewById<Button>(R.id.button_hosting_toggle).performClick() }
-            await("Stop cleanup", 5_000) { !host.hasDisplayResources() && !host.captureResourcesPresent() && !host.isWakeLockHeld() }
-            assertSame(originalView,browser.view())
             scenario.onActivity {
+                assertTrue("Stop must exercise an authenticated RG peer", server.isLinkUp())
+                it.findViewById<Button>(R.id.button_hosting_toggle).performClick()
+                // Synchronous Stop must clear exclusion before its final listeners reattach/render.
+                StopRecoveryAssertions.afterStop(it, browser, host, checkNotNull(originalView), checkNotNull(originalDocument))
+                assertTrue("TLS peer still present before explicit link Stop", server.isLinkUp())
                 val before = SystemClock.elapsedRealtime()
                 server.stop() // Actual Activity-lifecycle call shape, under normal StrictMode.
                 assertFalse(server.isLinkUp())
                 assertTrue("main-thread stop returns within bound",SystemClock.elapsedRealtime()-before < 1_000)
                 Log.i("EyeBrowseT02", "LINK_STOP_MAIN_MS=${SystemClock.elapsedRealtime()-before}")
             }
+            await("Stop cleanup", 5_000) { StopRecoveryAssertions.resourcesGone(host) }
+            scenario.onActivity {
+                StopRecoveryAssertions.afterStop(it, browser, host, checkNotNull(originalView), checkNotNull(originalDocument))
+            }
             Log.i("EyeBrowseT02", "STOP_CLEAN")
+            StopRecoveryAssertions.restartAndStop(scenario, browser, host, checkNotNull(originalView), checkNotNull(originalDocument))
         } catch (failure: Throwable) {
             primaryFailure = failure
             Log.e("EyeBrowseT02", "PRIMARY_FAILURE",failure)
@@ -84,6 +104,7 @@ class LivePresentationInstrumentedTest {
                 { instrumentation.runOnMainSync { host.stop() } },
                 { instrumentation.runOnMainSync { server.stop() } },
                 { scenario.close() },
+                { StopRecoveryAssertions.await("final cleanup", 5_000) { StopRecoveryAssertions.resourcesGone(host) } },
             ).mapNotNull { step -> runCatching(step).exceptionOrNull() }
             cleanup.forEach { Log.e("EyeBrowseT02","CLEANUP_FAILURE",it) }
             if (primaryFailure != null) cleanup.forEach { primaryFailure.addSuppressed(it) }

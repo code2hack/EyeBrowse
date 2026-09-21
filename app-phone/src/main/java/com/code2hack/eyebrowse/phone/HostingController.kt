@@ -515,6 +515,9 @@ class HostingController private constructor(private val appContext: Context) {
             hostingService = null
         }
         hostingContext = null
+        // Release RG input exclusion only after private teardown. The settled notification below
+        // lets the current live Activity reattach through its existing identity-fenced path.
+        rgPresentationOwned = false
         state = State.NOT_HOSTING
         attachment = Attachment.NONE
         Log.i(TAG, "stop complete gen=$generation")
