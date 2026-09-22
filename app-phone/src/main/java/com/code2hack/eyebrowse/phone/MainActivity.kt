@@ -47,6 +47,9 @@ class MainActivity : ComponentActivity() {
     private var attachment: PhoneBrowserSession.Attachment? = null
     private lateinit var addressBar: AddressBarModel
     private lateinit var hosting: HostingController
+    private lateinit var link: com.code2hack.eyebrowse.phone.link.PhoneLinkServer
+    private lateinit var usePhoneButton: Button
+    private val linkObserver: () -> Unit = { runOnUiThread { if (::hosting.isInitialized) render() } }
 
     private lateinit var addressInput: EditText
     private lateinit var backButton: ImageButton
@@ -113,6 +116,10 @@ class MainActivity : ComponentActivity() {
         hostingStatusText = findViewById(R.id.hosting_status)
         webContainer = findViewById(R.id.web_container)
         hosting = HostingController.get(applicationContext)
+        link = com.code2hack.eyebrowse.phone.link.PhoneLinkServer.obtain(this)
+        usePhoneButton = findViewById(R.id.button_use_phone)
+        usePhoneButton.setOnClickListener { link.useOnPhone();render() }
+        link.addLinkObserver(linkObserver)
         webContainer.addOnLayoutChangeListener(webViewportLayoutListener)
 
         if (savedInstanceState != null) {
@@ -130,9 +137,9 @@ class MainActivity : ComponentActivity() {
             true
         }
         openButton.setOnClickListener { submitAddress() }
-        backButton.setOnClickListener { session.goBack() }
-        forwardButton.setOnClickListener { session.goForward() }
-        reloadButton.setOnClickListener { session.reload() }
+        backButton.setOnClickListener { if (link.phoneOwnsInput() && !hosting.isRgPresentationOwned()) session.goBack() }
+        forwardButton.setOnClickListener { if (link.phoneOwnsInput() && !hosting.isRgPresentationOwned()) session.goForward() }
+        reloadButton.setOnClickListener { if (link.phoneOwnsInput() && !hosting.isRgPresentationOwned()) session.reload() }
         hostingButton.setOnClickListener { toggleHosting() }
         pairRgButton.setOnClickListener {
             startActivity(android.content.Intent(this, com.code2hack.eyebrowse.phone.pairing.PairingActivity::class.java))
@@ -144,7 +151,7 @@ class MainActivity : ComponentActivity() {
                     hideIme()
                     return
                 }
-                if (session.canGoBack()) {
+                if (link.phoneOwnsInput() && !hosting.isRgPresentationOwned() && session.canGoBack()) {
                     session.goBack()
                     return
                 }
@@ -194,6 +201,8 @@ class MainActivity : ComponentActivity() {
         // no-op, and returns the ownership token this Activity must keep.
         attachment = hosting.onPhoneUiAvailable(this, webContainer, attachment)
         recordPhoneViewport(webContainer.width, webContainer.height)
+        val link = com.code2hack.eyebrowse.phone.link.PhoneLinkServer.obtain(this)
+        if (link.isPaired()) runCatching { link.start() }
     }
 
     override fun onStop() {
@@ -204,12 +213,13 @@ class MainActivity : ComponentActivity() {
         // during STARTING the transition is deferred and service readiness reconciles. A finishing
         // Activity keeps its token for the destroy path (system transition ordering can run
         // another Activity's onStart before this onStop).
-        attachment = hosting.onPhoneUiHidden(attachment)
+        attachment = hosting.onPhoneUiHidden(attachment, this)
     }
 
     override fun onDestroy() {
         Log.i("EyeBrowseHost", "activity onDestroy " + identityHash())
         webContainer.removeOnLayoutChangeListener(webViewportLayoutListener)
+        link.removeLinkObserver(linkObserver)
         hosting.removeListener(hostingListener)
         session.removeListener(sessionListener)
         // A destroyed Activity must not steal the view from a successor; only when this Activity
@@ -217,7 +227,7 @@ class MainActivity : ComponentActivity() {
         hosting.moveWebViewToPrivateDisplay(attachment)
         // R5: actual destruction releases the controller-held Activity/container references for
         // the matching UI owner and clears availability (identity-checked by token).
-        hosting.onPhoneUiDestroyed(attachment)
+        hosting.onPhoneUiDestroyed(attachment, this)
         session.detach(attachment)
         super.onDestroy()
     }
@@ -243,6 +253,7 @@ class MainActivity : ComponentActivity() {
             height,
             resources.configuration.densityDpi,
         )
+        link.publishPhoneViewport()
     }
 
     private fun toggleHosting() {
@@ -287,6 +298,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun submitAddress() {
+        if (!link.phoneOwnsInput() || hosting.isRgPresentationOwned()) return
         val result = session.openAddress(addressInput.text.toString())
         if (result.accepted()) {
             addressBar.onSubmittedAccepted(result.url())
@@ -341,9 +353,13 @@ class MainActivity : ComponentActivity() {
         progressBar.visibility = if (session.isLoading()) View.VISIBLE else View.INVISIBLE
         progressBar.progress = session.progress()
 
-        backButton.isEnabled = session.canGoBack()
-        forwardButton.isEnabled = session.canGoForward()
-        reloadButton.isEnabled = session.isLive()
+        val localInput = link.phoneOwnsInput() && !hosting.isRgPresentationOwned()
+        usePhoneButton.visibility = if (link.phoneOwnsInput()) View.GONE else View.VISIBLE
+        addressInput.isEnabled = localInput
+        openButton.isEnabled = localInput
+        backButton.isEnabled = localInput && session.canGoBack()
+        forwardButton.isEnabled = localInput && session.canGoForward()
+        reloadButton.isEnabled = localInput && session.isLive()
 
         renderHosting()
     }
@@ -379,7 +395,7 @@ class MainActivity : ComponentActivity() {
                 hostingButton.setText(R.string.action_hosting_start)
             }
         }
-        hostingStatusText.text = text
+        hostingStatusText.text = if (hosting.isRgPresentationOwned()) getString(R.string.browsing_on_glasses) else text
     }
 
     private fun isImeVisible(): Boolean {

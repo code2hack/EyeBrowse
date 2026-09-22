@@ -1,6 +1,8 @@
 package com.code2hack.eyebrowse.core.link.messages
 
 import kotlinx.serialization.Serializable
+import com.code2hack.eyebrowse.core.link.control.BrowserCommandId
+import com.code2hack.eyebrowse.core.link.presentation.PresentationProfile
 
 /**
  * Versioned v1 application messages (ticket plan §4.4/§5), carried as bounded JSON frames.
@@ -11,6 +13,9 @@ import kotlinx.serialization.Serializable
 data class HelloMessage(val pmj: Int, val pmm: Int, val caps: List<String>) {
     fun hasRequiredCapabilities(): Boolean =
         com.code2hack.eyebrowse.core.link.LinkProtocol.REQUIRED_CAPABILITIES.all { caps.contains(it) }
+
+    fun hasPresentationCapabilities(): Boolean =
+        com.code2hack.eyebrowse.core.link.LinkProtocol.PRESENTATION_CAPABILITIES.all { caps.contains(it) }
 }
 
 /** RG → Phone, initial pairing proof (plan §4.2 steps 2–4). Byte fields are base64url. */
@@ -61,3 +66,84 @@ object PongMessage
 /** Best-effort pre-close Forget notice; security never depends on delivery (plan §8). */
 @Serializable
 object ForgetNoticeMessage
+
+@Serializable
+enum class HandoffTargetWire { PHONE, RG }
+
+/** #7 messages are admitted only on an authenticated, negotiated presentation session. */
+sealed interface BrowserControlMessage
+
+@Serializable
+data class HandoffRequestMessage(
+    val target: HandoffTargetWire,
+    val observedControlEpoch: Long,
+    val profile: PresentationProfile? = null,
+) : BrowserControlMessage
+
+@Serializable
+data class HandoffResultMessage(
+    val accepted: Boolean,
+    val owner: com.code2hack.eyebrowse.core.link.control.ControlOwner,
+    val context: com.code2hack.eyebrowse.core.link.control.ControlContext,
+    val profile: PresentationProfile? = null,
+    val reason: String? = null,
+) : BrowserControlMessage
+
+@Serializable
+data class BrowserStateMessage(
+    val owner: com.code2hack.eyebrowse.core.link.control.ControlOwner,
+    val context: com.code2hack.eyebrowse.core.link.control.ControlContext,
+    val profile: PresentationProfile? = null,
+    val url: String? = null,
+    val title: String? = null,
+    val canGoBack: Boolean = false,
+    val canGoForward: Boolean = false,
+    val loading: Boolean = false,
+    val stale: Boolean = true,
+    val error: String? = null,
+) : BrowserControlMessage {
+    init {
+        require(url == null || url.length <= 2048)
+        require(title == null || title.length <= 512)
+        require(error == null || error.length <= 512)
+    }
+}
+
+@Serializable
+data class BrowserActionMessage(
+    val commandId: String,
+    val context: com.code2hack.eyebrowse.core.link.control.ControlContext,
+    val action: com.code2hack.eyebrowse.core.link.control.BrowserAction,
+    val commandSequence: Long,
+) : BrowserControlMessage {
+    init {
+        require(commandSequence > 0)
+        require(BrowserCommandId.matches(commandId, context, commandSequence))
+    }
+}
+
+/** Accepted is admission only. Unknown page effect stays null and is never blindly replayed. */
+@Serializable
+data class BrowserActionResultMessage(
+    val commandId: String,
+    val accepted: Boolean,
+    val effectSucceeded: Boolean? = null,
+    val reason: String? = null,
+) : BrowserControlMessage {
+    init {
+        require(commandId.isNotBlank() && commandId.length <= BrowserCommandId.MAX_LENGTH)
+        require(reason == null || reason.length <= 128)
+    }
+}
+
+@Serializable
+data class PresentationStopMessage(
+    val context: com.code2hack.eyebrowse.core.link.control.ControlContext,
+    val reason: String,
+) : BrowserControlMessage { init { require(reason.length <= 128) } }
+
+@Serializable
+data class PresentationStaleMessage(
+    val context: com.code2hack.eyebrowse.core.link.control.ControlContext,
+    val reason: String,
+) : BrowserControlMessage { init { require(reason.length <= 128) } }

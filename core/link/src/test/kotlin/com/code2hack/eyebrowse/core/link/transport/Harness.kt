@@ -1,5 +1,7 @@
 package com.code2hack.eyebrowse.core.link.transport
 
+import com.code2hack.eyebrowse.core.link.messages.BrowserControlMessage
+import com.code2hack.eyebrowse.core.link.framing.PresentationFrame
 import com.code2hack.eyebrowse.core.link.HostStatusValue
 import com.code2hack.eyebrowse.core.link.LinkError
 import com.code2hack.eyebrowse.core.link.LinkProtocol
@@ -43,6 +45,7 @@ object Harness {
         val timings: LinkTimings = FAST_TIMINGS,
         keyPair: KeyPair = TestCrypto.ecKeyPair(),
         val lifecycle: InvitationLifecycle = InvitationLifecycle(System::currentTimeMillis),
+        val advertisedHello: HelloMessage = HelloMessage(LinkProtocol.MAJOR,LinkProtocol.MINOR,LinkProtocol.REQUIRED_CAPABILITIES),
     ) {
         val keyPair: KeyPair = keyPair
         val identity: TlsServerIdentity =
@@ -74,13 +77,15 @@ object Harness {
         val linkDown = CountDownLatch(1)
         val linkLostNotifications = java.util.concurrent.atomic.AtomicInteger(0)
         val listenerLinkDownNotifications = java.util.concurrent.atomic.AtomicInteger(0)
+        val sessions = LinkedBlockingDeque<AuthenticatedControlSession>()
+        var controlHandler: ((AuthenticatedControlSession, BrowserControlMessage) -> Unit)? = null
         lateinit var engine: LinkServerEngine
 
         private val trustController = object : LinkServerEngine.TrustController {
             override fun serverHello(): HelloMessage {
                 helloGate?.await()
                 if (serverHelloDelayMs > 0) Thread.sleep(serverHelloDelayMs)
-                return HelloMessage(LinkProtocol.MAJOR, LinkProtocol.MINOR, LinkProtocol.REQUIRED_CAPABILITIES)
+                return advertisedHello
             }
 
             override fun consumeInvitation(id: String, secretB64: String): InvitationLifecycle.ConsumeOutcome {
@@ -121,6 +126,8 @@ object Harness {
         }
 
         private val listener = object : LinkServerEngine.Listener {
+            override fun onAuthenticatedSession(session: AuthenticatedControlSession, peer: HelloMessage) { sessions.add(session) }
+            override fun onControl(session: AuthenticatedControlSession, message: BrowserControlMessage) { controlHandler?.invoke(session,message) }
             override fun onAuthFailed(error: LinkError) {
                 authFailures.add(error)
             }
@@ -156,6 +163,7 @@ object Harness {
     class ClientHarness(
         keyPair: KeyPair = TestCrypto.ecKeyPair(),
         val timings: LinkTimings = FAST_TIMINGS,
+        val advertisedHello: HelloMessage = HelloMessage(LinkProtocol.MAJOR,LinkProtocol.MINOR,LinkProtocol.REQUIRED_CAPABILITIES),
     ) {
         val keyPair: KeyPair = keyPair
         val signer = TestCrypto.softwareSigningIdentity(keyPair)
@@ -166,8 +174,14 @@ object Harness {
         val stateChanges = LinkedBlockingDeque<com.code2hack.eyebrowse.core.link.PairingState>()
         val stateTimesNanos = ConcurrentHashMap<com.code2hack.eyebrowse.core.link.PairingState, Long>()
         val authenticated = LinkedBlockingDeque<ByteArray>()
+        val sessionHello = LinkedBlockingDeque<HelloMessage>()
+        val controls = LinkedBlockingDeque<BrowserControlMessage>()
+        val frames = LinkedBlockingDeque<PresentationFrame>()
 
         private val listener = object : LinkClientEngine.Listener {
+            override fun onAuthenticatedSession(session: AuthenticatedControlSession, peer: HelloMessage) { sessionHello.add(peer) }
+            override fun onControl(message: BrowserControlMessage) { controls.add(message) }
+            override fun onPresentation(frame: PresentationFrame) { frames.add(frame) }
             override fun onStateChange(state: com.code2hack.eyebrowse.core.link.PairingState) {
                 stateTimesNanos.putIfAbsent(state, System.nanoTime())
                 stateChanges.add(state)
@@ -198,8 +212,7 @@ object Harness {
             engine = LinkClientEngine(timings, listener)
         }
 
-        fun hello(): HelloMessage =
-            HelloMessage(LinkProtocol.MAJOR, LinkProtocol.MINOR, LinkProtocol.REQUIRED_CAPABILITIES)
+        fun hello(): HelloMessage = advertisedHello
 
         fun attempt(
             phonePinHex: String,
@@ -279,6 +292,9 @@ object Harness {
             }
         }
 
+        fun readNegotiatedRecord(): com.code2hack.eyebrowse.core.link.framing.LinkRecord =
+            com.code2hack.eyebrowse.core.link.framing.PresentationRecordCodec.read(input,true,false)
+
         fun phoneSpki(): ByteArray = socket.session.peerCertificates[0].publicKey.encoded
 
         fun close() = socket.close()
@@ -312,6 +328,7 @@ object Harness {
             nonceOverride: ByteArray? = null,
             signKey: KeyPair = keyPair,
             presentedSpki: ByteArray = keyPair.public.encoded,
+            helloOverride: HelloMessage = HelloMessage(LinkProtocol.MAJOR,LinkProtocol.MINOR,LinkProtocol.REQUIRED_CAPABILITIES),
         ) {
             val nonce = nonceOverride ?: lastNonce ?: error("challenge not read")
             val transcript = com.code2hack.eyebrowse.core.link.crypto.ChallengeTranscript.build(
@@ -334,11 +351,7 @@ object Harness {
                     rgSpki = B64URL.encode(presentedSpki),
                     nonce = B64URL.encode(nonce),
                     sig = B64URL.encode(signature),
-                    hello = HelloMessage(
-                        LinkProtocol.MAJOR,
-                        LinkProtocol.MINOR,
-                        LinkProtocol.REQUIRED_CAPABILITIES,
-                    ),
+                    hello = helloOverride,
                 ),
             )
         }

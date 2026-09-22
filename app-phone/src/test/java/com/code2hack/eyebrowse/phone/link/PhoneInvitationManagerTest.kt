@@ -88,7 +88,7 @@ class PhoneInvitationManagerTest {
 
         val parsed = InvitationCodec.parse(active.payload).getOrThrow()
         assertEquals(1, parsed.protocolMajor)
-        assertEquals(0, parsed.protocolMinor)
+        assertEquals(LinkProtocol.MINOR, parsed.protocolMinor)
         assertEquals(fp, parsed.phoneSpkiSha256Hex)
         assertEquals(LinkProtocol.INVITATION_TTL_SECONDS, parsed.ttlSeconds)
         assertEquals(LinkProtocol.INVITATION_SECRET_BYTES, parsed.invitationSecret.size)

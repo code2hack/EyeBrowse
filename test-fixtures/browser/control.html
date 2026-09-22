@@ -1,0 +1,16 @@
+<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>T03 A</title>
+<style>body{margin:0;background:#f6f3ea;color:#171717;font:16px sans-serif;height:1800px}button,a{position:absolute;left:16px;width:140px;height:40px;box-sizing:border-box;font:16px sans-serif}button{top:16px}a{top:72px;display:block;background:#abc;padding:8px}input{position:absolute;top:128px;left:16px;width:200px}#marker{position:absolute;top:180px;left:16px}</style></head><body>
+<button id="action">Activate A</button><a id="next">Open B</a><input id="state" value="initial"><div id="marker"></div>
+<script>
+const nonce=new URLSearchParams(location.search).get('case')||'unscoped';const key='t03-'+nonce;
+function note(event){const values=JSON.parse(sessionStorage.getItem(key)||'[]');values.push(event);sessionStorage.setItem(key,JSON.stringify(values));}
+window.fixtureKey=key;window.fixtureMarker='M'+Date.now();document.getElementById('marker').textContent=window.fixtureMarker;
+window.__t03Geometry=()=>{const scale=devicePixelRatio*visualViewport.scale;const a=document.getElementById('action').getBoundingClientRect();const n=document.getElementById('next').getBoundingClientRect();return {scale,cssY:scrollY,x:(a.x+a.width/2)*scale,y:(a.y+a.height/2)*scale,nx:(n.x+n.width/2)*scale,ny:(n.y+n.height/2)*scale};};
+window.__t03Title=base=>{window.__t03Base=base;document.title=base+'|G='+JSON.stringify(window.__t03Geometry());};
+window.__t03Refresh=()=>window.__t03Title(window.__t03Base||'T03 A');
+note('load:A');addEventListener('pageshow',()=>{note('show:A');window.__t03Refresh();});addEventListener('resize',window.__t03Refresh);visualViewport.addEventListener('resize',window.__t03Refresh);let clicks=0;
+document.getElementById('action').onclick=()=>{clicks++;note('click:A:'+clicks);window.__t03Title('T03 A click '+clicks);};
+document.getElementById('next').href='/control-two.html?case='+encodeURIComponent(nonce);
+onscroll=()=>{note('scroll:A:'+Math.round(scrollY));window.__t03Title('T03 A scroll '+Math.round(scrollY));};
+window.__t03Title('T03 A');
+</script></body></html>

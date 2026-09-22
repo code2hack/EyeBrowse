@@ -1,0 +1,12 @@
+<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>T03 B</title>
+<style>body{margin:0;background:#e7f0ff;color:#171717;font:16px sans-serif;height:1800px}button{position:absolute;left:16px;top:16px;width:140px;height:40px;font:16px sans-serif}p{position:absolute;top:80px;left:16px}</style></head><body><button id="done">Finish actions</button><p>Second fixture page</p>
+<script>
+const nonce=new URLSearchParams(location.search).get('case')||'unscoped';const key='t03-'+nonce;
+function note(event){const values=JSON.parse(sessionStorage.getItem(key)||'[]');values.push(event);sessionStorage.setItem(key,JSON.stringify(values));}
+window.fixtureKey=key;
+window.__t03Geometry=()=>{const scale=devicePixelRatio*visualViewport.scale;const a=document.getElementById('done').getBoundingClientRect();return {scale,cssY:scrollY,x:(a.x+a.width/2)*scale,y:(a.y+a.height/2)*scale};};
+window.__t03Title=base=>{window.__t03Base=base;document.title=base+'|G='+JSON.stringify(window.__t03Geometry());};
+window.__t03Refresh=()=>window.__t03Title(window.__t03Base||'T03 B');
+note('load:B');addEventListener('pageshow',()=>{note('show:B');window.__t03Refresh();});addEventListener('resize',window.__t03Refresh);visualViewport.addEventListener('resize',window.__t03Refresh);document.getElementById('done').onclick=()=>{note('click:B');window.__t03Title('T03 done');};
+window.__t03Title('T03 B');
+</script></body></html>

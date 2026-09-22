@@ -32,7 +32,7 @@ class InvitationCodecTest {
         )
         val parsed = InvitationCodec.parse(payload).getOrThrow()
         assertEquals(1, parsed.protocolMajor)
-        assertEquals(0, parsed.protocolMinor)
+        assertEquals(LinkProtocol.MINOR, parsed.protocolMinor)
         assertEquals(id, parsed.invitationId)
         assertTrue(parsed.invitationSecret.contentEquals(secret))
         assertEquals(fp, parsed.phoneSpkiSha256Hex)

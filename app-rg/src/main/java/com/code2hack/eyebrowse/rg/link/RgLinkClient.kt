@@ -1,5 +1,10 @@
 package com.code2hack.eyebrowse.rg.link
 
+import com.code2hack.eyebrowse.core.link.CapabilityNegotiation
+import com.code2hack.eyebrowse.core.link.CapabilityNegotiator
+import com.code2hack.eyebrowse.core.link.messages.BrowserControlMessage
+import com.code2hack.eyebrowse.core.link.framing.PresentationFrame
+import com.code2hack.eyebrowse.core.link.transport.AuthenticatedControlSession
 import com.code2hack.eyebrowse.core.link.HostStatusValue
 import com.code2hack.eyebrowse.core.link.LinkError
 import com.code2hack.eyebrowse.core.link.LinkProtocol
@@ -33,10 +38,18 @@ class RgLinkClient(
         fun onStatus(status: HostStatusValue)
         fun onLinkLost()
         fun onConnectFailed(error: LinkError)
+        fun onPresentationCompatibility(result: CapabilityNegotiation) {}
+        fun onControl(message: BrowserControlMessage) {}
+        fun onPresentation(frame: PresentationFrame) {}
     }
 
     @Volatile
     private var engine: LinkClientEngine? = null
+
+    @Volatile var presentationCompatibility: CapabilityNegotiation = CapabilityNegotiation.UpdateRequired
+        private set
+    private var authenticatedPeer: Pair<ByteArray,Locator>? = null
+    fun sendControl(message: BrowserControlMessage): Boolean = engine?.sendControl(message) ?: false
 
     private val engineListener = object : LinkClientEngine.Listener {
         override fun onStateChange(state: PairingState) = listener.onStateChange(state)
@@ -48,6 +61,15 @@ class RgLinkClient(
         override fun onConnectFailed(error: LinkError) = listener.onConnectFailed(error)
 
         override fun onAuthenticated(phoneSpki: ByteArray, usedLocator: Locator) {
+            authenticatedPeer = phoneSpki.copyOf() to usedLocator
+        }
+        override fun onControl(message: BrowserControlMessage) = listener.onControl(message)
+        override fun onPresentation(frame: PresentationFrame) = listener.onPresentation(frame)
+        override fun onAuthenticatedSession(session: AuthenticatedControlSession, peer: HelloMessage) {
+            val (phoneSpki, usedLocator) = checkNotNull(authenticatedPeer)
+            authenticatedPeer = null
+            presentationCompatibility = CapabilityNegotiator.negotiate(peer, true)
+            listener.onPresentationCompatibility(presentationCompatibility)
             // Trust commit happens strictly after the pinned TLS peer proved possession of the
             // invitation or its remembered identity (plan §4.2/§8). Locator refresh is allowed
             // for the SAME pinned identity (plan §8 "Changed locator").
@@ -56,9 +78,9 @@ class RgLinkClient(
                     peerSpkiSha256Hex = com.code2hack.eyebrowse.core.link.crypto.SpkiFingerprint.sha256Hex(phoneSpki),
                     peerSpkiB64 = com.code2hack.eyebrowse.core.link.invitation.B64URL.encode(phoneSpki),
                     lastLocators = listOf(usedLocator.toWire()),
-                    protocolMajor = LinkProtocol.MAJOR,
-                    protocolMinor = LinkProtocol.MINOR,
-                    peerCapabilities = LinkProtocol.REQUIRED_CAPABILITIES,
+                    protocolMajor = peer.pmj,
+                    protocolMinor = peer.pmm,
+                    peerCapabilities = peer.caps,
                 ),
             )
         }
@@ -137,5 +159,5 @@ class RgLinkClient(
         engine ?: LinkClientEngine(timings, engineListener).also { engine = it }
 
     private fun hello(): HelloMessage =
-        HelloMessage(LinkProtocol.MAJOR, LinkProtocol.MINOR, LinkProtocol.REQUIRED_CAPABILITIES)
+        HelloMessage(LinkProtocol.MAJOR, LinkProtocol.MINOR, LinkProtocol.ALL_CAPABILITIES)
 }

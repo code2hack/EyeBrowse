@@ -437,6 +437,7 @@ class HostingController private constructor(private val appContext: Context) {
      * notifying listeners (F7).
      */
     private fun failStart(reason: String?) {
+        rgPresentationOwned = false
         presentationEpochs.retire()
         mainHandler.removeCallbacks(startTimeout)
         pendingStartGeneration = -1
@@ -514,6 +515,9 @@ class HostingController private constructor(private val appContext: Context) {
             hostingService = null
         }
         hostingContext = null
+        // Release RG input exclusion only after private teardown. The settled notification below
+        // lets the current live Activity reattach through its existing identity-fenced path.
+        rgPresentationOwned = false
         state = State.NOT_HOSTING
         attachment = Attachment.NONE
         Log.i(TAG, "stop complete gen=$generation")
@@ -543,7 +547,7 @@ class HostingController private constructor(private val appContext: Context) {
     @Synchronized
     fun ensurePhoneUiAttachment(activity: android.app.Activity, container: ViewGroup?,
             currentToken: PhoneBrowserSession.Attachment?): PhoneBrowserSession.Attachment? {
-        if (!phoneUiAvailable || phoneUiActivity !== activity || phoneUiContainer !== container) {
+        if (rgPresentationOwned || !phoneUiAvailable || phoneUiActivity !== activity || phoneUiContainer !== container) {
             return currentToken
         }
         if (state == State.HOSTING && displayHost != null) {
@@ -578,6 +582,74 @@ class HostingController private constructor(private val appContext: Context) {
         return currentToken
     }
 
+    /** T02: real RG measurement owns this immutable epoch, even while Phone is visible. */
+    private var rgPresentationOwned = false
+
+    @Synchronized
+    fun isRgPresentationOwned(): Boolean = rgPresentationOwned
+
+    @Synchronized
+    fun presentOnRg(profile: HostingPresentationProfile): Boolean {
+        check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
+        if (state != State.HOSTING) return false
+        if (rgPresentationOwned && presentationEpochs.current?.profile == profile) return true
+        if (lease != null || displayHost?.isOwnerActive() == true || displayHost?.isRetiring() == true) return false
+        val old = displayHost ?: return false
+        // Retire callbacks by epoch BEFORE releasing the prior presentation. No new WebView/load.
+        val epoch = presentationEpochs.begin(generation, profile)
+        rgPresentationOwned = true
+        old.release(session)
+        if (!old.isQuiescent()) retiringHosts.add(old)
+        val host = PrivateDisplayHost(resourceFactory, Runnable { onRetirementSignal(epoch) })
+        displayHost = host
+        host.setUnavailableListener(Runnable { onPresentationUnavailable(epoch, host) })
+        return try {
+            host.create(checkNotNull(hostingContext), profile.width, profile.height, profile.densityDpi)
+            host.attachSessionView(session)
+            attachment = Attachment.PRIVATE_DISPLAY
+            notifyHostingChanged()
+            Log.i(TAG, "RG profile=${profile.width}x${profile.height}@${profile.densityDpi} gen=$generation")
+            true
+        } catch (error: RuntimeException) {
+            failureReason = "RG presentation allocation failed"
+            stop()
+            false
+        } catch (error: HostingException) {
+            failureReason = "RG presentation allocation failed"
+            stop()
+            false
+        }
+    }
+
+    /** Explicit handoff: retire private resources before releasing RG input exclusion. */
+    @Synchronized
+    fun presentOnPhone(): Boolean {
+        check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
+        if (measurePhoneControlProfile() == null) return false
+        if (!rgPresentationOwned) return true
+        revokeLease()
+        presentationEpochs.retire()
+        val retired = displayHost
+        retired?.release(session)
+        if (retired != null && !retired.isQuiescent()) retiringHosts.add(retired)
+        rgPresentationOwned = false
+        attachment = Attachment.NONE
+        // The current Activity's normal listener attaches and retains its fresh token.
+        notifyHostingChanged()
+        return session.view()?.parent === phoneUiContainer
+    }
+
+    /** Fresh local measurement for Phone takeover; never substitute a private display profile. */
+    @Synchronized
+    fun measurePhoneControlProfile(): com.code2hack.eyebrowse.core.link.presentation.PresentationProfile? {
+        val container = phoneUiContainer ?: return null
+        if (!phoneUiAvailable || !container.isAttachedToWindow) return null
+        val size = PhoneContentViewport.size(container.width, container.height,
+            container.paddingLeft, container.paddingTop, container.paddingRight, container.paddingBottom)
+        return com.code2hack.eyebrowse.core.link.presentation.PresentationProfile.fromMeasured(
+            size.first,size.second,container.resources.displayMetrics.densityDpi)
+    }
+
     /**
      * Records current Phone content bounds only. Owner identity rejects predecessor callbacks.
      * Private geometry always comes from the immutable generation profile, never these metrics.
@@ -609,8 +681,8 @@ class HostingController private constructor(private val appContext: Context) {
      * for a visible successor.
      */
     @Synchronized
-    fun onPhoneUiHidden(token: PhoneBrowserSession.Attachment?): PhoneBrowserSession.Attachment? {
-        if (token == null || token !== uiOwnerToken) {
+    fun onPhoneUiHidden(token: PhoneBrowserSession.Attachment?, activity: android.app.Activity? = null): PhoneBrowserSession.Attachment? {
+        if (!(activity != null && activity === phoneUiActivity) && (token == null || token !== uiOwnerToken)) {
             return token // Not the registered UI owner; a successor (or nobody) owns the slot.
         }
         phoneUiAvailable = false
@@ -628,8 +700,8 @@ class HostingController private constructor(private val appContext: Context) {
      * {@link #moveWebViewToPrivateDisplay}.
      */
     @Synchronized
-    fun onPhoneUiDestroyed(token: PhoneBrowserSession.Attachment?): PhoneBrowserSession.Attachment? {
-        if (token != null && token === uiOwnerToken) {
+    fun onPhoneUiDestroyed(token: PhoneBrowserSession.Attachment?, activity: android.app.Activity? = null): PhoneBrowserSession.Attachment? {
+        if ((activity != null && activity === phoneUiActivity) || (token != null && token === uiOwnerToken)) {
             phoneUiAvailable = false
             phoneUiActivity = null
             phoneUiContainer = null
@@ -702,7 +774,7 @@ class HostingController private constructor(private val appContext: Context) {
     fun moveWebViewToPhoneUi(activity: android.app.Activity,
             container: ViewGroup?): PhoneBrowserSession.Attachment? {
         Log.i(TAG, "moveToPhoneUi state=$state attachment=$attachment")
-        if (state != State.HOSTING || !phoneUiAvailable || phoneUiActivity !== activity ||
+        if (rgPresentationOwned || state != State.HOSTING || !phoneUiAvailable || phoneUiActivity !== activity ||
                 phoneUiContainer !== container) {
             return null // A stale Activity cannot reclaim a successor's presentation.
         }
@@ -893,8 +965,10 @@ class HostingController private constructor(private val appContext: Context) {
             } else {
                 // Old callbacks may complete ONLY retired resources, not the current host.
                 synchronized(this) {
+                    val before = retiringHosts.size
                     for (host in retiringHosts.toList()) host.evaluateRetirementCompletion()
                     pruneQuiescedRetiringHostsLocked()
+                    if (before != retiringHosts.size) notifyHostingChanged()
                     if (retiringHosts.any { it.isRetiring() }) {
                         mainHandler.postDelayed({ onRetirementSignal(epoch) }, RETIREMENT_RECHECK_MS)
                     }
