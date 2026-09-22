@@ -248,7 +248,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Worker",
-    "scope": "v0.01; persistent ticket Worker for RG-chain issues (issue #7 delivered: T01-T04); binding gpt-6-astra/max (Owner static directive)",
+    "scope": "v0.01; persistent ticket Worker for RG-chain issues (issue #7 delivered: T01-T04); binding gpt-6-astra/ultra (Owner static directive, 20260922)",
     "host": "u4090",
     "runtime": "codex",
     "id": "01a0bfdf-0ba4-78d0-9eb1-ff54e9ddad16",
