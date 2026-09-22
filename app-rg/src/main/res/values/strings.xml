@@ -17,4 +17,8 @@
     <string name="browser_back">Back</string>
     <string name="browser_forward">Forward</string>
     <string name="browser_reload">Reload</string>
+    <string name="pointer_recenter">Recenter</string>
+    <string name="pointer_ready">Head pointer ready</string>
+    <string name="pointer_unavailable">Head tracking unavailable</string>
+    <string name="input_unavailable">Action unavailable — try again</string>
 </resources>

@@ -9,7 +9,7 @@ window.__t03Geometry=()=>{const scale=devicePixelRatio*visualViewport.scale;cons
 window.__t03Title=base=>{window.__t03Base=base;document.title=base+'|G='+JSON.stringify(window.__t03Geometry());};
 window.__t03Refresh=()=>window.__t03Title(window.__t03Base||'T03 A');
 note('load:A');addEventListener('pageshow',()=>{note('show:A');window.__t03Refresh();});addEventListener('resize',window.__t03Refresh);visualViewport.addEventListener('resize',window.__t03Refresh);let clicks=0;
-document.getElementById('action').onclick=()=>{clicks++;note('click:A:'+clicks);window.__t03Title('T03 A click '+clicks);};
+document.getElementById('action').onclick=()=>{clicks++;document.getElementById('action').textContent='Activate A '+clicks;note('click:A:'+clicks);window.__t03Title('T03 A click '+clicks);};
 document.getElementById('next').href='/control-two.html?case='+encodeURIComponent(nonce);
 onscroll=()=>{note('scroll:A:'+Math.round(scrollY));window.__t03Title('T03 A scroll '+Math.round(scrollY));};
 window.__t03Title('T03 A');

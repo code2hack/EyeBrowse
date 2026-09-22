@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent">
+<LinearLayout
     android:id="@+id/rg_root" android:layout_width="match_parent" android:layout_height="match_parent"
     android:orientation="vertical" android:background="@android:color/black">
     <TextView android:id="@+id/rg_status" android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -9,6 +11,13 @@
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
         <Button android:id="@+id/rg_retry" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/rg_retry" />
         <Button android:id="@+id/button_scan_pair" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/rg_action_scan_pair" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:orientation="horizontal">
+        <Button android:id="@+id/rg_recenter" android:layout_width="wrap_content" android:layout_height="match_parent"
+            android:text="@string/pointer_recenter" />
+        <TextView android:id="@+id/rg_pointer_status" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="match_parent" android:gravity="center_vertical" android:maxLines="2"
+            android:text="@string/pointer_unavailable" android:textColor="@color/rg_text_secondary" android:textSize="12sp" />
     </LinearLayout>
     <Button android:id="@+id/rg_handoff" android:layout_width="match_parent" android:layout_height="48dp"
         android:text="@string/use_on_glasses" android:enabled="false" android:maxLines="1" />
@@ -20,3 +29,6 @@
     <ImageView android:id="@+id/rg_page" android:layout_width="match_parent" android:layout_height="0dp"
         android:layout_weight="1" android:scaleType="center" android:contentDescription="@string/rg_page_description" />
 </LinearLayout>
+<com.code2hack.eyebrowse.rg.PointerOverlay android:id="@+id/rg_pointer"
+    android:layout_width="match_parent" android:layout_height="match_parent" />
+</FrameLayout>

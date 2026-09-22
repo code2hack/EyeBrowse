@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.view.WindowInsets
+import android.view.KeyEvent
 import android.widget.*
 import com.code2hack.eyebrowse.rg.pairing.RgPairingActivity
 import com.code2hack.eyebrowse.core.link.messages.BrowserStateMessage
@@ -14,15 +15,30 @@ import com.code2hack.eyebrowse.core.link.control.ControlOwner
 class MainActivity : Activity() {
     lateinit var presentation: RgPresentationController
         private set
+    private lateinit var pointer: PointerOverlay
+    internal lateinit var inputRouter: RgInputRouter
+        private set
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         val root = findViewById<View>(R.id.rg_root)
+        pointer = findViewById(R.id.rg_pointer)
+        fun pointerBounds() = pointer.bounds(root.paddingLeft.toFloat(),root.paddingTop.toFloat(),
+            (root.width-root.paddingRight).coerceAtLeast(root.paddingLeft).toFloat(),
+            (root.height-root.paddingBottom).coerceAtLeast(root.paddingTop).toFloat(),display?.rotation ?: 0)
         root.setOnApplyWindowInsetsListener { view, insets ->
             val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
             view.setPadding(bars.left,bars.top,bars.right,bars.bottom)
+            pointerBounds()
             insets
         }
+        root.addOnLayoutChangeListener { _,_,_,_,_,_,_,_,_ -> pointerBounds() }
+        pointer.onAvailabilityChanged = { available ->
+            findViewById<TextView>(R.id.rg_pointer_status).setText(
+                if(available) R.string.pointer_ready else R.string.pointer_unavailable)
+            if(!available && ::inputRouter.isInitialized) inputRouter.cancel()
+        }
+        findViewById<Button>(R.id.rg_recenter).setOnClickListener { pointer.recenter() }
         val image = findViewById<ImageView>(R.id.rg_page)
         val status = findViewById<TextView>(R.id.rg_status)
         val location = findViewById<TextView>(R.id.rg_detail)
@@ -39,6 +55,7 @@ class MainActivity : Activity() {
                 findViewById<Button>(R.id.rg_back).isEnabled = presentation.canAct() && state.canGoBack
                 findViewById<Button>(R.id.rg_forward).isEnabled = presentation.canAct() && state.canGoForward
                 findViewById<Button>(R.id.rg_reload).isEnabled = presentation.canAct()
+                if(::inputRouter.isInitialized) inputRouter.surfaceChanged()
             }
             override fun frame(bitmap: android.graphics.Bitmap) { image.setImageBitmap(bitmap) }
         })
@@ -58,7 +75,22 @@ class MainActivity : Activity() {
             startActivity(Intent(this,RgPairingActivity::class.java))
             finish()
         }
+        inputRouter=RgInputRouter(this,pointer,presentation) { accepted ->
+            findViewById<TextView>(R.id.rg_pointer_status).setText(when {
+                !pointer.inputPosition().available -> R.string.pointer_unavailable
+                accepted -> R.string.pointer_ready
+                else -> R.string.input_unavailable
+            })
+        }
     }
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean =
+        if(::inputRouter.isInitialized && inputRouter.key(event)) true else super.dispatchKeyEvent(event)
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if(::inputRouter.isInitialized) inputRouter.focus(hasFocus)
+    }
+    override fun onResume() { super.onResume();pointer.start();inputRouter.resume() }
+    override fun onPause() { inputRouter.pause();pointer.stop();super.onPause() }
     override fun onStop() { presentation.pause(); super.onStop() }
-    override fun onDestroy() { presentation.close(); super.onDestroy() }
+    override fun onDestroy() { inputRouter.pause();pointer.stop();presentation.close(); super.onDestroy() }
 }
