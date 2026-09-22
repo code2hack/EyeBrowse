@@ -152,22 +152,34 @@ class PointerGestureInstrumentedTest {
     }
     @Test fun changedConsentMeaningAndContextCancelBeforeTypedRequest() = scene { s ->
         val state=s.phoneState();s.aim(R.id.rg_handoff);s.tap()
+        s.await("one fresh typed glasses request") { it.presentation.lastHandoffRequest!=null }
+        lateinit var glassesRequest: HandoffRequestMessage
+        s.main {
+            glassesRequest=checkNotNull(it.presentation.lastHandoffRequest)
+            assertEquals(HandoffTargetWire.RG,glassesRequest.target)
+            assertEquals(state.context.controlEpoch,glassesRequest.observedControlEpoch)
+            assertEquals(it.presentation.profile(),glassesRequest.profile)
+            assertEquals(1L,it.inputRouter.nativeInvocations)
+            assertFalse("no page input before an authoritative grant and frame",it.presentation.canAct())
+            assertNull(it.presentation.lastHandoffResult)
+        }
+        s.tap()
         s.main { it.findViewById<Button>(R.id.rg_handoff).setText(R.string.use_on_phone);it.inputRouter.surfaceChanged() }
-        s.waitConfirmation();s.main { assertNull(it.presentation.lastHandoffRequest);assertEquals(0L,it.inputRouter.nativeInvocations) }
+        s.waitConfirmation();s.main { assertSame(glassesRequest,it.presentation.lastHandoffRequest);assertEquals(1L,it.inputRouter.nativeInvocations) }
         s.main { it.presentation.onControl(state.copy(title="restore local fixture")) }
         s.await("original meaning restored") { it.findViewById<Button>(R.id.rg_handoff).text.toString()==it.getString(R.string.use_on_glasses) }
         s.tap()
         s.main { it.presentation.onControl(state.copy(owner=ControlOwner.RG,context=state.context.copy(controlEpoch=2,documentId="B"))) }
-        s.waitConfirmation();s.main { assertNull(it.presentation.lastHandoffRequest);assertEquals(0L,it.inputRouter.nativeInvocations) }
+        s.waitConfirmation();s.main { assertSame(glassesRequest,it.presentation.lastHandoffRequest);assertEquals(1L,it.inputRouter.nativeInvocations) }
         // Fresh deliberate activation invokes the real existing handoff method. There is no socket in this RG-only fixture.
-        s.tap();s.await("one fresh typed return request") { it.presentation.lastHandoffRequest!=null }
+        s.tap();s.await("one fresh typed return request") { it.presentation.lastHandoffRequest?.target==HandoffTargetWire.PHONE }
         s.main {
             assertEquals(HandoffTargetWire.PHONE,it.presentation.lastHandoffRequest!!.target)
             assertEquals(2L,it.presentation.lastHandoffRequest!!.observedControlEpoch)
-            assertEquals(1L,it.inputRouter.nativeInvocations)
+            assertEquals(2L,it.inputRouter.nativeInvocations)
             assertFalse(it.presentation.canAct());assertNull(it.presentation.lastHandoffResult)
         }
-        Log.i("EyeBrowseGestureTest","CONSENT localSyntheticState=true staleLabel=0 staleContext=0 freshRequest=PHONE actualLink=false")
+        Log.i("EyeBrowseGestureTest","CONSENT localSyntheticState=true staleLabel=0 staleContext=0 freshRequests=RG,PHONE actualLink=false")
     }
     @Test fun pauseSilenceAndModalOcclusionCancelWithoutRecoveryReplay() {
         for(reason in listOf("pause","silence","modal")) scene { s ->
