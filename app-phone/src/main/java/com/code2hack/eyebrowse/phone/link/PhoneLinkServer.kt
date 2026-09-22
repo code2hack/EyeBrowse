@@ -89,8 +89,8 @@ class PhoneLinkServer(
             loading=browserSession?.isLoading() ?: false, stale=state.presentationStatus != PresentationStatus.READY,
             error=browserSession?.errorMessage()?.take(512)))) session.close()
     }
-    private val hostingListener = HostingController.Listener {
-        val before = controlCoordinator.authority.snapshot().context
+    /** Pull actual Hosting state at lifecycle/admission boundaries, including missed Stop events. */
+    private fun reconcileHostingAuthority() {
         hostingController?.status()?.let {
             controlCoordinator.authority.setHostingGeneration(it.generation.toLong(), it.state == HostingController.State.HOSTING)
             if (it.state == HostingController.State.NOT_HOSTING) {
@@ -103,6 +103,11 @@ class PhoneLinkServer(
                 }
             }
         }
+    }
+
+    private val hostingListener = HostingController.Listener {
+        val before = controlCoordinator.authority.snapshot().context
+        reconcileHostingAuthority()
         if (before != controlCoordinator.authority.snapshot().context) {
             authenticatedSession?.setPresentation(null,null)
             notifyLinkObservers()
@@ -137,9 +142,7 @@ class PhoneLinkServer(
                 try {
                     synchronized(controlCoordinator.authority) {
                         if (authenticatedSession !== session) return@post
-                        hostingController?.status()?.let {
-                            controlCoordinator.authority.setHostingGeneration(it.generation.toLong(), it.state == HostingController.State.HOSTING)
-                        }
+                        reconcileHostingAuthority()
                         processControl(message)?.let { response ->
                             if (!session.sendControl(response)) session.close()
                         }
@@ -170,6 +173,7 @@ class PhoneLinkServer(
     /** Phone-local explicit takeover works even after the RG link is lost. */
     fun useOnPhone(): HandoffResultMessage = synchronized(controlCoordinator.authority) {
         check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
+        reconcileHostingAuthority()
         val epoch = controlCoordinator.authority.snapshot().controlEpoch
         val result = processControl(HandoffRequestMessage(HandoffTargetWire.PHONE,epoch)) as HandoffResultMessage
         authenticatedSession?.sendControl(result)
@@ -259,6 +263,8 @@ class PhoneLinkServer(
     @Synchronized
     fun start() {
         controlCoordinator.onLinkStarting()
+        reconcileHostingAuthority()
+        notifyLinkObservers()
         if (engine != null) return
         // Validate/repair only at use time. Construction must survive an inadequate VALID/CORRUPT
         // alias so PairingActivity can still expose the explicit Forget recovery control.
