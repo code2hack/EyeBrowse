@@ -148,13 +148,13 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Reviewer",
-    "scope": "v0.0.1",
+    "scope": "v0.0.1 | RETIRED 20260922 at Owner direction, replaced by local Reviewer-v0.0.1; verdict history retained in issue threads (#7/#8); conversation archived",
     "host": "chatgpt.com",
     "runtime": "chatgpt",
     "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70-eyebrowse/c/6aaa1b2a-6628-83ea-b1a3-2296c513bd85",
     "model": "gpt-6-pro (Latest channel, pill \"Pro\"; verified 20260922; thinking Extra High)",
     "name": "v0.0.1 Reviewer",
-    "status": "active"
+    "status": "retired"
   },
   {
     "role": "Expert",
@@ -264,6 +264,16 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70-eyebrowse/c/6ab111f3-423c-83ea-8d94-1a818786289a",
     "model": "gpt-6-pro (ChatGPT '6 Pro')",
     "name": "Expert-v0.01",
+    "status": "active"
+  },
+  {
+    "role": "Reviewer",
+    "scope": "v0.0.1; local independent exact-head review for RG-chain issues; successor to the retired ChatGPT v0.0.1 Reviewer (verdict history in issue threads); gpt-6-astra/ultra per Owner directive; bootstrap read AGENTS.md/CONTRIBUTORS.md + #8 plan/BLOCKED/supplement records",
+    "host": "u4090",
+    "runtime": "codex",
+    "id": "01a0c8c7-b041-7db2-b644-22ed4343de82",
+    "model": "gpt-6-astra",
+    "name": "Reviewer-v0.0.1",
     "status": "active"
   }
 ]
