@@ -26,12 +26,58 @@ import kotlin.math.abs
 /** All positive browser operations use raw pose -> actual Activity KeyEvent -> production router -> TLS. */
 @RunWith(AndroidJUnit4::class)
 class PointerBrowserJourneyTest {
+    /** Test-only delegates retain the original callbacks and synchronous durable reservation. */
+    @Suppress("UNCHECKED_CAST")
+    private class DispatchProbe(private val router:RgInputRouter,peer:RgPresentationController) : AutoCloseable {
+        data class Sample(val entry:Long,val cpuEntry:Long,var persistEntry:Long=-1,var persistExit:Long=-1,
+            var persistCpu:Long=-1,var persistOk:Boolean?=null,var emitted:Long=-1,var cpuTotal:Long=-1,
+            var trace:RgInputRouter.DispatchTrace?=null)
+        private val restore=mutableListOf<()->Unit>()
+        private var active:Sample?=null
+        var last:Sample?=null
+            private set
+        init {
+            val field=RgPresentationController::class.java.getDeclaredField("commands").apply { isAccessible=true }
+            val sequence=field.get(peer)
+            val persist=CommandSequence::class.java.getDeclaredField("persist").apply { isAccessible=true }
+            val original=persist.get(sequence) as (CommandSequence.Cursor)->Boolean
+            persist.set(sequence,{ cursor:CommandSequence.Cursor ->
+                val sample=active;val cpu=SystemClock.currentThreadTimeMillis()
+                sample?.persistEntry=SystemClock.uptimeMillis()
+                try { original(cursor).also { sample?.persistOk=it } }
+                finally { sample?.persistExit=SystemClock.uptimeMillis();sample?.persistCpu=SystemClock.currentThreadTimeMillis()-cpu }
+            })
+            restore.add { persist.set(sequence,original) }
+            val gestures=RgInputRouter::class.java.getDeclaredField("gestures").apply { isAccessible=true }.get(router)
+            for(name in listOf("single","scroll")) {
+                val callback=PadGestureRecognizer::class.java.getDeclaredField(name).apply { isAccessible=true }
+                val delegate=callback.get(gestures) as (Any?)->Unit
+                callback.set(gestures,{ argument:Any? ->
+                    val sample=Sample(SystemClock.uptimeMillis(),SystemClock.currentThreadTimeMillis())
+                    val previous=router.lastDispatch;active=sample
+                    try { delegate(argument) }
+                    finally {
+                        sample.emitted=SystemClock.uptimeMillis();sample.cpuTotal=SystemClock.currentThreadTimeMillis()-sample.cpuEntry
+                        sample.trace=router.lastDispatch?.takeIf { it!==previous };last=sample;active=null
+                        val trace=sample.trace
+                        Log.i(TAG,"DISPATCH_EMIT kind=$name entry=${sample.entry} confirmed=${trace?.confirmedAt} " +
+                            "persistStart=${sample.persistEntry} persistEnd=${sample.persistExit} persistCpuMs=${sample.persistCpu} " +
+                            "persistOk=${sample.persistOk} finish=${trace?.finishedAt} emitted=${sample.emitted} " +
+                            "cpuTotalMs=${sample.cpuTotal} accepted=${trace?.accepted}")
+                    }
+                })
+                restore.add { callback.set(gestures,delegate) }
+            }
+        }
+        override fun close() { restore.asReversed().forEach { it() } }
+    }
     private class Journey(val scenario: ActivityScenario<MainActivity>) {
         val source=RawPoseReplay()
         val pad=InputDevice.getDeviceIds().toList().mapNotNull(InputDevice::getDevice).first { it.name=="ROKID,PSOC-TP-R" }
         lateinit var peer:RgPresentationController
         lateinit var pointer:PointerOverlay
         lateinit var activity:MainActivity
+        var probe:DispatchProbe?=null
         val app=InstrumentationRegistry.getInstrumentation().targetContext
         val mission=UUID.fromString(InstrumentationRegistry.getArguments().getString("missionId")).toString()
         val cursor get() = app.getSharedPreferences("browser-command-sequence",0).all.toMap()
@@ -46,6 +92,7 @@ class PointerBrowserJourneyTest {
                 activity=it;peer=it.presentation;pointer=it.findViewById(R.id.rg_pointer)
                 pointer.stop();pointer.replaceSourceForTest(source);pointer.start()
                 assertEquals("declared RG mounting rotation",Surface.ROTATION_0,it.display!!.rotation)
+                probe=DispatchProbe(it.inputRouter,peer)
             }
             await("focused surface/fresh raw replay") { activity.hasWindowFocus() && pointer.position.available }
         }
@@ -92,9 +139,17 @@ class PointerBrowserJourneyTest {
         fun dispatched(tap:Tap,name:String):RgInputRouter.DispatchTrace {
             await("confirmed dispatch $name",1_000) { activity.inputRouter.lastDispatch !== tap.previous }
             lateinit var trace:RgInputRouter.DispatchTrace
-            main { trace=checkNotNull(it.inputRouter.lastDispatch);assertTrue("eligible $name",trace.accepted)
-                assertTrue("enqueue/local invocation <=100ms",trace.finishedAt-trace.confirmedAt<=100) }
-            Log.i(TAG,"DISPATCH name=$name localMs=${trace.finishedAt-trace.confirmedAt} recognitionMs=${trace.recognitionWaitMs} down=${tap.down} confirm=${trace.confirmedAt}")
+            main {
+                trace=checkNotNull(it.inputRouter.lastDispatch)
+                val observed=SystemClock.uptimeMillis();val sample=checkNotNull(probe?.last)
+                assertSame("emission corresponds to this exact dispatch",trace,sample.trace)
+                Log.i(TAG,"DISPATCH name=$name localMs=${trace.finishedAt-trace.confirmedAt} recognitionMs=${trace.recognitionWaitMs} " +
+                    "down=${tap.down} entry=${sample.entry} confirm=${trace.confirmedAt} persistStart=${sample.persistEntry} " +
+                    "persistEnd=${sample.persistExit} finish=${trace.finishedAt} emitted=${sample.emitted} observed=$observed " +
+                    "observationLagMs=${observed-trace.finishedAt} cpuTotalMs=${sample.cpuTotal}")
+                assertTrue("eligible $name",trace.accepted)
+                assertTrue("enqueue/local invocation <=100ms: $name actual=${trace.finishedAt-trace.confirmedAt}ms",trace.finishedAt-trace.confirmedAt<=100)
+            }
             return trace
         }
         fun contextDuringTap(tap:Tap,name:String,changed:(BrowserStateMessage)->Boolean):Long {
@@ -343,7 +398,7 @@ class PointerBrowserJourneyTest {
             Log.i(TAG,"RG_I8_PASS realTls=true pointerActions=true allNegatives=true")
         } catch(failure:Throwable) { primary=failure;Log.e(TAG,"PRIMARY_FAILURE",failure);throw failure }
         finally {
-            val errors=listOf<()->Unit>({scenario.close()},{ack.delete();assertFalse(ack.exists())}).mapNotNull { runCatching(it).exceptionOrNull() }
+            val errors=listOf<()->Unit>({j.main { j.probe?.close() }},{scenario.close()},{ack.delete();assertFalse(ack.exists())}).mapNotNull { runCatching(it).exceptionOrNull() }
             if(primary!=null) errors.forEach { primary!!.addSuppressed(it) } else if(errors.isNotEmpty()) throw errors.first()
         }
     }
