@@ -14,15 +14,27 @@ import com.code2hack.eyebrowse.core.link.control.ControlOwner
 class MainActivity : Activity() {
     lateinit var presentation: RgPresentationController
         private set
+    private lateinit var pointer: PointerOverlay
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         val root = findViewById<View>(R.id.rg_root)
+        pointer = findViewById(R.id.rg_pointer)
+        fun pointerBounds() = pointer.bounds(root.paddingLeft.toFloat(),root.paddingTop.toFloat(),
+            (root.width-root.paddingRight).coerceAtLeast(root.paddingLeft).toFloat(),
+            (root.height-root.paddingBottom).coerceAtLeast(root.paddingTop).toFloat(),display?.rotation ?: 0)
         root.setOnApplyWindowInsetsListener { view, insets ->
             val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
             view.setPadding(bars.left,bars.top,bars.right,bars.bottom)
+            pointerBounds()
             insets
         }
+        root.addOnLayoutChangeListener { _,_,_,_,_,_,_,_,_ -> pointerBounds() }
+        pointer.onAvailabilityChanged = { available ->
+            findViewById<TextView>(R.id.rg_pointer_status).setText(
+                if(available) R.string.pointer_ready else R.string.pointer_unavailable)
+        }
+        findViewById<Button>(R.id.rg_recenter).setOnClickListener { pointer.recenter() }
         val image = findViewById<ImageView>(R.id.rg_page)
         val status = findViewById<TextView>(R.id.rg_status)
         val location = findViewById<TextView>(R.id.rg_detail)
@@ -59,6 +71,8 @@ class MainActivity : Activity() {
             finish()
         }
     }
+    override fun onResume() { super.onResume();pointer.start() }
+    override fun onPause() { pointer.stop();super.onPause() }
     override fun onStop() { presentation.pause(); super.onStop() }
-    override fun onDestroy() { presentation.close(); super.onDestroy() }
+    override fun onDestroy() { pointer.stop();presentation.close(); super.onDestroy() }
 }
