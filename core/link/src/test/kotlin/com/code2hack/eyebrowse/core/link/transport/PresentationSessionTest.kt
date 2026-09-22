@@ -10,7 +10,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PresentationSessionTest {
-    private val hello = HelloMessage(1,1,LinkProtocol.ALL_CAPABILITIES)
+    private val hello = HelloMessage(LinkProtocol.MAJOR,LinkProtocol.MINOR,LinkProtocol.ALL_CAPABILITIES)
     private val timings = Harness.FAST_TIMINGS.copy(livenessTimeoutMs=5_000)
 
     @Test fun rememberedLegacyTrustReconnectsWithPresentationCapabilitiesWithoutNewInvitation() {
@@ -92,7 +92,7 @@ class PresentationSessionTest {
             val raw=Harness.RawClient(port,server.identity.spkiSha256Hex())
             try {
                 val invitation=server.generateInvitation()
-                raw.sendHello(caps=LinkProtocol.ALL_CAPABILITIES);raw.expectChallenge()
+                raw.sendHello(major=hello.pmj,minor=hello.pmm,caps=hello.caps);raw.expectChallenge()
                 raw.sendPairAuth(invitation.first,invitation.second,helloOverride=hello)
                 assertTrue(raw.readMessage() is AuthOkMessage)
                 assertTrue(raw.readNegotiatedRecord() is LinkRecord.Control)
