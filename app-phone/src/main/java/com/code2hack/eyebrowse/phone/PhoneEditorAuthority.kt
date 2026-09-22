@@ -23,19 +23,21 @@ class PhoneEditorAuthority {
     fun isOpening(request: Opening) = phase == Phase.OPENING && opening == request
     fun isRevoking(barrier: Revocation) = revocation === barrier
 
-    fun beginOpen(state: ControlSnapshot, connection: Long, profileTransition: Boolean = false): Opening? {
-        if (phase != Phase.EMPTY || !eligible(state, profileTransition) || transition >= Long.MAX_VALUE - 1) return null
+    fun beginOpen(state: ControlSnapshot, connection: Long, profileTransition: Boolean = false,
+                  localFocusReady: Boolean = true): Opening? {
+        if (phase != Phase.EMPTY || !localFocusReady || !eligible(state, profileTransition) || transition >= Long.MAX_VALUE - 1) return null
         transition++
         return Opening(UUID.randomUUID().toString(), state.context, connection, transition, profileTransition).also {
             opening = it; issuedToken = it.id; phase = Phase.OPENING
         }
     }
 
-    fun opened(request: Opening, answer: Grant?, state: ControlSnapshot, connection: Long): Boolean {
+    fun opened(request: Opening, answer: Grant?, state: ControlSnapshot, connection: Long,
+               localFocusReady: Boolean = true): Boolean {
         if (phase != Phase.OPENING || opening != request) return false
         opening = null
         if (answer == null || answer.opening != request || answer.target.token != request.id ||
-            request.context != state.context || request.connection != connection || !eligible(state, request.profileTransition)) {
+            request.context != state.context || request.connection != connection || !localFocusReady || !eligible(state, request.profileTransition)) {
             phase = Phase.UNCERTAIN // The renderer may have granted; require a revoke barrier.
             return false
         }
@@ -44,9 +46,10 @@ class PhoneEditorAuthority {
     }
 
     /** Called only AFTER BrowserControlCoordinator consumes the canonical current ordinal. */
-    fun beginEdit(id: String, target: EditorTarget, state: ControlSnapshot, connection: Long): Pending? {
+    fun beginEdit(id: String, target: EditorTarget, state: ControlSnapshot, connection: Long,
+                  localFocusReady: Boolean = true): Pending? {
         val current = grant ?: return null
-        if (phase != Phase.READY || current.target != target || current.opening.context != state.context ||
+        if (phase != Phase.READY || !localFocusReady || current.target != target || current.opening.context != state.context ||
             current.opening.connection != connection || !eligible(state)) return null
         return Pending(id, current).also { pending = it; phase = Phase.PENDING }
     }

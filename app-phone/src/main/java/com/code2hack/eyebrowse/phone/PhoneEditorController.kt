@@ -24,6 +24,9 @@ class PhoneEditorController(
     private val closing = ArrayList<(Boolean) -> Unit>()
     private val observe = Runnable { observeCurrent() }
     private var awaitingProfile: ControlContext? = null
+    private val hosting = HostingController.get(app)
+    private var profilePreparation: Runnable? = null
+    private var cancelProfilePreparation: (() -> Unit)? = null
 
     init {
         val assets = app.applicationContext.assets
@@ -43,7 +46,8 @@ class PhoneEditorController(
                 snapshot.owner == ControlOwner.RG && snapshot.linkAuthenticated && snapshot.hostingActive
         }
         return EditorStateMessage(snapshot.context, current?.target, current?.kind, current?.enter,
-            current != null && authority.phase == PhoneEditorAuthority.Phase.READY && snapshot.presentationStatus == PresentationStatus.READY)
+            current != null && authority.phase == PhoneEditorAuthority.Phase.READY &&
+                hosting.localEditorFocusReady() && snapshot.presentationStatus == PresentationStatus.READY)
     }
 
     private fun changed() {
@@ -56,13 +60,40 @@ class PhoneEditorController(
     fun openAfterActivation(activation: BrowserAction.ActivateAt, callback: (Boolean) -> Unit = {}) =
         open(activation, null, callback)
 
-    fun resumeAfterProfile(previousTarget: EditorTarget, callback: (Boolean) -> Unit = {}) =
-        open(null, previousTarget, callback)
+    fun resumeAfterProfile(previousTarget: EditorTarget, callback: (Boolean) -> Unit = {}) {
+        checkMain()
+        cancelProfilePreparation?.invoke()
+        val context = state().context
+        val link = connection()
+        val started = android.os.SystemClock.elapsedRealtime()
+        var done = false
+        fun finish(ready: Boolean) {
+            if (done) return
+            done = true
+            profilePreparation?.let(main::removeCallbacks)
+            profilePreparation = null; cancelProfilePreparation = null
+            android.util.Log.i("EyeBrowseEditor", "profile focus settle ms=${android.os.SystemClock.elapsedRealtime()-started} ready=$ready")
+            if (ready) open(null, previousTarget, callback) else callback(false)
+        }
+        val check = object : Runnable {
+            override fun run() {
+                if (done) return
+                val latest = state()
+                if (latest.context != context || connection() != link || latest.owner != ControlOwner.RG ||
+                    !latest.linkAuthenticated || !latest.hostingActive || !isQuiescent()) finish(false)
+                else if (hosting.localEditorFocusReady()) finish(true)
+                else if (android.os.SystemClock.elapsedRealtime() - started >= 1000) finish(false)
+                else main.postDelayed(this, 16)
+            }
+        }
+        profilePreparation = check; cancelProfilePreparation = { finish(false) }; check.run()
+    }
 
     private fun open(activation: BrowserAction.ActivateAt?, previousTarget: EditorTarget?, callback: (Boolean) -> Unit) {
         checkMain()
         val adapter = adapter ?: return callback(false)
-        val opening = authority.beginOpen(state(), connection(), profileTransition = previousTarget != null) ?: return callback(false)
+        val opening = authority.beginOpen(state(), connection(), profileTransition = previousTarget != null,
+            localFocusReady = hosting.localEditorFocusReady()) ?: return callback(false)
         awaitingProfile = if (previousTarget != null) opening.context else null
         var reported = false
         fun report(ok: Boolean) { if (!reported) { reported = true; callback(ok) } }
@@ -88,7 +119,7 @@ class PhoneEditorController(
                     result.revision != null && result.kind != null && result.enter != null && result.instance == instance)
                     PhoneEditorAuthority.Grant(opening, EditorTarget(opening.id, result.generation), instance,
                         result.revision, result.kind, result.enter) else null
-                val ready = authority.opened(opening, granted, state(), connection())
+                val ready = authority.opened(opening, granted, state(), connection(), hosting.localEditorFocusReady())
                 if (!ready && authority.phase != PhoneEditorAuthority.Phase.EMPTY) close { }
                 changed(); report(ready)
             }
@@ -99,7 +130,7 @@ class PhoneEditorController(
     fun execute(message: BrowserActionMessage, callback: (BrowserActionResultMessage) -> Unit) {
         checkMain()
         val edit = message.action as BrowserAction.Edit
-        val operation = authority.beginEdit(message.commandId, edit.target, state(), connection())
+        val operation = authority.beginEdit(message.commandId, edit.target, state(), connection(), hosting.localEditorFocusReady())
         val adapter = adapter
         if (operation == null || adapter == null) {
             callback(BrowserActionResultMessage(message.commandId, false, reason = "EDITOR_NOT_READY")); return
@@ -118,7 +149,8 @@ class PhoneEditorController(
             main.removeCallbacks(timeout)
             val correlated = result.commandId == message.commandId && result.instance == operation.grant.instance &&
                 result.token == operation.grant.target.token && result.generation == operation.grant.target.focusGeneration
-            val completed = authority.completed(operation, if (correlated) result.revision else null, correlated && result.ready)
+            val completed = authority.completed(operation, if (correlated) result.revision else null,
+                correlated && result.ready && hosting.localEditorFocusReady())
             if (!completed) {
                 // Resolve the original transport callback without touching the successor.
                 report(null, "EDITOR_UNCERTAIN"); return@edit
@@ -137,6 +169,7 @@ class PhoneEditorController(
     /** Completion means the old renderer grant cannot subsequently act, not just native reset. */
     fun close(retainForProfile: Boolean = false, callback: (Boolean) -> Unit) {
         checkMain()
+        cancelProfilePreparation?.invoke()
         main.removeCallbacks(observe)
         awaitingProfile = null
         if (isQuiescent()) return callback(true)
@@ -175,11 +208,22 @@ class PhoneEditorController(
         val current = authority.grant ?: return
         val latest = state()
         if (current.opening.context != latest.context || current.opening.connection != connection() ||
-            !latest.linkAuthenticated || latest.owner != ControlOwner.RG || !latest.hostingActive ||
+            !latest.linkAuthenticated || latest.owner != ControlOwner.RG || !latest.hostingActive || !hosting.localEditorFocusReady() ||
             (latest.presentationStatus != PresentationStatus.READY && awaitingProfile != latest.context)) close { }
         else if (awaitingProfile == latest.context && latest.presentationStatus == PresentationStatus.READY) {
             awaitingProfile = null; changed()
         }
+    }
+
+    /** Called only by the current presentation generation. No renderer/IO under the host lock. */
+    fun onLocalFocusChanged() {
+        checkMain()
+        if (!hosting.localEditorFocusReady() && !isQuiescent()) {
+            val barrier = authority.revoke() // Fence an opening/in-flight edit synchronously.
+            main.post {
+                if (authority.isRevoking(barrier)) close { }
+            } // A retired focus callback cannot close a successor; renderer work is outside locks.
+        } else main.post { changed() } // Availability alone never opens/reopens an editor.
     }
 
     private fun observeCurrent() {

@@ -498,12 +498,14 @@ class HostingController private constructor(private val appContext: Context) {
         if (!session.editorQuiescent()) {
             if (!editorStopPending) {
                 editorStopPending = true
-                session.retireEditor { verified ->
-                    synchronized(this) {
-                        editorStopPending = false
-                        if (verified) completeStop() else {
-                            failureReason = "Editor retirement unconfirmed"
-                            notifyHostingChanged()
+                mainHandler.post {
+                    session.retireEditor { verified ->
+                        synchronized(this) {
+                            editorStopPending = false
+                            if (verified) completeStop() else {
+                                failureReason = "Editor retirement unconfirmed"
+                                notifyHostingChanged()
+                            }
                         }
                     }
                 }
@@ -623,6 +625,12 @@ class HostingController private constructor(private val appContext: Context) {
             localFocusForRg = true)
         displayHost = host
         host.setUnavailableListener(Runnable { onPresentationUnavailable(epoch, host) })
+        host.setLocalFocusListener(Runnable {
+            // Main-thread native events are tied to this host/epoch, never to the old Activity.
+            if (displayHost === host && presentationEpochs.current == epoch && rgPresentationOwned) {
+                session.remoteEditor?.onLocalFocusChanged()
+            }
+        })
         return try {
             host.create(checkNotNull(hostingContext), profile.width, profile.height, profile.densityDpi)
             host.attachSessionView(session)
@@ -1105,6 +1113,11 @@ class HostingController private constructor(private val appContext: Context) {
 
     @Synchronized
     fun privateDisplaySnapshot(): PrivateDisplayHost.DisplaySnapshot? = displayHost?.displaySnapshot()
+
+    /** Local private-window readiness, deliberately independent of Phone foreground/keyguard. */
+    @Synchronized
+    fun localEditorFocusReady(): Boolean = state == State.HOSTING && rgPresentationOwned &&
+        presentationEpochs.current != null && displayHost?.localFocusReady(session) == true
 
     // ---------------------------------------------------- lifecycle events
 

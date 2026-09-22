@@ -59,4 +59,32 @@ class PhoneEditorAuthorityTest {
         assertTrue(a.completed(p, null, false)); assertNull(a.grant)
         assertEquals(PhoneEditorAuthority.Phase.UNCERTAIN, a.phase)
     }
+    @Test fun localFocusIsRequiredBeforeOpeningPublishingAndDispatching() {
+        val a = PhoneEditorAuthority()
+        assertNull(a.beginOpen(state, 4, localFocusReady = false))
+        assertEquals(PhoneEditorAuthority.Phase.EMPTY, a.phase)
+        val opening = a.beginOpen(state, 4)!!
+        val g = PhoneEditorAuthority.Grant(opening, EditorTarget(opening.id, 1), "renderer", 0,
+            EditorKind.TEXT, EditorEnter.IMPLICIT_SUBMIT)
+        assertFalse(a.opened(opening, g, state, 4, localFocusReady = false))
+        assertEquals(PhoneEditorAuthority.Phase.UNCERTAIN, a.phase)
+        val barrier = a.revoke(); assertTrue(a.revoked(barrier, true))
+        val fresh = open(a)
+        assertNull(a.beginEdit("old-focus", fresh.target, state, 4, localFocusReady = false))
+        assertEquals(PhoneEditorAuthority.Phase.READY, a.phase)
+    }
+
+    @Test fun focusLossFencesPendingEffectUntilRendererRetirementAndNeverReopens() {
+        val a = PhoneEditorAuthority(); val g = open(a)
+        val pending = a.beginEdit("effect-before-loss", g.target, state, 4)!!
+        val barrier = a.revoke() // Native focus callback closes admission synchronously.
+        assertFalse(a.completed(pending, 1, true))
+        assertNull(a.beginOpen(state, 4, localFocusReady = true))
+        assertNull(a.beginEdit("after-regain", g.target, state, 4))
+        assertFalse(a.revoked(barrier, false))
+        assertEquals(PhoneEditorAuthority.Phase.UNCERTAIN, a.phase)
+        assertTrue(a.revoked(barrier, true))
+        assertEquals(PhoneEditorAuthority.Phase.EMPTY, a.phase)
+        assertNull(a.grant) // Regaining local focus is availability, not explicit activation.
+    }
 }

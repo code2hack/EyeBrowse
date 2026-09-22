@@ -5,8 +5,11 @@
 </head><body><div id="fields"></div>
 <script>
 // Harmless website fixture, not the editing implementation. Values never leave this document.
+const fixtureFocus = HTMLElement.prototype.focus, fixtureBlur = HTMLElement.prototype.blur;
+window.fixtureBoundFocus = {};
 window.resetFields = function () {
-  document.getElementById('fields').innerHTML = '<form id="form"><input id="a" name="a"><input id="p" type="password" name="p"><button id="send" type="submit">Send</button></form><input id="b"><textarea id="t"></textarea><div id="c" contenteditable="true"></div>';
+  document.getElementById('fields').innerHTML = '<form id="form"><input id="a" name="a"><input id="p" type="password" name="p"><button id="send" type="submit">Send</button></form><input id="b"><textarea id="t"></textarea><div id="c" contenteditable="true"></div><input id="p2" type="password"><textarea id="t2"></textarea><div id="c2" contenteditable="true"></div><button id="neutral" type="button">Neutral</button><label id="labelB" for="b">B</label>';
+  for(const id of ['a','b','p','p2','t','t2','c','c2','neutral']) { const e=document.getElementById(id); fixtureBoundFocus[id]=fixtureFocus.bind(e); }
   window.events = []; window.submits = 0; window.submitEvents = 0; window.clicks = 0; window.expectedData = null;
   window.eventTrace = []; window.eventTraceOverflow = false; window.eventPhase = 'fixture-reset'; window.focusoutDepth = 0;
   document.getElementById('form').addEventListener('submit', function (event) { window.submitEvents++; if (!event.defaultPrevented) window.submits++; event.preventDefault(); });
@@ -28,10 +31,45 @@ window.markEventPhase = function (phase) {
 };
 for (const name of ['beforeinput','input','change','focus','blur','focusin','focusout']) document.addEventListener(name, function (event) {
   if (event.type === 'focusout') window.focusoutDepth++;
-  const target = ['a','b','p','t','c','form','send'].includes(event.target.id) ? event.target.id : 'other';
+  const target = ['a','b','p','p2','t','t2','c','c2','neutral','form','send'].includes(event.target.id) ? event.target.id : 'other';
   const source = event.isTrusted ? 'webview-native' : event.type === 'change' && window.focusoutDepth > 0 ? 'adapter-focusout' : 'script-other';
   window.traceEvent({type:event.type,target:target,trusted:event.isTrusted,bubbles:event.bubbles,source:source,insideFocusout:window.focusoutDepth>0});
 }, true);
 document.addEventListener('focusout', function () { window.focusoutDepth = Math.max(0,window.focusoutDepth-1); });
+// A website-origin focus sequence, not an editing engine. The production packet remains
+// bounded JSON data and is executed only by the bundled adapter after the synchronous stimulus.
+window.focusHistoryCase = function(encoded) {
+  const spec=JSON.parse(encoded),a=document.getElementById(spec.a),b=document.getElementById(spec.b);
+  const saved=getSelection().rangeCount===1?getSelection().getRangeAt(0):null;
+  const startNode=saved&&saved.startContainer,endNode=saved&&saved.endContainer;
+  const start=saved&&saved.startOffset,end=saved&&saved.endOffset;
+  const cs=a.selectionStart,ce=a.selectionEnd,kind=a.type;
+  let cycle=null;
+  function move(node) {
+    if(spec.method==='bound')fixtureBoundFocus[node.id]();
+    else if(spec.method==='prototype')HTMLElement.prototype.focus.call(node);
+    else if(spec.method==='label'&&node===b)document.getElementById('labelB').click();
+    else fixtureFocus.call(node);
+  }
+  function transition() {
+    if(spec.method==='body')fixtureBlur.call(a);
+    else if(spec.method==='neutral')fixtureFocus.call(document.getElementById('neutral'));
+    else move(b);
+    const middle=spec.method==='body'?document.body:spec.method==='neutral'?document.getElementById('neutral'):b;
+    const middleReached=document.activeElement===middle;
+    // Unknown-op response is a read-only state snapshot; never inspect/flush the adapter here.
+    const departure=JSON.parse(__eyebrowseEditorV1.request(JSON.stringify({op:'fixture-read-only',instance:spec.instance})));
+    move(a);
+    if(spec.method==='cached'&&saved){getSelection().removeAllRanges();getSelection().addRange(saved);}
+    else if(a.isContentEditable){const r=document.createRange();r.setStart(startNode,start);r.setEnd(endNode,end);getSelection().removeAllRanges();getSelection().addRange(r);}
+    if(!a.isContentEditable)a.setSelectionRange(cs,ce);
+    const after=getSelection().rangeCount===1?getSelection().getRangeAt(0):null;
+    const sameSelection=a.isContentEditable?after&&after.startContainer===startNode&&after.endContainer===endNode&&after.startOffset===start&&after.endOffset===end:a.selectionStart===cs&&a.selectionEnd===ce;
+    cycle={middleReached,retiredAtDeparture:departure.ready===false,sameNode:document.activeElement===a,sameType:a.type===kind,sameSelection:Boolean(sameSelection),sameRange:after===saved};
+  }
+  if(spec.beforeinput)a.addEventListener('beforeinput',transition,{once:true});else transition();
+  const result=JSON.parse(__eyebrowseEditorV1.request(spec.packet));
+  return JSON.stringify({cycle,status:result.status,originalUnchanged:(a.isContentEditable?a.textContent:a.value)==='AB',successorUntouched:(b.isContentEditable?b.textContent:b.value)==='',inputCount:events.filter(e=>e.type==='input').length,changeCount:events.filter(e=>e.type==='change').length,order:eventTrace});
+};
 resetFields();
 </script></body></html>

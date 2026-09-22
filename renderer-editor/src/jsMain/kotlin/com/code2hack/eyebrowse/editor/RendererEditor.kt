@@ -6,6 +6,7 @@ external val JSON: dynamic
 external class MutationObserver(callback: (dynamic, dynamic) -> Unit) {
     fun observe(node: dynamic, options: dynamic)
     fun takeRecords(): dynamic
+    fun disconnect()
 }
 external class InputEvent(type: String, options: dynamic)
 external class Event(type: String, options: dynamic)
@@ -59,6 +60,9 @@ private class Editor {
     private var busy = false
     private var ownInput = false
     private var dirtyNode: dynamic = null
+    private var reconcileTimer: dynamic = null
+    private var stopped = false
+    private var observeWhileRemote = false
     // Capture public primitives once. Element-defined overrides cannot introduce callbacks at
     // the audited synchronous mutation boundary. This is not a hostile-page security sandbox.
     private val inputRange = window.HTMLInputElement.prototype.setRangeText
@@ -67,7 +71,7 @@ private class Editor {
     private val submit = window.HTMLFormElement.prototype.requestSubmit
     private val click = window.HTMLElement.prototype.click
     private val reveal = window.Element.prototype.scrollIntoView
-    private val observer = MutationObserver { records, _ -> mutations(records) }
+    private val observer = MutationObserver { records, _ -> mutations(records); reconcile() }
 
     init {
         window.crypto.getRandomValues(random)
@@ -76,25 +80,64 @@ private class Editor {
         options.subtree = true; options.childList = true; options.attributes = true; options.characterData = true
         options.attributeFilter = arrayOf("disabled", "readonly", "type", "contenteditable", "maxlength", "form")
         observer.observe(doc, options)
-        doc.addEventListener("focusin", { _: dynamic -> invalidate() }, true)
-        doc.addEventListener("focusout", { event: dynamic ->
-            invalidate()
-            if (dirtyNode === event.target) {
-                val changed = dirtyNode; dirtyNode = null
-                val options = obj(); options.bubbles = true
-                dispatchEvent.call(changed, Event("change", options))
-            }
+        val focusSignal: (dynamic) -> Unit = { event ->
+            val current = grant ?: retired
+            if (event.isTrusted == true && current != null &&
+                (event.type == "focusin" || event.target === current.node)) invalidate(current)
+            reconcile()
+        }
+        doc.addEventListener("focusin", focusSignal, true)
+        doc.addEventListener("focusout", focusSignal, true)
+        doc.addEventListener("change", { event: dynamic ->
+            // A genuine native commit already fulfilled this episode; never suppress its event.
+            if (event.isTrusted == true && dirtyNode === event.target) dirtyNode = null
+            reconcile()
         }, true)
         doc.addEventListener("input", { _: dynamic ->
-            if (!ownInput) { dirtyNode = null; invalidate() }
+            if (!ownInput) invalidate()
+            reconcile()
         }, true)
-        doc.addEventListener("selectionchange", { _: dynamic ->
-            val current = grant
-            if (current != null && !busy && !current.selection.same(selection(current.node, current.kind))) invalidate()
-        }, true)
+        doc.addEventListener("selectionchange", { _: dynamic -> reconcile() }, true)
+        window.addEventListener("blur", { _: dynamic -> invalidate(); reconcile() })
+        window.addEventListener("pagehide", { _: dynamic ->
+            stopped = true; invalidate(); dirtyNode = null
+            cancelReconcile(); observer.disconnect()
+        })
     }
 
-    private fun invalidate() { grant = null; retired = null }
+    private fun invalidate(current: Grant? = null) {
+        if (current == null || grant === current) grant = null
+        if (current == null || retired === current) retired = null
+    }
+
+    private fun cancelReconcile() {
+        if (reconcileTimer != null) window.clearTimeout(reconcileTimer)
+        reconcileTimer = null
+    }
+
+    /** One observer for every signal and boundary; grant retirement never erases a dirty episode. */
+    private fun reconcile() {
+        mutations(observer.takeRecords())
+        val current = grant ?: retired
+        if (current != null && (stopped || window.document !== doc || doc.hasFocus() != true ||
+                doc.activeElement !== current.node || kind(current.node) != current.kind ||
+                !current.selection.same(selection(current.node, current.kind)))) invalidate(current)
+        val changed = dirtyNode
+        // Actual departure is distinct from an ambiguous window/selection signal. Clear BEFORE
+        // page callbacks, so reentrant reconciliation cannot notify this episode twice.
+        if (changed != null && !stopped && window.document === doc && doc.activeElement !== changed) {
+            grant?.takeIf { it.node === changed }?.let(::invalidate)
+            retired?.takeIf { it.node === changed }?.let(::invalidate)
+            dirtyNode = null
+            val options = obj(); options.bubbles = true
+            dispatchEvent.call(changed, Event("change", options))
+            mutations(observer.takeRecords())
+        }
+        if (stopped || !observeWhileRemote || (grant == null && retired == null && dirtyNode == null)) cancelReconcile()
+        else if (reconcileTimer == null) reconcileTimer = window.setTimeout({
+            reconcileTimer = null; reconcile()
+        }, 50) // Secondary availability only; native synchronous transitions provide ABA fencing.
+    }
 
     private fun mutations(records: dynamic) {
         val current = grant ?: retired ?: return
@@ -147,8 +190,8 @@ private class Editor {
     }
 
     private fun valid(current: Grant): Boolean {
-        mutations(observer.takeRecords())
-        return grant === current && current.node.ownerDocument === doc && window.document === doc &&
+        reconcile()
+        return !stopped && doc.hasFocus() == true && grant === current && current.node.ownerDocument === doc && window.document === doc &&
             doc.activeElement === current.node && kind(current.node) == current.kind &&
             current.selection.same(selection(current.node, current.kind))
     }
@@ -169,6 +212,7 @@ private class Editor {
         return try {
             val trace = obj(); trace.start = window.performance.now()
             val r = JSON.parse(encoded)
+            if (r != null && r.op in arrayOf("inspect", "grant", "revoke", "edit")) reconcile()
             val answer = when {
                 r == null -> result("MALFORMED")
                 r.op == "inspect" -> { grant?.let { if (!valid(it)) invalidate() }; result("STATE") }
@@ -187,6 +231,8 @@ private class Editor {
                                 invalidate()
                                 if (retain) retired = old
                             } else if (r.retainForProfile != true) retired = null
+                            observeWhileRemote = retired != null
+                            if (!observeWhileRemote) cancelReconcile()
                         }
                         result("REVOKED")
                     }
@@ -208,7 +254,8 @@ private class Editor {
         val order = decimal(r.transition, true) ?: return result("MALFORMED", null)
         if (!greater(order, transition)) return result("STALE_EDITOR", null)
         transition = order
-        mutations(observer.takeRecords())
+        reconcile()
+        if (stopped || doc.hasFocus() != true) return result("STALE_EDITOR", null)
         val previous = retired
         val context = Context.read(r.context) ?: return result("MALFORMED", null)
         val token = string(r.token, 128)?.takeIf { it.isNotBlank() } ?: return result("MALFORMED", null)
@@ -233,9 +280,10 @@ private class Editor {
         if (ns != namespace) { namespace = ns; highWater = "0" }
         val current = Grant(node, token, context, generation.toString(), kind, selection)
         grant = current
+        observeWhileRemote = true
         val options = obj(); options.block = "nearest"; options.inline = "nearest"
         reveal.call(node, options)
-        if (!valid(current)) { invalidate(); return result("STALE_EDITOR", null) }
+        if (!valid(current)) { invalidate(current); return result("STALE_EDITOR", null) }
         return result("READY", current)
     }
 
@@ -251,7 +299,7 @@ private class Editor {
         if (r.token != current.token || r.generation != current.generation || r.revision != current.revision.toString())
             return result("STALE_EDITOR", current, id)
         if (busy) return result("BUSY", current, id)
-        if (!valid(current)) { invalidate(); return result("STALE_EDITOR", null, id) }
+        if (!valid(current)) { invalidate(current); return result("STALE_EDITOR", null, id) }
         if (current.revision == Long.MAX_VALUE) { invalidate(); return result("EXHAUSTED", null, id) }
         val operation = string(r.action, 16) ?: return result("MALFORMED", current, id)
         val text = if (operation == "INSERT") string(r.text, 256) ?: return result("MALFORMED", current, id) else ""
@@ -271,7 +319,7 @@ private class Editor {
             options.data = if (operation == "INSERT") insertion else null
             val allowed = dispatchEvent.call(node, InputEvent("beforeinput", options)) == true
             if (!valid(current) || (beforeValue != null && node.value != beforeValue)) {
-                invalidate(); return result("STALE_EDITOR", null, id)
+                invalidate(current); return result("STALE_EDITOR", null, id)
             }
             if (!allowed) return result("CANCELLED", current, id)
             trace.guard = window.performance.now()
@@ -288,7 +336,7 @@ private class Editor {
                 try { options.cancelable = false; dispatchEvent.call(node, InputEvent("input", options)) }
                 finally { ownInput = false }
             }
-            if (!valid(current)) invalidate()
+            if (!valid(current)) invalidate(current)
             return result(if (changed) "APPLIED" else "NO_CHANGE", current, id)
         } finally { busy = false }
     }
@@ -389,7 +437,7 @@ private class Editor {
             // <=1 blocking-field case requests submission from the original form itself.
             if (submitter == null) submit.call(form) else click.call(submitter)
         } finally { window.removeEventListener("submit", guard, true) }
-        if (!valid(current)) invalidate()
+        if (!valid(current)) invalidate(current)
         return if (rejected) "CANCELLED" else if (reached) "SUBMISSION_REQUESTED" else "NO_CHANGE"
     }
 }

@@ -155,6 +155,9 @@ class RendererEditorQualificationTest {
             main { assertTrue(host.presentOnRg(HostingPresentationProfile(480, 344, 204))); lease = host.acquireLease { } }
             assertNotNull(lease)
             scenario.moveToState(Lifecycle.State.CREATED)
+            await("real private local editor focus", 1000) {
+                var ready=false;main {ready=host.localEditorFocusReady()};ready&&truth("document.hasFocus()")
+            }
             row("private-background-contract") {
                 main {
                     val view = browser.view()!!
@@ -163,9 +166,17 @@ class RendererEditorQualificationTest {
                     assertTrue(view.display!!.displayId != 0)
                     assertTrue(flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE != 0)
                     assertTrue(flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE != 0)
+                    assertTrue(flags and WindowManager.LayoutParams.FLAG_LOCAL_FOCUS_MODE != 0)
+                    assertTrue(view.hasWindowFocus() && view.hasFocus())
+                    Log.i(TAG,"LOCAL_FOCUS display=${view.display!!.displayId} window=${view.hasWindowFocus()} view=${view.hasFocus()} flags=$flags")
                 }
                 assertEquals(0, automation.windows.count { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD })
+                val focusDump=automation.executeShellCommand("dumpsys window").use {android.os.ParcelFileDescriptor.AutoCloseInputStream(it).bufferedReader().use{r->r.readText()}}
+                val focusLines=focusDump.lineSequence().filter{it.contains("mCurrentFocus=")||it.contains("mFocusedApp=")||it.contains("mTopFocusedDisplayId=")}.map{it.trim()}.toList()
+                Log.i(TAG,"GLOBAL_FOCUS metadata=${org.json.JSONArray(focusLines)}")
+                assertTrue(focusLines.any{it=="mTopFocusedDisplayId=0"})
             }
+            focusTransitionCases()
             for (id in listOf("a", "p", "t", "c")) {
                 row("$id-caret-case-symbol-events") {
                     reset(); focus(id)
@@ -453,6 +464,73 @@ class RendererEditorQualificationTest {
         }
     }
 
+    private fun focusTransitionCases() {
+        for ((a,b) in listOf("a" to "b","p" to "p2","t" to "t2","c" to "c2")) {
+            for (method in listOf("cached","bound","prototype","neutral","body")) row("focus-history-$a-$method") {
+                focus(a,"AB",1)
+                js("(()=>{const b=document.getElementById('$b');if(b.isContentEditable)b.textContent='';else b.value='';return true})()")
+                val g=grant()
+                js("window.events=[];window.eventTrace=[];true")
+                val spec=JSONObject().put("a",a).put("b",b).put("method",method).put("instance",instance)
+                    .put("packet",packet(g,++sequence).toString())
+                val observed=JSONObject(JSONTokener(js("focusHistoryCase(${JSONObject.quote(spec.toString())})")).nextValue() as String)
+                Log.i(TAG,"FOCUS_HISTORY metadata=$observed")
+                val c=observed.getJSONObject("cycle")
+                assertTrue("actual ABA setup",c.getBoolean("middleReached")&&c.getBoolean("sameNode")&&c.getBoolean("sameType")&&c.getBoolean("sameSelection"))
+                if(a=="c"&&method=="cached")assertTrue("exact saved-Range counterexample",c.getBoolean("sameRange"))
+                assertTrue("retired at departure",c.getBoolean("retiredAtDeparture"))
+                assertEquals("STALE_EDITOR",observed.getString("status"))
+                assertTrue(observed.getBoolean("originalUnchanged")&&observed.getBoolean("successorUntouched"))
+                assertEquals(0,observed.getInt("inputCount"));assertEquals(0,observed.getInt("changeCount"))
+            }
+            row("focus-history-$a-beforeinput") {
+                focus(a,"AB",1)
+                js("(()=>{const b=document.getElementById('$b');if(b.isContentEditable)b.textContent='';else b.value='';return true})()")
+                val g=grant();js("window.events=[];window.eventTrace=[];true")
+                val spec=JSONObject().put("a",a).put("b",b).put("method","cached").put("instance",instance)
+                    .put("beforeinput",true).put("packet",packet(g,++sequence).toString())
+                val observed=JSONObject(JSONTokener(js("focusHistoryCase(${JSONObject.quote(spec.toString())})")).nextValue() as String)
+                Log.i(TAG,"BEFOREINPUT_HISTORY metadata=$observed")
+                val c=observed.getJSONObject("cycle")
+                assertTrue(c.getBoolean("middleReached")&&c.getBoolean("sameNode")&&c.getBoolean("sameSelection")&&c.getBoolean("retiredAtDeparture"))
+                assertEquals("STALE_EDITOR",observed.getString("status"))
+                assertTrue(observed.getBoolean("originalUnchanged")&&observed.getBoolean("successorUntouched"))
+                assertEquals(0,observed.getInt("inputCount"));assertEquals(0,observed.getInt("changeCount"))
+            }
+        }
+        row("clean-focus-move-does-not-invent-change") {
+            reset();focus("a");grant();js("window.events=[];document.getElementById('b').focus();true")
+            assertTrue(truth("events.filter(e=>e.type==='change').length===0"))
+        }
+        row("sustained-typing-survives-secondary-reconciliation") {
+            reset();focus("a");var g=grant();var expected=""
+            repeat(20) {
+                val result=edit(g,EditorOperation.Insert("Q"),"sustained-$it")
+                assertEquals(RendererEditorAdapter.Status.APPLIED,result.status)
+                expected+="Q";assertTrue(unchanged("a",expected));g=g.copy(revision=result.revision!!)
+                SystemClock.sleep(60) // Deliberately cross the secondary50ms observation interval.
+            }
+            assertTrue(truth("events.filter(e=>e.type==='change').length===0"))
+        }
+        row("dirty-change-refocus-reentry-notifies-once-and-retires-old-token") {
+            reset();focus("a","AB",1);var g=grant()
+            val done=edit(g,EditorOperation.Insert("X"),"dirty-refocus");assertEquals(RendererEditorAdapter.Status.APPLIED,done.status)
+            g=g.copy(revision=done.revision!!)
+            js("document.getElementById('a').addEventListener('change',()=>{document.getElementById('a').focus();window.__eyebrowseEditorV1.request(JSON.stringify({op:'inspect'}));},{once:true});document.getElementById('b').focus();true")
+            assertTrue(truth("events.filter(e=>e.type==='change'&&e.target==='a').length===1"))
+            assertEquals(RendererEditorAdapter.Status.STALE_EDITOR,edit(g,EditorOperation.Insert("Q"),"old-after-refocus").status)
+            assertTrue(unchanged("a","AXB"));assertTrue(unchanged("b",""))
+        }
+        row("late-old-node-observer-cannot-retire-successor-or-repeat-change") {
+            reset();focus("a");val a=grant();assertEquals(RendererEditorAdapter.Status.APPLIED,edit(a,EditorOperation.Insert("X"),"dirty-old").status)
+            focus("b");val b=grant()
+            js("document.getElementById('a').setAttribute('readonly','');true")
+            call("repeated-reconcile",adapter::inspect);call("repeated-reconcile2",adapter::inspect)
+            assertEquals(RendererEditorAdapter.Status.APPLIED,edit(b,EditorOperation.Insert("Q"),"fresh-successor").status)
+            assertTrue(unchanged("b","Q"));assertTrue(truth("events.filter(e=>e.type==='change'&&e.target==='a').length===1"))
+        }
+    }
+
     private fun profileAndDocumentCases(scenario: ActivityScenario<MainActivity>, url: String, original: WebView) {
         row("same-target-and-live-value-across-shrink-grow") {
             reset(); focus("a", "retained"); var g = grant()
@@ -603,6 +681,26 @@ class RendererEditorQualificationTest {
                 SystemClock.sleep(1100) // Pass the retired opening's deadline; no new input is queued.
                 main { lease?.renew(); assertEquals(PhoneEditorAuthority.Phase.READY, controller.authority.phase); controller.close { } }
                 quiescent()
+            }
+            row("controller-local-focus-loss-retires-before-regain") {
+                val old=open();var focusProbe:android.view.View?=null
+                try {
+                    main {
+                        val view=browser.view()!!;val parent=view.parent as android.view.ViewGroup
+                        val probe=android.view.View(parent.context).apply {isFocusableInTouchMode=true}
+                        focusProbe=probe;parent.addView(probe,android.view.ViewGroup.LayoutParams(1,1));assertTrue(probe.requestFocus())
+                        assertFalse(host.localEditorFocusReady())
+                        assertEquals(PhoneEditorAuthority.Phase.REVOKING,controller.authority.phase)
+                        assertFalse(controller.stateMessage().ready)
+                        parent.removeView(probe);assertTrue(view.requestFocus())
+                    }
+                    quiescent()
+                    assertEquals(PhoneEditorAuthority.Phase.EMPTY,controller.authority.phase)
+                    assertFalse(controller.stateMessage().ready)
+                    assertEquals(RendererEditorAdapter.Status.STALE_EDITOR,edit(old,EditorOperation.Insert("Q"),"after-focus-regain").status)
+                    assertTrue(unchanged("a",""));val fresh=open();assertNotEquals(old.target,fresh.target)
+                    main {controller.close { }};quiescent()
+                } finally {main {focusProbe?.let{(it.parent as? android.view.ViewGroup)?.removeView(it)}}}
             }
             for (loss in listOf("owner", "link", "connection")) row("controller-$loss-loss") {
                 val g = open()

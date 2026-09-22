@@ -88,6 +88,8 @@ class PrivateDisplayHost(
         fun isAvailable(): Boolean = true
         fun setUnavailableListener(listener: Runnable?) {}
         fun focusAttachedView(view: android.view.View?) {}
+        fun localFocusReady(view: android.view.View): Boolean = false
+        fun setLocalFocusListener(listener: Runnable?) {}
     }
 
     /** Immutable per-lease delivery sink; the capture pipeline invokes exactly this object. */
@@ -101,10 +103,14 @@ class PrivateDisplayHost(
     private val ownerPhase = CaptureOwnerPhase()
 
     private var unavailableListener: Runnable? = null
+    private var localFocusListener: Runnable? = null
     private var resourceSerial: Long = 0
     private var virtualDisplay: VirtualDisplay? = null // main-thread only
 
     fun setUnavailableListener(listener: Runnable?) { unavailableListener = listener }
+    fun setLocalFocusListener(listener: Runnable?) { localFocusListener = listener }
+    fun localFocusReady(session: PhoneBrowserSession): Boolean =
+        localFocusForRg && session.view()?.let { presentation?.localFocusReady(it) } == true
 
     data class DisplaySnapshot(
         val serial: Long, val displayId: Int, val valid: Boolean, val state: Int,
@@ -205,6 +211,11 @@ class PrivateDisplayHost(
                 // Retired Presentation events cannot invalidate a replacement in the same host.
                 if (presentation === presentationHost && resourceSerial == createdSerial) {
                     unavailableListener?.run()
+                }
+            })
+            presentationHost.setLocalFocusListener(Runnable {
+                if (presentation === presentationHost && resourceSerial == createdSerial) {
+                    localFocusListener?.run()
                 }
             })
             presentationHost.show()
@@ -872,6 +883,22 @@ class PrivateDisplayHost(
         private val content = FrameLayout(this.context).apply { setBackgroundColor(Color.WHITE) }
         private var focusView: android.view.View? = null
         private var localFocusRequested = false
+        private var focusListener: Runnable? = null
+        private var reportedFocusReady = false
+        private val windowFocus = android.view.ViewTreeObserver.OnWindowFocusChangeListener {
+            reportLocalFocus()
+        }
+        private val viewFocus = android.view.ViewTreeObserver.OnGlobalFocusChangeListener { _, _ ->
+            reportLocalFocus()
+        }
+
+        private fun reportLocalFocus() {
+            val ready = focusView?.let(::localFocusReady) == true
+            if (ready != reportedFocusReady) {
+                reportedFocusReady = ready
+                focusListener?.run()
+            }
+        }
         private val acquireLocalFocus = Runnable {
             val view = focusView
             if (view != null && isShowing && content.isAttachedToWindow &&
@@ -897,6 +924,7 @@ class PrivateDisplayHost(
             content.removeCallbacks(acquireLocalFocus)
             focusView?.removeOnAttachStateChangeListener(focusAttachment)
             focusView = null // Fence queued callbacks before retirement of this window.
+            reportLocalFocus()
             if (localFocusRequested && content.isAttachedToWindow) {
                 window?.setLocalFocus(false, true)
                 Log.i(TAG, "local focus released display=${display.displayId}")
@@ -909,8 +937,17 @@ class PrivateDisplayHost(
 
         override fun onStop() {
             focusAttachedView(null)
+            content.viewTreeObserver.removeOnWindowFocusChangeListener(windowFocus)
+            content.viewTreeObserver.removeOnGlobalFocusChangeListener(viewFocus)
+            focusListener = null
             super.onStop()
         }
+
+        override fun localFocusReady(view: android.view.View): Boolean =
+            view === focusView && isShowing && content.isAttachedToWindow &&
+                view.isAttachedToWindow && view.parent === content && view.hasWindowFocus() && view.hasFocus()
+
+        override fun setLocalFocusListener(listener: Runnable?) { focusListener = listener }
 
         override fun onCreate(savedInstanceState: android.os.Bundle?) {
             super.onCreate(savedInstanceState)
@@ -927,6 +964,8 @@ class PrivateDisplayHost(
             }
             setContentView(content, ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            content.viewTreeObserver.addOnWindowFocusChangeListener(windowFocus)
+            content.viewTreeObserver.addOnGlobalFocusChangeListener(viewFocus)
         }
 
         override fun container(): FrameLayout = content

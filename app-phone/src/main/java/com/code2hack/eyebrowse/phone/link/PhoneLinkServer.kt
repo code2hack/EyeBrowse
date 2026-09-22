@@ -84,12 +84,14 @@ class PhoneLinkServer(
         } }
     }
     private val reconcilePresentation = Runnable {
-        synchronized(controlCoordinator.authority) {
+        val state = synchronized(controlCoordinator.authority) {
             controlCoordinator.reconcileDocument()
-            editorController?.reconcile()
-            publisher?.reconcile(controlCoordinator.authority.snapshot())
-            publishBrowserState()
+            controlCoordinator.authority.snapshot()
         }
+        // Native focus reads and renderer scheduling never run under the link authority monitor.
+        editorController?.reconcile()
+        publisher?.reconcile(state)
+        publishBrowserState()
     }
     private fun schedulePresentation() {
         main.removeCallbacks(reconcilePresentation)
