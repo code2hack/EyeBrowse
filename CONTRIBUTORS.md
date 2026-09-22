@@ -248,23 +248,23 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Worker",
-    "scope": "v0.0.1; issue #6 RG-chain (completed: accepted, merged e8eb3cd); continues as qualified local executor for issue #7 (worktree/scratch/harness/device tooling retained)",
+    "scope": "v0.01; persistent ticket Worker for RG-chain issues (issue #7 delivered: T01-T04); binding gpt-6-astra/max (Owner static directive)",
     "host": "u4090",
     "runtime": "codex",
     "id": "01a0bfdf-0ba4-78d0-9eb1-ff54e9ddad16",
     "model": "gpt-6-astra / medium",
-    "name": "Worker-#6-r3-Codex-#7",
+    "name": "Worker-v0.01",
     "status": "active"
   },
   {
     "role": "Expert",
-    "scope": "v0.0.1; RG-chain issues #7..#12 escalated corrections; successor to retired Expert-#6; inherits standing directives (physical S20+ testing, TCP5555 priority, T02/T03 seam QR bypass, hybrid owner-scoped viewport architecture per #issuecomment-5757375322); RETIRED at issue #7 closeout: T01 (T2/R2a/R2b corrections) + T02 (T2-R1 Stop-ownership + C2 fixture-baseline barrier) escalations, all PASS; publication workaround established (6-pro work / gpt-5.6-sol commit+push)",
+    "scope": "v0.01; RG-chain escalated corrections for issues #8..#12 (successor record retains Expert-#7 work history: T01/T02 escalations, publication workaround 6-pro work / gpt-5.6-sol commit+push); standing directives inherited (physical S20+ testing, TCP5555 priority, seam QR bypass, hybrid owner-scoped viewport); reactivated by explicit Owner assignment 20260922",
     "host": "chatgpt.com",
     "runtime": "chatgpt",
     "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70-eyebrowse/c/6ab111f3-423c-83ea-8d94-1a818786289a",
     "model": "gpt-6-pro (ChatGPT '6 Pro')",
-    "name": "Expert-#7",
-    "status": "retired"
+    "name": "Expert-v0.01",
+    "status": "active"
   }
 ]
 ```
