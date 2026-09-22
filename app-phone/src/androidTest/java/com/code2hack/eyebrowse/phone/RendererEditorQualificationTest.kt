@@ -54,9 +54,15 @@ class RendererEditorQualificationTest {
         }
         return answer
     }
-    private fun await(label: String, bound: Long = 2000, predicate: () -> Boolean) {
+    private fun await(label: String, bound: Long = 2000,
+                      diagnostics: () -> Map<String, Boolean> = {
+                          mapOf("browserLive" to browser.isLive(), "notLoading" to !browser.isLoading(),
+                              "errorAbsent" to (browser.errorMessage() == null))
+                      }, predicate: () -> Boolean) {
         val until = SystemClock.elapsedRealtime() + bound
         while (SystemClock.elapsedRealtime() < until) { if (predicate()) return; SystemClock.sleep(15) }
+        val checks = runCatching { diagnostics() }.getOrElse { mapOf("diagnosticsAvailable" to false) }
+        Log.e(TAG, "AWAIT_TIMEOUT barrier=$label lastPredicateSatisfied=false checks=${JSONObject(checks)}")
         fail(label)
     }
     private fun call(label: String, action: ((RendererEditorAdapter.Result) -> Unit) -> Unit): RendererEditorAdapter.Result {
@@ -117,8 +123,26 @@ class RendererEditorQualificationTest {
         var primary: Throwable? = null
         try {
             lateinit var barrier: FixtureNavigationBarrier
-            scenario.onActivity { link.stop(); barrier = FixtureNavigationBarrier(browser.documentIdentity(), url, "I9 renderer"); browser.openAddress(url) }
-            await("fresh renderer fixture", 10000) { barrier.isReady(FixtureNavigationBarrier.Observation(browser.documentIdentity(), browser.displayUrl(), browser.lastCommittedUrl(), browser.pageTitle(), browser.isLoading(), browser.isLive(), browser.errorMessage())) }
+            scenario.onActivity {
+                link.stop()
+                barrier = FixtureNavigationBarrier(browser.documentIdentity(), url, expectedTitle = "I9 renderer fixture")
+                browser.openAddress(url)
+            }
+            var observed: FixtureNavigationBarrier.Observation? = null
+            await("fresh renderer fixture", 10000, diagnostics = {
+                val last = observed
+                mapOf("observationAvailable" to (last != null), "live" to (last?.live == true),
+                    "errorAbsent" to (last != null && last.error == null), "notLoading" to (last?.loading == false),
+                    "documentChanged" to (last != null && last.documentId != barrier.previousDocumentId),
+                    "displayedUrlMatches" to (last?.displayedUrl == barrier.requestedUrl),
+                    "committedUrlMatches" to (last?.committedUrl == barrier.requestedUrl),
+                    "titleMatches" to (last?.title == "I9 renderer fixture"))
+            }) {
+                val current = FixtureNavigationBarrier.Observation(browser.documentIdentity(), browser.displayUrl(),
+                    browser.lastCommittedUrl(), browser.pageTitle(), browser.isLoading(), browser.isLive(), browser.errorMessage())
+                observed = current
+                barrier.isReady(current)
+            }
             context = ControlContext("substrate-${UUID.randomUUID()}", 1, browser.documentIdentity(), 1, 1)
             val program = app.assets.open("eyebrowse-editor.js").bufferedReader().use { it.readText() }
             main { adapter = RendererEditorAdapter(browser::view, browser::documentIdentity, program) }
