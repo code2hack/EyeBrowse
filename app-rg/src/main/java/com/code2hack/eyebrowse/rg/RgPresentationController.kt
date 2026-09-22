@@ -27,17 +27,31 @@ class RgPresentationController(context: Context, private val surface: Surface) :
     private val commands = commandSequence(context.applicationContext)
     private var pendingCommand: String? = null
     private var actionTimeout: Runnable? = null
+    private val handoff=PendingHandoff()
+    private var handoffTimeout: Runnable?=null
+    private var inputRevision=0L
     @Volatile var lastActionResult: BrowserActionResultMessage? = null
         private set
     @Volatile var lastHandoffResult: HandoffResultMessage? = null
         private set
+    @Volatile internal var lastHandoffRequest: HandoffRequestMessage? = null
+        private set
 
     fun canAct(): Boolean = synchronized(lock) {
         val current = state
-        compatible && !closed && pendingCommand == null && current?.owner == ControlOwner.RG &&
+        compatible && !closed && pendingCommand == null && !handoff.busy && current?.owner == ControlOwner.RG &&
             !current.stale && !current.loading && current.profile == measuredProfile && lastFrameHeader?.context == current.context
     }
-    fun canHandoff(): Boolean = compatible && !closed && state != null
+    fun canHandoff(): Boolean = synchronized(lock) { compatible && !closed && state != null && !handoff.busy }
+
+    internal fun inputSnapshot(): RgInputSnapshot = synchronized(lock) {
+        RgInputSnapshot(state?.context,state?.owner,measuredProfile,inputRevision,canAct(),canHandoff(),
+            state?.canGoBack==true,state?.canGoForward==true)
+    }
+    /** Validation and the existing reservation/send path share this monitor; no old-point/new-context gap. */
+    internal fun dispatchIfCurrent(expected: RgInputSnapshot, dispatch: ()->Boolean): Boolean = synchronized(lock) {
+        if (closed || inputSnapshot()!=expected) false else dispatch()
+    }
 
     fun back(): String? = action(BrowserAction.Back)
     fun forward(): String? = action(BrowserAction.Forward)
@@ -53,6 +67,7 @@ class RgPresentationController(context: Context, private val surface: Surface) :
             return@synchronized null
         }
         pendingCommand = request.commandId
+        inputRevision++
         if (!client.sendControl(request)) {
             pendingCommand = null
             status("Action not sent")
@@ -70,10 +85,26 @@ class RgPresentationController(context: Context, private val surface: Surface) :
         request.commandId
     }
 
-    fun requestPhone(): Boolean {
-        val current = state ?: return false
-        if (!canHandoff() || current.owner != ControlOwner.RG) return false
-        return client.sendControl(HandoffRequestMessage(HandoffTargetWire.PHONE,current.context.controlEpoch))
+    fun requestPhone(): Boolean = requestHandoff(HandoffTargetWire.PHONE)
+
+    private fun requestHandoff(target: HandoffTargetWire): Boolean = synchronized(lock) {
+        val current=state ?: return@synchronized false
+        if (!canHandoff() || (target==HandoffTargetWire.RG)!=(current.owner==ControlOwner.PHONE)) return@synchronized false
+        val profile=if(target==HandoffTargetWire.RG) measuredProfile ?: return@synchronized false else null
+        val request=HandoffRequestMessage(target,current.context.controlEpoch,profile)
+        lastHandoffRequest=request
+        inputRevision++
+        if(!handoff.request(current.context,request,client::sendControl)) {
+            status("Control request not sent");return@synchronized false
+        }
+        handoffTimeout?.let(main::removeCallbacks)
+        val timeout=Runnable { synchronized(lock) {
+            handoff.clear();handoffTimeout=null;inputRevision++
+            status("Control change not confirmed — not retried")
+        } }
+        handoffTimeout=timeout;main.postDelayed(timeout,5_000)
+        status("Waiting for control")
+        true
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -111,8 +142,10 @@ class RgPresentationController(context: Context, private val surface: Surface) :
         Unit
     }
 
-    fun measure(width: Int, height: Int, densityDpi: Int) {
-        measuredProfile = PresentationProfile.fromMeasured(width,height,densityDpi)
+    fun measure(width: Int, height: Int, densityDpi: Int): Unit = synchronized(lock) {
+        val next=PresentationProfile.fromMeasured(width,height,densityDpi)
+        if(next!=measuredProfile) inputRevision++
+        measuredProfile = next
         val current = state
         if (current?.owner == ControlOwner.RG && current.profile != measuredProfile) {
             invalidate("Viewport changed — presentation stale")
@@ -124,24 +157,31 @@ class RgPresentationController(context: Context, private val surface: Surface) :
     fun reconnect() { if (!closed) client.reconnect() }
 
     /** T02 production API; explicit handoff UI and bidirectional journey arrive in T03. */
-    fun requestPresentation(): Boolean {
-        val current = state ?: return false
-        val profile = measuredProfile ?: return false
-        if (!compatible || closed || current.owner != ControlOwner.PHONE) return false
-        return client.sendControl(HandoffRequestMessage(HandoffTargetWire.RG,current.context.controlEpoch,profile))
+    fun requestPresentation(): Boolean = requestHandoff(HandoffTargetWire.RG)
+    // Engine lifecycle callbacks can hold its operation lock. Do not take our monitor from that
+    // lock while main-thread dispatch holds our monitor and calls sendControl in the other direction.
+    private fun onMain(block: ()->Unit) {
+        if(Looper.myLooper()==Looper.getMainLooper()) block() else main.post { if(!closed) block() }
     }
-    override fun onStateChange(state: PairingState) = status(state.name)
-    override fun onStatus(status: HostStatusValue) { if (state?.owner != ControlOwner.RG) status("Host: $status") }
-    override fun onPresentationCompatibility(result: CapabilityNegotiation) {
-        compatible = result == CapabilityNegotiation.Accepted
+    override fun onStateChange(state: PairingState) = onMain { status(state.name) }
+    override fun onStatus(status: HostStatusValue) = onMain { if (state?.owner != ControlOwner.RG) status("Host: $status") }
+    override fun onPresentationCompatibility(result: CapabilityNegotiation) = onMain { synchronized(lock) {
+        val next=result == CapabilityNegotiation.Accepted
+        if(next!=compatible) inputRevision++
+        compatible = next
         if (!compatible) invalidate("Update apps to use presentation")
-    }
-    override fun onLinkLost() { compatible = false; invalidate("Disconnected — page stale; Retry") }
-    override fun onConnectFailed(error: LinkError) { invalidate("Connection failed: ${error.javaClass.simpleName}") }
+    } }
+    override fun onLinkLost() = onMain { synchronized(lock) { compatible = false; invalidate("Disconnected — page stale; Retry") } }
+    override fun onConnectFailed(error: LinkError) = onMain { invalidate("Connection failed: ${error.javaClass.simpleName}") }
     override fun onControl(message: BrowserControlMessage): Unit = synchronized(lock) {
         when (message) {
             is BrowserStateMessage -> {
+                val old=state
+                if(old==null || old.context!=message.context || old.owner!=message.owner || old.profile!=message.profile ||
+                    old.stale!=message.stale || old.loading!=message.loading) inputRevision++
                 state = message
+                handoff.observed(message.owner,message.context)
+                if(!handoff.busy) { handoffTimeout?.let(main::removeCallbacks);handoffTimeout=null }
                 val live = message.owner == ControlOwner.RG && !message.stale && message.profile == measuredProfile
                 inbox.grant(message.context.takeIf { live }, message.profile.takeIf { live })
                 status(if (!live) {
@@ -149,6 +189,8 @@ class RgPresentationController(context: Context, private val surface: Surface) :
                 } else if (lastFrameHeader?.context == message.context) statusText else "Waiting for current frame")
             }
             is HandoffResultMessage -> {
+                handoff.result(message)
+                if(!handoff.busy) { handoffTimeout?.let(main::removeCallbacks);handoffTimeout=null }
                 lastHandoffResult = message
                 if (!message.accepted) status(if (message.reason == "INVALID_PROFILE") "Open Phone to return browsing" else "Control could not be transferred")
             }
@@ -225,12 +267,14 @@ class RgPresentationController(context: Context, private val surface: Surface) :
         }
     }
     private fun invalidate(reason: String) {
-        synchronized(lock) { state = state?.copy(stale=true); inbox.grant(null,null); pendingCommand = null; actionTimeout?.let(main::removeCallbacks); actionTimeout = null }
+        synchronized(lock) {
+            inputRevision++;handoff.clear();handoffTimeout?.let(main::removeCallbacks);handoffTimeout=null
+            state = state?.copy(stale=true); inbox.grant(null,null); pendingCommand = null; actionTimeout?.let(main::removeCallbacks); actionTimeout = null
+        }
         status(reason)
     }
     fun pause() {
-        compatible = false
-        invalidate("Presentation paused — Retry")
+        synchronized(lock) { compatible = false;invalidate("Presentation paused — Retry") }
         client.disconnect()
     }
     companion object {
@@ -249,7 +293,8 @@ class RgPresentationController(context: Context, private val surface: Surface) :
     }
 
     fun close() {
-        synchronized(lock) { closed = true; inbox.grant(null,null); pendingDisplay?.second?.recycle(); pendingDisplay = null }
+        synchronized(lock) { closed = true;inputRevision++;handoff.clear(); inbox.grant(null,null); pendingDisplay?.second?.recycle(); pendingDisplay = null }
+        handoffTimeout?.let(main::removeCallbacks);handoffTimeout=null
         actionTimeout?.let(main::removeCallbacks)
         client.disconnect(); decoder.shutdownNow(); main.removeCallbacks(display); main.removeCallbacks(updateSurface)
         // ImageView may still render the last bitmap until its Activity detaches. Let GC own it.

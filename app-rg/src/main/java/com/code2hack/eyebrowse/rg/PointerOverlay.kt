@@ -74,6 +74,12 @@ class PointerOverlay(context: Context, attrs: AttributeSet?=null) : View(context
         publishAvailability()
     }
 
+    /** Recheck age at admission even if the stale Handler callback has been delayed. */
+    internal fun inputPosition(): PointerPosition {
+        model.advance(SystemClock.elapsedRealtimeNanos());publishAvailability()
+        return position
+    }
+
     internal fun replaceSourceForTest(replacement: HeadPoseSource) {
         check(!running) { "Stop real acquisition before injecting raw replay" }
         source.stop();source=replacement

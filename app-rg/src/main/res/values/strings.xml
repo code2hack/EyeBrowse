@@ -20,4 +20,5 @@
     <string name="pointer_recenter">Recenter</string>
     <string name="pointer_ready">Head pointer ready</string>
     <string name="pointer_unavailable">Head tracking unavailable</string>
+    <string name="input_unavailable">Action unavailable — try again</string>
 </resources>
