@@ -108,7 +108,8 @@ internal class RgInputRouter(
     private fun confirmedTap(tap: Tap?) {
         val confirmed=SystemClock.uptimeMillis()
         val accepted=tap!=null && usable() && tap.geometryVersion==geometryVersion &&
-            targetAt(tap.point,presentation.inputSnapshot())==tap.target && presentation.dispatchIfCurrent(tap.input) {
+            targetAt(tap.point,presentation.inputSnapshot())==tap.target &&
+            presentation.dispatchIfCurrent(tap.input,(tap.target as? Target.Native)?.action) {
                 when(val target=tap.target) {
                     is Target.Native -> tap.input.allows(target.action) && target.view.isEnabled && target.view.isShown &&
                         target.view.performClick().also { if(it) nativeInvocations++ }

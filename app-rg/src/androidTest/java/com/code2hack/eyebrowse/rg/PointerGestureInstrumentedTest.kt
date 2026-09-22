@@ -13,6 +13,10 @@ import com.code2hack.eyebrowse.core.link.CapabilityNegotiation
 import com.code2hack.eyebrowse.core.link.control.*
 import com.code2hack.eyebrowse.core.link.framing.*
 import com.code2hack.eyebrowse.core.link.messages.*
+import com.code2hack.eyebrowse.core.link.session.PeerTrustRead
+import com.code2hack.eyebrowse.core.link.session.PeerTrustStore
+import com.code2hack.eyebrowse.rg.link.RgLinkClient
+import com.code2hack.eyebrowse.rg.link.RgPairingStore
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -20,6 +24,7 @@ import java.io.ByteArrayOutputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.*
 
 @RunWith(AndroidJUnit4::class)
@@ -84,6 +89,57 @@ class PointerGestureInstrumentedTest {
             calls.incrementAndGet();activity.findViewById<PointerOverlay>(R.id.rg_pointer).recenter()
         } }
         return calls
+    }
+
+    @Test fun retryKeepsOriginalNativeTargetAndReadsRealTrustOutsideControllerMonitor() = scene { s ->
+        val reads=AtomicInteger();val heldMonitor=AtomicBoolean();val validTrust=AtomicBoolean()
+        var restore: ()->Unit = {}
+        var beforeInvocations=0L
+        try {
+            s.main { activity ->
+                val controller=activity.presentation
+                val monitor=checkNotNull(RgPresentationController::class.java.getDeclaredField("lock")
+                    .apply { isAccessible=true }.get(controller))
+                val client=RgPresentationController::class.java.getDeclaredField("client")
+                    .apply { isAccessible=true }.get(controller) as RgLinkClient
+                val field=RgLinkClient::class.java.getDeclaredField("store").apply { isAccessible=true }
+                val original=field.get(client) as RgPairingStore
+                val observer=object : PeerTrustStore by original {
+                    override fun read(): PeerTrustRead {
+                        reads.incrementAndGet();heldMonitor.set(Thread.holdsLock(monitor))
+                        val started=SystemClock.uptimeMillis()
+                        val result=original.read() // Real preserved trust file; no substituted result or write.
+                        validTrust.set(result is PeerTrustRead.Valid)
+                        Log.i("EyeBrowseGestureTest","RETRY_TRUST_READ heldController="+heldMonitor.get()+
+                            " durationMs="+(SystemClock.uptimeMillis()-started)+" validTrust="+validTrust.get())
+                        return result
+                    }
+                }
+                val store=RgPairingStore::class.java.getDeclaredConstructor(PeerTrustStore::class.java)
+                    .apply { isAccessible=true }.newInstance(observer)
+                restore={ client.disconnect();field.set(client,original) }
+                field.set(client,store)
+                beforeInvocations=activity.inputRouter.nativeInvocations
+            }
+            s.aim(R.id.rg_retry);s.tap()
+            s.main { it.findViewById<Button>(R.id.rg_retry).isEnabled=false }
+            s.waitConfirmation();assertEquals("Disabled original target cannot read trust",0,reads.get())
+            s.main {
+                assertEquals(beforeInvocations,it.inputRouter.nativeInvocations)
+                it.findViewById<Button>(R.id.rg_retry).isEnabled=true
+            }
+            s.aim(R.id.rg_retry);s.tap()
+            s.await("fresh native Retry reaches actual trust read") { reads.get()==1 }
+            s.main {
+                val trace=checkNotNull(it.inputRouter.lastDispatch)
+                assertTrue(trace.accepted);assertTrue("Existing remembered trust remains readable",validTrust.get())
+                assertFalse("Retry trust IO is outside the validated-dispatch monitor",heldMonitor.get())
+                assertEquals(beforeInvocations+1,it.inputRouter.nativeInvocations)
+                assertTrue("Native Retry invocation <=100ms",trace.finishedAt-trace.confirmedAt<=100)
+                Log.i("EyeBrowseGestureTest","RETRY_NATIVE_PASS reads=1 originalTargetCancelled=true heldController=false"+
+                    " localMs="+(trace.finishedAt-trace.confirmedAt)+" recognitionMs="+trace.recognitionWaitMs)
+            }
+        } finally { s.main { restore() } }
     }
 
     @Test fun confirmedTapKeepsOriginalTargetAndInvokesOnceWithinLocalBound() = scene { s ->

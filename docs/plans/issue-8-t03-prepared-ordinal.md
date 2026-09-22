@@ -33,6 +33,16 @@ Lock order:
 - Publication uses only the memory lock. Notifications are posted to Main after releasing it; controller updates coalesce there. Existing engine-held lifecycle callbacks remain marshalled to Main, preserving the T02 inversion fix.
 - UI/Activity shutdown never waits for the IO worker.
 
+The final whole-ticket review found that native Retry's Button listener re-entered `reconnect()`
+inside the router's validated-dispatch monitor. Exiting the nested monitor did not release the outer
+one before the trust read. The bridge now carries the captured native-action classification: only
+Retry validates under the monitor and invokes its unchanged listener synchronously after release.
+Original Main-thread target/geometry/availability checks remain; every page/navigation/handoff
+callback retains atomic original-context validation, ordinal consumption and queue admission.
+No gesture is posted or deferred, and its timing still ends after the native callback returns.
+The focused JVM regression observes the actual controller/link-client trust-read boundary; the RG
+instrumented regression drives the real pointer/pad/Button path with an unchanged real-store observer.
+
 The preparation failure guard is4000ms from the original demand, shorter than the allowed5s maximum. Frames and repeated demand calls do not renew it. A timeout invalidates publication and visibly reports unavailable controls; it does not terminate the write or permit a second writer. Explicit recovery may establish a new demand. Native Retry retries preparation even when the authenticated link is already healthy; it does not require forcing a disconnect. Actual preparation/readiness durations are reported separately;4000ms is not a normal latency allowance.
 
 ## Eligibility and original intent

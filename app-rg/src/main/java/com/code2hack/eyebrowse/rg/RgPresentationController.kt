@@ -93,11 +93,20 @@ class RgPresentationController(context: Context, private val surface: Surface) :
         RgInputSnapshot(state?.context,state?.owner,measuredProfile,inputRevision,canAct(),canHandoff(),
             state?.canGoBack==true,state?.canGoForward==true,commands.snapshot(reservationOwner).revision)
     }
-    /** Validation and the existing reservation/send path share this monitor; no old-point/new-context gap. */
-    internal fun dispatchIfCurrent(expected: RgInputSnapshot, dispatch: ()->Boolean): Boolean = synchronized(lock) {
-        if (closed || inputSnapshot()!=expected) false else {
-            val previous=validatedInput;validatedInput=expected
-            try { dispatch() } finally { validatedInput=previous }
+    /** Remote actions/handoffs validate and send atomically. Retry is local recovery, not a page action. */
+    internal fun dispatchIfCurrent(expected: RgInputSnapshot, nativeAction: LocalInputAction? = null,
+        dispatch: ()->Boolean): Boolean {
+        if(nativeAction==LocalInputAction.RETRY) {
+            val accepted=synchronized(lock) { !closed && inputSnapshot()==expected }
+            // The router validates the original native target on Main. Invoke its listener now,
+            // synchronously but outside this monitor: reconnect loads trust. Never defer a gesture.
+            return accepted && dispatch()
+        }
+        return synchronized(lock) {
+            if (closed || inputSnapshot()!=expected) false else {
+                val previous=validatedInput;validatedInput=expected
+                try { dispatch() } finally { validatedInput=previous }
+            }
         }
     }
 
