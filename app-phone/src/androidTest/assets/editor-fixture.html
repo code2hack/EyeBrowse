@@ -8,6 +8,7 @@
 window.resetFields = function () {
   document.getElementById('fields').innerHTML = '<form id="form"><input id="a" name="a"><input id="p" type="password" name="p"><button id="send" type="submit">Send</button></form><input id="b"><textarea id="t"></textarea><div id="c" contenteditable="true"></div>';
   window.events = []; window.submits = 0; window.submitEvents = 0; window.clicks = 0; window.expectedData = null;
+  window.eventTrace = []; window.eventTraceOverflow = false; window.eventPhase = 'fixture-reset'; window.focusoutDepth = 0;
   document.getElementById('form').addEventListener('submit', function (event) { window.submitEvents++; if (!event.defaultPrevented) window.submits++; event.preventDefault(); });
   document.getElementById('send').addEventListener('click', function () { window.clicks++; });
 };
@@ -15,5 +16,22 @@ for (const name of ['beforeinput','input','change']) document.addEventListener(n
   window.events.push({type:event.type,target:event.target.id,inputType:event.inputType || null,
     dataMatches:event.data === window.expectedData,bubbles:event.bubbles,trusted:event.isTrusted});
 });
+// Diagnostic metadata only. The fixture never dispatches change; the adapter is the only
+// script change producer in the basic-edit rows. Trusted delivery is WebView-generated.
+window.traceEvent = function (entry) {
+  if (window.eventTrace.length < 96) window.eventTrace.push(Object.assign({order:window.eventTrace.length,timeMs:performance.now(),phase:window.eventPhase},entry));
+  else window.eventTraceOverflow = true;
+};
+window.markEventPhase = function (phase) {
+  window.eventPhase = phase;
+  window.traceEvent({type:'marker',activeA:document.activeElement===document.getElementById('a'),activeB:document.activeElement===document.getElementById('b')});
+};
+for (const name of ['beforeinput','input','change','focus','blur','focusin','focusout']) document.addEventListener(name, function (event) {
+  if (event.type === 'focusout') window.focusoutDepth++;
+  const target = ['a','b','p','t','c','form','send'].includes(event.target.id) ? event.target.id : 'other';
+  const source = event.isTrusted ? 'webview-native' : event.type === 'change' && window.focusoutDepth > 0 ? 'adapter-focusout' : 'script-other';
+  window.traceEvent({type:event.type,target:target,trusted:event.isTrusted,bubbles:event.bubbles,source:source,insideFocusout:window.focusoutDepth>0});
+}, true);
+document.addEventListener('focusout', function () { window.focusoutDepth = Math.max(0,window.focusoutDepth-1); });
 resetFields();
 </script></body></html>

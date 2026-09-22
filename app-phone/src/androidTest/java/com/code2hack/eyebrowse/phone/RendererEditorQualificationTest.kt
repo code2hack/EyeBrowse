@@ -98,7 +98,7 @@ class RendererEditorQualificationTest {
     private fun edit(g: PhoneEditorAuthority.Grant, operation: EditorOperation, label: String,
                      n: Long = ++sequence): RendererEditorAdapter.Result {
         val text = (operation as? EditorOperation.Insert)?.text
-        js("window.expectedData=${text?.let(JSONObject::quote) ?: "null"};true")
+        js("window.expectedData=${text?.let(JSONObject::quote) ?: "null"};markEventPhase('before-adapter-edit');true")
         effectEnqueuedMs = SystemClock.elapsedRealtime(); effectReported = false; effectExpected = false
         return call(label) { adapter.edit(g, message(g, operation, n), it) }.also {
             effectExpected = it.status == RendererEditorAdapter.Status.APPLIED || it.status == RendererEditorAdapter.Status.SUBMISSION_REQUESTED
@@ -175,8 +175,23 @@ class RendererEditorQualificationTest {
                     assertTrue(truth("events.filter(e=>e.type==='beforeinput'&&e.target==='$id'&&e.dataMatches&&e.bubbles&&!e.trusted).length===1"))
                     assertTrue(truth("events.filter(e=>e.type==='input'&&e.target==='$id'&&e.dataMatches&&e.bubbles&&!e.trusted).length===1"))
                     if (id == "p") assertTrue(truth("document.getElementById('p').type==='password'"))
-                    js("document.getElementById('b').focus();true")
-                    assertTrue(truth("events.filter(e=>e.type==='change'&&e.target==='$id').length===1"))
+                    js("markEventPhase('before-b-focus');document.getElementById('b').focus();markEventPhase('after-b-focus');true")
+                    // Snapshot the original assertion predicate at its original next-evaluation
+                    // boundary, before logging. No wait or second sample can replace its result.
+                    val diagnostic = JSONObject(js("""(()=>{
+                        const changes=events.filter(e=>e.type==='change'&&e.target==='$id');
+                        const delivered=eventTrace.filter(e=>e.type==='change'&&e.target==='$id');
+                        return {changeCount:changes.length,exactlyOneChange:changes.length===1,
+                          nativeChanges:delivered.filter(e=>e.source==='webview-native').length,
+                          adapterFocusoutChanges:delivered.filter(e=>e.source==='adapter-focusout').length,
+                          otherScriptChanges:delivered.filter(e=>e.source==='script-other').length,
+                          captureMatchesBubble:delivered.length===changes.length,
+                          beforeinputOnce:events.filter(e=>e.type==='beforeinput'&&e.target==='$id'&&e.dataMatches&&e.bubbles&&!e.trusted).length===1,
+                          inputOnce:events.filter(e=>e.type==='input'&&e.target==='$id'&&e.dataMatches&&e.bubbles&&!e.trusted).length===1,
+                          activeB:document.activeElement===document.getElementById('b'),
+                          overflow:eventTraceOverflow,order:eventTrace};})()"""))
+                    Log.i(TAG, "CHANGE_DIAGNOSTIC field=$id metadata=$diagnostic")
+                    assertTrue("exactly one change on blur", diagnostic.getBoolean("exactlyOneChange"))
                 }
                 row("$id-selection-replacement") {
                     reset(); focus(id, "A😀B", 1, 3)
