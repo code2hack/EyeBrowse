@@ -11,6 +11,7 @@ import com.code2hack.eyebrowse.core.link.control.*
 import com.code2hack.eyebrowse.core.link.messages.*
 import com.code2hack.eyebrowse.rg.link.RgLinkClient
 import org.junit.Assert.*
+import org.json.JSONObject
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -20,6 +21,8 @@ class BrowserControlJourneyTest {
         val app=InstrumentationRegistry.getInstrumentation().targetContext
         val scenario=ActivityScenario.launch<MainActivity>(Intent(app,MainActivity::class.java))
         lateinit var peer:RgPresentationController
+        fun title():String?=peer.browserState()?.title?.substringBefore("|G=")
+        fun geometry():JSONObject=JSONObject(checkNotNull(peer.browserState()?.title).substringAfter("|G="))
         try {
             scenario.onActivity { peer=it.presentation;peer.reconnect() }
             await("Phone state",10_000) { peer.browserState()?.owner==ControlOwner.PHONE && peer.profile()!=null }
@@ -31,7 +34,7 @@ class BrowserControlJourneyTest {
             assertTrue(SystemClock.elapsedRealtime()-firstStart <= 2_000)
             Log.i("EyeBrowseT03","PHONE_TO_RG_READY_MS=${SystemClock.elapsedRealtime()-firstStart}")
             val oldContext=peer.browserState()!!.context
-            await("Phone foreground fence verified",5_000) { peer.browserState()?.title=="RG ownership verified" }
+            await("Phone foreground fence verified",5_000) { title()=="RG ownership verified" }
             val client=RgPresentationController::class.java.getDeclaredField("client").let { it.isAccessible=true;it.get(peer) as RgLinkClient }
             scenario.onActivity { peer.pause() }
             val engine=RgLinkClient::class.java.getDeclaredField("engine").let { it.isAccessible=true;it.get(client) as com.code2hack.eyebrowse.core.link.transport.LinkClientEngine }
@@ -45,7 +48,7 @@ class BrowserControlJourneyTest {
             scenario.onActivity { it.findViewById<Button>(R.id.rg_handoff).performClick() }
             await("Phone owner ack",1_000) { peer.browserState()?.owner==ControlOwner.PHONE }
             Log.i("EyeBrowseT03","RG_TO_PHONE_MS=${SystemClock.elapsedRealtime()-returnStart}")
-            await("Phone continuity verified",10_000) { peer.browserState()?.title=="Phone verified" }
+            await("Phone continuity verified",10_000) { title()=="Phone verified" }
             // Inject only through the existing authenticated production client, never a test receiver.
             fun raw(request:BrowserActionMessage):BrowserActionResultMessage {
                 val previous=peer.lastActionResult
@@ -59,8 +62,11 @@ class BrowserControlJourneyTest {
             await("RG reacquired",2_000) { peer.canAct() }
             val active=peer.browserState()!!.context
             assertTrue(active.controlEpoch>oldContext.controlEpoch)
-            val profile=peer.profile()!!;val scale=profile.densityDpi/160f
-            val x=86f*scale;val y=36f*scale
+            await("measured fixture geometry",3_000) { title()=="T03 A" && peer.browserState()?.title?.contains("|G=")==true }
+            val profile=peer.profile()!!;val measured=geometry()
+            val x=measured.getDouble("x").toFloat();val y=measured.getDouble("y").toFloat()
+            assertTrue(x in 0f..profile.width.toFloat() && y in 0f..profile.height.toFloat())
+            Log.i("EyeBrowseT03","MEASURED_GEOMETRY $measured profileDensity=${profile.densityDpi}")
             fun accepted(send:()->String?):String {
                 var id:String?=null
                 scenario.onActivity { id=send() }
@@ -83,7 +89,7 @@ class BrowserControlJourneyTest {
                 assertNull(peer.lastActionResult!!.effectSucceeded)
             }
             val click=accepted { peer.activateAt(x,y) }
-            await("ActivateAt effect",1_000) { peer.browserState()?.title=="T03 A click 1" && peer.canAct() }
+            await("ActivateAt effect",1_000) { title()=="T03 A click 1" && peer.canAct() }
             assertEquals("STALE_COMMAND_SEQUENCE",raw(BrowserActionMessage(click,active,BrowserAction.ActivateAt(x,y),click.split(':')[2].toLong())).reason)
             var rejected:String?=null
             scenario.onActivity { rejected=peer.activateAt(profile.width+1f,y) }
@@ -92,21 +98,36 @@ class BrowserControlJourneyTest {
             assertEquals("OUTSIDE_VIEWPORT",peer.lastActionResult!!.reason)
             assertEquals("STALE_COMMAND_SEQUENCE",raw(BrowserActionMessage(rejected!!,active,BrowserAction.ActivateAt(x,y),rejected!!.split(':')[2].toLong())).reason)
             Log.i("EyeBrowseT03","NEGATIVE_ACTIONS stale=true replay=true rejectedOrdinalConsumed=true")
+            val scrollScale=geometry().getDouble("scale")
+            val positiveStart=SystemClock.elapsedRealtime()
             accepted { peer.scrollBy(0f,160f) }
-            await("positive scroll",1_000) { peer.browserState()?.title?.let { it.startsWith("T03 A scroll ") && kotlin.math.abs(it.substringAfterLast(' ').toInt()-kotlin.math.round(160f/scale).toInt())<=1 }==true && peer.canAct() }
+            await("positive scroll",1_000) {
+                (title()?.startsWith("T03 A scroll ")==true || title()=="T03 A positive verified") &&
+                    kotlin.math.abs(geometry().getDouble("cssY")-160.0/scrollScale)<=1 && peer.canAct()
+            }
+            assertTrue("positive effect <=1s",SystemClock.elapsedRealtime()-positiveStart<=1_000)
+            Log.i("EyeBrowseT03","POSITIVE_SCROLL_MS=${SystemClock.elapsedRealtime()-positiveStart} css=${geometry().getDouble("cssY")} expected=${160.0/scrollScale}")
+            await("Phone native positive delta",3_000) { title()=="T03 A positive verified" }
+            val negativeStart=SystemClock.elapsedRealtime()
             accepted { peer.scrollBy(0f,-160f) }
-            await("negative scroll",1_000) { peer.browserState()?.title=="T03 A scroll 0" && peer.canAct() }
-            accepted { peer.activateAt(x,92f*scale) }
-            await("B navigation",5_000) { peer.browserState()?.title=="T03 B" && peer.canAct() }
+            await("negative scroll",1_000) {
+                (title()=="T03 A scroll 0" || title()=="T03 A negative verified") && kotlin.math.abs(geometry().getDouble("cssY"))<=1 && peer.canAct()
+            }
+            assertTrue("negative effect <=1s",SystemClock.elapsedRealtime()-negativeStart<=1_000)
+            Log.i("EyeBrowseT03","NEGATIVE_SCROLL_MS=${SystemClock.elapsedRealtime()-negativeStart}")
+            await("Phone native negative delta",3_000) { title()=="T03 A negative verified" }
+            accepted { peer.activateAt(geometry().getDouble("nx").toFloat(),geometry().getDouble("ny").toFloat()) }
+            await("B navigation",5_000) { title()=="T03 B" && peer.canAct() }
             navigationButton(R.id.rg_back)
             await("Back effect",5_000) { peer.browserState()?.url?.contains("/control.html?")==true && peer.canAct() }
             navigationButton(R.id.rg_forward)
-            await("Forward effect",5_000) { peer.browserState()?.title=="T03 B" && peer.canAct() }
+            await("Forward effect",5_000) { title()=="T03 B" && peer.canAct() }
             val beforeReload=peer.browserState()!!.context.documentId
             navigationButton(R.id.rg_reload)
-            await("Reload effect",5_000) { peer.browserState()?.context?.documentId!=beforeReload && peer.browserState()?.title=="T03 B" && peer.canAct() }
-            accepted { peer.activateAt(x,y) }
-            await("final page effect",1_000) { peer.browserState()?.title=="T03 done" }
+            await("Reload effect",5_000) { peer.browserState()?.context?.documentId!=beforeReload && title()=="T03 B" && peer.canAct() }
+            await("current B geometry",2_000) { peer.browserState()?.title?.contains("|G=")==true }
+            accepted { peer.activateAt(geometry().getDouble("x").toFloat(),geometry().getDouble("y").toFloat()) }
+            await("final page effect",1_000) { title()=="T03 done" }
             Log.i("EyeBrowseT03","RG_T03_ACTIONS_PASS")
             scenario.onActivity { peer.pause() }
         } finally { scenario.close() }

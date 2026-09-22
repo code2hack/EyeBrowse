@@ -34,7 +34,7 @@ class BrowserControlJourneyTest {
         try {
             lateinit var barrier:FixtureNavigationBarrier
             scenario.onActivity { barrier=FixtureNavigationBarrier(browser.documentIdentity(),url,"T03 A");browser.openAddress(url);link.start() }
-            await("fresh control fixture",10_000) { barrier.isReady(FixtureNavigationBarrier.Observation(browser.documentIdentity(),browser.displayUrl(),browser.lastCommittedUrl(),browser.pageTitle(),browser.isLoading(),browser.isLive(),browser.errorMessage())) }
+            await("fresh control fixture",10_000) { barrier.isReady(FixtureNavigationBarrier.Observation(browser.documentIdentity(),browser.displayUrl(),browser.lastCommittedUrl(),browser.pageTitle()?.substringBefore("|G="),browser.isLoading(),browser.isLive(),browser.errorMessage())) }
             val originalDoc=browser.documentIdentity()
             js(browser,"document.getElementById('state').value='T03-preserved';true")
             val marker=js(browser,"window.fixtureMarker")
@@ -65,7 +65,7 @@ class BrowserControlJourneyTest {
                 assertTrue(host.isRgPresentationOwned())
             }
             Log.i("EyeBrowseT03","OLD_PHONE_REJECTED foregroundDoesNotSteal=true")
-            js(browser,"document.title='RG ownership verified';true")
+            js(browser,"window.__t03Title('RG ownership verified');true")
             await("first return to Phone",15_000) { link.controlCoordinator.authority.snapshot().owner==ControlOwner.PHONE }
             scenario.onActivity {
                 assertSame(baseline,browser.view());assertEquals(originalDoc,browser.documentIdentity())
@@ -78,9 +78,40 @@ class BrowserControlJourneyTest {
             assertEquals(marker,js(browser,"window.fixtureMarker"))
             assertEquals("\"T03-preserved\"",js(browser,"document.getElementById('state').value"))
             Log.i("EyeBrowseT03","HANDOFF_ROUNDTRIP sameView=true sameDocument=true sameMarker=true sameField=true")
-            js(browser,"document.title='Phone verified';true")
+            js(browser,"window.__t03Title('Phone verified');true")
             await("RG second takeover",15_000) { link.controlCoordinator.authority.snapshot().owner==ControlOwner.RG }
-            await("all RG actions complete",40_000) { browser.pageTitle()=="T03 done" && !browser.isLoading() }
+            await("second presentation ready",2_000) { link.controlCoordinator.authority.snapshot().presentationStatus==PresentationStatus.READY }
+            val beforeScroll=geometry(browser,"A-before",160,"action","next")!!
+            assertEquals("fixture starts at native top",0,beforeScroll.getInt("nativeScrollY"))
+            js(browser,"window.__t03Title('T03 A');true")
+            var positiveRecorded=false
+            var negativeRecorded=false
+            val actionDeadline=SystemClock.elapsedRealtime()+40_000
+            while(SystemClock.elapsedRealtime()<actionDeadline) {
+                var title="";var loading=true
+                InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                    title=browser.pageTitle()?.substringBefore("|G=") ?: "";loading=browser.isLoading()
+                }
+                if(title=="T03 done" && !loading) break
+                if(title.startsWith("T03 A scroll ") && !loading) {
+                    val css=title.substringBefore('|').substringAfterLast(' ').toInt()
+                    if(css>0 && !positiveRecorded) {
+                        val after=geometry(browser,"positive-after",160,"action","next")!!
+                        assertEquals("commanded +160 viewport px",beforeScroll.getInt("nativeScrollY")+160,after.getInt("nativeScrollY"))
+                        positiveRecorded=true
+                        js(browser,"window.__t03Title('T03 A positive verified');true")
+                    } else if(css==0 && positiveRecorded && !negativeRecorded) {
+                        val after=geometry(browser,"negative-after",-160,"action","next")!!
+                        assertEquals("commanded -160 viewport px",beforeScroll.getInt("nativeScrollY"),after.getInt("nativeScrollY"))
+                        negativeRecorded=true
+                        js(browser,"window.__t03Title('T03 A negative verified');true")
+                    }
+                }
+                SystemClock.sleep(20)
+            }
+            await("all RG actions complete",1_000) { browser.pageTitle()?.substringBefore("|G=")=="T03 done" && !browser.isLoading() }
+            assertTrue("positive native delta observed",positiveRecorded)
+            assertTrue("negative native delta observed",negativeRecorded)
             assertSame(baseline,browser.view())
             val events=JSONArray(JSONArray("["+js(browser,"sessionStorage.getItem(window.fixtureKey)")+"]").getString(0))
             val values=(0 until events.length()).map { events.getString(it) }
@@ -104,7 +135,6 @@ class BrowserControlJourneyTest {
                 it.findViewById<Button>(R.id.button_hosting_toggle).performClick()
             }
             await("Stop cleanup",5_000) { !host.hasDisplayResources() && !host.captureResourcesPresent() && !host.isWakeLockHeld() }
-            js(browser,"sessionStorage.removeItem(window.fixtureKey);true")
             Log.i("EyeBrowseT03","PHONE_T03_PASS disconnectedTakeover=true stopClean=true")
         } catch (failure:Throwable) {
             primaryFailure=failure
@@ -112,6 +142,7 @@ class BrowserControlJourneyTest {
             throw failure
         } finally {
             val cleanup=listOf<()->Unit>(
+                { if(browser.isLive() && browser.displayUrl()?.startsWith(url.substringBefore("/control.html")+"/control")==true) clearFixtureStorage(browser) },
                 { InstrumentationRegistry.getInstrumentation().runOnMainSync { host.stop() } },
                 { InstrumentationRegistry.getInstrumentation().runOnMainSync { link.stop() } },
                 { scenario.close() },
@@ -120,6 +151,48 @@ class BrowserControlJourneyTest {
             else if(cleanup.isNotEmpty()) throw cleanup.first()
         }
     }
+    private fun geometry(browser:PhoneBrowserSession,stage:String,command:Int,target:String,next:String?):JSONObject? {
+        val visual=CountDownLatch(1)
+        var document=""
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            document=browser.documentIdentity()
+            browser.view()!!.postVisualStateCallback(0,object:android.webkit.WebView.VisualStateCallback() {
+                override fun onComplete(requestId:Long) { visual.countDown() }
+            })
+        }
+        assertTrue("fixture visual state",visual.await(3,TimeUnit.SECONDS))
+        val native=JSONObject()
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val v=browser.view()!!
+            native.put("stage",stage).put("commandViewportPx",command).put("document",document)
+                .put("nativeScrollY",v.scrollY).put("webViewScale",v.scale.toDouble())
+                .put("width",v.width).put("height",v.height).put("densityDpi",v.resources.displayMetrics.densityDpi)
+                .put("nativeObservedMs",SystemClock.elapsedRealtime())
+        }
+        val script="""(function(){function rect(id){const e=document.getElementById(id);if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height};}return {scrollY:scrollY,dpr:devicePixelRatio,innerWidth:innerWidth,visualScale:visualViewport.scale,metadata:window.__t03Geometry(),action:rect(${JSONObject.quote(target)}),next:rect(${JSONObject.quote(next ?: "")})};})()"""
+        val css=JSONObject(js(browser,script))
+        var stillCurrent=false
+        InstrumentationRegistry.getInstrumentation().runOnMainSync { stillCurrent=browser.documentIdentity()==document && !browser.isLoading() }
+        if(!stillCurrent || css.isNull("action")) return null // An intended navigation retired this observation.
+        native.put("css",css)
+        val measured=FixtureViewportGeometry(native.getDouble("webViewScale"),native.getInt("width"),native.getInt("height"))
+        native.put("expectedCssDelta",measured.cssDelta(command))
+        assertEquals("native and visual-viewport scale agree",measured.scale,css.getDouble("dpr")*css.getDouble("visualScale"),0.01)
+        if(stage=="A-before") {
+            val rect=css.getJSONObject("action")
+            val center=measured.center(rect.getDouble("x"),rect.getDouble("y"),rect.getDouble("w"),rect.getDouble("h"))
+            assertEquals("measured action x",center.first,css.getJSONObject("metadata").getDouble("x"),1.0)
+            assertEquals("measured action y",center.second,css.getJSONObject("metadata").getDouble("y"),1.0)
+        }
+        Log.i("EyeBrowseT03","SCROLL_GEOMETRY $native")
+        return native
+    }
+    private fun clearFixtureStorage(browser:PhoneBrowserSession) {
+        val removed=js(browser,"(function(){const keys=Object.keys(sessionStorage).filter(k=>/^t03-[0-9a-f-]{36}$/.test(k));keys.forEach(k=>sessionStorage.removeItem(k));return keys;})()")
+        assertEquals("[]",js(browser,"Object.keys(sessionStorage).filter(k=>/^t03-[0-9a-f-]{36}$/.test(k))"))
+        Log.i("EyeBrowseT03","FIXTURE_STORAGE_CLEANUP removed=$removed remaining=0")
+    }
+
     private fun await(label:String,bound:Long,condition:()->Boolean) {
         val end=SystemClock.elapsedRealtime()+bound
         while(SystemClock.elapsedRealtime()<end) {
