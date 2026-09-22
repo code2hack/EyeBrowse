@@ -31,13 +31,22 @@ class BrowserControlJourneyTest {
             assertTrue(SystemClock.elapsedRealtime()-firstStart <= 2_000)
             Log.i("EyeBrowseT03","PHONE_TO_RG_READY_MS=${SystemClock.elapsedRealtime()-firstStart}")
             val oldContext=peer.browserState()!!.context
+            await("Phone foreground fence verified",5_000) { peer.browserState()?.title=="RG ownership verified" }
+            val client=RgPresentationController::class.java.getDeclaredField("client").let { it.isAccessible=true;it.get(peer) as RgLinkClient }
+            scenario.onActivity { peer.pause() }
+            val engine=RgLinkClient::class.java.getDeclaredField("engine").let { it.isAccessible=true;it.get(client) as com.code2hack.eyebrowse.core.link.transport.LinkClientEngine }
+            await("cancel quiescence",2_000) { !engine.isBusy }
+            scenario.onActivity { it.findViewById<Button>(R.id.rg_retry).performClick() }
+            await("authenticated reconnect without takeover",10_000) { peer.canAct() }
+            assertEquals(oldContext.controlEpoch,peer.browserState()!!.context.controlEpoch)
+            assertEquals(ControlOwner.RG,peer.browserState()!!.owner)
+            Log.i("EyeBrowseT03","RECONNECT_PRESERVES_OWNER epoch=${oldContext.controlEpoch}")
             val returnStart=SystemClock.elapsedRealtime()
             scenario.onActivity { it.findViewById<Button>(R.id.rg_handoff).performClick() }
             await("Phone owner ack",1_000) { peer.browserState()?.owner==ControlOwner.PHONE }
             Log.i("EyeBrowseT03","RG_TO_PHONE_MS=${SystemClock.elapsedRealtime()-returnStart}")
             await("Phone continuity verified",10_000) { peer.browserState()?.title=="Phone verified" }
             // Inject only through the existing authenticated production client, never a test receiver.
-            val client=RgPresentationController::class.java.getDeclaredField("client").let { it.isAccessible=true;it.get(peer) as RgLinkClient }
             fun raw(request:BrowserActionMessage):BrowserActionResultMessage {
                 val previous=peer.lastActionResult
                 assertTrue(client.sendControl(request))

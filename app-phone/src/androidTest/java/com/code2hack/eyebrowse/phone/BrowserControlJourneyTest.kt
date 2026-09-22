@@ -5,6 +5,7 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.ViewGroup
 import android.widget.Button
+import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -27,6 +28,8 @@ class BrowserControlJourneyTest {
         val nonce=java.util.UUID.randomUUID().toString()
         val url=InstrumentationRegistry.getArguments().getString("fixtureBaseUrl","http://127.0.0.1:26341")+"/control.html?case="+nonce
         var baseline:android.webkit.WebView?=null
+        var historySize=0
+        var historyIndex=0
         var primaryFailure: Throwable?=null
         try {
             lateinit var barrier:FixtureNavigationBarrier
@@ -35,19 +38,41 @@ class BrowserControlJourneyTest {
             val originalDoc=browser.documentIdentity()
             js(browser,"document.getElementById('state').value='T03-preserved';true")
             val marker=js(browser,"window.fixtureMarker")
-            scenario.onActivity { baseline=browser.view();assertNotNull(baseline);it.findViewById<Button>(R.id.button_hosting_toggle).performClick() }
+            scenario.onActivity {
+                baseline=browser.view();assertNotNull(baseline)
+                val history=baseline!!.copyBackForwardList();historySize=history.size;historyIndex=history.currentIndex
+                it.findViewById<Button>(R.id.button_hosting_toggle).performClick()
+            }
             await("hosting",5_000) { host.status().state==HostingController.State.HOSTING }
+            val oldPhoneContext=link.controlCoordinator.authority.snapshot().context
             Log.i("EyeBrowseT03","PHONE_T03_READY")
             await("RG first takeover",20_000) { link.controlCoordinator.authority.snapshot().owner==ControlOwner.RG && host.isRgPresentationOwned() }
             scenario.onActivity {
                 assertFalse(it.findViewById<Button>(R.id.button_open).isEnabled)
                 assertNotSame(it.findViewById<ViewGroup>(R.id.web_container),browser.view()!!.parent)
+                val stale=BrowserActionRequest(BrowserCommandId.create(oldPhoneContext,1),oldPhoneContext,BrowserAction.Reload,1)
+                assertEquals(ActionRejection.STALE_CONTEXT,(link.controlCoordinator.authority.admitAction(ControlOwner.PHONE,stale) as ActionDecision.Rejected).reason)
+                it.findViewById<android.widget.ImageButton>(R.id.button_reload).performClick()
+                assertEquals(originalDoc,browser.documentIdentity())
             }
+            val rgEpoch=link.controlCoordinator.authority.snapshot().controlEpoch
+            scenario.moveToState(Lifecycle.State.CREATED)
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            scenario.onActivity {
+                assertEquals(ControlOwner.RG,link.controlCoordinator.authority.snapshot().owner)
+                assertEquals(rgEpoch,link.controlCoordinator.authority.snapshot().controlEpoch)
+                assertEquals(originalDoc,browser.documentIdentity())
+                assertTrue(host.isRgPresentationOwned())
+            }
+            Log.i("EyeBrowseT03","OLD_PHONE_REJECTED foregroundDoesNotSteal=true")
+            js(browser,"document.title='RG ownership verified';true")
             await("first return to Phone",15_000) { link.controlCoordinator.authority.snapshot().owner==ControlOwner.PHONE }
             scenario.onActivity {
                 assertSame(baseline,browser.view());assertEquals(originalDoc,browser.documentIdentity())
                 assertSame(it.findViewById<ViewGroup>(R.id.web_container),browser.view()!!.parent)
                 assertTrue(it.findViewById<Button>(R.id.button_open).isEnabled)
+                assertEquals(historySize,baseline!!.copyBackForwardList().size)
+                assertEquals(historyIndex,baseline!!.copyBackForwardList().currentIndex)
                 assertFalse(host.isRgPresentationOwned())
             }
             assertEquals(marker,js(browser,"window.fixtureMarker"))
