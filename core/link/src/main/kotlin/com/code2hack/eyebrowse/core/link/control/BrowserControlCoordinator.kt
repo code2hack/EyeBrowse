@@ -137,6 +137,18 @@ class BrowserControlCoordinator(
         return HandoffDecision.Accepted(state)
     }
 
+    /** Explicit Hosting Stop returns local authority; hidden Phone geometry remains unmeasured. */
+    @Synchronized fun returnToPhoneAfterStop(freshPhoneProfile: PresentationProfile?) {
+        if (state.owner != ControlOwner.RG) return
+        // Exhausted authority remains fail-closed; never wrap/reuse an old full context.
+        if (state.controlEpoch == Long.MAX_VALUE || state.viewportEpoch == Long.MAX_VALUE) return
+        state = state.copy(owner=ControlOwner.PHONE, profile=freshPhoneProfile,
+            context=state.context.copy(controlEpoch=state.controlEpoch+1,
+                viewportEpoch=state.viewportEpoch+1),
+            presentationStatus=PresentationStatus.INACTIVE)
+        commandHighWater=0
+    }
+
     @Synchronized fun markPresentationReady(context: ControlContext): Boolean {
         if (context != state.context || state.owner != ControlOwner.RG || !state.hostingActive ||
             !state.linkAuthenticated || !state.sessionCompatible) return false

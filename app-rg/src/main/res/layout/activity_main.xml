@@ -10,6 +10,13 @@
         <Button android:id="@+id/rg_retry" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/rg_retry" />
         <Button android:id="@+id/button_scan_pair" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/rg_action_scan_pair" />
     </LinearLayout>
+    <Button android:id="@+id/rg_handoff" android:layout_width="match_parent" android:layout_height="48dp"
+        android:text="@string/use_on_glasses" android:enabled="false" android:maxLines="1" />
+    <LinearLayout android:id="@+id/rg_navigation" android:layout_width="match_parent" android:layout_height="48dp" android:orientation="horizontal" android:visibility="invisible">
+        <Button android:id="@+id/rg_back" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:text="@string/browser_back" android:maxLines="1" android:textSize="12sp" />
+        <Button android:id="@+id/rg_forward" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:text="@string/browser_forward" android:maxLines="1" android:textSize="12sp" />
+        <Button android:id="@+id/rg_reload" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:text="@string/browser_reload" android:maxLines="1" android:textSize="12sp" />
+    </LinearLayout>
     <ImageView android:id="@+id/rg_page" android:layout_width="match_parent" android:layout_height="0dp"
         android:layout_weight="1" android:scaleType="center" android:contentDescription="@string/rg_page_description" />
 </LinearLayout>

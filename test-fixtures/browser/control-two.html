@@ -1,0 +1,7 @@
+<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>T03 B</title>
+<style>body{margin:0;background:#e7f0ff;color:#171717;font:16px sans-serif;height:1800px}button{position:absolute;left:16px;top:16px;width:140px;height:40px;font:16px sans-serif}p{position:absolute;top:80px;left:16px}</style></head><body><button id="done">Finish actions</button><p>Second fixture page</p>
+<script>
+const nonce=new URLSearchParams(location.search).get('case')||'unscoped';const key='t03-'+nonce;
+function note(event){const values=JSON.parse(sessionStorage.getItem(key)||'[]');values.push(event);sessionStorage.setItem(key,JSON.stringify(values));}
+window.fixtureKey=key;note('load:B');addEventListener('pageshow',()=>note('show:B'));document.getElementById('done').onclick=()=>{note('click:B');document.title='T03 done';};
+</script></body></html>

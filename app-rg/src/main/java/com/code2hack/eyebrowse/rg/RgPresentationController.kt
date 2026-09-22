@@ -9,6 +9,7 @@ import android.os.SystemClock
 import android.util.Log
 import com.code2hack.eyebrowse.core.link.*
 import com.code2hack.eyebrowse.core.link.control.ControlOwner
+import com.code2hack.eyebrowse.core.link.control.BrowserAction
 import com.code2hack.eyebrowse.core.link.framing.PresentationFrame
 import com.code2hack.eyebrowse.core.link.messages.*
 import com.code2hack.eyebrowse.core.link.presentation.PresentationProfile
@@ -23,6 +24,58 @@ class RgPresentationController(context: Context, private val surface: Surface) :
         /** Bitmap remains owned here; the surface must not recycle or retain replaced frames. */
         fun frame(bitmap: Bitmap)
     }
+    private val commands = commandSequence(context.applicationContext)
+    private var pendingCommand: String? = null
+    private var actionTimeout: Runnable? = null
+    @Volatile var lastActionResult: BrowserActionResultMessage? = null
+        private set
+    @Volatile var lastHandoffResult: HandoffResultMessage? = null
+        private set
+
+    fun canAct(): Boolean = synchronized(lock) {
+        val current = state
+        compatible && !closed && pendingCommand == null && current?.owner == ControlOwner.RG &&
+            !current.stale && !current.loading && current.profile == measuredProfile && lastFrameHeader?.context == current.context
+    }
+    fun canHandoff(): Boolean = compatible && !closed && state != null
+
+    fun back(): String? = action(BrowserAction.Back)
+    fun forward(): String? = action(BrowserAction.Forward)
+    fun reload(): String? = action(BrowserAction.Reload)
+    fun activateAt(x: Float, y: Float): String? = action(BrowserAction.ActivateAt(x,y))
+    fun scrollBy(dx: Float, dy: Float): String? = action(BrowserAction.ScrollBy(dx,dy))
+
+    private fun action(action: BrowserAction): String? = synchronized(lock) {
+        if (!canAct()) return@synchronized null
+        val current = checkNotNull(state)
+        val request = commands.next(current.context,action) ?: run {
+            status("Cannot reserve action — use Phone recovery")
+            return@synchronized null
+        }
+        pendingCommand = request.commandId
+        if (!client.sendControl(request)) {
+            pendingCommand = null
+            status("Action not sent")
+            return@synchronized null
+        }
+        status("Waiting for page")
+        val timeout = Runnable { synchronized(lock) {
+            if (pendingCommand == request.commandId) {
+                pendingCommand = null
+                status("Could not confirm action — not retried")
+            }
+        } }
+        actionTimeout = timeout
+        main.postDelayed(timeout,5_000)
+        request.commandId
+    }
+
+    fun requestPhone(): Boolean {
+        val current = state ?: return false
+        if (!canHandoff() || current.owner != ControlOwner.RG) return false
+        return client.sendControl(HandoffRequestMessage(HandoffTargetWire.PHONE,current.context.controlEpoch))
+    }
+
     private val main = Handler(Looper.getMainLooper())
     private val inbox = PresentationInbox()
     private val decoder = Executors.newSingleThreadExecutor { r -> Thread(r,"eyebrowse-frame-decoder") }
@@ -95,7 +148,19 @@ class RgPresentationController(context: Context, private val surface: Surface) :
                     if (message.owner == ControlOwner.PHONE) "Browsing on Phone" else "Presentation stale"
                 } else if (lastFrameHeader?.context == message.context) statusText else "Waiting for current frame")
             }
-            is HandoffResultMessage -> if (!message.accepted) invalidate("Presentation declined: ${message.reason}")
+            is HandoffResultMessage -> {
+                lastHandoffResult = message
+                if (!message.accepted) status(if (message.reason == "INVALID_PROFILE") "Open Phone to return browsing" else "Control could not be transferred")
+            }
+            is BrowserActionResultMessage -> {
+                lastActionResult = message
+                if (pendingCommand == message.commandId) {
+                    pendingCommand = null
+                    actionTimeout?.let(main::removeCallbacks); actionTimeout = null
+                    status(if (!message.accepted) "Action unavailable — page or control changed"
+                        else if (message.reason != null) "Could not confirm action — not retried" else "Connected to Phone")
+                }
+            }
             is PresentationStaleMessage -> invalidate("Presentation stale: ${message.reason}")
             is PresentationStopMessage -> invalidate("Presentation stopped")
             else -> Unit
@@ -160,7 +225,7 @@ class RgPresentationController(context: Context, private val surface: Surface) :
         }
     }
     private fun invalidate(reason: String) {
-        synchronized(lock) { inbox.grant(null,null) }
+        synchronized(lock) { state = state?.copy(stale=true); inbox.grant(null,null); pendingCommand = null; actionTimeout?.let(main::removeCallbacks); actionTimeout = null }
         status(reason)
     }
     fun pause() {
@@ -168,8 +233,24 @@ class RgPresentationController(context: Context, private val surface: Surface) :
         invalidate("Presentation paused — Retry")
         client.disconnect()
     }
+    companion object {
+        private var sequence: CommandSequence? = null
+        @Synchronized private fun commandSequence(context: Context): CommandSequence {
+            return sequence ?: run {
+                val prefs=context.getSharedPreferences("browser-command-sequence",Context.MODE_PRIVATE)
+                CommandSequence({
+                    prefs.getString("lifetime",null)?.let { CommandSequence.Cursor(it,prefs.getLong("epoch",-1),prefs.getLong("sequence",0)) }
+                }, { cursor ->
+                    prefs.edit().putString("lifetime",cursor.lifetime).putLong("epoch",cursor.epoch)
+                        .putLong("sequence",cursor.sequence).commit()
+                }).also { sequence=it }
+            }
+        }
+    }
+
     fun close() {
         synchronized(lock) { closed = true; inbox.grant(null,null); pendingDisplay?.second?.recycle(); pendingDisplay = null }
+        actionTimeout?.let(main::removeCallbacks)
         client.disconnect(); decoder.shutdownNow(); main.removeCallbacks(display); main.removeCallbacks(updateSurface)
         // ImageView may still render the last bitmap until its Activity detaches. Let GC own it.
         shown = null

@@ -1,0 +1,12 @@
+<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>T03 A</title>
+<style>body{margin:0;background:#f6f3ea;color:#171717;font:16px sans-serif;height:1800px}button,a{position:absolute;left:16px;width:140px;height:40px;box-sizing:border-box;font:16px sans-serif}button{top:16px}a{top:72px;display:block;background:#abc;padding:8px}input{position:absolute;top:128px;left:16px;width:200px}#marker{position:absolute;top:180px;left:16px}</style></head><body>
+<button id="action">Activate A</button><a id="next">Open B</a><input id="state" value="initial"><div id="marker"></div>
+<script>
+const nonce=new URLSearchParams(location.search).get('case')||'unscoped';const key='t03-'+nonce;
+function note(event){const values=JSON.parse(sessionStorage.getItem(key)||'[]');values.push(event);sessionStorage.setItem(key,JSON.stringify(values));}
+window.fixtureKey=key;window.fixtureMarker='M'+Date.now();document.getElementById('marker').textContent=window.fixtureMarker;
+note('load:A');addEventListener('pageshow',()=>note('show:A'));let clicks=0;
+document.getElementById('action').onclick=()=>{clicks++;note('click:A:'+clicks);document.title='T03 A click '+clicks;};
+document.getElementById('next').href='/control-two.html?case='+encodeURIComponent(nonce);
+onscroll=()=>{note('scroll:A:'+Math.round(scrollY));document.title='T03 A scroll '+Math.round(scrollY);};
+</script></body></html>

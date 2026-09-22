@@ -128,6 +128,14 @@
             android:text="@string/action_hosting_start" />
 
         <Button
+            android:id="@+id/button_use_phone"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            android:textSize="12sp"
+            android:text="@string/use_on_phone" />
+
+        <Button
             android:id="@+id/button_pair_rg"
             style="?android:attr/borderlessButtonStyle"
             android:layout_width="wrap_content"

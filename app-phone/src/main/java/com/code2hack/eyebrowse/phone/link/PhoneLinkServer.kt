@@ -50,6 +50,7 @@ class PhoneLinkServer(
     val controlCoordinator = PhoneControlCoordinator(
         readDocumentIdentity = { browserSession?.documentIdentity() ?: fallbackDocumentId },
         invalidatePresentation = { authenticatedSession?.setPresentation(null, null) },
+        executeAction = { browserSession?.executeRemoteAction(it) ?: error("browser unavailable") },
         measurePhone = { hostingController?.measurePhoneControlProfile() },
     )
     private val publisher by lazy {
@@ -92,8 +93,20 @@ class PhoneLinkServer(
         val before = controlCoordinator.authority.snapshot().context
         hostingController?.status()?.let {
             controlCoordinator.authority.setHostingGeneration(it.generation.toLong(), it.state == HostingController.State.HOSTING)
+            if (it.state == HostingController.State.NOT_HOSTING) {
+                controlCoordinator.authority.returnToPhoneAfterStop(hostingController.measurePhoneControlProfile())
+            } else if (!it.captureActive) {
+                val current = controlCoordinator.authority.snapshot()
+                if (current.owner == ControlOwner.RG && current.presentationStatus == PresentationStatus.READY) {
+                    controlCoordinator.authority.markPresentationStale(current.context)
+                    authenticatedSession?.setPresentation(null,null)
+                }
+            }
         }
-        if (before != controlCoordinator.authority.snapshot().context) authenticatedSession?.setPresentation(null,null)
+        if (before != controlCoordinator.authority.snapshot().context) {
+            authenticatedSession?.setPresentation(null,null)
+            notifyLinkObservers()
+        }
         // Hosting state transition (main thread): push the latest-state observation if linked.
         engine?.pushStatus(currentHostStatus())
         schedulePresentation()
@@ -127,11 +140,8 @@ class PhoneLinkServer(
                         hostingController?.status()?.let {
                             controlCoordinator.authority.setHostingGeneration(it.generation.toLong(), it.state == HostingController.State.HOSTING)
                         }
-                        val before = controlCoordinator.authority.snapshot().context
-                        controlCoordinator.receive(message)?.let { response ->
-                            if (before != controlCoordinator.authority.snapshot().context) session.setPresentation(null, null)
+                        processControl(message)?.let { response ->
                             if (!session.sendControl(response)) session.close()
-                            schedulePresentation()
                         }
                     }
                 } finally { pendingControls.release() }
@@ -139,6 +149,38 @@ class PhoneLinkServer(
             if (!posted) { pendingControls.release(); session.close() }
         }
         override fun onAuthFailed(error: LinkError) = notifyLinkObservers()
+    }
+
+    /** Shared main-thread boundary for remote handoff/actions and explicit local recovery. */
+    private fun processControl(message: BrowserControlMessage): BrowserControlMessage? {
+        val before = controlCoordinator.authority.snapshot().context
+        val response = controlCoordinator.receive(message)
+        val state = controlCoordinator.authority.snapshot()
+        if (before != state.context) authenticatedSession?.setPresentation(null,null)
+        if (response is HandoffResultMessage && response.accepted) {
+            publisher?.stop()
+            if (state.owner == ControlOwner.PHONE) check(hostingController?.presentOnPhone() == true)
+            else publisher?.reconcile(state)
+            notifyLinkObservers()
+        }
+        schedulePresentation()
+        return response
+    }
+
+    /** Phone-local explicit takeover works even after the RG link is lost. */
+    fun useOnPhone(): HandoffResultMessage = synchronized(controlCoordinator.authority) {
+        check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
+        val epoch = controlCoordinator.authority.snapshot().controlEpoch
+        val result = processControl(HandoffRequestMessage(HandoffTargetWire.PHONE,epoch)) as HandoffResultMessage
+        authenticatedSession?.sendControl(result)
+        result
+    }
+
+    fun phoneOwnsInput(): Boolean = controlCoordinator.authority.snapshot().owner == ControlOwner.PHONE
+
+    fun publishPhoneViewport() {
+        hostingController?.measurePhoneControlProfile()?.let { controlCoordinator.authority.updatePhoneViewport(it) }
+        schedulePresentation()
     }
 
     /** T02's real producer reports readiness only for its exact immutable presentation context. */

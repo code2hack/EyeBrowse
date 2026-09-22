@@ -47,6 +47,9 @@ class MainActivity : ComponentActivity() {
     private var attachment: PhoneBrowserSession.Attachment? = null
     private lateinit var addressBar: AddressBarModel
     private lateinit var hosting: HostingController
+    private lateinit var link: com.code2hack.eyebrowse.phone.link.PhoneLinkServer
+    private lateinit var usePhoneButton: Button
+    private val linkObserver: () -> Unit = { runOnUiThread { if (::hosting.isInitialized) render() } }
 
     private lateinit var addressInput: EditText
     private lateinit var backButton: ImageButton
@@ -113,6 +116,10 @@ class MainActivity : ComponentActivity() {
         hostingStatusText = findViewById(R.id.hosting_status)
         webContainer = findViewById(R.id.web_container)
         hosting = HostingController.get(applicationContext)
+        link = com.code2hack.eyebrowse.phone.link.PhoneLinkServer.obtain(this)
+        usePhoneButton = findViewById(R.id.button_use_phone)
+        usePhoneButton.setOnClickListener { link.useOnPhone();render() }
+        link.addLinkObserver(linkObserver)
         webContainer.addOnLayoutChangeListener(webViewportLayoutListener)
 
         if (savedInstanceState != null) {
@@ -130,9 +137,9 @@ class MainActivity : ComponentActivity() {
             true
         }
         openButton.setOnClickListener { submitAddress() }
-        backButton.setOnClickListener { if (!hosting.isRgPresentationOwned()) session.goBack() }
-        forwardButton.setOnClickListener { if (!hosting.isRgPresentationOwned()) session.goForward() }
-        reloadButton.setOnClickListener { if (!hosting.isRgPresentationOwned()) session.reload() }
+        backButton.setOnClickListener { if (link.phoneOwnsInput() && !hosting.isRgPresentationOwned()) session.goBack() }
+        forwardButton.setOnClickListener { if (link.phoneOwnsInput() && !hosting.isRgPresentationOwned()) session.goForward() }
+        reloadButton.setOnClickListener { if (link.phoneOwnsInput() && !hosting.isRgPresentationOwned()) session.reload() }
         hostingButton.setOnClickListener { toggleHosting() }
         pairRgButton.setOnClickListener {
             startActivity(android.content.Intent(this, com.code2hack.eyebrowse.phone.pairing.PairingActivity::class.java))
@@ -144,7 +151,7 @@ class MainActivity : ComponentActivity() {
                     hideIme()
                     return
                 }
-                if (!hosting.isRgPresentationOwned() && session.canGoBack()) {
+                if (link.phoneOwnsInput() && !hosting.isRgPresentationOwned() && session.canGoBack()) {
                     session.goBack()
                     return
                 }
@@ -212,6 +219,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         Log.i("EyeBrowseHost", "activity onDestroy " + identityHash())
         webContainer.removeOnLayoutChangeListener(webViewportLayoutListener)
+        link.removeLinkObserver(linkObserver)
         hosting.removeListener(hostingListener)
         session.removeListener(sessionListener)
         // A destroyed Activity must not steal the view from a successor; only when this Activity
@@ -245,6 +253,7 @@ class MainActivity : ComponentActivity() {
             height,
             resources.configuration.densityDpi,
         )
+        link.publishPhoneViewport()
     }
 
     private fun toggleHosting() {
@@ -289,7 +298,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun submitAddress() {
-        if (hosting.isRgPresentationOwned()) return
+        if (!link.phoneOwnsInput() || hosting.isRgPresentationOwned()) return
         val result = session.openAddress(addressInput.text.toString())
         if (result.accepted()) {
             addressBar.onSubmittedAccepted(result.url())
@@ -344,7 +353,8 @@ class MainActivity : ComponentActivity() {
         progressBar.visibility = if (session.isLoading()) View.VISIBLE else View.INVISIBLE
         progressBar.progress = session.progress()
 
-        val localInput = !hosting.isRgPresentationOwned()
+        val localInput = link.phoneOwnsInput() && !hosting.isRgPresentationOwned()
+        usePhoneButton.visibility = if (link.phoneOwnsInput()) View.GONE else View.VISIBLE
         addressInput.isEnabled = localInput
         openButton.isEnabled = localInput
         backButton.isEnabled = localInput && session.canGoBack()

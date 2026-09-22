@@ -4,6 +4,7 @@ package com.code2hack.eyebrowse.phone
 internal class FixtureNavigationBarrier(
     val previousDocumentId: String,
     val requestedUrl: String,
+    private val expectedTitle: String = "Hosting capture page",
 ) {
     data class Observation(
         val documentId: String,
@@ -21,5 +22,5 @@ internal class FixtureNavigationBarrier(
         observed.live && observed.error == null && !observed.loading &&
             observed.documentId != previousDocumentId &&
             observed.displayedUrl == requestedUrl && observed.committedUrl == requestedUrl &&
-            observed.title == "Hosting capture page"
+            observed.title == expectedTitle
 }

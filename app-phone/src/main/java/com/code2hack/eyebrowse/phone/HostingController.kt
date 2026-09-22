@@ -621,6 +621,24 @@ class HostingController private constructor(private val appContext: Context) {
         }
     }
 
+    /** Explicit handoff: retire private resources before releasing RG input exclusion. */
+    @Synchronized
+    fun presentOnPhone(): Boolean {
+        check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
+        if (measurePhoneControlProfile() == null) return false
+        if (!rgPresentationOwned) return true
+        revokeLease()
+        presentationEpochs.retire()
+        val retired = displayHost
+        retired?.release(session)
+        if (retired != null && !retired.isQuiescent()) retiringHosts.add(retired)
+        rgPresentationOwned = false
+        attachment = Attachment.NONE
+        // The current Activity's normal listener attaches and retains its fresh token.
+        notifyHostingChanged()
+        return session.view()?.parent === phoneUiContainer
+    }
+
     /** Fresh local measurement for Phone takeover; never substitute a private display profile. */
     @Synchronized
     fun measurePhoneControlProfile(): com.code2hack.eyebrowse.core.link.presentation.PresentationProfile? {
@@ -947,8 +965,10 @@ class HostingController private constructor(private val appContext: Context) {
             } else {
                 // Old callbacks may complete ONLY retired resources, not the current host.
                 synchronized(this) {
+                    val before = retiringHosts.size
                     for (host in retiringHosts.toList()) host.evaluateRetirementCompletion()
                     pruneQuiescedRetiringHostsLocked()
+                    if (before != retiringHosts.size) notifyHostingChanged()
                     if (retiringHosts.any { it.isRetiring() }) {
                         mainHandler.postDelayed({ onRetirementSignal(epoch) }, RETIREMENT_RECHECK_MS)
                     }

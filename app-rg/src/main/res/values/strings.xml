@@ -12,4 +12,9 @@
     <string name="rg_location_empty">No live page</string>
     <string name="rg_retry">Retry</string>
     <string name="rg_page_description">Live Phone page</string>
+    <string name="use_on_phone">Use on phone</string>
+    <string name="use_on_glasses">Use on glasses</string>
+    <string name="browser_back">Back</string>
+    <string name="browser_forward">Forward</string>
+    <string name="browser_reload">Reload</string>
 </resources>

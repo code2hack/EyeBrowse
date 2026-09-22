@@ -159,6 +159,32 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
         webView?.reload()
     }
 
+    /** Main-thread effects for an ALREADY admitted command. No script/DOM automation. */
+    fun executeRemoteAction(action: com.code2hack.eyebrowse.core.link.control.BrowserAction) {
+        check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
+        val view = checkNotNull(webView) { "browser unavailable" }
+        check(isLive()) { "browser unavailable" }
+        when (action) {
+            com.code2hack.eyebrowse.core.link.control.BrowserAction.Back -> goBack()
+            com.code2hack.eyebrowse.core.link.control.BrowserAction.Forward -> goForward()
+            com.code2hack.eyebrowse.core.link.control.BrowserAction.Reload -> reload()
+            is com.code2hack.eyebrowse.core.link.control.BrowserAction.ScrollBy ->
+                view.scrollBy(kotlin.math.round(action.dx).toInt(), kotlin.math.round(action.dy).toInt())
+            is com.code2hack.eyebrowse.core.link.control.BrowserAction.ActivateAt -> {
+                require(action.x < view.width && action.y < view.height)
+                val now = android.os.SystemClock.uptimeMillis()
+                val down = android.view.MotionEvent.obtain(now, now, android.view.MotionEvent.ACTION_DOWN, action.x, action.y, 0)
+                val up = android.view.MotionEvent.obtain(now, now + 1, android.view.MotionEvent.ACTION_UP, action.x, action.y, 0)
+                try {
+                    view.requestFocus()
+                    view.dispatchTouchEvent(down)
+                    view.dispatchTouchEvent(up)
+                } finally { down.recycle(); up.recycle() }
+            }
+        }
+        view.invalidate()
+    }
+
     /** Flushes persistent cookies; called at the Activity stop boundary. */
     fun flushCookies() {
         CookieManager.getInstance().flush()
