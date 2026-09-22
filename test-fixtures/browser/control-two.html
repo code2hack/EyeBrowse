@@ -7,6 +7,6 @@ window.fixtureKey=key;
 window.__t03Geometry=()=>{const scale=devicePixelRatio*visualViewport.scale;const a=document.getElementById('done').getBoundingClientRect();return {scale,cssY:scrollY,x:(a.x+a.width/2)*scale,y:(a.y+a.height/2)*scale};};
 window.__t03Title=base=>{window.__t03Base=base;document.title=base+'|G='+JSON.stringify(window.__t03Geometry());};
 window.__t03Refresh=()=>window.__t03Title(window.__t03Base||'T03 B');
-note('load:B');addEventListener('pageshow',()=>{note('show:B');window.__t03Refresh();});addEventListener('resize',window.__t03Refresh);visualViewport.addEventListener('resize',window.__t03Refresh);document.getElementById('done').onclick=()=>{note('click:B');window.__t03Title('T03 done');};
+note('load:B');addEventListener('pageshow',()=>{note('show:B');window.__t03Refresh();});addEventListener('resize',window.__t03Refresh);visualViewport.addEventListener('resize',window.__t03Refresh);document.getElementById('done').onclick=()=>{document.getElementById('done').textContent='Finished';note('click:B');window.__t03Title('T03 done');};
 window.__t03Title('T03 B');
 </script></body></html>

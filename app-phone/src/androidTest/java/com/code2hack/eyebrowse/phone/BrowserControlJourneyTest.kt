@@ -151,7 +151,7 @@ class BrowserControlJourneyTest {
             else if(cleanup.isNotEmpty()) throw cleanup.first()
         }
     }
-    private fun geometry(browser:PhoneBrowserSession,stage:String,command:Int,target:String,next:String?):JSONObject? {
+    internal fun geometry(browser:PhoneBrowserSession,stage:String,command:Int,target:String,next:String?):JSONObject? {
         val visual=CountDownLatch(1)
         var document=""
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
@@ -200,7 +200,7 @@ class BrowserControlJourneyTest {
             if(ok)return;SystemClock.sleep(25)
         };fail(label)
     }
-    private fun js(browser:PhoneBrowserSession,script:String):String {
+    internal fun js(browser:PhoneBrowserSession,script:String):String {
         val done=CountDownLatch(1);var value=""
         InstrumentationRegistry.getInstrumentation().runOnMainSync { browser.view()!!.evaluateJavascript(script) { value=it;done.countDown() } }
         assertTrue(done.await(3,TimeUnit.SECONDS));return value

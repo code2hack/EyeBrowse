@@ -2,8 +2,6 @@ package com.code2hack.eyebrowse.rg
 
 import android.app.AlertDialog
 import android.graphics.Bitmap
-import android.os.Handler
-import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.*
@@ -26,36 +24,7 @@ import kotlin.math.*
 
 @RunWith(AndroidJUnit4::class)
 class PointerGestureInstrumentedTest {
-    private class RawReplay : HeadPoseSource {
-        override val description="instrumentation raw quaternion stream"
-        override var registered=false
-            private set
-        var flowing=true
-        private var sample=RotationSample(0,0f,0f,0f,1f)
-        private var consumer: ((RotationSample)->Unit)?=null
-        private val handler=Handler(Looper.getMainLooper())
-        private val pump=object: Runnable {
-            override fun run() {
-                if(!registered) return
-                if(flowing) consumer?.invoke(sample.copy(timestampNs=SystemClock.elapsedRealtimeNanos()))
-                handler.postDelayed(this,20)
-            }
-        }
-        override fun start(consumer: (RotationSample)->Unit): Boolean { this.consumer=consumer;registered=true;handler.post(pump);return true }
-        override fun stop() { registered=false;handler.removeCallbacks(pump);consumer=null }
-        fun aim(activity: MainActivity, point: InputPoint) {
-            val root=activity.findViewById<View>(R.id.rg_root)
-            val radius=8*activity.resources.displayMetrics.density
-            val left=root.paddingLeft+radius;val right=root.width-root.paddingRight-radius
-            val top=root.paddingTop+radius;val bottom=root.height-root.paddingBottom-radius
-            fun angle(delta: Double,halfRange: Double)=Math.toRadians(delta*2*halfRange+sign(delta)*.3)
-            val yaw=angle((point.x-left)/(right-left)-.5,30.0)
-            val pitch=angle((point.y-top)/(bottom-top)-.5,22.0)
-            val sy=sin(-yaw/2);val cy=cos(-yaw/2);val sx=sin(-pitch/2);val cx=cos(-pitch/2)
-            sample=RotationSample(0,(cy*sx).toFloat(),(sy*cx).toFloat(),(-sy*sx).toFloat(),(cy*cx).toFloat())
-        }
-    }
-    private class Scene(val scenario: ActivityScenario<MainActivity>,val source: RawReplay) {
+    private class Scene(val scenario: ActivityScenario<MainActivity>,val source: RawPoseReplay) {
         val pad=InputDevice.getDeviceIds().toList().mapNotNull { InputDevice.getDevice(it) }.first { it.name=="ROKID,PSOC-TP-R" }
         fun main(block: (MainActivity)->Unit) { scenario.onActivity(block) }
         fun await(label: String,bound: Long=2_000,condition: (MainActivity)->Boolean) {
@@ -96,7 +65,7 @@ class PointerGestureInstrumentedTest {
         }
     }
     private fun scene(block: (Scene)->Unit) {
-        val scenario=ActivityScenario.launch(MainActivity::class.java);val source=RawReplay()
+        val scenario=ActivityScenario.launch(MainActivity::class.java);val source=RawPoseReplay()
         try {
             val scene=Scene(scenario,source)
             scene.main {
