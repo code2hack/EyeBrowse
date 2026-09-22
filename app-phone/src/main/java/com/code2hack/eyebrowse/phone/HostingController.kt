@@ -619,7 +619,8 @@ class HostingController private constructor(private val appContext: Context) {
         rgPresentationOwned = true
         old.release(session)
         if (!old.isQuiescent()) retiringHosts.add(old)
-        val host = PrivateDisplayHost(resourceFactory, Runnable { onRetirementSignal(epoch) })
+        val host = PrivateDisplayHost(resourceFactory, Runnable { onRetirementSignal(epoch) },
+            localFocusForRg = true)
         displayHost = host
         host.setUnavailableListener(Runnable { onPresentationUnavailable(epoch, host) })
         return try {

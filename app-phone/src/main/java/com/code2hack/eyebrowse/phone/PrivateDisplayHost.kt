@@ -54,6 +54,7 @@ import java.util.zip.CRC32
 class PrivateDisplayHost(
     private val factory: Factory,
     private val onQuiesced: Runnable?,
+    private val localFocusForRg: Boolean = false,
 ) {
 
     /** Test seam: creates the platform resources so failure injection can exercise rollback. */
@@ -86,6 +87,7 @@ class PrivateDisplayHost(
         /** Optional for fake factories; platform implementation checks its window/display. */
         fun isAvailable(): Boolean = true
         fun setUnavailableListener(listener: Runnable?) {}
+        fun focusAttachedView(view: android.view.View?) {}
     }
 
     /** Immutable per-lease delivery sink; the capture pipeline invokes exactly this object. */
@@ -252,11 +254,15 @@ class PrivateDisplayHost(
             return
         }
         session.attachExternal(shown.container(), shown.container().context)
+        if (localFocusForRg) shown.focusAttachedView(session.view())
     }
 
     /** Moves the session WebView out of the presentation container (stays alive, parentless). */
     fun detachSessionView(session: PhoneBrowserSession) {
-        presentation?.let { session.detachExternal(it.container()) }
+        presentation?.let {
+            it.focusAttachedView(null)
+            session.detachExternal(it.container())
+        }
     }
 
     /**
@@ -864,13 +870,55 @@ class PrivateDisplayHost(
 
         // Presentation.getContext(): a display/window context on API31+, NOT the outer service.
         private val content = FrameLayout(this.context).apply { setBackgroundColor(Color.WHITE) }
+        private var focusView: android.view.View? = null
+        private var localFocusRequested = false
+        private val acquireLocalFocus = Runnable {
+            val view = focusView
+            if (view != null && isShowing && content.isAttachedToWindow &&
+                view.isAttachedToWindow && view.parent === content && !localFocusRequested) {
+                view.requestFocus() // Select the browser within this non-global local window.
+                window?.setLocalFocus(true, true)
+                localFocusRequested = true
+                Log.i(TAG, "local focus requested display=${display.displayId}")
+            }
+        }
+        private val focusAttachment = object : android.view.View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(view: android.view.View) {
+                if (view === focusView) content.post(acquireLocalFocus)
+            }
+            override fun onViewDetachedFromWindow(view: android.view.View) {
+                if (view === focusView) focusAttachedView(null)
+            }
+        }
+
+        override fun focusAttachedView(view: android.view.View?) {
+            check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
+            if (view === focusView) return
+            content.removeCallbacks(acquireLocalFocus)
+            focusView?.removeOnAttachStateChangeListener(focusAttachment)
+            focusView = null // Fence queued callbacks before retirement of this window.
+            if (localFocusRequested && content.isAttachedToWindow) {
+                window?.setLocalFocus(false, true)
+                Log.i(TAG, "local focus released display=${display.displayId}")
+            }
+            localFocusRequested = false
+            focusView = view
+            view?.addOnAttachStateChangeListener(focusAttachment)
+            if (view?.isAttachedToWindow == true) content.post(acquireLocalFocus)
+        }
+
+        override fun onStop() {
+            focusAttachedView(null)
+            super.onStop()
+        }
 
         override fun onCreate(savedInstanceState: android.os.Bundle?) {
             super.onCreate(savedInstanceState)
             requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
             window?.apply {
                 addFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                    android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    android.view.WindowManager.LayoutParams.FLAG_LOCAL_FOCUS_MODE)
                 clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
                 setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.WHITE))
                 setDecorFitsSystemWindows(false)
