@@ -1,0 +1,100 @@
+# Issue 9 T01: renderer editor and authority foundation
+
+Controlling plan: [5780808159](https://github.com/code2hack/EyeBrowse/issues/9#issuecomment-5780808159),
+clock reconciliation [5780823585](https://github.com/code2hack/EyeBrowse/issues/9#issuecomment-5780823585),
+renderer disposition [5782588285](https://github.com/code2hack/EyeBrowse/issues/9#issuecomment-5782588285).
+The raw InputConnection route failed the admitted-A/later-B isolation probe on S20+/WebView99;
+that is retained round-1 RED evidence. This implementation is round 2, a renderer mechanism,
+not native remote editing or completed RG-keyboard acceptance.
+
+## Packaging and privilege boundary
+
+`renderer-editor` uses the existing Kotlin compiler version, 2.2.21, with one Kotlin/JS whole-program
+plain artifact. Phone's asset task packages the generated file as `eyebrowse-editor.js`. No webpack,
+npm editing library, dynamic module loader, downloaded program, or separate browser engine is used.
+Review the Kotlin source and emitted asset together; the exact asset SHA belongs in every candidate
+receipt. External DOM declarations and object/typed-array allocation are the visible platform interop.
+
+The Phone loads the fixed asset off the UI thread and outside controller/link locks. Public WebView
+evaluation invokes one fixed entry, with the request serialized as a JSON **string**, including escaped
+line separators. No wire script, selector, HTML, property path, reflection, native bridge or extra endpoint
+exists. Page code can see/interfere with its own DOM and the page-realm helper; its observations/results
+are not Phone authority or a security sandbox. No trust, storage, OS or Phone-control privilege is exposed.
+
+## Exact target and mutation transaction
+
+One document instance, one grant, one in-flight operation, one explicitly retained resize target. A grant
+stores the actual top-level element, token, native context, renderer generation, selection and revision.
+Input text/password, textarea, and plain contenteditable hosts with direct text/BR children are supported.
+Frames, shadow editors and arbitrary rich markup fail explicitly. Initial production grant discovery
+checks the accepted activation's measured hit against the actual focused editor; edits never resolve a
+selector or use the latest activeElement as their destination.
+
+Focus transitions revoke immediately. Mutation observation includes removals, ancestor disabled state,
+target attribute ABA and plain-content changes. `takeRecords()` runs at the execution boundary, so delayed
+observer delivery cannot revive a removed/reinserted or temporarily readonly/disabled/type-changed node.
+Selection must still match the captured revision. New documents do not auto-install an old edit/grant.
+
+The edit reserves its renderer ordinal and marks itself in-flight before page callbacks. It emits a
+cancellable synthetic `beforeinput`, then revalidates the original node, grant, selection, pending mutation
+records and relevant value state. The bound `setRangeText` primitive edits controls; a bounded Range edits
+plain text/BR content. Neither calls InputConnection, defers mutation, writes innerHTML nor replaces the
+entire field. Post-edit `input` is emitted once; post-input refocus retires authority while preserving the
+honest original-node result. Nested edit attempts fail BUSY and never become an effect backlog.
+
+Backspace deletes the selected range or preceding Unicode code point; beginning/empty is no-change.
+Applicable maxlength blocks growth, not deletion of already-overlong content. Fields stay masked and
+values remain transient in the renderer. A single dirty-node marker emits change on blur without a value
+journal; native user input clears that marker so Phone IME remains responsible for its own native events.
+
+## Enter, cancellation and Done
+
+Multiline Enter inserts one line break. Single-line Enter resolves only the editor's associated form.
+The first default submitter in document order is used, including external form associations. Disabled
+default means no fallback. The real default-button click preserves click handlers and normal browser
+validation; the no-default case uses requestSubmit only with at most one implicit-submission blocking field.
+A scoped submit capture guard revalidates after click/validation callbacks and cancels a stale/reassociated
+submission. The fixture records total submit events separately from non-prevented submission requests;
+page-authored click/blur/submit side effects are not a promise of website transaction control.
+No form.submit, direct POST, validation bypass or fallback after uncertainty exists.
+
+Done retires only its matching grant and never sends Enter or forces blur. Synthetic event `isTrusted`
+is false. Trusted-event-only applications, arbitrary rich editors and composition are not silently claimed
+as native-equivalent. The required ordinary/event-driven controls still require physical qualification.
+
+## Native authority, ordering, clocks and wire freeze
+
+Protocol major 1/minor 2; capabilities `TEXT_INPUT_V1` and `RG_VIEWPORT_UPDATE_V1`. Base #6 trust and #7
+browsing continue for an older peer; keyboard admission explicitly reports unavailable. New effects remain
+`BrowserActionMessage` with canonical injective v2 IDs and the existing prepared ordinal/high-water rules.
+Insert is <=256 UTF-8 bytes, address <=4096 UTF-8 bytes, token <=128 characters, within unchanged 32KiB
+control records. Malformed decode errors and object formatting never echo typed bytes.
+
+Editor close and viewport transition are bounded state-only messages. Viewport transition IDs are monotonic
+per authenticated connection, with one previous exact request/result retained for idempotence. Same-owner
+resize increments viewport epoch, preserves owner/control epoch and action high-water, retires old capture,
+and publishes the new profile. After attachment, rebind/reveal requires the explicitly retained original
+element BEFORE acquiring the new capture lease. Remote edits remain disabled until the fresh profile frame
+establishes readiness; a newly focused successor cannot become the old editor. The wire never selects a DOM node.
+
+All 64-bit identity/ordinal/transition fields cross into the renderer as canonical decimal strings, never
+JavaScript Number. A separate monotonic **native editor lifecycle** order fences late grant/revoke scripts;
+it is not a replacement effect allocator. At most one effect is pending. No IO or blocking renderer waits
+occur under controller/link/gesture locks. A current-context rejected effect consumes its ordinal. Missing
+results are uncertain, never retried; a verified renderer revocation barrier is required before a fresh
+grant, successor transition or completed Stop. Old callbacks/timers cannot clear or close successors.
+
+Android scheduling/callback observations use elapsedRealtime. Renderer stages use performance.now within
+that renderer only. Do not subtract these clocks or Phone/RG clocks; receipts retain separate intervals.
+The existing <=100ms real enqueue endpoint and <=1s fixture effect target remain unchanged.
+
+## Qualification scope
+
+`RendererEditorQualificationTest` invokes the actual bundled production adapter on the S20+ private
+presentation. It is explicitly substrate evidence, not fake RG authentication, a real key journey or
+website server-transaction success. Fixture initialization/negative stimuli and independent boolean
+observations are separate from adapter-generated positive edits. New editor/protocol/authority JVM tests
+supplement the inherited identity inventory. The final receipt must enumerate actual rows, unavailable
+conditions, hashes, timing stages and cleanup; this document itself asserts no executed device PASS.
+
+T01's scoped independent source/security review remains mandatory before T02 release.

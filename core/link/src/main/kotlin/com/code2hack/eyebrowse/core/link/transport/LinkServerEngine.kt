@@ -319,7 +319,8 @@ class LinkServerEngine(
             // 4. Authenticated: AuthOk, then the FIRST protected status frame.
             sendFrame(output, LinkMessageCodec.encode(AuthOkMessage))
             val current = AuthenticatedControlSession(socket, input,
-                clientHello.hasPresentationCapabilities() && serverHello.hasPresentationCapabilities(), false)
+                clientHello.hasPresentationCapabilities() && serverHello.hasPresentationCapabilities(), false,
+                keyboardCompatible = clientHello.hasKeyboardCapabilities() && serverHello.hasKeyboardCapabilities())
             session = current
             synchronized(activeOwnershipLock) {
                 if (stopped || activeSocket.get() !== socket) return

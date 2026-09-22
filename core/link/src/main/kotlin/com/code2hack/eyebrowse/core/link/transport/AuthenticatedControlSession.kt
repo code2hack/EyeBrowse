@@ -18,6 +18,7 @@ class AuthenticatedControlSession internal constructor(
     val presentationCompatible: Boolean,
     private val receivesPresentation: Boolean,
     private val writeTimeoutMs: Long = 30_000,
+    val keyboardCompatible: Boolean = false,
 ) {
     private val queue = MultiplexedRecordQueue()
     private val lock = java.lang.Object()

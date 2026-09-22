@@ -58,9 +58,17 @@ sealed class BrowserAction {
     @Serializable data class ScrollBy(val dx: Float, val dy: Float) : BrowserAction() {
         init { require(dx.isFinite() && dy.isFinite() && kotlin.math.abs(dx) <= 4096 && kotlin.math.abs(dy) <= 4096) }
     }
+    @Serializable data class OpenAddress(val address: String) : BrowserAction() {
+        init {
+            require(address.length <= EditorLimits.ADDRESS_BYTES &&
+                address.toByteArray(Charsets.UTF_8).size <= EditorLimits.ADDRESS_BYTES) { "address payload exceeds limit" }
+        }
+        override fun toString() = "OpenAddress(redacted)"
+    }
+    @Serializable data class Edit(val target: EditorTarget, val operation: EditorOperation) : BrowserAction()
 }
 data class BrowserActionRequest(val commandId: String, val context: ControlContext, val action: BrowserAction, val commandSequence: Long)
-enum class ActionRejection { INVALID_COMMAND_ID, WRONG_OWNER, STALE_CONTEXT, PRESENTATION_NOT_READY, LINK_UNAVAILABLE, INCOMPATIBLE_SESSION, STALE_COMMAND_SEQUENCE, INVALID_COMMAND_SEQUENCE, OUTSIDE_VIEWPORT }
+enum class ActionRejection { INVALID_COMMAND_ID, WRONG_OWNER, STALE_CONTEXT, PRESENTATION_NOT_READY, LINK_UNAVAILABLE, INCOMPATIBLE_SESSION, STALE_COMMAND_SEQUENCE, INVALID_COMMAND_SEQUENCE, OUTSIDE_VIEWPORT, KEYBOARD_UNAVAILABLE }
 sealed class ActionDecision {
     data class Accepted(val commandId: String) : ActionDecision()
     data class Rejected(val reason: ActionRejection) : ActionDecision()
@@ -79,6 +87,7 @@ class BrowserControlCoordinator(
     private var state = ControlSnapshot(ControlContext(lifetimeId, 0, initialDocumentId, 0, null))
     // Per-control-epoch ordering, not a cache: old/uncertain sequences never become admissible.
     private var commandHighWater = 0L
+    private var keyboardCompatible = false
 
     @Synchronized fun snapshot(): ControlSnapshot = state
 
@@ -100,7 +109,8 @@ class BrowserControlCoordinator(
     }
 
     /** Reconnect and foreground events cannot transfer control or revive an old presentation. */
-    @Synchronized fun setAuthenticated(authenticated: Boolean, compatible: Boolean = false) {
+    @Synchronized fun setAuthenticated(authenticated: Boolean, compatible: Boolean = false, keyboardCompatible: Boolean = false) {
+        this.keyboardCompatible = authenticated && compatible && keyboardCompatible
         val changed = authenticated != state.linkAuthenticated || compatible != state.sessionCompatible
         state = state.copy(linkAuthenticated = authenticated, sessionCompatible = authenticated && compatible,
             context = if (changed) state.context.copy(viewportEpoch = Math.incrementExact(state.viewportEpoch)) else state.context,
@@ -162,6 +172,17 @@ class BrowserControlCoordinator(
         return true
     }
 
+    /** Deliberate same-owner resize; ordinal high-water and owner/control epoch never reset. */
+    @Synchronized fun updateRgViewport(expected: ControlContext, profile: PresentationProfile): ControlSnapshot? {
+        if (expected != state.context || state.owner != ControlOwner.RG || !state.linkAuthenticated ||
+            !state.sessionCompatible || !keyboardCompatible || !state.hostingActive) return null
+        if (state.profile == profile) return state
+        if (state.viewportEpoch == Long.MAX_VALUE) return null
+        state = state.copy(profile = profile, context = state.context.copy(viewportEpoch = state.viewportEpoch + 1),
+            presentationStatus = PresentationStatus.STALE)
+        return state
+    }
+
     @Synchronized fun admitAction(source: ControlOwner, request: BrowserActionRequest): ActionDecision {
         fun reject(reason: ActionRejection) = ActionDecision.Rejected(reason)
         if (request.commandId.isBlank() || request.commandId.length > BrowserCommandId.MAX_LENGTH) return reject(ActionRejection.INVALID_COMMAND_ID)
@@ -176,7 +197,10 @@ class BrowserControlCoordinator(
         if (source == ControlOwner.RG) {
             if (!state.linkAuthenticated) return reject(ActionRejection.LINK_UNAVAILABLE)
             if (!state.sessionCompatible) return reject(ActionRejection.INCOMPATIBLE_SESSION)
-            if (!state.hostingActive || state.presentationStatus != PresentationStatus.READY) return reject(ActionRejection.PRESENTATION_NOT_READY)
+            if (!state.hostingActive || (request.action !is BrowserAction.OpenAddress && state.presentationStatus != PresentationStatus.READY))
+                return reject(ActionRejection.PRESENTATION_NOT_READY)
+            if ((request.action is BrowserAction.Edit || request.action is BrowserAction.OpenAddress) && !keyboardCompatible)
+                return reject(ActionRejection.KEYBOARD_UNAVAILABLE)
         }
         val action = request.action
         if (action is BrowserAction.ActivateAt) {

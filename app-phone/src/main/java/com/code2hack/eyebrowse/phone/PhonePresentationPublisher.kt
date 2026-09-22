@@ -17,6 +17,7 @@ class PhonePresentationPublisher(
     private val ready: (ControlContext) -> Boolean,
     private val send: (PresentationFrame) -> Boolean,
     private val requestFreshFrame: () -> Unit,
+    private val beforeCapture: ((ControlSnapshot, () -> Unit) -> Unit)? = null,
     private val degraded: (ControlContext, String) -> Unit,
 ) {
     private val main = Handler(Looper.getMainLooper())
@@ -46,44 +47,49 @@ class PhonePresentationPublisher(
         }
         val grant = state.context
         context = grant
-        lease = hosting.acquireLease { frame ->
-            if (context != grant || frame.generation.toLong() != grant.hostingGeneration ||
-                frame.width != profile.width || frame.height != profile.height) return@acquireLease
-            // Capture already throttles. Retain the bound across lease/context replacements too.
-            if (lastEncodedMs != Long.MIN_VALUE && frame.captureElapsedMs - lastEncodedMs < HostingPolicy.MIN_FRAME_INTERVAL_MS) {
-                // A static document may have no later producer event. Request one fresh render
-                // after the remaining interval; never retain the borrowed bitmap or build a FIFO.
-                val delay = HostingPolicy.MIN_FRAME_INTERVAL_MS - (frame.captureElapsedMs - lastEncodedMs)
-                main.post {
-                    if (context == grant && trailingRequest == null) {
-                        val task = Runnable {
-                            trailingRequest = null
-                            if (context == grant) requestFreshFrame()
+        fun startCapture() {
+            if (context != grant) return // A late editor/profile callback cannot revive a retired lease.
+            lease = hosting.acquireLease { frame ->
+                if (context != grant || frame.generation.toLong() != grant.hostingGeneration ||
+                    frame.width != profile.width || frame.height != profile.height) return@acquireLease
+                // Capture already throttles. Retain the bound across lease/context replacements too.
+                if (lastEncodedMs != Long.MIN_VALUE && frame.captureElapsedMs - lastEncodedMs < HostingPolicy.MIN_FRAME_INTERVAL_MS) {
+                    // A static document may have no later producer event. Request one fresh render
+                    // after the remaining interval; never retain the borrowed bitmap or build a FIFO.
+                    val delay = HostingPolicy.MIN_FRAME_INTERVAL_MS - (frame.captureElapsedMs - lastEncodedMs)
+                    main.post {
+                        if (context == grant && trailingRequest == null) {
+                            val task = Runnable {
+                                trailingRequest = null
+                                if (context == grant) requestFreshFrame()
+                            }
+                            trailingRequest = task
+                            main.postDelayed(task, delay)
                         }
-                        trailingRequest = task
-                        main.postDelayed(task, delay)
                     }
+                    return@acquireLease
                 }
-                return@acquireLease
-            }
-            lastEncodedMs = frame.captureElapsedMs
-            try {
-                val output = BoundedFrameOutput(LinkProtocol.PRESENTATION_RECORD_MAX_BYTES - LinkProtocol.PRESENTATION_METADATA_MAX_BYTES - 4)
-                check(frame.bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 85, output))
-                val pixels = output.toByteArray()
-                val encoded = PresentationFrame(PresentationFrameHeader(grant, frame.sequence,
-                    frame.captureElapsedMs, frame.width, frame.height), pixels)
-                if (context == grant && ready(grant) && send(encoded)) {
-                    Log.i("EyeBrowsePresentation", "encoded seq=${frame.sequence} capture=${frame.captureElapsedMs} bytes=${pixels.size} profile=${frame.width}x${frame.height}")
+                lastEncodedMs = frame.captureElapsedMs
+                try {
+                    val output = BoundedFrameOutput(LinkProtocol.PRESENTATION_RECORD_MAX_BYTES - LinkProtocol.PRESENTATION_METADATA_MAX_BYTES - 4)
+                    check(frame.bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 85, output))
+                    val pixels = output.toByteArray()
+                    val encoded = PresentationFrame(PresentationFrameHeader(grant, frame.sequence,
+                        frame.captureElapsedMs, frame.width, frame.height), pixels)
+                    if (context == grant && ready(grant) && send(encoded)) {
+                        Log.i("EyeBrowsePresentation", "encoded seq=${frame.sequence} capture=${frame.captureElapsedMs} bytes=${pixels.size} profile=${frame.width}x${frame.height}")
+                    }
+                } catch (_: Exception) {
+                    main.post { if (context == grant) degraded(grant, "Frame encoding failed or exceeded limit") }
                 }
-            } catch (_: Exception) {
-                main.post { if (context == grant) degraded(grant, "Frame encoding failed or exceeded limit") }
             }
+            if (lease == null) {
+                context = null
+                degraded(grant, "Capture unavailable")
+            } else main.postDelayed(renew, 1_000)
         }
-        if (lease == null) {
-            context = null
-            degraded(grant, "Capture unavailable")
-        } else main.postDelayed(renew, 1_000)
+        // #9 revalidates/reveals the retained editor after attachment, before the first new frame.
+        beforeCapture?.invoke(state, ::startCapture) ?: startCapture()
     }
 
     fun stop() {

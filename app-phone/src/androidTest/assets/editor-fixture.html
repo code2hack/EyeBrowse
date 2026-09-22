@@ -1,0 +1,19 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>I9 renderer fixture</title>
+<style>body{margin:8px;background:#d8efd8}input,textarea,[contenteditable]{font:16px sans-serif;width:90%;min-height:22px;margin:2px;display:block}[contenteditable]{white-space:pre-wrap;border:1px solid #555}button{font-size:16px}</style>
+</head><body><div id="fields"></div>
+<script>
+// Harmless website fixture, not the editing implementation. Values never leave this document.
+window.resetFields = function () {
+  document.getElementById('fields').innerHTML = '<form id="form"><input id="a" name="a"><input id="p" type="password" name="p"><button id="send" type="submit">Send</button></form><input id="b"><textarea id="t"></textarea><div id="c" contenteditable="true"></div>';
+  window.events = []; window.submits = 0; window.submitEvents = 0; window.clicks = 0; window.expectedData = null;
+  document.getElementById('form').addEventListener('submit', function (event) { window.submitEvents++; if (!event.defaultPrevented) window.submits++; event.preventDefault(); });
+  document.getElementById('send').addEventListener('click', function () { window.clicks++; });
+};
+for (const name of ['beforeinput','input','change']) document.addEventListener(name, function(event) {
+  window.events.push({type:event.type,target:event.target.id,inputType:event.inputType || null,
+    dataMatches:event.data === window.expectedData,bubbles:event.bubbles,trusted:event.isTrusted});
+});
+resetFields();
+</script></body></html>

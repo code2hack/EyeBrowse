@@ -468,6 +468,7 @@ class HostingController private constructor(private val appContext: Context) {
     }
 
     // ---------------------------------------------------------------- stop
+    private var editorStopPending = false
 
     /** Explicit Stop; idempotent, bounded, and safe during startup or when not hosting. */
     @Synchronized
@@ -492,6 +493,23 @@ class HostingController private constructor(private val appContext: Context) {
 
     /** Publishes the settled final state BEFORE notifying listeners (F7). */
     private fun completeStop() {
+        if (state == State.NOT_HOSTING) return
+        // Do not release Phone input/declare Stop complete while an old edit can still execute.
+        if (!session.editorQuiescent()) {
+            if (!editorStopPending) {
+                editorStopPending = true
+                session.retireEditor { verified ->
+                    synchronized(this) {
+                        editorStopPending = false
+                        if (verified) completeStop() else {
+                            failureReason = "Editor retirement unconfirmed"
+                            notifyHostingChanged()
+                        }
+                    }
+                }
+            }
+            return
+        }
         presentationEpochs.retire()
         mainHandler.removeCallbacks(watchdog)
         mainHandler.removeCallbacks(idleRelease)
@@ -593,6 +611,7 @@ class HostingController private constructor(private val appContext: Context) {
         check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
         if (state != State.HOSTING) return false
         if (rgPresentationOwned && presentationEpochs.current?.profile == profile) return true
+        if (!session.editorQuiescent()) return false
         if (lease != null || displayHost?.isOwnerActive() == true || displayHost?.isRetiring() == true) return false
         val old = displayHost ?: return false
         // Retire callbacks by epoch BEFORE releasing the prior presentation. No new WebView/load.
@@ -627,6 +646,7 @@ class HostingController private constructor(private val appContext: Context) {
         check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
         if (measurePhoneControlProfile() == null) return false
         if (!rgPresentationOwned) return true
+        if (!session.editorQuiescent()) return false
         revokeLease()
         presentationEpochs.retire()
         val retired = displayHost
@@ -1089,6 +1109,7 @@ class HostingController private constructor(private val appContext: Context) {
 
     private fun onSessionChanged(changed: PhoneBrowserSession) {
         synchronized(this) {
+            if (state == State.STOPPING && changed.editorQuiescent()) completeStop()
             if (state == State.HOSTING && !changed.isLive()) {
                 // The renderer is gone: hosting is interrupted and needs an explicit restart.
                 Log.i(TAG, "browser lost while hosting gen=$generation")

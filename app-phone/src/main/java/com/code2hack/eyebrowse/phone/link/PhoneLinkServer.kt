@@ -6,6 +6,7 @@ import com.code2hack.eyebrowse.core.link.control.*
 import com.code2hack.eyebrowse.core.link.messages.*
 import com.code2hack.eyebrowse.phone.PhoneControlCoordinator
 import com.code2hack.eyebrowse.phone.PhoneBrowserSession
+import com.code2hack.eyebrowse.phone.PhoneEditorController
 import com.code2hack.eyebrowse.core.link.messages.BrowserControlMessage
 import com.code2hack.eyebrowse.core.link.transport.AuthenticatedControlSession
 import com.code2hack.eyebrowse.core.link.HostStatusValue
@@ -38,6 +39,7 @@ class PhoneLinkServer(
     private val hostingController: HostingController?,
     private val locators: () -> List<Locator>,
     private val browserSession: PhoneBrowserSession? = null,
+    private val appContext: Context? = null,
 ) {
 
     @Volatile
@@ -53,9 +55,26 @@ class PhoneLinkServer(
         executeAction = { browserSession?.executeRemoteAction(it) ?: error("browser unavailable") },
         measurePhone = { hostingController?.measurePhoneControlProfile() },
     )
+    @Volatile private var connectionGeneration = 0L
+    val editorController: PhoneEditorController? = if (appContext != null && browserSession != null)
+        PhoneEditorController(appContext, browserSession, controlCoordinator.authority::snapshot,
+            { connectionGeneration }) { state ->
+                authenticatedSession?.takeIf { it.keyboardCompatible }?.sendControl(state)
+            }.also { browserSession.remoteEditor = it } else null
+    private var transitionPending = false
+    private var viewportHighWater = 0L
+    private var lastViewportResult: Pair<ViewportUpdateMessage, ViewportUpdateResultMessage>? = null
+    private var lastCloseResult: Pair<EditorCloseMessage, EditorCloseResultMessage>? = null
+    @Volatile private var profileEditor: Pair<ControlContext, EditorTarget>? = null
     private val publisher by lazy {
         hostingController?.let { PhonePresentationPublisher(it, ::publishPresentationReady, ::sendPresentation,
-            { browserSession?.requestFreshCaptureFrame() }) { context, reason ->
+            { browserSession?.requestFreshCaptureFrame() }, beforeCapture = { state, start ->
+                val retained = profileEditor?.takeIf { it.first == state.context }
+                if (retained != null && editorController != null) {
+                    profileEditor = null
+                    editorController.resumeAfterProfile(retained.second) { start() }
+                } else start()
+            }) { context, reason ->
             synchronized(controlCoordinator.authority) {
                 if (controlCoordinator.authority.markPresentationStale(context)) {
                     authenticatedSession?.setPresentation(null, null)
@@ -67,6 +86,7 @@ class PhoneLinkServer(
     private val reconcilePresentation = Runnable {
         synchronized(controlCoordinator.authority) {
             controlCoordinator.reconcileDocument()
+            editorController?.reconcile()
             publisher?.reconcile(controlCoordinator.authority.snapshot())
             publishBrowserState()
         }
@@ -126,32 +146,165 @@ class PhoneLinkServer(
                 controlCoordinator.onLinkStopped()
                 authenticatedSession = null
             }
+            main.post { editorController?.close { } }
             schedulePresentation()
             notifyLinkObservers()
         }
         override fun onAuthenticatedSession(session: AuthenticatedControlSession, peer: HelloMessage) {
             synchronized(controlCoordinator.authority) {
-                controlCoordinator.onAuthenticatedSession(session.presentationCompatible)
+                connectionGeneration = Math.incrementExact(connectionGeneration)
+                controlCoordinator.onAuthenticatedSession(session.presentationCompatible, session.keyboardCompatible)
                 authenticatedSession = session
+            }
+            main.post {
+                if (authenticatedSession !== session) return@post
+                viewportHighWater = 0; lastViewportResult = null; lastCloseResult = null
+                editorController?.close { }
             }
             schedulePresentation()
         }
         override fun onControl(session: AuthenticatedControlSession, message: BrowserControlMessage) {
             if (!pendingControls.tryAcquire()) { session.close(); return }
             val posted = main.post {
+                var completed = false
+                fun complete(response: BrowserControlMessage?) {
+                    if (completed) return
+                    completed = true
+                    try {
+                        if (response != null && authenticatedSession === session && !session.sendControl(response)) session.close()
+                    } finally { pendingControls.release() }
+                }
                 try {
-                    synchronized(controlCoordinator.authority) {
-                        if (authenticatedSession !== session) return@post
-                        reconcileHostingAuthority()
-                        processControl(message)?.let { response ->
-                            if (!session.sendControl(response)) session.close()
-                        }
-                    }
-                } finally { pendingControls.release() }
+                    if (authenticatedSession !== session) { complete(null); return@post }
+                    reconcileHostingAuthority()
+                    processEditorAwareControl(session, message, ::complete)
+                } catch (_: RuntimeException) { complete(null); session.close() }
             }
             if (!posted) { pendingControls.release(); session.close() }
         }
         override fun onAuthFailed(error: LinkError) = notifyLinkObservers()
+    }
+
+    /** One effect/transition at a time; no accepted-effect backlog behind editor work. */
+    private fun processEditorAwareControl(session: AuthenticatedControlSession, message: BrowserControlMessage,
+                                          answer: (BrowserControlMessage?) -> Unit) {
+        controlCoordinator.reconcileDocument()
+        val editor = editorController
+        if (message is BrowserActionMessage && (message.action is BrowserAction.Edit || transitionPending)) {
+            val admission = controlCoordinator.authority.admitAction(ControlOwner.RG,
+                BrowserActionRequest(message.commandId, message.context, message.action, message.commandSequence))
+            if (admission is ActionDecision.Rejected) {
+                answer(BrowserActionResultMessage(message.commandId, false, reason = admission.reason.name)); return
+            }
+            if (transitionPending || editor == null) {
+                answer(BrowserActionResultMessage(message.commandId, false, reason = "EDITOR_NOT_READY")); return
+            }
+            editor.execute(message, answer); return
+        }
+        when (message) {
+            is EditorCloseMessage -> {
+                lastCloseResult?.takeIf { it.first == message }?.let { answer(it.second); return }
+                val current = controlCoordinator.authority.snapshot()
+                if (!session.keyboardCompatible || message.context != current.context || current.owner != ControlOwner.RG ||
+                    editor?.authority?.grant?.target != message.target) {
+                    answer(EditorCloseResultMessage(message.requestId, current.context, false)); return
+                }
+                editor.close { verified ->
+                    val result = EditorCloseResultMessage(message.requestId, message.context, verified)
+                    lastCloseResult = message to result; answer(result)
+                }
+            }
+            is ViewportUpdateMessage -> {
+                lastViewportResult?.takeIf { it.first == message }?.let { answer(it.second); return }
+                val current = controlCoordinator.authority.snapshot()
+                fun rejected() = ViewportUpdateResultMessage(message.transitionId, false,
+                    controlCoordinator.authority.snapshot().context, controlCoordinator.authority.snapshot().profile)
+                if (!session.keyboardCompatible || transitionPending || message.context != current.context ||
+                    message.transitionId <= viewportHighWater || current.owner != ControlOwner.RG || !current.hostingActive) {
+                    answer(rejected()); return
+                }
+                viewportHighWater = message.transitionId
+                transitionPending = true
+                val previousTarget = editor?.authority?.grant?.target
+                retireEditor(retainForProfile = previousTarget != null) { verified ->
+                    transitionPending = false
+                    val updated = if (verified && authenticatedSession === session)
+                        controlCoordinator.authority.updateRgViewport(message.context, message.profile) else null
+                    val result = if (updated == null) rejected() else {
+                        publisher?.stop(); authenticatedSession?.setPresentation(null, null)
+                        controlCoordinator.authority.markPresentationStale(updated.context)
+                        profileEditor = previousTarget?.let { updated.context to it }
+                        schedulePresentation()
+                        ViewportUpdateResultMessage(message.transitionId, true, updated.context, updated.profile)
+                    }
+                    lastViewportResult = message to result; answer(result)
+                }
+            }
+            is HandoffRequestMessage -> {
+                if (transitionPending) {
+                    val state = controlCoordinator.authority.snapshot()
+                    answer(HandoffResultMessage(false, state.owner, state.context, state.profile, "EDITOR_TRANSITION")); return
+                }
+                transitionPending = true
+                retireEditor { verified ->
+                    transitionPending = false
+                    if (verified && authenticatedSession === session) answer(processControl(message)) else {
+                        val state = controlCoordinator.authority.snapshot()
+                        answer(HandoffResultMessage(false, state.owner, state.context, state.profile, "EDITOR_UNCERTAIN"))
+                    }
+                }
+            }
+            is BrowserActionMessage -> {
+                // A page navigation/activation must not overtake an earlier renderer edit.
+                if (editor?.isQuiescent() == false) {
+                    val admission = controlCoordinator.authority.admitAction(ControlOwner.RG,
+                        BrowserActionRequest(message.commandId, message.context, message.action, message.commandSequence))
+                    if (admission is ActionDecision.Rejected) answer(BrowserActionResultMessage(message.commandId, false, reason = admission.reason.name))
+                    else if (editor.authority.phase != com.code2hack.eyebrowse.phone.PhoneEditorAuthority.Phase.READY) {
+                        answer(BrowserActionResultMessage(message.commandId, false, reason = "EDITOR_NOT_READY"))
+                    } else {
+                        transitionPending = true
+                        editor.close { verified ->
+                            transitionPending = false
+                            val current = controlCoordinator.authority.snapshot()
+                            if (!verified || authenticatedSession !== session || current.context != message.context || current.owner != ControlOwner.RG ||
+                                !current.linkAuthenticated || !current.sessionCompatible || !current.hostingActive ||
+                                (message.action !is BrowserAction.OpenAddress && current.presentationStatus != PresentationStatus.READY)) {
+                                answer(BrowserActionResultMessage(message.commandId, true, false, "EDITOR_TRANSITION"))
+                            } else {
+                                var dispatchFailure: String? = null
+                                try { browserSession?.executeRemoteAction(message.action) ?: error("browser unavailable") }
+                                catch (_: RuntimeException) { dispatchFailure = "DISPATCH_UNCERTAIN" }
+                                answer(BrowserActionResultMessage(message.commandId, true, null, dispatchFailure))
+                                schedulePresentation()
+                                if (dispatchFailure == null) requestEditorForActivation(session, message)
+                            }
+                        }
+                    }
+                } else {
+                    val response = processControl(message)
+                    answer(response)
+                    if ((response as? BrowserActionResultMessage)?.accepted == true) requestEditorForActivation(session, message)
+                }
+            }
+            else -> answer(processControl(message))
+        }
+    }
+
+    private fun requestEditorForActivation(session: AuthenticatedControlSession, message: BrowserActionMessage) {
+        val activation = message.action as? BrowserAction.ActivateAt ?: return
+        if (!session.keyboardCompatible) return
+        main.post {
+            if (authenticatedSession !== session) return@post
+            controlCoordinator.reconcileDocument()
+            // A successful old-page tap cannot open an autofocus editor on its successor page.
+            if (controlCoordinator.authority.snapshot().context == message.context)
+                editorController?.openAfterActivation(activation)
+        }
+    }
+
+    private fun retireEditor(retainForProfile: Boolean = false, completed: (Boolean) -> Unit) {
+        editorController?.close(retainForProfile, completed) ?: completed(true)
     }
 
     /** Shared main-thread boundary for remote handoff/actions and explicit local recovery. */
@@ -161,6 +314,7 @@ class PhoneLinkServer(
         val state = controlCoordinator.authority.snapshot()
         if (before != state.context) authenticatedSession?.setPresentation(null,null)
         if (response is HandoffResultMessage && response.accepted) {
+            profileEditor = null
             publisher?.stop()
             if (state.owner == ControlOwner.PHONE) check(hostingController?.presentOnPhone() == true)
             else publisher?.reconcile(state)
@@ -171,13 +325,16 @@ class PhoneLinkServer(
     }
 
     /** Phone-local explicit takeover works even after the RG link is lost. */
-    fun useOnPhone(): HandoffResultMessage = synchronized(controlCoordinator.authority) {
+    fun useOnPhone() {
         check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
-        reconcileHostingAuthority()
-        val epoch = controlCoordinator.authority.snapshot().controlEpoch
-        val result = processControl(HandoffRequestMessage(HandoffTargetWire.PHONE,epoch)) as HandoffResultMessage
-        authenticatedSession?.sendControl(result)
-        result
+        retireEditor { verified ->
+            if (verified) {
+                reconcileHostingAuthority()
+                val epoch = controlCoordinator.authority.snapshot().controlEpoch
+                val result = processControl(HandoffRequestMessage(HandoffTargetWire.PHONE, epoch)) as HandoffResultMessage
+                authenticatedSession?.sendControl(result)
+            }
+        }
     }
 
     fun phoneOwnsInput(): Boolean = controlCoordinator.authority.snapshot().owner == ControlOwner.PHONE
@@ -197,6 +354,7 @@ class PhoneLinkServer(
             if (!controlCoordinator.authority.markPresentationReady(context)) return false
             val state = controlCoordinator.authority.snapshot()
             session.setPresentation(state.context, state.profile)
+            main.post { if (authenticatedSession === session) editorController?.reconcile() }
             schedulePresentation()
             session.sendControl(com.code2hack.eyebrowse.core.link.messages.BrowserStateMessage(
                 state.owner, state.context, state.profile, stale=false)).also { if (!it) session.close() }
@@ -285,6 +443,7 @@ class PhoneLinkServer(
             authenticatedSession = null
         }
         main.post { publisher?.stop() }
+        main.post { editorController?.close { } }
         engine?.let {
             if (sendForgetNotice) it.sendForgetNotice()
             it.stop()
@@ -358,6 +517,7 @@ class PhoneLinkServer(
                 hostingController = runCatching { HostingController.get(appContext) }.getOrNull(),
                 locators = { PhoneLocatorEnumerator.enumerate(appContext) },
                 browserSession = PhoneBrowserSession.get(appContext),
+                appContext = appContext,
             )
             return server
         }
