@@ -632,7 +632,10 @@ class RendererEditorQualificationTest {
             assertEquals(RendererEditorAdapter.Status.APPLIED, edit(g, EditorOperation.Insert("R"), "fresh-after-native").status)
             assertTrue(unchanged("a", "qR"))
         }
-        row("actual-display-off-private-edit") {
+        if (InstrumentationRegistry.getArguments().getString("displayOffRecoveryVerified") != "true") {
+            // Plan section10: do not deliberately strand the only management transport.
+            Log.i(TAG, "ROW_NOT_EXERCISED name=actual-display-off-private-edit reason=NO_VERIFIED_RECOVERY_TRANSPORT")
+        } else row("actual-display-off-private-edit") {
             reset(); focus("a"); val g = grant()
             val power = app.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
             val keyguard = app.getSystemService(android.content.Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
