@@ -25,7 +25,7 @@ internal class RgInputRouter(
     }
     private data class Tap(val point: InputPoint, val target: Target, val geometryVersion: Long,
         val input: RgInputSnapshot, val capturedAtUptime: Long)
-    data class DispatchTrace(val kind: String, val accepted: Boolean, val confirmedAt: Long, val finishedAt: Long, val recognitionWaitMs: Long)
+    data class DispatchTrace(val kind: String, val accepted: Boolean, val confirmedAt: Long, val finishedAt: Long, val recognitionWaitMs: Long, val capturedAt: Long?)
     internal var lastDispatch: DispatchTrace?=null
         private set
     internal var nativeInvocations=0L
@@ -36,6 +36,7 @@ internal class RgInputRouter(
     private val browserRoot=activity.findViewById<View>(R.id.rg_root)
     private val image=activity.findViewById<ImageView>(R.id.rg_page)
     private val main=Handler(Looper.getMainLooper())
+    private var gestureEventAt=0L
     private var active=false
     private var focused=false
     private var geometryVersion=0L
@@ -83,6 +84,7 @@ internal class RgInputRouter(
             event.action==KeyEvent.ACTION_UP -> PadGestureRecognizer.Phase.UP
             else -> PadGestureRecognizer.Phase.CANCEL
         }
+        gestureEventAt=event.eventTime
         gestures.accept(PadGestureRecognizer.Event(key,phase,event.eventTime,event.downTime,event.repeatCount),SystemClock.uptimeMillis())
         schedule()
         return true // Do not also let the focused native Button process the same pad sequence.
@@ -99,6 +101,7 @@ internal class RgInputRouter(
         if(!usable()) return null
         val point=pointer.inputPosition().let { InputPoint(it.x,it.y) }
         val input=presentation.inputSnapshot()
+        if(input!=gestureContext) return null // Refill between refresh and UP cannot promote an unavailable DOWN.
         val target=targetAt(point,input) ?: run { feedback(false);return null }
         return Tap(point,target,geometryVersion,input,SystemClock.uptimeMillis())
     }
@@ -112,17 +115,17 @@ internal class RgInputRouter(
                     is Target.Page -> tap.input.pageReady && presentation.activateAt(target.point.x,target.point.y)!=null
                 }
             }
-        lastDispatch=DispatchTrace("tap",accepted,confirmed,SystemClock.uptimeMillis(),tap?.let { confirmed-it.capturedAtUptime } ?: 0)
+        lastDispatch=DispatchTrace("tap",accepted,confirmed,SystemClock.uptimeMillis(),tap?.let { confirmed-it.capturedAtUptime } ?: 0,tap?.capturedAtUptime)
         feedback(accepted)
     }
     private fun scroll(delta: Int) {
         val confirmed=SystemClock.uptimeMillis()
-        val input=presentation.inputSnapshot()
-        // Swipe targets the active browser region even when the pointer is over local chrome.
-        val accepted=usable() && input.pageReady && presentation.dispatchIfCurrent(input) {
+        val input=gestureContext
+        // Swipe keeps its original availability/context even if a background refill finishes at UP.
+        val accepted=usable() && input?.pageReady==true && presentation.dispatchIfCurrent(input) {
             presentation.scrollBy(0f,delta.toFloat())!=null
         }
-        lastDispatch=DispatchTrace("scroll",accepted,confirmed,SystemClock.uptimeMillis(),0)
+        lastDispatch=DispatchTrace("scroll",accepted,confirmed,SystemClock.uptimeMillis(),0,gestureEventAt)
         feedback(accepted)
     }
 

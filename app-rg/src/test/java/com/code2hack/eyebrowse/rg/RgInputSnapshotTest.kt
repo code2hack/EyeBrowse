@@ -30,4 +30,14 @@ class RgInputSnapshotTest {
         assertTrue(waiting.allows(LocalInputAction.USE_PHONE))
         assertFalse(waiting.allows(LocalInputAction.BACK));assertFalse(waiting.allows(LocalInputAction.RELOAD))
     }
+    @Test fun preparedSlotTurnoverInvalidatesAnOtherwiseIdenticalRemoteIntent() {
+        val before=phone.copy(owner=ControlOwner.RG,pageReady=true,reservationRevision=10)
+        val unavailable=before.copy(pageReady=false,reservationRevision=11)
+        val refill=before.copy(reservationRevision=12)
+        assertNotEquals(before,refill);assertNotEquals(unavailable,refill)
+        assertFalse(unavailable.allows(LocalInputAction.RELOAD))
+        assertTrue(unavailable.allows(LocalInputAction.RECENTER))
+        assertTrue(unavailable.allows(LocalInputAction.RETRY))
+        assertTrue(unavailable.allows(LocalInputAction.USE_PHONE))
+    }
 }

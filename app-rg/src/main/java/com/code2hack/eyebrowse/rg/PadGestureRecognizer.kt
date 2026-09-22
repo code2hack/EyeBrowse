@@ -65,6 +65,11 @@ internal class PadGestureRecognizer<T>(
         pending=null;suppressTapsUntil=timeMs+doubleTapMs
         if(timeMs>=modeDedupUntil) { modeDedupUntil=timeMs+doubleTapMs;modeToggle() }
     }
-    fun cancel() { press=null;pending=null }
+    fun cancel() {
+        // Do not reinterpret the remaining tail of an invalidated physical sequence as a fresh tap
+        // merely because (for example) ordinal readiness became true between its two taps.
+        if(hasWork) suppressTapsUntil=maxOf(suppressTapsUntil,pending?.deadline ?: (lastEventMs+doubleTapMs))
+        press=null;pending=null
+    }
     companion object { const val MAX_EVENT_AGE_MS=250L }
 }

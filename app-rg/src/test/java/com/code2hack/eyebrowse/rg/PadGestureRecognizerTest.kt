@@ -82,4 +82,21 @@ class PadGestureRecognizerTest {
         t.event(Key.TAP,Phase.UP,1020,Long.MIN_VALUE);t.recognizer.confirm(2000)
         assertEquals(0,t.captures);assertTrue(t.singles.isEmpty())
     }
+    @Test fun availabilityInvalidationCannotTurnADoubleTailIntoANewPageTap() {
+        for(completedFirst in listOf(false,true)) {
+            val t=Trial();t.target=null;t.event(Key.TAP,Phase.DOWN,1000)
+            if(completedFirst) t.event(Key.TAP,Phase.UP,1020,1000)
+            t.recognizer.cancel() // e.g. prepared-slot false -> true, while that physical sequence is in progress.
+            t.target="now-ready"
+            if(!completedFirst) t.event(Key.TAP,Phase.UP,1020,1000)
+            t.tap(1100);t.recognizer.confirm(2000)
+            assertTrue("interrupted sequence leaked a tail tap",t.singles.isEmpty())
+            t.tap(2100);t.recognizer.confirm(2500)
+            assertEquals(listOf("now-ready"),t.singles)
+        }
+    }
+    @Test fun idleAvailabilityChangesDoNotDelayANewEligibleGesture() {
+        val t=Trial();t.recognizer.cancel();t.tap(1000);t.recognizer.confirm(1320)
+        assertEquals(listOf("original"),t.singles)
+    }
 }

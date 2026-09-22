@@ -26,44 +26,30 @@ import kotlin.math.abs
 /** All positive browser operations use raw pose -> actual Activity KeyEvent -> production router -> TLS. */
 @RunWith(AndroidJUnit4::class)
 class PointerBrowserJourneyTest {
-    /** Test-only delegates retain the original callbacks and synchronous durable reservation. */
+    /** Dispatch-only probe; preparation is independently traced by the real process allocator/store. */
     @Suppress("UNCHECKED_CAST")
-    private class DispatchProbe(private val router:RgInputRouter,peer:RgPresentationController) : AutoCloseable {
-        data class Sample(val entry:Long,val cpuEntry:Long,var persistEntry:Long=-1,var persistExit:Long=-1,
-            var persistCpu:Long=-1,var persistOk:Boolean?=null,var emitted:Long=-1,var cpuTotal:Long=-1,
+    internal class DispatchProbe(private val router:RgInputRouter) : AutoCloseable {
+        data class Sample(val entry:Long,val cpuEntry:Long,var emitted:Long=-1,var cpuTotal:Long=-1,
             var trace:RgInputRouter.DispatchTrace?=null)
         private val restore=mutableListOf<()->Unit>()
-        private var active:Sample?=null
         var last:Sample?=null
             private set
         init {
-            val field=RgPresentationController::class.java.getDeclaredField("commands").apply { isAccessible=true }
-            val sequence=field.get(peer)
-            val persist=CommandSequence::class.java.getDeclaredField("persist").apply { isAccessible=true }
-            val original=persist.get(sequence) as (CommandSequence.Cursor)->Boolean
-            persist.set(sequence,{ cursor:CommandSequence.Cursor ->
-                val sample=active;val cpu=SystemClock.currentThreadTimeMillis()
-                sample?.persistEntry=SystemClock.uptimeMillis()
-                try { original(cursor).also { sample?.persistOk=it } }
-                finally { sample?.persistExit=SystemClock.uptimeMillis();sample?.persistCpu=SystemClock.currentThreadTimeMillis()-cpu }
-            })
-            restore.add { persist.set(sequence,original) }
             val gestures=RgInputRouter::class.java.getDeclaredField("gestures").apply { isAccessible=true }.get(router)
             for(name in listOf("single","scroll")) {
                 val callback=PadGestureRecognizer::class.java.getDeclaredField(name).apply { isAccessible=true }
                 val delegate=callback.get(gestures) as (Any?)->Unit
                 callback.set(gestures,{ argument:Any? ->
                     val sample=Sample(SystemClock.uptimeMillis(),SystemClock.currentThreadTimeMillis())
-                    val previous=router.lastDispatch;active=sample
+                    val previous=router.lastDispatch
                     try { delegate(argument) }
                     finally {
                         sample.emitted=SystemClock.uptimeMillis();sample.cpuTotal=SystemClock.currentThreadTimeMillis()-sample.cpuEntry
-                        sample.trace=router.lastDispatch?.takeIf { it!==previous };last=sample;active=null
+                        sample.trace=router.lastDispatch?.takeIf { it!==previous };last=sample
                         val trace=sample.trace
-                        Log.i(TAG,"DISPATCH_EMIT kind=$name entry=${sample.entry} confirmed=${trace?.confirmedAt} " +
-                            "persistStart=${sample.persistEntry} persistEnd=${sample.persistExit} persistCpuMs=${sample.persistCpu} " +
-                            "persistOk=${sample.persistOk} finish=${trace?.finishedAt} emitted=${sample.emitted} " +
-                            "cpuTotalMs=${sample.cpuTotal} accepted=${trace?.accepted}")
+                        Log.i(TAG,"DISPATCH_EMIT kind="+name+" entry="+sample.entry+" captured="+trace?.capturedAt+
+                            " confirmed="+trace?.confirmedAt+" finish="+trace?.finishedAt+" emitted="+sample.emitted+
+                            " cpuTotalMs="+sample.cpuTotal+" accepted="+trace?.accepted)
                     }
                 })
                 restore.add { callback.set(gestures,delegate) }
@@ -71,7 +57,7 @@ class PointerBrowserJourneyTest {
         }
         override fun close() { restore.asReversed().forEach { it() } }
     }
-    private class Journey(val scenario: ActivityScenario<MainActivity>) {
+    internal class Journey(val scenario: ActivityScenario<MainActivity>) {
         val source=RawPoseReplay()
         val pad=InputDevice.getDeviceIds().toList().mapNotNull(InputDevice::getDevice).first { it.name=="ROKID,PSOC-TP-R" }
         lateinit var peer:RgPresentationController
@@ -80,7 +66,7 @@ class PointerBrowserJourneyTest {
         var probe:DispatchProbe?=null
         val app=InstrumentationRegistry.getInstrumentation().targetContext
         val mission=UUID.fromString(InstrumentationRegistry.getArguments().getString("missionId")).toString()
-        val cursor get() = app.getSharedPreferences("browser-command-sequence",0).all.toMap()
+        val actions get() = peer.actionAccounting()
         fun main(action:(MainActivity)->Unit) { scenario.onActivity(action) }
         fun await(label:String,bound:Long=3_000,condition:()->Boolean) {
             val end=SystemClock.uptimeMillis()+bound
@@ -92,9 +78,10 @@ class PointerBrowserJourneyTest {
                 activity=it;peer=it.presentation;pointer=it.findViewById(R.id.rg_pointer)
                 pointer.stop();pointer.replaceSourceForTest(source);pointer.start()
                 assertEquals("declared RG mounting rotation",Surface.ROTATION_0,it.display!!.rotation)
-                probe=DispatchProbe(it.inputRouter,peer)
+                probe=DispatchProbe(it.inputRouter)
             }
             await("focused surface/fresh raw replay") { activity.hasWindowFocus() && pointer.position.available }
+            main { source.adoptCurrentReference() }
         }
         fun title()=peer.browserState()?.title?.substringBefore("|G=")
         fun geometry()=JSONObject(checkNotNull(peer.browserState()?.title).substringAfter("|G="))
@@ -143,10 +130,12 @@ class PointerBrowserJourneyTest {
                 trace=checkNotNull(it.inputRouter.lastDispatch)
                 val observed=SystemClock.uptimeMillis();val sample=checkNotNull(probe?.last)
                 assertSame("emission corresponds to this exact dispatch",trace,sample.trace)
-                Log.i(TAG,"DISPATCH name=$name localMs=${trace.finishedAt-trace.confirmedAt} recognitionMs=${trace.recognitionWaitMs} " +
-                    "down=${tap.down} entry=${sample.entry} confirm=${trace.confirmedAt} persistStart=${sample.persistEntry} " +
-                    "persistEnd=${sample.persistExit} finish=${trace.finishedAt} emitted=${sample.emitted} observed=$observed " +
-                    "observationLagMs=${observed-trace.finishedAt} cpuTotalMs=${sample.cpuTotal}")
+                Log.i(TAG,"DISPATCH name="+name+" localMs="+(trace.finishedAt-trace.confirmedAt)+
+                    " recognitionMs="+trace.recognitionWaitMs+" down="+tap.down+" up="+tap.up+
+                    " entry="+sample.entry+" captured="+trace.capturedAt+" confirm="+trace.confirmedAt+
+                    " finish="+trace.finishedAt+" emitted="+sample.emitted+" observed="+observed+
+                    " observationLagMs="+(observed-trace.finishedAt)+" cpuTotalMs="+sample.cpuTotal)
+
                 assertTrue("eligible $name",trace.accepted)
                 assertTrue("enqueue/local invocation <=100ms: $name actual=${trace.finishedAt-trace.confirmedAt}ms",trace.finishedAt-trace.confirmedAt<=100)
             }
@@ -171,8 +160,8 @@ class PointerBrowserJourneyTest {
         fun confirmWindow() { SystemClock.sleep(450) }
         fun request(name:String) { Log.i(TAG,"I8_PHONE_OP $name mission=$mission") }
         fun check(name:String) { request(name);await("Phone independent $name",8_000) { title()=="I8 ACK $name" } }
-        fun qualified(page:String):Boolean {
-            if(!peer.canAct()) return false
+        fun qualified(page:String,requireEligible:Boolean=true):Boolean {
+            if(requireEligible && !peer.canAct()) return false
             val state=peer.browserState() ?: return false;val header=peer.lastFrameHeader ?: return false
             if(header.context!=state.context || header.width!=peer.profile()?.width || header.height!=peer.profile()?.height) return false
             val bitmap=(activity.findViewById<ImageView>(R.id.rg_page).drawable as? BitmapDrawable)?.bitmap ?: return false
@@ -250,11 +239,11 @@ class PointerBrowserJourneyTest {
         try {
             j.setup();j.native(R.id.rg_retry,"initial Retry")
             j.await("real authenticated Phone state",10_000) { j.peer.browserState()?.owner==ControlOwner.PHONE && j.peer.canHandoff() }
-            val noAction=j.peer.lastActionResult;val initialCursor=j.cursor
+            val noAction=j.peer.lastActionResult;val initialActions=j.actions
             j.main { assertNull(j.peer.lastHandoffRequest) }
             j.aimNative(R.id.rg_page);j.pad();j.confirmWindow()
             j.aimNative(R.id.rg_reload);j.pad();j.confirmWindow();j.pad(292);j.confirmWindow()
-            assertSame(noAction,j.peer.lastActionResult);assertEquals(initialCursor,j.cursor)
+            assertSame(noAction,j.peer.lastActionResult);assertEquals(initialActions,j.actions)
             assertEquals(ControlOwner.PHONE,j.peer.browserState()!!.owner);assertNull(j.peer.lastHandoffRequest)
             j.check("phone_owned")
             j.native(R.id.rg_recenter,"Recenter-before-consent");j.main { j.source.adoptCurrentReference() }
@@ -267,14 +256,14 @@ class PointerBrowserJourneyTest {
             assertEquals("STALE_CONTEXT",j.raw(stale).reason)
             j.handoff(ControlOwner.RG,"A")
 
-            var before=j.cursor;var result=j.peer.lastActionResult
+            var before=j.actions;var result=j.peer.lastActionResult
             j.aimNative(R.id.rg_forward);j.pad();j.confirmWindow()
             val modes=AtomicInteger();j.main { it.inputRouter.onModeToggleIntent={modes.incrementAndGet()} }
             j.aimPage();j.pad();SystemClock.sleep(40);j.pad();j.pad(291);j.confirmWindow()
-            assertEquals(1,modes.get());assertEquals(before,j.cursor);assertSame(result,j.peer.lastActionResult)
+            assertEquals(1,modes.get());assertEquals(before,j.actions);assertSame(result,j.peer.lastActionResult)
             j.check("disabled_double")
             for(reason in listOf("sensor","pause","viewport","modal")) {
-                j.live("A");j.aimPage();before=j.cursor;result=j.peer.lastActionResult
+                j.live("A");j.aimPage();before=j.actions;result=j.peer.lastActionResult
                 val epoch=j.peer.browserState()!!.context.controlEpoch;val capture=j.peer.lastFrameHeader!!.captureTsMs
                 val originalProfile=j.peer.profile()
                 j.pad()
@@ -288,7 +277,7 @@ class PointerBrowserJourneyTest {
                     }
                     "modal" -> j.main { dialog=AlertDialog.Builder(it).setMessage("Pointer interruption fixture").setPositiveButton("Close",null).show() }
                 }
-                j.confirmWindow();assertEquals("$reason did not reserve",before,j.cursor);assertSame(result,j.peer.lastActionResult)
+                j.confirmWindow();assertEquals("$reason did not consume, construct, or enqueue",before,j.actions);assertSame(result,j.peer.lastActionResult)
                 when(reason) {
                     "sensor" -> { j.main { j.source.flowing=true };j.recoverPose() }
                     "pause" -> { scenario.moveToState(Lifecycle.State.RESUMED);j.recoverPose();j.reconnect("A",epoch,capture) }
@@ -300,23 +289,23 @@ class PointerBrowserJourneyTest {
                     }
                     else -> { j.main { dialog!!.dismiss() };j.await("modal closed") { j.activity.hasWindowFocus() } }
                 }
-                j.confirmWindow();assertEquals("$reason no replay",before,j.cursor);j.check(reason)
-                Log.i(TAG,"INTERRUPTION name=$reason reserved=0 effects=0 recoveryReplay=0")
+                j.confirmWindow();assertEquals("$reason no replay",before,j.actions);j.check(reason)
+                Log.i(TAG,"INTERRUPTION name=$reason consumedConstructedQueued=0 effects=0 recoveryReplay=0")
             }
 
-            j.aimPage();before=j.cursor;result=j.peer.lastActionResult
+            j.aimPage();before=j.actions;result=j.peer.lastActionResult
             var beforeClickHash=0L;j.main { beforeClickHash=j.frameHash() }
             j.request("busy");waitHost("busy")
             val firstTap=j.pad();val actionTrace=j.dispatched(firstTap,"ActivateAt-A")
             j.main { assertFalse("real command is pending during Phone hold",j.peer.canAct()) }
-            val reserved=j.cursor
+            val reserved=j.actions
             j.pad();j.pad(292)
-            assertEquals("busy gestures reserve nothing",reserved,j.cursor)
+            assertEquals("busy gestures consume, construct, and enqueue nothing",reserved,j.actions)
             val click=j.result(result,"ActivateAt-A")
             j.await("actual visible A click",1_000) { j.title()=="T03 A click 1" && j.peer.canAct() && j.frameHash()!=beforeClickHash }
             val busyEffect=SystemClock.uptimeMillis()-actionTrace.confirmedAt
             assertTrue("bounded delayed fixture action",busyEffect<=1_000)
-            Log.i(TAG,"BUSY_ACTION effectMs=$busyEffect fullGestureMs=${SystemClock.uptimeMillis()-firstTap.down} holdInjectedMs=900 extraReserved=0")
+            Log.i(TAG,"BUSY_ACTION effectMs=$busyEffect fullGestureMs=${SystemClock.uptimeMillis()-firstTap.down} holdInjectedMs=900 extraConsumedConstructedQueued=0")
             j.check("busy_verified")
             val current=j.peer.browserState()!!.context;val g=j.geometry()
             assertEquals("STALE_COMMAND_SEQUENCE",j.raw(BrowserActionMessage(click.commandId,current,BrowserAction.ActivateAt(g.getDouble("x").toFloat(),g.getDouble("y").toFloat()),click.commandId.split(':')[2].toLong())).reason)
@@ -353,20 +342,20 @@ class PointerBrowserJourneyTest {
             result=j.peer.lastActionResult;navTrace=j.native(R.id.rg_reload,"Reload");j.result(result,"Reload")
             j.await("Reload new B document",5_000) { j.peer.browserState()?.context?.documentId!=reloadDoc && j.title()=="T03 B" && j.peer.canAct() };j.live("B");j.effect("Reload",navTrace)
 
-            j.aimPage();before=j.cursor;result=j.peer.lastActionResult
+            j.aimPage();before=j.actions;result=j.peer.lastActionResult
             val navigationDoc=j.peer.browserState()!!.context.documentId;val navigationTap=j.pad();j.request("navigation")
             val navChanged=j.contextDuringTap(navigationTap,"navigation") { it.context.documentId!=navigationDoc }
             j.await("Phone navigation zero-effect oracle",8_000) { j.title()=="I8 ACK navigation" && j.peer.canAct() }
-            j.confirmWindow();assertEquals(before,j.cursor);assertSame(result,j.peer.lastActionResult)
-            Log.i(TAG,"NAVIGATION_PENDING changedMs=$navChanged commandDelta=0")
+            j.confirmWindow();assertEquals(before,j.actions);assertSame(result,j.peer.lastActionResult)
+            Log.i(TAG,"NAVIGATION_PENDING changedMs=$navChanged consumptionConstructionQueueDelta=0")
 
             val stalePagePoint=j.aimPage();j.aimNative(R.id.rg_handoff)
             val previousRequest=j.peer.lastHandoffRequest;val takeoverTap=j.pad();j.request("takeover")
             val takeoverChanged=j.contextDuringTap(takeoverTap,"takeover") { it.owner==ControlOwner.PHONE }
             j.await("Phone takeover oracle",8_000) { j.title()=="I8 ACK takeover" }
-            j.confirmWindow();assertSame(previousRequest,j.peer.lastHandoffRequest);assertEquals(before,j.cursor)
+            j.confirmWindow();assertSame(previousRequest,j.peer.lastHandoffRequest);assertEquals(before,j.actions)
             j.aim(stalePagePoint);j.pad();j.confirmWindow();j.aimNative(R.id.rg_reload);j.pad();j.confirmWindow();j.pad(292);j.confirmWindow()
-            assertEquals(ControlOwner.PHONE,j.peer.browserState()!!.owner);assertEquals(before,j.cursor);assertSame(previousRequest,j.peer.lastHandoffRequest)
+            assertEquals(ControlOwner.PHONE,j.peer.browserState()!!.owner);assertEquals(before,j.actions);assertSame(previousRequest,j.peer.lastHandoffRequest)
             j.check("phone_owned_again")
             Log.i(TAG,"PHONE_TAKEOVER_PENDING changedMs=$takeoverChanged staleConsent=0 phoneOwnedPageNav=0")
 
@@ -378,9 +367,9 @@ class PointerBrowserJourneyTest {
             Log.i(TAG,"ACTIVATE_EFFECT page=B effectMs=$finishMs fullGestureMs=${SystemClock.uptimeMillis()-finishTap.down}")
             j.request("actions_done");j.await("independent complete Phone ledger",8_000) { j.title()=="I8 EFFECTS VERIFIED" }
             j.handoff(ControlOwner.PHONE,"B");j.await("final continuity proof",8_000) { j.title()=="I8 FINAL RETURN VERIFIED" }
-            j.handoff(ControlOwner.RG,"B");j.aimPage();before=j.cursor;result=j.peer.lastActionResult
+            j.handoff(ControlOwner.RG,"B");j.aimPage();before=j.actions;result=j.peer.lastActionResult
             j.pad();j.main { j.peer.pause() };j.quiescent();j.confirmWindow()
-            assertEquals(before,j.cursor);assertSame(result,j.peer.lastActionResult)
+            assertEquals(before,j.actions);assertSame(result,j.peer.lastActionResult)
             val frames=j.peer.displayedFrames
             var centerX=0f
             j.native(R.id.rg_recenter,"Recenter-link-down");j.main {
@@ -394,7 +383,7 @@ class PointerBrowserJourneyTest {
                 Log.i(TAG,"WITHHELD_FRAMES localDrawMs=$ms newFrames=0 recenterLocal=true linkClosed=true")
             }
             j.request("final_disconnected");waitHost("done")
-            assertEquals(before,j.cursor)
+            assertEquals(before,j.actions)
             Log.i(TAG,"RG_I8_PASS realTls=true pointerActions=true allNegatives=true")
         } catch(failure:Throwable) { primary=failure;Log.e(TAG,"PRIMARY_FAILURE",failure);throw failure }
         finally {
