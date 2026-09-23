@@ -66,17 +66,24 @@ class PhoneLinkServer(
     private var lastViewportResult: Pair<ViewportUpdateMessage, ViewportUpdateResultMessage>? = null
     private var lastCloseResult: Pair<EditorCloseMessage, EditorCloseResultMessage>? = null
     @Volatile private var profileEditor: Pair<ControlContext, EditorTarget>? = null
+    @Volatile private var profileRequest: Pair<ControlContext, Long>? = null
     private val publisher by lazy {
         hostingController?.let { PhonePresentationPublisher(it, ::publishPresentationReady, ::sendPresentation,
             { browserSession?.requestFreshCaptureFrame() }, beforeCapture = { state, start ->
                 val retained = profileEditor?.takeIf { it.first == state.context }
-                if (retained != null && editorController != null) {
+                if (editorController != null) {
                     profileEditor = null
-                    editorController.resumeAfterProfile(retained.second) { start() }
+                    val deadline = profileRequest?.takeIf { it.first == state.context }?.second?.plus(2000)
+                        ?: (android.os.SystemClock.elapsedRealtime() + 1000)
+                    editorController.preparePresentation(retained?.second, deadline) { geometry, _ ->
+                        if (geometry) start() // Editor refusal never retargets; geometry remains required.
+                    }
                 } else start()
             }) { context, reason ->
             synchronized(controlCoordinator.authority) {
-                if (controlCoordinator.authority.markPresentationStale(context)) {
+                if (profileRequest?.first == context) profileRequest = null
+                if (controlCoordinator.authority.snapshot().context == context) {
+                    controlCoordinator.authority.markPresentationStale(context)
                     authenticatedSession?.setPresentation(null, null)
                     authenticatedSession?.sendControl(PresentationStaleMessage(context, reason))
                 }
@@ -90,7 +97,8 @@ class PhoneLinkServer(
         }
         // Native focus reads and renderer scheduling never run under the link authority monitor.
         editorController?.reconcile()
-        publisher?.reconcile(state)
+        val request = profileRequest?.takeIf { it.first == state.context }?.second
+        publisher?.reconcile(state, request ?: android.os.SystemClock.elapsedRealtime())
         publishBrowserState()
     }
     private fun schedulePresentation() {
@@ -147,6 +155,7 @@ class PhoneLinkServer(
             synchronized(controlCoordinator.authority) {
                 controlCoordinator.onLinkStopped()
                 authenticatedSession = null
+                profileRequest = null; profileEditor = null
             }
             main.post { editorController?.close { } }
             schedulePresentation()
@@ -161,6 +170,7 @@ class PhoneLinkServer(
             main.post {
                 if (authenticatedSession !== session) return@post
                 viewportHighWater = 0; lastViewportResult = null; lastCloseResult = null
+                profileRequest = null; profileEditor = null
                 editorController?.close { }
             }
             schedulePresentation()
@@ -217,15 +227,20 @@ class PhoneLinkServer(
                 }
             }
             is ViewportUpdateMessage -> {
+                val requestedAt = android.os.SystemClock.elapsedRealtime()
                 lastViewportResult?.takeIf { it.first == message }?.let { answer(it.second); return }
                 val current = controlCoordinator.authority.snapshot()
                 fun rejected() = ViewportUpdateResultMessage(message.transitionId, false,
                     controlCoordinator.authority.snapshot().context, controlCoordinator.authority.snapshot().profile)
-                if (!session.keyboardCompatible || transitionPending || message.context != current.context ||
+                if (!session.keyboardCompatible || transitionPending || profileRequest != null || message.context != current.context ||
                     message.transitionId <= viewportHighWater || current.owner != ControlOwner.RG || !current.hostingActive) {
                     answer(rejected()); return
                 }
                 viewportHighWater = message.transitionId
+                if (message.profile == current.profile) {
+                    val result = ViewportUpdateResultMessage(message.transitionId, true, current.context, current.profile)
+                    lastViewportResult = message to result; answer(result); return
+                }
                 transitionPending = true
                 val previousTarget = editor?.authority?.grant?.target
                 retireEditor(retainForProfile = previousTarget != null) { verified ->
@@ -233,9 +248,11 @@ class PhoneLinkServer(
                     val updated = if (verified && authenticatedSession === session)
                         controlCoordinator.authority.updateRgViewport(message.context, message.profile) else null
                     val result = if (updated == null) rejected() else {
-                        publisher?.stop(); authenticatedSession?.setPresentation(null, null)
+                        // Publisher performs a dedicated lease/surface transfer, not ordinary stop.
+                        authenticatedSession?.setPresentation(null, null)
                         controlCoordinator.authority.markPresentationStale(updated.context)
                         profileEditor = previousTarget?.let { updated.context to it }
+                        profileRequest = updated.context to requestedAt
                         schedulePresentation()
                         ViewportUpdateResultMessage(message.transitionId, true, updated.context, updated.profile)
                     }
@@ -317,6 +334,7 @@ class PhoneLinkServer(
         if (before != state.context) authenticatedSession?.setPresentation(null,null)
         if (response is HandoffResultMessage && response.accepted) {
             profileEditor = null
+            profileRequest = null
             publisher?.stop()
             if (state.owner == ControlOwner.PHONE) check(hostingController?.presentOnPhone() == true)
             else publisher?.reconcile(state)
@@ -354,6 +372,7 @@ class PhoneLinkServer(
             if (controlCoordinator.authority.snapshot().presentationStatus == PresentationStatus.READY &&
                 controlCoordinator.authority.snapshot().context == context) return true
             if (!controlCoordinator.authority.markPresentationReady(context)) return false
+            if (profileRequest?.first == context) profileRequest = null
             val state = controlCoordinator.authority.snapshot()
             session.setPresentation(state.context, state.profile)
             main.post { if (authenticatedSession === session) editorController?.reconcile() }

@@ -60,10 +60,18 @@ class PhoneEditorController(
     fun openAfterActivation(activation: BrowserAction.ActivateAt, callback: (Boolean) -> Unit = {}) =
         open(activation, null, callback)
 
-    fun resumeAfterProfile(previousTarget: EditorTarget, callback: (Boolean) -> Unit = {}) {
+    fun resumeAfterProfile(previousTarget: EditorTarget, callback: (Boolean) -> Unit = {}) =
+        preparePresentation(previousTarget) { geometry, editor -> callback(geometry && editor) }
+
+    /** One bounded geometry preparation, not a queue of keys or automatic field selection. */
+    fun preparePresentation(previousTarget: EditorTarget? = null,
+                            deadlineElapsedMs: Long = android.os.SystemClock.elapsedRealtime() + 1000,
+                            callback: (Boolean, Boolean) -> Unit) {
         checkMain()
         cancelProfilePreparation?.invoke()
-        val context = state().context
+        val snapshot = state()
+        val profile = snapshot.profile ?: return callback(false, false)
+        val context = snapshot.context
         val link = connection()
         val started = android.os.SystemClock.elapsedRealtime()
         var done = false
@@ -72,18 +80,35 @@ class PhoneEditorController(
             done = true
             profilePreparation?.let(main::removeCallbacks)
             profilePreparation = null; cancelProfilePreparation = null
-            android.util.Log.i("EyeBrowseEditor", "profile focus settle ms=${android.os.SystemClock.elapsedRealtime()-started} ready=$ready")
-            if (ready) open(null, previousTarget, callback) else callback(false)
+            android.util.Log.i("EyeBrowseEditor", "profile geometry settle ms=${android.os.SystemClock.elapsedRealtime()-started} ready=$ready")
+            if (!ready) callback(false, false)
+            else if (previousTarget == null) callback(true, false)
+            else open(null, previousTarget) { callback(true, it) }
         }
         val check = object : Runnable {
             override fun run() {
                 if (done) return
                 val latest = state()
                 if (latest.context != context || connection() != link || latest.owner != ControlOwner.RG ||
-                    !latest.linkAuthenticated || !latest.hostingActive || !isQuiescent()) finish(false)
-                else if (hosting.localEditorFocusReady()) finish(true)
-                else if (android.os.SystemClock.elapsedRealtime() - started >= 1000) finish(false)
-                else main.postDelayed(this, 16)
+                    !latest.linkAuthenticated || !latest.hostingActive || !isQuiescent() ||
+                    android.os.SystemClock.elapsedRealtime() >= deadlineElapsedMs) { finish(false); return }
+                val currentAdapter = adapter
+                if (!hosting.localEditorFocusReady() || currentAdapter == null) { main.postDelayed(this,16); return }
+                currentAdapter.install { installed ->
+                    if (done) return@install
+                    if (installed.instance == null) { finish(false); return@install }
+                    currentAdapter.viewport { result ->
+                        if (done) return@viewport
+                        val view = browser.view()
+                        val current = state()
+                        if (current.context != context || connection() != link || !hosting.localEditorFocusReady() ||
+                            android.os.SystemClock.elapsedRealtime() >= deadlineElapsedMs) finish(false)
+                        else if (view != null && result.viewport?.matches(profile.width,profile.height,view.scale) == true) {
+                            android.util.Log.i("EyeBrowseEditor", "profile renderer=${result.viewport} native=${view.width}x${view.height} scale=${view.scale}")
+                            finish(true)
+                        } else main.postDelayed(this,16)
+                    }
+                }
             }
         }
         profilePreparation = check; cancelProfilePreparation = { finish(false) }; check.run()

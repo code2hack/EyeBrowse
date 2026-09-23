@@ -284,15 +284,30 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
      * pre-arm buffers. May be invoked from the capture thread; View.post performs the actual
      * invalidation on the WebView/UI thread and fences renderer replacement.
      */
-    fun requestFreshCaptureFrame(isCurrentOwner: () -> Boolean = { true }) {
+    fun requestFreshCaptureFrame(frameCommitted: (() -> Unit)? = null,
+                                 isCurrentOwner: () -> Boolean = { true }) {
         val target = webView ?: return
         target.post {
             if (webView !== target || rendererGone || !isCurrentOwner()) {
                 return@post
             }
-            target.requestLayout()
-            target.invalidate()
-            target.postInvalidateOnAnimation()
+            fun draw() {
+                target.requestLayout()
+                target.invalidate()
+                target.postInvalidateOnAnimation()
+            }
+            if (frameCommitted == null) draw() else {
+                if (!target.isHardwareAccelerated) return@post // No unqualified fallback frame.
+                target.postVisualStateCallback(0, object : WebView.VisualStateCallback() {
+                    override fun onComplete(requestId: Long) {
+                        if (webView !== target || rendererGone || !target.isAttachedToWindow || !isCurrentOwner()) return
+                        target.viewTreeObserver.registerFrameCommitCallback {
+                            if (webView === target && !rendererGone && isCurrentOwner()) frameCommitted()
+                        }
+                        draw()
+                    }
+                })
+            }
         }
     }
 

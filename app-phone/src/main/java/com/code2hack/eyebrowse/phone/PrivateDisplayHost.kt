@@ -90,6 +90,8 @@ class PrivateDisplayHost(
         fun focusAttachedView(view: android.view.View?) {}
         fun localFocusReady(view: android.view.View): Boolean = false
         fun setLocalFocusListener(listener: Runnable?) {}
+        fun windowIdentity(): Int = 0
+        fun focusLossSerial(): Long = 0
     }
 
     /** Immutable per-lease delivery sink; the capture pipeline invokes exactly this object. */
@@ -139,6 +141,154 @@ class PrivateDisplayHost(
     private var captureThread: HandlerThread? = null // main-thread lifecycle
     private var captureHandler: Handler? = null // main-thread lifecycle
     private var retainedCaptureThread: Thread? = null // latest capture thread, for isAlive() introspection
+    private val main = Handler(android.os.Looper.getMainLooper())
+    private var profileResize: Any? = null
+    private var cancelProfileResize: (() -> Unit)? = null
+    private var stagedProfileReader: ImageReader? = null
+    private var retiringProfileReader: ImageReader? = null
+    private var retiringProfileCloseScheduled = false
+    private var profileSerial = 0L
+    private var lastProfileSettlement: Runnable? = null
+    @Volatile private var staleReaderCallbacks = 0L
+
+    /** Instrumentation replays the real callbacks; no receiver, fake focus, or alternate path. */
+    internal fun profileSettlementForTest(): Runnable? = lastProfileSettlement
+    internal fun replayImageCallbackForTest(reader: ImageReader) = onImageAvailable(reader)
+    internal fun staleReaderCallbacksForTest(): Long = staleReaderCallbacks
+
+    data class ProfileGeometry(
+        val display: DisplaySnapshot, val presentationId: Int, val windowId: Int, val decorId: Int,
+        val parentId: Int, val viewId: Int, val density: Int, val decorWidth: Int, val decorHeight: Int,
+        val containerWidth: Int, val containerHeight: Int, val measuredWidth: Int, val measuredHeight: Int,
+        val viewWidth: Int, val viewHeight: Int, val profileSerial: Long, val focusLossSerial: Long,
+        val localFocus: Boolean, val readerOverlap: Int,
+    )
+
+    fun profileGeometry(session: PhoneBrowserSession): ProfileGeometry {
+        val shown = presentation
+        val container = shown?.container()
+        val view = session.view()
+        val metrics = android.util.DisplayMetrics()
+        virtualDisplay?.display?.getRealMetrics(metrics)
+        return ProfileGeometry(displaySnapshot(), System.identityHashCode(shown), shown?.windowIdentity() ?: 0,
+            System.identityHashCode(container?.rootView), System.identityHashCode(view?.parent),
+            System.identityHashCode(view), metrics.densityDpi, container?.rootView?.width ?: 0,
+            container?.rootView?.height ?: 0, container?.width ?: 0, container?.height ?: 0,
+            view?.measuredWidth ?: 0, view?.measuredHeight ?: 0, view?.width ?: 0, view?.height ?: 0,
+            profileSerial, shown?.focusLossSerial() ?: 0, localFocusReady(session),
+            (if (imageReader != null) 1 else 0) + (if (stagedProfileReader != null) 1 else 0) +
+                (if (retiringProfileReader != null) 1 else 0))
+    }
+
+    /** Dedicated same-window transaction. Ordinary release/expiry keeps its destructive meaning. */
+    fun resizeProfile(profile: HostingPresentationProfile, session: PhoneBrowserSession,
+                      deadlineElapsedMs: Long, completed: (Boolean) -> Unit) {
+        check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
+        val shown = presentation
+        val display = virtualDisplay
+        val view = session.view()
+        val oldReader = imageReader
+        if (profileResize != null || stagedProfileReader != null || retiringProfileReader != null ||
+            shown == null || display == null || view == null || oldReader == null || displaySurfaceDetached ||
+            !localFocusReady(session) || !shown.isAvailable() || !display.display.isValid ||
+            display.display.state != Display.STATE_ON || profile.densityDpi != densityDpi ||
+            SystemClock.elapsedRealtime() >= deadlineElapsedMs) { completed(false); return }
+        val request = Any()
+        profileResize = request
+        val serial = ++profileSerial
+        val focusSerial = shown.focusLossSerial()
+        val document = session.documentIdentity()
+        var finished = false
+        var timeout: Runnable? = null
+        fun finish(ok: Boolean) {
+            if (finished) return
+            finished = true
+            timeout?.let(main::removeCallbacks)
+            if (profileResize === request) {
+                profileResize = null
+                cancelProfileResize = null
+                lastProfileSettlement = null
+            }
+            completed(ok)
+        }
+        cancelProfileResize = {
+            if (profileResize === request) { profileResize = null; lastProfileSettlement = null }
+            cancelProfileResize = null
+            timeout?.let(main::removeCallbacks)
+            main.post { finish(false) } // No recursive Stop during resource teardown.
+        }
+        timeout = Runnable { if (profileResize === request) finish(false) }
+        main.postDelayed(timeout!!, (deadlineElapsedMs-SystemClock.elapsedRealtime()).coerceAtLeast(0))
+        fun current() = profileResize === request && presentation === shown && virtualDisplay === display &&
+            session.view() === view && session.documentIdentity() == document && view.parent === shown.container() &&
+            shown.focusLossSerial() == focusSerial && localFocusReady(session) && shown.isAvailable()
+        val staged = try { factory.createImageReader(profile.width, profile.height) }
+            catch (_: RuntimeException) { null }
+        if (staged == null) { finish(false); return }
+        stagedProfileReader = staged
+        Log.i(TAG, "profile[$serial] staged reader; overlap=2 oldSurfaceValid=${oldReader.surface.isValid}")
+        stopCapture() // No close/null surface. The queued barrier waits outside every monitor.
+        val capture = captureHandler
+        val settle = object : Runnable {
+            override fun run() {
+                if (profileResize !== request) return
+                if (!current() || SystemClock.elapsedRealtime() >= deadlineElapsedMs) { finish(false); return }
+                val g = profileGeometry(session)
+                if (g.display.valid && g.display.state == Display.STATE_ON && !g.display.surfaceDetached &&
+                    g.display.actualWidth == profile.width && g.display.actualHeight == profile.height &&
+                    g.density == profile.densityDpi && g.decorWidth == profile.width && g.decorHeight == profile.height &&
+                    g.containerWidth == profile.width && g.containerHeight == profile.height &&
+                    g.measuredWidth == profile.width && g.measuredHeight == profile.height &&
+                    g.viewWidth == profile.width && g.viewHeight == profile.height && retiringProfileReader == null) {
+                    Log.i(TAG, "profile[$serial] native layout settled $g")
+                    finish(true)
+                } else view.postOnAnimation(this)
+            }
+        }
+        lastProfileSettlement = settle
+        val swap = Runnable {
+            if (!current()) { finish(false); return@Runnable }
+            try {
+                Log.i(TAG, "profile[$serial] quiesced; resize ${profile.width}x${profile.height}@${profile.densityDpi}")
+                display.resize(profile.width, profile.height, profile.densityDpi)
+                Log.i(TAG, "profile[$serial] setSurface(non-null) oldSurfaceValid=${oldReader.surface.isValid}")
+                display.setSurface(staged.surface)
+                synchronized(nativeLock) {
+                    imageReader = staged
+                    stagedProfileReader = null
+                    retiringProfileReader = oldReader
+                    frameBitmap = null // Drop, never recycle a bitmap a completed borrower retained.
+                    width = profile.width; height = profile.height
+                    displaySurfaceDetached = false
+                }
+                val retire = Runnable {
+                    val closed = runCatching { oldReader.close() }.isSuccess
+                    main.post {
+                        retiringProfileCloseScheduled = false
+                        if (closed && retiringProfileReader === oldReader) retiringProfileReader = null
+                        Log.i(TAG, "profile[$serial] old reader closed=$closed")
+                        if (profileResize === request) {
+                            if (!closed) finish(false) else {
+                                shown.container().requestLayout(); view.requestLayout()
+                                view.postOnAnimation(settle)
+                            }
+                        }
+                    }
+                }
+                retiringProfileCloseScheduled = true
+                if (capture == null) retire.run() else if (!capture.post(retire)) {
+                    retiringProfileCloseScheduled = false
+                    finish(false)
+                }
+            } catch (error: RuntimeException) {
+                Log.e(TAG, "profile[$serial] platform failure ${error.javaClass.simpleName}")
+                // Keep both producers owned until caller's explicit Stop releases the display.
+                finish(false)
+            }
+        }
+        if (capture == null) main.post(swap)
+        else if (!capture.post { main.post(swap) }) finish(false)
+    }
 
     // Java original: plain (non-volatile) field; swapped from main, read on the capture path.
     private var frameSink: FrameSink? = null
@@ -156,6 +306,7 @@ class PrivateDisplayHost(
     @Volatile private var captureReleased: Boolean = false // release requested; no further admissions/copying
     @Volatile private var teardownComplete: Boolean = true
     @Volatile private var captureGeneration: Int = 0 // hosting generation stamped into produced frames
+    private var frameCommitReady = true // nativeLock; required only for a profile-transfer rearm.
 
     // Sparse production diagnostics for the T04 acceptance path. Reset per capture arm/rearm;
     // no bitmap/pixel payload is retained.
@@ -228,6 +379,7 @@ class PrivateDisplayHost(
         }
     }
 
+
     /** Rolls back whatever subset of display resources was already allocated. */
     private fun rollbackDisplayAllocation() {
         synchronized(nativeLock) {
@@ -287,6 +439,7 @@ class PrivateDisplayHost(
     @Throws(HostingException::class)
     fun ensureCaptureSurface(serviceContext: Context, desiredWidth: Int, desiredHeight: Int,
             desiredDensityDpi: Int, session: PhoneBrowserSession) {
+        if (profileResize != null) throw HostingException("profile resize pending; recovery forbidden")
         val sizeError = HostingPolicy.viewportError(desiredWidth, desiredHeight)
         if (sizeError != null) {
             throw HostingException(sizeError)
@@ -397,7 +550,7 @@ class PrivateDisplayHost(
      * healthy capturing state over an unarmed reader.
      */
     fun rearmCapture(hostingGeneration: Int, boundSink: FrameSink?,
-            freshFrameRequest: Runnable?): Boolean {
+            freshFrameRequest: Runnable?, requireFrameCommit: Boolean = false): Boolean {
         if (!ownerPhase.isActive() || imageReader == null || boundSink == null ||
                 captureThread == null || captureHandler == null) {
             return false
@@ -410,6 +563,7 @@ class PrivateDisplayHost(
             captureGeneration = hostingGeneration
             captureActive = true
             captureReleased = false
+            frameCommitReady = !requireFrameCommit
         }
         imageReader?.setOnImageAvailableListener(::onImageAvailable, captureHandler)
         scheduleDrainThenFreshFrame(freshFrameRequest)
@@ -428,7 +582,7 @@ class PrivateDisplayHost(
      * hidden side effects.
      */
     fun startCapture(hostingGeneration: Int, boundSink: FrameSink?,
-            freshFrameRequest: Runnable?): Boolean {
+            freshFrameRequest: Runnable?, requireFrameCommit: Boolean = false): Boolean {
         if (imageReader == null || boundSink == null) {
             return false
         }
@@ -444,6 +598,7 @@ class PrivateDisplayHost(
             captureGeneration = hostingGeneration
             captureActive = true
             captureReleased = false
+            frameCommitReady = !requireFrameCommit
         }
         Log.i(TAG, "startCapture gen=$hostingGeneration reader=${imageReader != null}" +
                 " threadAlive=${captureThread != null}")
@@ -632,6 +787,7 @@ class PrivateDisplayHost(
 
     /** Full teardown for Stop: detaches the session view, dismisses, releases the display. */
     fun release(session: PhoneBrowserSession?) {
+        cancelProfileResize?.invoke()
         stopCapture()
         if (session != null) {
             detachSessionView(session)
@@ -650,6 +806,14 @@ class PrivateDisplayHost(
         if (display != null) {
             display.release()
             virtualDisplay = null
+        }
+        // A failed surface replacement may have attached the staged producer: close only AFTER
+        // the exact display is destroyed. No fallback window or old authority is resurrected.
+        stagedProfileReader?.let { runCatching { it.close() } }
+        stagedProfileReader = null
+        if (!retiringProfileCloseScheduled) {
+            retiringProfileReader?.let { runCatching { it.close() } }
+            retiringProfileReader = null
         }
         releaseCaptureResources()
     }
@@ -742,9 +906,10 @@ class PrivateDisplayHost(
             readerCallbackCount += 1
             val now = SystemClock.elapsedRealtime()
             lastReaderCallbackElapsedMs = now
+            if (reader !== imageReader) { staleReaderCallbacks++; return }
             val sink = frameSink ?: return
             val handler = captureHandler ?: return
-            if (!captureActive || captureReleased || reader !== imageReader) return
+            if (!captureActive || captureReleased || !frameCommitReady || reader !== imageReader) return
             val wakeup = deliveryThrottle.request(now)
             if (wakeup == null) {
                 coalescedCallbackCount += 1
@@ -763,6 +928,20 @@ class PrivateDisplayHost(
         }
     }
 
+    /** A real committed draw, bound to exactly the new sink; old-window callbacks cannot arm it. */
+    fun frameCommitted(sink: FrameSink) {
+        val reader: ImageReader
+        val handler: Handler
+        synchronized(nativeLock) {
+            if (frameSink !== sink || !captureActive || captureReleased) return
+            reader = imageReader ?: return
+            handler = captureHandler ?: return
+            frameCommitReady = true
+        }
+        Log.i(TAG, "profile frame commit qualified arm=$captureArmSerial")
+        handler.post { onImageAvailable(reader) } // Commit may follow an already-queued image event.
+    }
+
     /**
      * Throttle BEFORE acquiring. A final static-navigation frame inside the 200ms window
      * stays in ImageReader until this one-shot wakeup, even if no more callbacks arrive.
@@ -779,7 +958,7 @@ class PrivateDisplayHost(
             if (!deliveryThrottle.consume(wakeup)) return
             pendingFrameTask = null
             pendingFrameHandler = null
-            if (!captureActive || captureReleased || reader !== imageReader ||
+            if (!captureActive || captureReleased || !frameCommitReady || reader !== imageReader ||
                     frameSink !== sink) return
             var image: Image? = null
             try {
@@ -810,6 +989,7 @@ class PrivateDisplayHost(
 
     /** Copies the acquired image into the reused borrowed bitmap (nativeLock held by caller). */
     private fun copyFrame(image: Image, captureElapsedMs: Long): HostingFrame? {
+        if (image.width != width || image.height != height) return null
         val plane = image.planes[0]
         val rowStride = plane.rowStride
         val rowBytes = width * plane.pixelStride
@@ -885,6 +1065,7 @@ class PrivateDisplayHost(
         private var localFocusRequested = false
         private var focusListener: Runnable? = null
         private var reportedFocusReady = false
+        private var lostFocusSerial = 0L
         private val windowFocus = android.view.ViewTreeObserver.OnWindowFocusChangeListener {
             reportLocalFocus()
         }
@@ -896,6 +1077,7 @@ class PrivateDisplayHost(
             val ready = focusView?.let(::localFocusReady) == true
             if (ready != reportedFocusReady) {
                 reportedFocusReady = ready
+                if (!ready) lostFocusSerial++
                 focusListener?.run()
             }
         }
@@ -969,6 +1151,8 @@ class PrivateDisplayHost(
         }
 
         override fun container(): FrameLayout = content
+        override fun windowIdentity(): Int = System.identityHashCode(window)
+        override fun focusLossSerial(): Long = lostFocusSerial
         override fun isAvailable(): Boolean = isShowing && display.isValid
         override fun setUnavailableListener(listener: Runnable?) {
             setOnDismissListener(if (listener == null) null else

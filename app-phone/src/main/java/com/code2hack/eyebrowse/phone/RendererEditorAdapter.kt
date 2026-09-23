@@ -18,7 +18,7 @@ class RendererEditorAdapter(
     private val bundledProgram: String,
 ) {
     enum class Status {
-        STATE, READY, REVOKED, APPLIED, NO_CHANGE, SUBMISSION_REQUESTED, CANCELLED,
+        STATE, VIEWPORT, READY, REVOKED, APPLIED, NO_CHANGE, SUBMISSION_REQUESTED, CANCELLED,
         STALE_DOCUMENT, STALE_CONTEXT, STALE_EDITOR, REPLAY, BUSY, MALFORMED,
         UNSUPPORTED, EXHAUSTED, UNCERTAIN,
     }
@@ -28,12 +28,13 @@ class RendererEditorAdapter(
                       val generation: Long? = null, val revision: Long? = null,
                       val kind: EditorKind? = null, val enter: EditorEnter? = null,
                       val ready: Boolean = false, val commandId: String? = null, val timing: Timing? = null,
-                      val lifecycleOrder: Long? = null)
+                      val lifecycleOrder: Long? = null, val viewport: RendererViewport? = null)
 
     /** Installs once in this actual document. Edit/revoke never re-install an old grant. */
     fun install(callback: (Result) -> Unit) = evaluate(bundledProgram + "\n" + invocation(JSONObject().put("op", "inspect")), callback)
 
     fun inspect(callback: (Result) -> Unit) = request(JSONObject().put("op", "inspect"), callback)
+    fun viewport(callback: (Result) -> Unit) = request(JSONObject().put("op", "viewport"), callback)
 
     fun grant(instance: String, opening: PhoneEditorAuthority.Opening,
               activation: BrowserAction.ActivateAt? = null, previousTarget: EditorTarget? = null,
@@ -104,7 +105,11 @@ class RendererEditorAdapter(
                     bounded("token", 128), long("generation"), long("revision"),
                     bounded("kind", 16)?.let(EditorKind::valueOf), bounded("enter", 32)?.let(EditorEnter::valueOf),
                     objectValue.opt("ready") == true, bounded("commandId", BrowserCommandId.MAX_LENGTH),
-                    Timing(time("rendererStartMs"), time("rendererGuardMs"), time("rendererMutationMs"), time("rendererResultMs")), long("lifecycleOrder"))
+                    Timing(time("rendererStartMs"), time("rendererGuardMs"), time("rendererMutationMs"), time("rendererResultMs")), long("lifecycleOrder"),
+                    if (objectValue.optString("status") == "VIEWPORT") RendererViewport(
+                        time("viewportWidth") ?: 0.0, time("viewportHeight") ?: 0.0,
+                        time("viewportScale") ?: 0.0, time("devicePixelRatio") ?: 0.0,
+                        objectValue.opt("pageFocused") == true) else null)
             }
         }
     } catch (_: Exception) { Result(Status.UNCERTAIN) } // Never export raw result/exception text.

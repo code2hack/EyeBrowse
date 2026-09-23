@@ -212,10 +212,20 @@ private class Editor {
         return try {
             val trace = obj(); trace.start = window.performance.now()
             val r = JSON.parse(encoded)
-            if (r != null && r.op in arrayOf("inspect", "grant", "revoke", "edit")) reconcile()
+            if (r != null && r.op in arrayOf("inspect", "viewport", "grant", "revoke", "edit")) reconcile()
             val answer = when {
                 r == null -> result("MALFORMED")
                 r.op == "inspect" -> { grant?.let { if (!valid(it)) invalidate() }; result("STATE") }
+                r.op == "viewport" -> {
+                    val out = result("VIEWPORT")
+                    val viewport = window.visualViewport
+                    out.viewportWidth = viewport?.width
+                    out.viewportHeight = viewport?.height
+                    out.viewportScale = viewport?.scale
+                    out.devicePixelRatio = window.devicePixelRatio
+                    out.pageFocused = doc.hasFocus()
+                    out
+                }
                 r.instance != instance -> result("STALE_DOCUMENT", null)
                 r.op == "grant" -> open(r)
                 r.op == "revoke" -> {
@@ -279,6 +289,7 @@ private class Editor {
         val ns = context.lifetime to context.epoch
         if (ns != namespace) { namespace = ns; highWater = "0" }
         val current = Grant(node, token, context, generation.toString(), kind, selection)
+        if (r.previousToken != null && previous != null) current.revision = previous.revision
         grant = current
         observeWhileRemote = true
         val options = obj(); options.block = "nearest"; options.inline = "nearest"

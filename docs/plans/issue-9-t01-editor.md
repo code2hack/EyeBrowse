@@ -2,7 +2,9 @@
 
 Controlling plan: [5780808159](https://github.com/code2hack/EyeBrowse/issues/9#issuecomment-5780808159),
 clock reconciliation [5780823585](https://github.com/code2hack/EyeBrowse/issues/9#issuecomment-5780823585),
-renderer disposition [5782588285](https://github.com/code2hack/EyeBrowse/issues/9#issuecomment-5782588285).
+renderer disposition [5782588285](https://github.com/code2hack/EyeBrowse/issues/9#issuecomment-5782588285),
+local-focus qualification [5785170815](https://github.com/code2hack/EyeBrowse/issues/9#issuecomment-5785170815),
+and in-place profile supplement [5786061535](https://github.com/code2hack/EyeBrowse/issues/9#issuecomment-5786061535).
 The raw InputConnection route failed the admitted-A/later-B isolation probe on S20+/WebView99;
 that is retained round-1 RED evidence. This implementation is round 2, a renderer mechanism,
 not native remote editing or completed RG-keyboard acceptance.
@@ -44,8 +46,12 @@ honest original-node result. Nested edit attempts fail BUSY and never become an 
 
 Backspace deletes the selected range or preceding Unicode code point; beginning/empty is no-change.
 Applicable maxlength blocks growth, not deletion of already-overlong content. Fields stay masked and
-values remain transient in the renderer. A single dirty-node marker emits change on blur without a value
-journal; native user input clears that marker so Phone IME remains responsible for its own native events.
+values remain transient in the renderer. A dirty episode is separate from executable authority and contains no value
+journal. Reconciliation retires the affected binding and clears the due episode before calling change
+listeners; reentry cannot notify it twice. Actual departure is required; selection/window ambiguity
+alone cannot invent a change. A genuine native change consumes the due episode without suppressing the
+native event. Done can cancel remote observation without forcing blur; the episode remains observable
+by real focus events. The secondary50ms timer is not a history witness.
 
 ## Enter, cancellation and Done
 
@@ -72,10 +78,22 @@ control records. Malformed decode errors and object formatting never echo typed 
 
 Editor close and viewport transition are bounded state-only messages. Viewport transition IDs are monotonic
 per authenticated connection, with one previous exact request/result retained for idempotence. Same-owner
-resize increments viewport epoch, preserves owner/control epoch and action high-water, retires old capture,
-and publishes the new profile. After attachment, rebind/reveal requires the explicitly retained original
-element BEFORE acquiring the new capture lease. Remote edits remain disabled until the fresh profile frame
-establishes readiness; a newly focused successor cannot become the old editor. The wire never selects a DOM node.
+resize increments viewport epoch while preserving owner/control epoch and action high-water. A dedicated
+lease transfer closes old frame admission without normal release or surface-null teardown. It stages one
+replacement reader, waits asynchronously for old capture callbacks, resizes the existing VirtualDisplay,
+replaces its Surface directly with the non-null new surface, then closes the disconnected old reader.
+The same Presentation/window/WebView attachment and continuous local focus must survive. Actual display,
+window/container/WebView layout and renderer viewport are checked before rebind and capture; API return
+or requested allocation is not completion. Matching current Image dimensions and a visual-state/committed
+draw fence precede resized output admission. Old reader/sink/context tokens remain invalid even when
+numerical dimensions recur. Ordinary Stop/expiry retain their normal teardown semantics.
+
+Retained state is a non-executable original-target reference, not an old edit grant. Focus loss/departure,
+node mutation or incompatible selection destroys it. Rebind/reveal mints a fresh token/generation while
+preserving logical revision; old tokens never become executable. Native geometry and actual renderer CSS
+viewport use the measured WebView scale, never DPI inference. Remote edits remain disabled until a fresh
+profile frame establishes readiness. Same-size no-op requests do not revoke a usable editor. The wire
+never selects a DOM node.
 
 All 64-bit identity/ordinal/transition fields cross into the renderer as canonical decimal strings, never
 JavaScript Number. A separate monotonic **native editor lifecycle** order fences late grant/revoke scripts;
@@ -98,3 +116,18 @@ supplement the inherited identity inventory. The final receipt must enumerate ac
 conditions, hashes, timing stages and cleanup; this document itself asserts no executed device PASS.
 
 T01's scoped independent source/security review remains mandatory before T02 release.
+
+## In-place qualification boundary
+
+The public local-focus arrangement retains NOT_FOCUSABLE|NOT_TOUCHABLE and adds LOCAL_FOCUS_MODE.
+Only the current RG-owned attached private host requests local focus. Its readiness is separate from
+Phone global focus and editor permission. Physical focus/dismiss/retirement events follow the current
+host identity across geometry epochs; old reader/layout callbacks follow their own tokens.
+
+The prior recreate-at-size checkpoint c3dbf26 is NOT_PASSED: physical shrink preserved the live page but
+created a real focus gap and invalidated the retained target. The in-place path has no blur exemption,
+no silent rebuild/readoption and no fallback surface variant. PR1/PR2 qualification is required before
+PR3/PR4 and full integration acceptance; the source here does not assert a hardware pass. Full T01 and
+both-app protected direct-LAN evidence, ordinary Phone IME return, cancellation/failure/lifecycle tests,
+exact-head host inventory and independent review remain required. The explicit USB-conditional
+screen-off/secure-lock disclosure remains separate from final cleanup lock verification.
