@@ -268,12 +268,22 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Reviewer",
-    "scope": "v0.0.1; local independent exact-head review for RG-chain issues; successor to the retired ChatGPT v0.0.1 Reviewer (verdict history in issue threads); gpt-6-astra/ultra per Owner directive; bootstrap read AGENTS.md/CONTRIBUTORS.md + #8 plan/BLOCKED/supplement records",
+    "scope": "v0.0.1; local independent exact-head review for RG-chain issues; FALLBACK reviewer (first priority is Reviewer-chatgpt per Owner directive 20260923); successor to the retired ChatGPT v0.0.1 Reviewer (verdict history in issue threads #7/#8); effort medium per Owner directive 20260923 (formerly ultra); bootstrap read AGENTS.md/CONTRIBUTORS.md + #8 plan/BLOCKED/supplement records",
     "host": "u4090",
     "runtime": "codex",
     "id": "01a0c8c7-b041-7db2-b644-22ed4343de82",
     "model": "gpt-6-astra",
     "name": "Reviewer-v0.0.1",
+    "status": "active"
+  },
+  {
+    "role": "Reviewer",
+    "scope": "v0.0.1; FIRST-PRIORITY independent exact-head Reviewer per Owner directive 20260923 (local Reviewer-v0.0.1 is fallback); created in the existing EyeBrowse project with visible Latest/6 Pro, setup verified, HOLD pending Manager assignment",
+    "host": "chatgpt.com",
+    "runtime": "chatgpt",
+    "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70/c/6ab32573-5b4c-83ea-8425-7ac31b5bd034",
+    "model": "gpt-6-pro",
+    "name": "Reviewer-chatgpt",
     "status": "active"
   }
 ]
