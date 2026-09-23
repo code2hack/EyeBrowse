@@ -131,3 +131,13 @@ PR3/PR4 and full integration acceptance; the source here does not assert a hardw
 both-app protected direct-LAN evidence, ordinary Phone IME return, cancellation/failure/lifecycle tests,
 exact-head host inventory and independent review remain required. The explicit USB-conditional
 screen-off/secure-lock disclosure remains separate from final cleanup lock verification.
+
+The initial readiness diagnostic at cdcbdba measured native480x344 but CSS171.0222168x123.0222244
+at actual DPR/WebView.scale2.8125, mapping to481x346. Chromium99 converts native pixels to
+integer DIP with an upward rounding, then back to Blink pixels with another upward rounding
+(ViewAndroid::OnSizeChanged; WidgetBase::DIPsToCeiledBlinkSpace). The renderer comparator models
+those float conversions using measured DPR, without a generic tolerance or inferred display density.
+Exact native/reader/image/encoded geometry, fresh-context barriers and the original2s deadline
+remain separate requirements: nearby native dimensions can share the same logical bucket.
+This correction is the Manager-authorized I9-T01-COMPARATOR-CORRECTION-ROUTED-GLMR2-20260923-01;
+the setup failures remain retained, and no successful in-place physical qualification is asserted here.
