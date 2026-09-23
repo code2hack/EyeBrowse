@@ -248,7 +248,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Worker",
-    "scope": "v0.01; persistent ticket Worker for RG-chain issues (issue #7 delivered: T01-T04); binding gpt-6-astra/ultra (Owner static directive, 20260922)",
+    "scope": "v0.01; persistent ticket Worker for RG-chain issues (issue #7 delivered: T01-T04); binding gpt-6-astra/medium (Owner directive 20260923, superseding the 20260922 ultra static directive; next-turn boundary preserved)",
     "host": "u4090",
     "runtime": "codex",
     "id": "01a0bfdf-0ba4-78d0-9eb1-ff54e9ddad16",
@@ -268,7 +268,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Reviewer",
-    "scope": "v0.0.1; local independent exact-head review for RG-chain issues; FALLBACK reviewer (first priority is Reviewer-chatgpt per Owner directive 20260923); successor to the retired ChatGPT v0.0.1 Reviewer (verdict history in issue threads #7/#8); effort medium per Owner directive 20260923 (formerly ultra); bootstrap read AGENTS.md/CONTRIBUTORS.md + #8 plan/BLOCKED/supplement records",
+    "scope": "v0.0.1; local independent exact-head review for RG-chain issues; FALLBACK reviewer (first priority is Reviewer-chatgpt per Owner directive 20260923); successor to the retired ChatGPT v0.0.1 Reviewer (verdict history in issue threads #7/#8); binding gpt-6-astra/ultra per Owner directive (medium applied to Worker only, 20260923); bootstrap read AGENTS.md/CONTRIBUTORS.md + #8 plan/BLOCKED/supplement records",
     "host": "u4090",
     "runtime": "codex",
     "id": "01a0c8c7-b041-7db2-b644-22ed4343de82",
