@@ -6,6 +6,8 @@ import android.graphics.Color
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.ImageReader
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.view.View
@@ -19,6 +21,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.ArrayList
 import java.util.HashSet
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import java.util.function.BooleanSupplier
 import org.json.JSONObject
@@ -2094,6 +2100,257 @@ class HostingInstrumentedTest {
         runOnMain(hosting::stop)
     }
 
+
+    /**
+     * R4a: hold the actual post-visual hardware traversal inside the Presentation after the
+     * product draw observer ran but before traversal returns. Queue the 240 profile transition at
+     * the front of Main, then release the traversal. The old frame-commit callback is therefore
+     * delivered only after its capture/profile authority was superseded and must publish nothing.
+     */
+    @Test
+    fun delayedCommitFromSupersededProfileCannotPublish() {
+        val factory = R4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val keyboard = HostingPresentationProfile(480, 240, 204)
+        val oldConsumer = CollectingConsumer()
+        oldConsumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val drawGate = factory.armNextDraw()
+        val deadline = SystemClock.elapsedRealtime() + 2_000
+        val oldLease = runOnMainSync {
+            hosting.acquireProfileLease(normal, deadline, oldConsumer)
+        }
+        assertNotNull("old profile lease", oldLease)
+        assertTrue("real hardware draw reached delayed-commit barrier",
+            drawGate.awaitEntered(1_000))
+
+        val transitionDone = CountDownLatch(1)
+        val transitionOk = AtomicBoolean(false)
+        Handler(Looper.getMainLooper()).postAtFrontOfQueue {
+            hosting.reconfigureRgProfile(keyboard, deadline) { ok ->
+                transitionOk.set(ok)
+                transitionDone.countDown()
+            }
+        }
+        drawGate.release()
+        assertTrue("draw barrier released without timeout", !drawGate.timedOut)
+        assertTrue("superseding profile settled inside original deadline",
+            transitionDone.await(2_000, TimeUnit.MILLISECONDS))
+        assertTrue("superseding profile accepted", transitionOk.get())
+        assertEquals("delayed old commit cannot publish", 0, oldConsumer.count())
+
+        val fresh = CollectingConsumer()
+        fresh.expectQualification(keyboard.width, keyboard.height, CAPTURE_PAGE_COLOR)
+        val freshLease = runOnMainSync {
+            hosting.acquireProfileLease(keyboard, deadline, fresh)
+        }
+        assertNotNull("successor profile lease", freshLease)
+        waitUntil("successor publishes after delayed old commit rejects", {
+            fresh.qualifyingCountFrom(0) > 0
+        }, 2_000)
+        assertEquals("old consumer remains fenced after successor readiness", 0, oldConsumer.count())
+        runOnMain(oldLease!!::release)
+        runOnMain(freshLease!!::release)
+    }
+
+    /**
+     * R4b: keep the capture HandlerThread between the swap-post and old-reader retirement. That
+     * leaves the prior ImageReader retained while the new 240 reader is current. Replay the old
+     * callback through the production callback seam and explicitly run the settlement seam while
+     * overlap=2: neither may complete readiness or deliver an old frame.
+     */
+    @Test
+    fun retainedOldReaderCallbackDuringDelayedSettlementCannotUnblockReadiness() {
+        val factory = R4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val keyboard = HostingPresentationProfile(480, 240, 204)
+        val baseline = CollectingConsumer()
+        baseline.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val baselineDeadline = SystemClock.elapsedRealtime() + 2_000
+        val baselineLease = runOnMainSync {
+            hosting.acquireProfileLease(normal, baselineDeadline, baseline)
+        }
+        assertNotNull("baseline profile lease", baselineLease)
+        waitUntil("baseline committed-Window frame", {
+            baseline.qualifyingCountFrom(0) > 0
+        }, 2_000)
+        val baselineCount = baseline.count()
+        val host = currentPrivateHostForR4()
+        val oldReader = factory.latestReader()
+        val staleBefore = hosting.staleProfileImageCallbacksForTest()
+
+        val captureGate = R4Gate()
+        val transitionDone = CountDownLatch(1)
+        val transitionOk = AtomicBoolean(false)
+        val deadline = SystemClock.elapsedRealtime() + 2_000
+        runOnMain {
+            hosting.reconfigureRgProfile(keyboard, deadline) { ok ->
+                transitionOk.set(ok)
+                transitionDone.countDown()
+            }
+            // resizeProfile already queued swap-post on this handler; this barrier is next.
+            assertTrue("capture barrier queued",
+                handlerFieldForR4(host, "captureHandler").post(captureGate.asRunnable()))
+        }
+        assertTrue("capture thread reached retirement-delay barrier",
+            captureGate.awaitEntered(1_000))
+        waitUntilMain("new reader installed while old reader retained", {
+            val g = hosting.profileGeometry()
+            g != null && g.display.readerWidth == keyboard.width &&
+                g.display.readerHeight == keyboard.height && g.readerOverlap == 2
+        })
+
+        val settlement = runOnMainSync { hosting.profileSettlementForTest() }
+        assertNotNull("profile settlement seam wired", settlement)
+        runOnMain(settlement!!)
+        assertEquals("settlement cannot complete while old reader is retained",
+            1L, transitionDone.count)
+
+        hosting.replayProfileImageCallbackForTest(oldReader)
+        assertEquals("retained old reader callback classified stale",
+            staleBefore + 1, hosting.staleProfileImageCallbacksForTest())
+        assertEquals("stale reader callback cannot publish/unblock old sink",
+            baselineCount, baseline.count())
+
+        captureGate.release()
+        assertTrue("capture barrier released without timeout", !captureGate.timedOut)
+        assertTrue("profile settles after old reader retirement",
+            transitionDone.await(2_000, TimeUnit.MILLISECONDS))
+        assertTrue("profile resize succeeds after delayed retirement", transitionOk.get())
+        assertEquals("old sink stays fenced after settlement", baselineCount, baseline.count())
+
+        val fresh = CollectingConsumer()
+        fresh.expectQualification(keyboard.width, keyboard.height, CAPTURE_PAGE_COLOR)
+        val freshLease = runOnMainSync {
+            hosting.acquireProfileLease(keyboard, deadline, fresh)
+        }
+        assertNotNull("successor lease after stale reader replay", freshLease)
+        waitUntil("successor frame after stale reader replay", {
+            fresh.qualifyingCountFrom(0) > 0
+        }, 2_000)
+        runOnMain(baselineLease!!::release)
+        runOnMain(freshLease!!::release)
+    }
+
+    /**
+     * R4c: block the dedicated readback thread before the old request invokes PixelCopy. After
+     * the committed request is in-flight, block Main, queue the 240 profile supersession, release
+     * readback and wait for the synchronous Window PixelCopy invocation to return. Its SUCCESS
+     * listener is now queued behind the already-enqueued supersession. Releasing Main proves a
+     * late successful old bitmap cannot be reheadered or publish into the successor epoch.
+     */
+    @Test
+    fun delayedPixelCopyCompletionAfterEpochSupersessionCannotPublishOldBitmap() {
+        val factory = R4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val keyboard = HostingPresentationProfile(480, 240, 204)
+        val oldConsumer = CollectingConsumer()
+        oldConsumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val drawGate = factory.armNextDraw()
+        val deadline = SystemClock.elapsedRealtime() + 2_000
+        val oldLease = runOnMainSync {
+            hosting.acquireProfileLease(normal, deadline, oldConsumer)
+        }
+        assertNotNull("old profile lease", oldLease)
+        assertTrue("hardware draw reached R4c barrier", drawGate.awaitEntered(1_000))
+
+        val host = currentPrivateHostForR4()
+        val readback = handlerFieldForR4(host, "readbackHandler")
+        val readbackGate = R4Gate()
+        assertTrue("readback barrier queued", readback.post(readbackGate.asRunnable()))
+        assertTrue("readback thread blocked before PixelCopy", readbackGate.awaitEntered(1_000))
+
+        drawGate.release()
+        assertTrue("draw barrier released without timeout", !drawGate.timedOut)
+        waitUntil("committed old Window copy request becomes in-flight", {
+            inFlightWindowCopyForR4(host)
+        }, 1_000)
+        // Flush the commit callback: the invoke runnable is now definitely queued behind readbackGate.
+        runOnMain { }
+
+        val mainGate = R4Gate()
+        Handler(Looper.getMainLooper()).postAtFrontOfQueue(mainGate.asRunnable())
+        assertTrue("Main blocked before PixelCopy completion delivery", mainGate.awaitEntered(1_000))
+
+        val transitionDone = CountDownLatch(1)
+        val transitionOk = AtomicBoolean(false)
+        Handler(Looper.getMainLooper()).post {
+            hosting.reconfigureRgProfile(keyboard, deadline) { ok ->
+                transitionOk.set(ok)
+                transitionDone.countDown()
+            }
+        }
+
+        // This marker is queued after the already-posted invoke runnable. Android 12's Window
+        // PixelCopy call has returned (and its Main listener is queued) before this marker runs.
+        val readbackReturned = CountDownLatch(1)
+        assertTrue("readback return marker queued",
+            readback.post { readbackReturned.countDown() })
+        readbackGate.release()
+        assertTrue("readback barrier released without timeout", !readbackGate.timedOut)
+        assertTrue("Window PixelCopy invocation returned while Main callback remained delayed",
+            readbackReturned.await(1_500, TimeUnit.MILLISECONDS))
+
+        mainGate.release()
+        assertTrue("Main barrier released without timeout", !mainGate.timedOut)
+        assertTrue("superseding profile completes before deadline",
+            transitionDone.await(2_000, TimeUnit.MILLISECONDS))
+        assertTrue("superseding profile accepted", transitionOk.get())
+        waitUntilMain("late PixelCopy completion retired", {
+            val d = hosting.captureDiagnostics()
+            d.contains("nativeCopy=0") && d.contains("copyResult=" + android.view.PixelCopy.SUCCESS)
+        })
+        assertEquals("late SUCCESS bitmap cannot publish into superseded epoch",
+            0, oldConsumer.count())
+
+        val fresh = CollectingConsumer()
+        fresh.expectQualification(keyboard.width, keyboard.height, CAPTURE_PAGE_COLOR)
+        val freshLease = runOnMainSync {
+            hosting.acquireProfileLease(keyboard, deadline, fresh)
+        }
+        assertNotNull("successor lease after delayed PixelCopy completion", freshLease)
+        waitUntil("successor publishes only its own committed Window copy", {
+            fresh.qualifyingCountFrom(0) > 0
+        }, 2_000)
+        assertEquals("old bitmap remains retired after successor readiness", 0, oldConsumer.count())
+        runOnMain(oldLease!!::release)
+        runOnMain(freshLease!!::release)
+    }
+
+    /** Static recorded regression stimulus; production profiles remain RG-measured. */
+    private fun prepareR4RecordedProfile(factory: R4ControlledFactory): HostingPresentationProfile {
+        runOnMain { hosting.setResourceFactoryForTest(factory) }
+        openFixture("/hosting.html", "Hosting capture page")
+        evaluateJs("window.__eyebrowseFreeze(true)")
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
+        val normal = HostingPresentationProfile(480, 344, 204)
+        assertTrue("recorded R4 profile accepted",
+            runOnMainSync { hosting.presentOnRg(normal) })
+        waitUntilMain("R4 private local focus ready", { hosting.localEditorFocusReady() })
+        awaitPrivateProfile()
+        return normal
+    }
+
+    private fun currentPrivateHostForR4(): PrivateDisplayHost = runOnMainSync {
+        val field = HostingController::class.java.getDeclaredField("displayHost")
+        field.isAccessible = true
+        checkNotNull(field.get(hosting) as? PrivateDisplayHost)
+    }
+
+    private fun handlerFieldForR4(host: PrivateDisplayHost, name: String): Handler {
+        val field = PrivateDisplayHost::class.java.getDeclaredField(name)
+        field.isAccessible = true
+        return checkNotNull(field.get(host) as? Handler) { "$name unavailable" }
+    }
+
+    private fun inFlightWindowCopyForR4(host: PrivateDisplayHost): Boolean {
+        val lockField = PrivateDisplayHost::class.java.getDeclaredField("nativeLock")
+        lockField.isAccessible = true
+        val copyField = PrivateDisplayHost::class.java.getDeclaredField("inFlightWindowCopy")
+        copyField.isAccessible = true
+        val lock = checkNotNull(lockField.get(host))
+        return synchronized(lock) { copyField.get(host) != null }
+    }
+
     private fun expectedPrivateSize(): IntArray = runOnMainSync {
         val profile = hosting.presentationProfile()
         intArrayOf(profile.width, profile.height)
@@ -2748,6 +3005,85 @@ class HostingInstrumentedTest {
                     pixels,
                     pixels.size,
                 )
+            }
+        }
+    }
+
+    /** Test-only deterministic barriers for I9-T01 FW2; never used by production admission. */
+    private class R4Gate {
+        val entered = CountDownLatch(1)
+        private val releaseLatch = CountDownLatch(1)
+        private val claimed = AtomicBoolean(false)
+        @Volatile var timedOut: Boolean = false
+            private set
+
+        fun asRunnable(): Runnable = Runnable { blockOnce() }
+
+        fun blockOnce() {
+            if (!claimed.compareAndSet(false, true)) return
+            entered.countDown()
+            try {
+                if (!releaseLatch.await(1_500, TimeUnit.MILLISECONDS)) timedOut = true
+            } catch (interrupted: InterruptedException) {
+                timedOut = true
+                Thread.currentThread().interrupt()
+            }
+        }
+
+        fun awaitEntered(timeoutMs: Long): Boolean =
+            entered.await(timeoutMs, TimeUnit.MILLISECONDS)
+
+        fun release() {
+            releaseLatch.countDown()
+        }
+    }
+
+    /**
+     * Real platform factory with test-only observation/control: retain reader object identities
+     * and delay one actual Presentation draw after the product listener has observed it.
+     */
+    private class R4ControlledFactory : PrivateDisplayHost.Factory {
+        private val platform = PrivateDisplayHost.PlatformFactory()
+        private val readers = CopyOnWriteArrayList<ImageReader>()
+        @Volatile private var nextDrawGate: R4Gate? = null
+
+        fun armNextDraw(): R4Gate = R4Gate().also { nextDrawGate = it }
+
+        fun latestReader(): ImageReader = checkNotNull(readers.lastOrNull())
+
+        override fun createVirtualDisplay(
+            manager: DisplayManager,
+            name: String,
+            width: Int,
+            height: Int,
+            densityDpi: Int,
+            surface: Any?,
+        ): VirtualDisplay? =
+            platform.createVirtualDisplay(manager, name, width, height, densityDpi, surface)
+
+        override fun createImageReader(width: Int, height: Int): ImageReader? =
+            platform.createImageReader(width, height)?.also(readers::add)
+
+        override fun createPresentation(
+            context: Context,
+            display: android.view.Display,
+        ): PrivateDisplayHost.PresentationHost {
+            val delegate = platform.createPresentation(context, display)
+            return object : PrivateDisplayHost.PresentationHost by delegate {
+                override fun setDrawListener(listener: PrivateDisplayHost.DrawListener?) {
+                    if (listener == null) {
+                        delegate.setDrawListener(null)
+                        return
+                    }
+                    delegate.setDrawListener(PrivateDisplayHost.DrawListener { serial, elapsedMs ->
+                        listener.onDraw(serial, elapsedMs)
+                        val gate = nextDrawGate
+                        if (gate != null && nextDrawGate === gate) {
+                            nextDrawGate = null
+                            gate.blockOnce()
+                        }
+                    })
+                }
             }
         }
     }
