@@ -608,46 +608,196 @@ class RendererEditorQualificationTest {
 
     private fun profileAndDocumentCases(scenario: ActivityScenario<MainActivity>, url: String, original: WebView) {
         row("same-target-and-live-value-across-shrink-grow") {
-            reset(); focus("a", "retained"); var g = grant()
-            for (height in listOf(240, 344)) {
-                call("profile-revoke") { adapter.revoke(instance, g.target.token, ++order, true, it) }
-                main { lease?.release(); lease = null }
-                await("capture drain before profile") { !host.captureResourcesPresent() }
-                context = context.copy(viewportEpoch = context.viewportEpoch + 1, hostingGeneration = host.status().generation.toLong())
-                val opening = PhoneEditorAuthority.Opening(UUID.randomUUID().toString(), context, 1, ++order)
-                val rebound = java.util.concurrent.atomic.AtomicReference<RendererEditorAdapter.Result>()
-                val early = java.util.concurrent.atomic.AtomicBoolean()
-                val frames = java.util.concurrent.atomic.AtomicInteger()
-                val degraded = java.util.concurrent.atomic.AtomicReference<String>()
-                lateinit var publisher: PhonePresentationPublisher
-                val profile = com.code2hack.eyebrowse.core.link.presentation.PresentationProfile(480, height, 204)
-                val requestAt = SystemClock.elapsedRealtime()
-                main {
-                    publisher = PhonePresentationPublisher(host, {
-                        if (rebound.get()?.status != RendererEditorAdapter.Status.READY) early.set(true)
-                        true
-                    }, { frame ->
-                        if (frame.header.context != context || frame.header.height != height) early.set(true)
-                        frames.incrementAndGet(); true
-                    }, { browser.requestFreshCaptureFrame() }, beforeCapture = { _, capture ->
-                        adapter.grant(instance, opening, previousTarget = g.target) { result -> rebound.set(result); capture() }
-                    }, degraded = { _, reason -> degraded.set(reason) })
-                    publisher.reconcile(ControlSnapshot(context, ControlOwner.RG, profile, true, PresentationStatus.STALE, true, true))
-                }
-                try {
-                    await("rebound editor precedes matching fresh profile", 2000) { frames.get() > 0 }
-                    val elapsed = SystemClock.elapsedRealtime() - requestAt
-                    Log.i(TAG, "PROFILE_READY height=$height nativeRequestToObservedFrameMs=$elapsed editorBeforeCapture=${!early.get()}")
-                    assertTrue(elapsed <= 2000); assertFalse(early.get()); assertNull(degraded.get())
-                } finally { main { publisher.stop() } }
-                val result = rebound.get()!!
-                assertEquals(RendererEditorAdapter.Status.READY, result.status)
-                g = PhoneEditorAuthority.Grant(opening, EditorTarget(result.token!!, result.generation!!), instance, result.revision!!, result.kind!!, result.enter!!)
-                assertTrue(unchanged("a", "retained")); main { assertSame(original, browser.view()) }
-                await("profile producer retired") { !host.captureResourcesPresent() }
-                main { lease = host.acquireLease { } }
-                assertNotNull(lease)
+            // Normal lease release tears down its reader/surface. Do it BEFORE retaining an
+            // editor, then establish ONE live publisher at the existing 344px profile. A new
+            // publisher per iteration has prior=null and chooses destructive presentOnRg(),
+            // not the same-window reconfigureRgProfile() transaction this row must qualify.
+            revokeCurrent()
+            main { lease?.release(); lease = null }
+            await("capture drain before initial publisher") { !host.captureResourcesPresent() }
+            main {
+                assertEquals(HostingPresentationProfile(480, 344, 204), host.presentationProfile())
+                assertEquals(context.documentId, browser.documentIdentity())
+                context = context.copy(hostingGeneration = host.status().generation.toLong())
             }
+            class ProfileObservation(
+                val expectedContext: ControlContext,
+                val height: Int,
+                val opening: PhoneEditorAuthority.Opening? = null,
+                val previousTarget: EditorTarget? = null,
+            ) {
+                val requestAt = SystemClock.elapsedRealtime()
+                val rebound = java.util.concurrent.atomic.AtomicReference<RendererEditorAdapter.Result>()
+                val prepared = java.util.concurrent.atomic.AtomicReference<PrivateDisplayHost.ProfileGeometry>()
+                val prepareCalls = java.util.concurrent.atomic.AtomicInteger()
+                val captureReleased = java.util.concurrent.atomic.AtomicBoolean()
+                val early = java.util.concurrent.atomic.AtomicBoolean()
+                val wrongGeometry = java.util.concurrent.atomic.AtomicBoolean()
+                val frames = java.util.concurrent.atomic.AtomicInteger()
+                val firstFrameAt = java.util.concurrent.atomic.AtomicLong()
+            }
+            // Fixed three-context observation set (seed/shrink/grow), never a replay ledger.
+            val observations = java.util.concurrent.ConcurrentHashMap<ControlContext, ProfileObservation>()
+            val active = java.util.concurrent.atomic.AtomicReference<ProfileObservation>()
+            val failure = java.util.concurrent.atomic.AtomicReference<String>()
+            val retiredCallbacks = java.util.concurrent.atomic.AtomicInteger()
+            lateinit var publisher: PhonePresentationPublisher
+            fun currentObservation(offered: ControlContext): ProfileObservation? {
+                val observation = observations[offered]
+                if (observation == null) failure.compareAndSet(null, "Unknown profile callback context")
+                if (observation == null || observation !== active.get()) {
+                    // A previously admitted callback may finish after reconciliation. It is
+                    // rejected, never counted as the new profile's first matching frame.
+                    retiredCallbacks.incrementAndGet()
+                    return null
+                }
+                return observation
+            }
+            main {
+                publisher = PhonePresentationPublisher(
+                    hosting = host,
+                    ready = { offered ->
+                        val observation = currentObservation(offered)
+                        if (observation == null) false else {
+                            if (!observation.captureReleased.get() ||
+                                (observation.opening != null &&
+                                    observation.rebound.get()?.status != RendererEditorAdapter.Status.READY)) {
+                                observation.early.set(true)
+                            }
+                            true // Observe a bypass, then fail the row; do not hide it by filtering.
+                        }
+                    },
+                    send = { frame ->
+                        val observation = currentObservation(frame.header.context)
+                        if (observation == null) false else {
+                            if (frame.header.width != 480 || frame.header.height != observation.height) {
+                                observation.wrongGeometry.set(true)
+                            }
+                            if (!observation.captureReleased.get()) observation.early.set(true)
+                            observation.firstFrameAt.compareAndSet(0L, SystemClock.elapsedRealtime())
+                            observation.frames.incrementAndGet()
+                            true
+                        }
+                    },
+                    requestFreshFrame = { browser.requestFreshCaptureFrame() },
+                    beforeCapture = prepare@ { state, capture ->
+                        val observation = currentObservation(state.context) ?: return@prepare
+                        if (observation.prepareCalls.incrementAndGet() != 1) {
+                            failure.compareAndSet(null, "Repeated profile preparation")
+                            return@prepare
+                        }
+                        observation.prepared.set(host.profileGeometry())
+                        val opening = observation.opening
+                        if (opening == null) {
+                            // Initial live producer only; no retained-editor claim until below.
+                            observation.captureReleased.set(true)
+                            capture()
+                        } else {
+                            adapter.grant(instance, opening, previousTarget = observation.previousTarget) { result ->
+                                observation.rebound.set(result)
+                                Log.i(TAG, "PROFILE_REBOUND height=${observation.height} status=${result.status} ready=${result.ready}")
+                                if (result.status == RendererEditorAdapter.Status.READY && result.ready &&
+                                    result.instance == instance && result.token == opening.id) {
+                                    observation.captureReleased.set(true)
+                                    capture()
+                                } else {
+                                    failure.compareAndSet(null, "Profile rebind returned ${result.status}, ready=${result.ready}")
+                                    // A resolved non-READY result is not a pending successful
+                                    // rebind. Do not start capture or refocus/readopt the target.
+                                }
+                            }
+                        }
+                    },
+                    degraded = { _, reason -> failure.compareAndSet(null, "Profile degraded: $reason") },
+                )
+            }
+            fun publish(observation: ProfileObservation) {
+                main {
+                    observations[observation.expectedContext] = observation
+                    active.set(observation)
+                    val profile = com.code2hack.eyebrowse.core.link.presentation.PresentationProfile(480, observation.height, 204)
+                    publisher.reconcile(ControlSnapshot(observation.expectedContext, ControlOwner.RG,
+                        profile, true, PresentationStatus.STALE, true, true), observation.requestAt)
+                }
+            }
+            fun awaitProfile(observation: ProfileObservation) {
+                await("rebound editor precedes matching fresh profile", 2000, diagnostics = {
+                    mapOf("preparedOnce" to (observation.prepareCalls.get() == 1),
+                        "reboundReady" to (observation.rebound.get()?.status == RendererEditorAdapter.Status.READY),
+                        "captureReleased" to observation.captureReleased.get(),
+                        "matchingFrameObserved" to (observation.frames.get() > 0),
+                        "noEarlyPublication" to !observation.early.get(),
+                        "geometryMatches" to !observation.wrongGeometry.get(),
+                        "failureAbsent" to (failure.get() == null))
+                }) { observation.frames.get() > 0 || failure.get() != null }
+                val elapsed = SystemClock.elapsedRealtime() - observation.requestAt
+                Log.i(TAG, "PROFILE_READY height=${observation.height} nativeRequestToObservedFrameMs=$elapsed " +
+                    "editorBeforeCapture=${!observation.early.get()} status=${observation.rebound.get()?.status} " +
+                    "prepared=${observation.prepareCalls.get()} frames=${observation.frames.get()} " +
+                    "firstFrameAt=${observation.firstFrameAt.get()} retiredCallbacks=${retiredCallbacks.get()} failure=${failure.get()}")
+                assertNull("profile preparation/capture must succeed", failure.get())
+                assertTrue("matching fresh profile frame required", observation.frames.get() > 0)
+                assertTrue("native request to observed profile <=2000ms", elapsed <= 2000)
+                assertTrue("exactly one pre-capture callback", observation.prepareCalls.get() == 1)
+                assertFalse("first publication preceded successful editor preparation", observation.early.get())
+                assertFalse("fresh frame must match both requested dimensions", observation.wrongGeometry.get())
+            }
+            try {
+                val initial = ProfileObservation(context, 344)
+                publish(initial)
+                awaitProfile(initial)
+                main {
+                    assertTrue("live producer before retaining editor", host.status().captureActive)
+                    assertTrue(host.captureResourcesPresent())
+                    assertTrue(host.localEditorFocusReady())
+                    assertSame(original, browser.view())
+                }
+                assertTrue(truth("document.hasFocus()"))
+                reset(); focus("a", "retained"); var g = grant()
+                for (height in listOf(240, 344)) {
+                    lateinit var before: PrivateDisplayHost.ProfileGeometry
+                    main {
+                        before = checkNotNull(host.profileGeometry())
+                        assertTrue("staged resize requires the live old reader/surface", host.status().captureActive &&
+                            !before.display.surfaceDetached && before.readerOverlap == 1 && before.localFocus)
+                    }
+                    assertEquals(RendererEditorAdapter.Status.REVOKED,
+                        call("profile-revoke") { adapter.revoke(instance, g.target.token, ++order, true, it) }.status)
+                    // Preserve the publisher and its backing reader between compatible epochs.
+                    // No normal lease.release()/publisher.stop(), target refocus, or fresh install.
+                    context = context.copy(viewportEpoch = context.viewportEpoch + 1)
+                    val opening = PhoneEditorAuthority.Opening(UUID.randomUUID().toString(), context, 1, ++order)
+                    val observation = ProfileObservation(context, height, opening, g.target)
+                    publish(observation)
+                    awaitProfile(observation)
+                    val result = checkNotNull(observation.rebound.get())
+                    assertEquals(RendererEditorAdapter.Status.READY, result.status)
+                    assertTrue(result.ready)
+                    assertEquals(opening.id, result.token)
+                    assertEquals(g.revision, checkNotNull(result.revision))
+                    val settled = checkNotNull(observation.prepared.get())
+                    Log.i(TAG, "PROFILE_PATH height=$height before=$before settled=$settled")
+                    assertTrue("in-place profile serial advanced once", settled.profileSerial == before.profileSerial + 1L)
+                    assertTrue("same display/Presentation/window/decor", settled.display.displayId == before.display.displayId &&
+                        settled.presentationId == before.presentationId && settled.windowId == before.windowId &&
+                        settled.decorId == before.decorId)
+                    assertTrue("same parent/view and uninterrupted local focus", settled.parentId == before.parentId &&
+                        settled.viewId == before.viewId && settled.focusLossSerial == before.focusLossSerial && settled.localFocus)
+                    assertTrue("native layout settled before editor rebound", settled.display.actualWidth == 480 &&
+                        settled.display.actualHeight == height && settled.containerWidth == 480 &&
+                        settled.containerHeight == height && settled.viewWidth == 480 && settled.viewHeight == height &&
+                        settled.density == 204 && settled.readerOverlap == 1 && !settled.display.surfaceDetached)
+                    g = PhoneEditorAuthority.Grant(opening, EditorTarget(checkNotNull(result.token),
+                        checkNotNull(result.generation)), instance, checkNotNull(result.revision),
+                        checkNotNull(result.kind), checkNotNull(result.enter))
+                    assertTrue(unchanged("a", "retained"))
+                    assertTrue(truth("document.hasFocus() && document.activeElement===document.getElementById('a')"))
+                    main { assertSame(original, browser.view()); assertEquals(context.documentId, browser.documentIdentity()) }
+                }
+            } finally { main { publisher.stop() } }
+            await("profile producer retired") { !host.captureResourcesPresent() }
+            main { lease = host.acquireLease { } }
+            assertNotNull(lease)
         }
         row("profile-rebind-cannot-adopt-replacement-editor") {
             reset(); focus("a"); val g = grant()
