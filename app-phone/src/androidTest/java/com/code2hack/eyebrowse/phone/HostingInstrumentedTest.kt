@@ -2261,7 +2261,8 @@ class HostingInstrumentedTest {
             assertTrue("$name draw observer reached the committed draw",
                 runOnMainSync { host.drawObservationForTest().serial } >= copy.committedDrawSerial)
 
-            val spatial = fw3SpatialOracle(bitmap, page)
+            val spatialScale = runOnMainSync { session.view()!!.scale.toDouble() }
+            val spatial = fw3SpatialOracle(bitmap, page, spatialScale)
             assertTrue("$name FW3 spatial oracle rejected raw Window copy: ${spatial.reason}",
                 spatial.accepted)
             held.release()
@@ -3574,6 +3575,7 @@ class HostingInstrumentedTest {
     private fun fw3SpatialOracle(
         bitmap: android.graphics.Bitmap,
         page: JSONObject,
+        webViewScale: Double,
     ): Fw3SpatialOracleResult {
         val visualWidth = page.optDouble("visualWidth", Double.NaN)
         val visualHeight = page.optDouble("visualHeight", Double.NaN)
@@ -3583,26 +3585,52 @@ class HostingInstrumentedTest {
         }
         val bounds = page.optJSONObject("fiducials")
             ?: return Fw3SpatialOracleResult(false, "missing fiducial geometry")
-        val xScale = bitmap.width.toDouble() / visualWidth
-        val yScale = bitmap.height.toDouble() / visualHeight
-        if (!xScale.isFinite() || !yScale.isFinite() || xScale <= 0 || yScale <= 0) {
-            return Fw3SpatialOracleResult(false, "invalid native/renderer mapping")
+        if (!webViewScale.isFinite() || webViewScale <= 0.0) {
+            return Fw3SpatialOracleResult(false, "invalid WebView scale")
         }
+        /*
+         * Calibrate placement with CSS * WebView.scale, exactly like RendererViewport.
+         * Recorded shrink arithmetic: scale=2.8125, so
+         * ceil(ceil(240/2.8125)*2.8125)=242 logical native px although the Window raster is 240.
+         * Renormalizing visualViewport.height to 240 erased that Blink quantization.
+         * Bottom-band x: round(71*2.8125)=200; round(108*2.8125)=304, matching the device receipt.
+         */
         fun mapped(id: String): android.graphics.Rect {
             val css = checkNotNull(bounds.optJSONObject(id)) { "missing CSS bounds for " + id }
-            val left = kotlin.math.round(css.getDouble("left") * xScale).toInt()
-            val top = kotlin.math.round(css.getDouble("top") * yScale).toInt()
-            val right = kotlin.math.round(
-                (css.getDouble("left") + css.getDouble("width")) * xScale
+            val rawLeft = kotlin.math.round(css.getDouble("left") * webViewScale).toInt()
+            val rawTop = kotlin.math.round(css.getDouble("top") * webViewScale).toInt()
+            val rawRight = kotlin.math.round(
+                (css.getDouble("left") + css.getDouble("width")) * webViewScale
             ).toInt()
-            val bottom = kotlin.math.round(
-                (css.getDouble("top") + css.getDouble("height")) * yScale
+            val rawBottom = kotlin.math.round(
+                (css.getDouble("top") + css.getDouble("height")) * webViewScale
             ).toInt()
+            require(rawRight > rawLeft && rawBottom > rawTop)
+
+            val leftEdge = id == "fw3-left"
+            val rightEdge = id == "fw3-right"
+            val topEdge = id == "fw3-top"
+            val bottomEdge = id == "fw3-bottom"
+            if (!leftEdge && !rightEdge && !topEdge && !bottomEdge) {
+                require(rawLeft >= 0 && rawTop >= 0 &&
+                    rawRight <= bitmap.width && rawBottom <= bitmap.height) {
+                    "interior fiducial out of bounds id=" + id
+                }
+                return android.graphics.Rect(rawLeft, rawTop, rawRight, rawBottom)
+            }
+
+            if (leftEdge) require(rawLeft <= 0 && rawRight > 0)
+            if (rightEdge) require(rawLeft < bitmap.width && rawRight >= bitmap.width)
+            if (topEdge) require(rawTop <= 0 && rawBottom > 0)
+            if (bottomEdge) require(rawTop < bitmap.height && rawBottom >= bitmap.height)
+
+            val left = if (leftEdge) 0 else rawLeft
+            val top = if (topEdge) 0 else rawTop
+            val right = if (rightEdge) bitmap.width else rawRight
+            val bottom = if (bottomEdge) bitmap.height else rawBottom
             require(left >= 0 && top >= 0 && right <= bitmap.width && bottom <= bitmap.height &&
                 right > left && bottom > top) {
-                "mapped fiducial out of bounds id=" + id + " rect=" +
-                    left + "," + top + "," + right + "," + bottom +
-                    " bitmap=" + bitmap.width + "x" + bitmap.height
+                "physical edge intersection out of bounds id=" + id
             }
             return android.graphics.Rect(left, top, right, bottom)
         }
@@ -3659,7 +3687,7 @@ class HostingInstrumentedTest {
             else android.graphics.Rect(minX, minY, maxX + 1, maxY + 1)
         }
 
-        fun closeAxis(a: Int, b: Int): Boolean = kotlin.math.abs(a - b) <= 1
+        fun closeAxis(a: Int, b: Int): Boolean = a == b
 
         for (fiducial in spec.fiducials) {
             val expected = fiducial.rect
