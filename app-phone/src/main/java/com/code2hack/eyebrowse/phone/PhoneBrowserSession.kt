@@ -67,6 +67,8 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
     private var captureVisualRequestSerial = 0L // UI-thread only; local draw/copy identity, never wire ordinal.
     fun documentIdentity(): String = documentId
     internal var remoteEditor: PhoneEditorController? = null
+    /** AndroidTest may delay delivery of a REAL frame-commit callback; null in production. */
+    internal var captureCommitDispatcherForTest: ((Runnable) -> Unit)? = null
     internal fun editorQuiescent() = remoteEditor?.isQuiescent() != false
     internal fun retireEditor(completed: (Boolean) -> Unit) {
         remoteEditor?.close(callback = completed) ?: completed(true)
@@ -288,7 +290,8 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
      */
     fun requestFreshCaptureFrame(
         drawSerial: (() -> Long)? = null,
-        frameCommitted: ((Long, Long) -> Unit)? = null,
+        visualReady: ((Long, Long) -> Unit)? = null,
+        frameCommitted: ((Long) -> Unit)? = null,
         isCurrentOwner: () -> Boolean = { true },
     ) {
         val target = webView ?: return
@@ -306,6 +309,7 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
                 return@post
             }
             val serial = drawSerial ?: return@post
+            val onVisualReady = visualReady ?: return@post
             if (!target.isHardwareAccelerated || !target.isAttachedToWindow) {
                 return@post // No software/synthetic fallback for a Window-qualified frame.
             }
@@ -320,19 +324,21 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
                     val beforeDrawSerial = serial()
                     android.util.Log.i("EyeBrowseCaptureFence",
                         "visual-ready request=" + requestId + " beforeDraw=" + beforeDrawSerial)
+                    // Arm the immutable draw association BEFORE invalidating. The later commit
+                    // callback carries only request identity; it never re-samples a newer draw.
+                    onVisualReady(requestId, beforeDrawSerial)
                     target.viewTreeObserver.registerFrameCommitCallback commit@{
                         if (webView !== target || rendererGone || !target.isAttachedToWindow ||
                             !isCurrentOwner()) return@commit
-                        val committedDrawSerial = serial()
-                        if (committedDrawSerial > beforeDrawSerial) {
-                            android.util.Log.i("EyeBrowseCaptureFence",
-                                "frame-commit request=" + requestId + " draw=" + committedDrawSerial)
-                            frameCommitted(requestId, committedDrawSerial)
-                        } else {
-                            android.util.Log.w("EyeBrowseCaptureFence",
-                                "frame-commit rejected request=" + requestId + " draw=" +
-                                    committedDrawSerial + " beforeDraw=" + beforeDrawSerial)
+                        android.util.Log.i("EyeBrowseCaptureFence",
+                            "frame-commit request=" + requestId)
+                        val delivery = Runnable {
+                            if (webView === target && !rendererGone && target.isAttachedToWindow &&
+                                isCurrentOwner()) {
+                                frameCommitted(requestId)
+                            }
                         }
+                        captureCommitDispatcherForTest?.invoke(delivery) ?: delivery.run()
                     }
                     draw()
                 }
@@ -391,6 +397,7 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
      * independent. UI thread only; not reachable from the product UI.
      */
     fun resetForTest() {
+        captureCommitDispatcherForTest = null
         disposeWebView()
         rendererGone = false
         displayUrl = null
