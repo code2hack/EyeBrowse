@@ -21,10 +21,13 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.ArrayList
 import java.util.HashSet
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import java.util.function.BooleanSupplier
 import org.json.JSONObject
@@ -2320,6 +2323,186 @@ class HostingInstrumentedTest {
         runOnMain(freshLease!!::release)
     }
 
+    /**
+     * T-A / R-01: the two-second profile-readiness deadline is one-time. After the first
+     * committed Window frame succeeds, the SAME renewed lease must keep publishing autonomous
+     * page updates after t0+2000 through independent steady-state transactions.
+     */
+    @Test
+    fun sameProfileLeaseKeepsPublishingPastInitialReadinessDeadline() {
+        val factory = R4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val deadline = SystemClock.elapsedRealtime() + 2_000
+        val lease = runOnMainSync { hosting.acquireProfileLease(normal, deadline, consumer) }
+        assertNotNull("finite-deadline profile lease", lease)
+        val renewal = LeaseRenewal(lease!!)
+        renewal.start()
+        try {
+            waitUntil("first readiness frame", { consumer.qualifyingCountFrom(0) > 0 }, 2_000)
+            val firstCount = consumer.count()
+            assertTrue("readiness retired after first successful frame: " +
+                runOnMainSync(hosting::captureDiagnostics),
+                runOnMainSync(hosting::captureDiagnostics).contains("readinessPending=false"))
+
+            evaluateJs("window.__eyebrowseFreeze(false)")
+            waitUntil("original readiness deadline has elapsed", {
+                SystemClock.elapsedRealtime() > deadline + 100
+            }, 2_500)
+            val countAfterDeadline = consumer.count()
+            waitUntil("same lease publishes a steady-state frame after t0+2000", {
+                consumer.count() > countAfterDeadline &&
+                    consumer.latestDeliveryElapsed() > deadline
+            }, 2_500)
+            assertTrue("same lease delivered beyond initial deadline", consumer.count() > firstCount)
+            assertTrue("steady-state capture authority remains live: " +
+                runOnMainSync(hosting::captureDiagnostics),
+                !runOnMainSync(hosting::captureDiagnostics).contains("terminal=true"))
+        } finally {
+            renewal.stopRenewing()
+            runOnMain(lease::release)
+        }
+    }
+
+    /**
+     * T-B / R-02 negative: initial NO_DATA, permitted recovery TIMEOUT, with a real trailing draw
+     * pending while the first copy is in flight. The unresolved readiness transaction gets exactly
+     * two Window-copy invocations; the coalesced demand cannot mint a third attempt-zero cycle.
+     */
+    @Test
+    fun transientRecoveryBudgetCannotResetFromTrailingDemand() {
+        val factory = R4ControlledFactory().apply {
+            scriptCopyResults(
+                android.view.PixelCopy.ERROR_SOURCE_NO_DATA,
+                android.view.PixelCopy.ERROR_TIMEOUT,
+            )
+        }
+        val normal = prepareR4RecordedProfile(factory)
+        val host = currentPrivateHostForR4()
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val firstCopyGate = factory.armNextCopy()
+        val deadline = SystemClock.elapsedRealtime() + 2_000
+        val lease = runOnMainSync { hosting.acquireProfileLease(normal, deadline, consumer) }
+        assertNotNull("scripted transient profile lease", lease)
+        assertTrue("initial copy invocation reached test barrier",
+            factory.awaitCopyInvocation(1_000) != null)
+        assertTrue("initial copy held in flight", firstCopyGate.awaitEntered(1_000))
+
+        val beforeTrailing = runOnMainSync { host.drawObservationForTest().serial }
+        runOnMain {
+            session.view()!!.invalidate()
+            session.view()!!.postInvalidateOnAnimation()
+        }
+        waitUntilMain("real trailing draw occurred during unresolved transaction", {
+            host.drawObservationForTest().serial > beforeTrailing
+        })
+
+        firstCopyGate.release()
+        assertTrue("first-copy barrier released", !firstCopyGate.timedOut)
+        assertNotNull("single recovery copy invoked",
+            factory.awaitCopyInvocation(1_500))
+        waitUntilMain("two transient results close readiness transaction", {
+            val d = hosting.captureDiagnostics()
+            d.contains("transaction=0") && d.contains("terminal=true") &&
+                d.contains("recoveries=1")
+        })
+        assertFalse("coalesced trailing demand cannot create a third copy",
+            factory.awaitCopyInvocation(600) != null)
+        assertEquals("exactly initial + one recovery copy", 2, factory.copyInvocationCount())
+        assertEquals("failed readiness transaction published no frame", 0, consumer.count())
+        runOnMain(lease!!::release)
+    }
+
+    /** T-B positive: one transient NO_DATA may recover exactly once to a real Window SUCCESS. */
+    @Test
+    fun singleTransientRecoveryCanSucceedWithinOriginalTransaction() {
+        val factory = R4ControlledFactory().apply {
+            scriptCopyResults(
+                android.view.PixelCopy.ERROR_SOURCE_NO_DATA,
+                R4ControlledFactory.REAL_COPY,
+            )
+        }
+        val normal = prepareR4RecordedProfile(factory)
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val deadline = SystemClock.elapsedRealtime() + 2_000
+        val lease = runOnMainSync { hosting.acquireProfileLease(normal, deadline, consumer) }
+        assertNotNull("recoverable profile lease", lease)
+        waitUntil("recovery SUCCESS publishes current Window pixels", {
+            consumer.qualifyingCountFrom(0) > 0
+        }, 2_000)
+        assertEquals("initial transient + one real recovery", 2, factory.copyInvocationCount())
+        val diagnostics = runOnMainSync(hosting::captureDiagnostics)
+        assertTrue("one recovery recorded: $diagnostics", diagnostics.contains("recoveries=1"))
+        assertTrue("successful recovery retires readiness: $diagnostics",
+            diagnostics.contains("readinessPending=false"))
+        assertTrue("successful recovery does not terminally fail capture: $diagnostics",
+            !diagnostics.contains("terminal=true"))
+        runOnMain(lease!!::release)
+    }
+
+    /**
+     * T-C / R-03: delay delivery of the REAL frame-commit callback while allowing another actual
+     * draw in the same epoch. The later draw may become PixelCopy's newest same-context pixels,
+     * but it must not advance the recorded commit association or HostingFrame freshness anchor.
+     */
+    @Test
+    fun delayedSameEpochCommitKeepsFirstQualifyingDrawAnchor() {
+        val factory = R4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val host = currentPrivateHostForR4()
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val delayedCommit = AtomicReference<Runnable>()
+        val commitCaptured = CountDownLatch(1)
+        runOnMain {
+            session.captureCommitDispatcherForTest = { callback ->
+                if (delayedCommit.compareAndSet(null, callback)) {
+                    commitCaptured.countDown()
+                } else {
+                    callback.run()
+                }
+            }
+        }
+        val deadline = SystemClock.elapsedRealtime() + 2_000
+        val lease = runOnMainSync { hosting.acquireProfileLease(normal, deadline, consumer) }
+        assertNotNull("delayed-commit profile lease", lease)
+        try {
+            assertTrue("real frame-commit callback captured",
+                commitCaptured.await(1_000, TimeUnit.MILLISECONDS))
+            val associated = runOnMainSync { host.drawObservationForTest() }
+            assertTrue("qualifying draw observed", associated.serial > 0 && associated.elapsedMs > 0)
+
+            runOnMain {
+                session.view()!!.invalidate()
+                session.view()!!.postInvalidateOnAnimation()
+            }
+            waitUntilMain("intervening same-epoch draw occurs", {
+                host.drawObservationForTest().serial > associated.serial
+            })
+            val later = runOnMainSync { host.drawObservationForTest() }
+            assertTrue("test actually advanced the Presentation draw", later.serial > associated.serial)
+            assertTrue("later draw has a later time", later.elapsedMs >= associated.elapsedMs)
+
+            runOnMain(checkNotNull(delayedCommit.get()))
+            waitUntil("delayed commit publishes one qualified frame", {
+                consumer.qualifyingCountFrom(0) > 0
+            }, 1_500)
+            assertEquals("freshness lower-bound remains the qualifying draw",
+                associated.elapsedMs, consumer.latestCaptureElapsed())
+            val diagnostics = runOnMainSync(hosting::captureDiagnostics)
+            assertTrue("commit association remains first qualifying serial: $diagnostics",
+                diagnostics.contains("committedDraw=" + associated.serial))
+            assertTrue("latest observed draw advanced independently: $diagnostics",
+                diagnostics.contains("draw=" + later.serial + "@"))
+        } finally {
+            runOnMain { session.captureCommitDispatcherForTest = null }
+            runOnMain(lease!!::release)
+        }
+    }
+
     /** Static recorded regression stimulus; production profiles remain RG-measured. */
     private fun prepareR4RecordedProfile(factory: R4ControlledFactory): HostingPresentationProfile {
         runOnMain { hosting.setResourceFactoryForTest(factory) }
@@ -3049,9 +3232,24 @@ class HostingInstrumentedTest {
     private class R4ControlledFactory : PrivateDisplayHost.Factory {
         private val platform = PrivateDisplayHost.PlatformFactory()
         private val readers = CopyOnWriteArrayList<ImageReader>()
+        private val scriptedCopyResults = ConcurrentLinkedQueue<Int>()
+        private val copyEvents = LinkedBlockingQueue<Int>()
+        private val copyCount = AtomicInteger(0)
         @Volatile private var nextDrawGate: R4Gate? = null
+        @Volatile private var nextCopyGate: R4Gate? = null
 
         fun armNextDraw(): R4Gate = R4Gate().also { nextDrawGate = it }
+
+        fun armNextCopy(): R4Gate = R4Gate().also { nextCopyGate = it }
+
+        fun scriptCopyResults(vararg results: Int) {
+            results.forEach(scriptedCopyResults::add)
+        }
+
+        fun awaitCopyInvocation(timeoutMs: Long): Int? =
+            copyEvents.poll(timeoutMs, TimeUnit.MILLISECONDS)
+
+        fun copyInvocationCount(): Int = copyCount.get()
 
         fun latestReader(): ImageReader = checkNotNull(readers.lastOrNull())
 
@@ -3067,6 +3265,28 @@ class HostingInstrumentedTest {
 
         override fun createImageReader(width: Int, height: Int): ImageReader? =
             platform.createImageReader(width, height)?.also(readers::add)
+
+        override fun requestWindowCopy(
+            window: android.view.Window,
+            sourceRect: android.graphics.Rect,
+            destination: android.graphics.Bitmap,
+            listener: android.view.PixelCopy.OnPixelCopyFinishedListener,
+            handler: Handler,
+        ) {
+            val invocation = copyCount.incrementAndGet()
+            copyEvents.offer(invocation)
+            val gate = nextCopyGate
+            if (gate != null && nextCopyGate === gate) {
+                nextCopyGate = null
+                gate.blockOnce()
+            }
+            val scripted = scriptedCopyResults.poll()
+            if (scripted == null || scripted == REAL_COPY) {
+                platform.requestWindowCopy(window, sourceRect, destination, listener, handler)
+            } else {
+                handler.post { listener.onPixelCopyFinished(scripted) }
+            }
+        }
 
         override fun createPresentation(
             context: Context,
@@ -3089,6 +3309,11 @@ class HostingInstrumentedTest {
                     })
                 }
             }
+        }
+
+        companion object {
+            /** Sentinel means delegate to the real public Window PixelCopy path. */
+            const val REAL_COPY: Int = Int.MIN_VALUE
         }
     }
 
