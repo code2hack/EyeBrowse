@@ -2460,7 +2460,7 @@ class HostingInstrumentedTest {
             waitUntilMain("abort cleanup production owner quiescent", {
                 !hosting.captureResourcesPresent() && !hosting.hasDisplayResources() &&
                     !hosting.isWakeLockHeld()
-            }, STOP_BOUND_MS)
+            })
             quiescent = !hosting.captureResourcesPresent() && !hosting.hasDisplayResources() &&
                 !hosting.isWakeLockHeld()
             assertTrue("abort cleanup must reach production quiescence", quiescent)
