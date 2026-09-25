@@ -323,7 +323,7 @@ class LivePresentationInstrumentedTest {
 
     private fun encodedReceipts(): List<EncodedReceipt> {
         val text = shellOutput(
-            "logcat -d -v brief -s EyeBrowsePresentation:I '*:S'"
+            "logcat -d -v brief -s EyeBrowsePresentation:I"
         )
         val regex = Regex(
             """encoded seq=(\d+) capture=(\d+) bytes=(\d+) profile=(\d+)x(\d+)"""
