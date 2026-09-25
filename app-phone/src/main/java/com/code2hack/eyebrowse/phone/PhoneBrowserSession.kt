@@ -64,6 +64,7 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
     private var currentAttachment: Attachment? = null
     private var rendererGone = false
     @Volatile private var documentId = java.util.UUID.randomUUID().toString()
+    private var captureVisualRequestSerial = 0L // UI-thread only; local draw/copy identity, never wire ordinal.
     fun documentIdentity(): String = documentId
     internal var remoteEditor: PhoneEditorController? = null
     internal fun editorQuiescent() = remoteEditor?.isQuiescent() != false
@@ -284,8 +285,11 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
      * pre-arm buffers. May be invoked from the capture thread; View.post performs the actual
      * invalidation on the WebView/UI thread and fences renderer replacement.
      */
-    fun requestFreshCaptureFrame(frameCommitted: (() -> Unit)? = null,
-                                 isCurrentOwner: () -> Boolean = { true }) {
+    fun requestFreshCaptureFrame(
+        drawSerial: (() -> Long)? = null,
+        frameCommitted: ((Long, Long) -> Unit)? = null,
+        isCurrentOwner: () -> Boolean = { true },
+    ) {
         val target = webView ?: return
         target.post {
             if (webView !== target || rendererGone || !isCurrentOwner()) {
@@ -296,18 +300,34 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
                 target.invalidate()
                 target.postInvalidateOnAnimation()
             }
-            if (frameCommitted == null) draw() else {
-                if (!target.isHardwareAccelerated) return@post // No unqualified fallback frame.
-                target.postVisualStateCallback(0, object : WebView.VisualStateCallback() {
-                    override fun onComplete(requestId: Long) {
-                        if (webView !== target || rendererGone || !target.isAttachedToWindow || !isCurrentOwner()) return
-                        target.viewTreeObserver.registerFrameCommitCallback {
-                            if (webView === target && !rendererGone && isCurrentOwner()) frameCommitted()
-                        }
-                        draw()
-                    }
-                })
+            if (frameCommitted == null) {
+                draw()
+                return@post
             }
+            val serial = drawSerial ?: return@post
+            if (!target.isHardwareAccelerated || !target.isAttachedToWindow) {
+                return@post // No software/synthetic fallback for a Window-qualified frame.
+            }
+            val visualRequestId = ++captureVisualRequestSerial
+            target.postVisualStateCallback(visualRequestId, object : WebView.VisualStateCallback() {
+                override fun onComplete(requestId: Long) {
+                    if (requestId != visualRequestId || webView !== target || rendererGone ||
+                        !target.isAttachedToWindow || !isCurrentOwner()) return
+                    // Main is not concurrently traversing while this callback runs. Any draw serial
+                    // observed after this point therefore belongs to a traversal after the visual
+                    // boundary, not an already in-flight earlier draw.
+                    val beforeDrawSerial = serial()
+                    target.viewTreeObserver.registerFrameCommitCallback {
+                        if (webView !== target || rendererGone || !target.isAttachedToWindow ||
+                            !isCurrentOwner()) return@registerFrameCommitCallback
+                        val committedDrawSerial = serial()
+                        if (committedDrawSerial > beforeDrawSerial) {
+                            frameCommitted(requestId, committedDrawSerial)
+                        }
+                    }
+                    draw()
+                }
+            })
         }
     }
 
