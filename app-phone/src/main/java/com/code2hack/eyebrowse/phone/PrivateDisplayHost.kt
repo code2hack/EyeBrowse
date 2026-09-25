@@ -3,6 +3,7 @@ package com.code2hack.eyebrowse.phone
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Rect
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.Image
@@ -12,7 +13,9 @@ import android.os.HandlerThread
 import android.os.SystemClock
 import android.util.Log
 import android.view.Display
+import android.view.PixelCopy
 import android.view.ViewGroup
+import android.view.Window
 import android.widget.FrameLayout
 import java.nio.ByteBuffer
 import java.util.zip.CRC32
@@ -76,6 +79,16 @@ class PrivateDisplayHost(
         fun createPresentation(context: Context, display: Display): PresentationHost
     }
 
+    data class DrawObservation(val serial: Long, val elapsedMs: Long)
+
+    fun interface DrawListener {
+        fun onDraw(serial: Long, elapsedMs: Long)
+    }
+
+    fun interface FreshFrameRequest {
+        fun request(onCommitted: (Long, Long) -> Unit)
+    }
+
     /** The shown presentation holding the container the WebView is attached to. */
     interface PresentationHost {
         fun show()
@@ -92,6 +105,9 @@ class PrivateDisplayHost(
         fun setLocalFocusListener(listener: Runnable?) {}
         fun windowIdentity(): Int = 0
         fun focusLossSerial(): Long = 0
+        fun captureWindow(): Window? = null
+        fun drawObservation(): DrawObservation = DrawObservation(0, 0)
+        fun setDrawListener(listener: DrawListener?) {}
     }
 
     /** Immutable per-lease delivery sink; the capture pipeline invokes exactly this object. */
@@ -257,7 +273,6 @@ class PrivateDisplayHost(
                     imageReader = staged
                     stagedProfileReader = null
                     retiringProfileReader = oldReader
-                    frameBitmap = null // Drop, never recycle a bitmap a completed borrower retained.
                     width = profile.width; height = profile.height
                     displaySurfaceDetached = false
                 }
@@ -290,23 +305,63 @@ class PrivateDisplayHost(
         else if (!capture.post { main.post(swap) }) finish(false)
     }
 
-    // Java original: plain (non-volatile) field; swapped from main, read on the capture path.
+    private data class CaptureBinding(
+        val sink: FrameSink,
+        val session: PhoneBrowserSession,
+        val generation: Int,
+        val freshFrameRequest: FreshFrameRequest,
+        val deadlineElapsedMs: Long,
+        val authoritySerial: Long,
+        val documentId: String,
+        val presentation: PresentationHost,
+        val windowIdentity: Int,
+        val profileSerial: Long,
+        val width: Int,
+        val height: Int,
+        val densityDpi: Int,
+    )
+
+    private data class CaptureCycle(
+        val id: Long,
+        val binding: CaptureBinding,
+        val attempt: Int,
+    )
+
+    private data class WindowCopyRequest(
+        val cycleId: Long,
+        val binding: CaptureBinding,
+        val attempt: Int,
+        val visualRequestId: Long,
+        val drawSerial: Long,
+        val drawElapsedMs: Long,
+        val window: Window,
+        val sourceRect: Rect,
+        val bitmap: Bitmap,
+    )
+
+    // Capture-path authority. ImageReader remains the non-null display sink only.
     private var frameSink: FrameSink? = null
     private var width: Int = 0
     private var height: Int = 0
     private var densityDpi: Int = 0
-
-    // Capture-path state.
     private var frameSequence: Long = 0
     private val deliveryThrottle = CaptureDeliveryThrottle(HostingPolicy.MIN_FRAME_INTERVAL_MS)
-    private var pendingFrameTask: Runnable? = null // nativeLock-protected; no Image/Bitmap retained
+    private var pendingFrameTask: Runnable? = null
     private var pendingFrameHandler: Handler? = null
-    private var frameBitmap: Bitmap? = null // nativeLock-protected
+    private var captureBinding: CaptureBinding? = null
+    private var captureAuthoritySerial = 0L
+    private var captureCycleSerial = 0L
+    private var activeCaptureCycle: CaptureCycle? = null
+    private var inFlightWindowCopy: WindowCopyRequest? = null
+    private var trailingCaptureDemand = false
+    private var captureTerminalFailure = false
+    private var readbackThread: HandlerThread? = null
+    private var readbackHandler: Handler? = null
+    private var retainedReadbackThread: Thread? = null
     @Volatile private var captureActive: Boolean = false
-    @Volatile private var captureReleased: Boolean = false // release requested; no further admissions/copying
+    @Volatile private var captureReleased: Boolean = false
     @Volatile private var teardownComplete: Boolean = true
-    @Volatile private var captureGeneration: Int = 0 // hosting generation stamped into produced frames
-    private var frameCommitReady = true // nativeLock; required only for a profile-transfer rearm.
+    @Volatile private var captureGeneration: Int = 0
 
     // Sparse production diagnostics for the T04 acceptance path. Reset per capture arm/rearm;
     // no bitmap/pixel payload is retained.
@@ -321,6 +376,14 @@ class PrivateDisplayHost(
     @Volatile private var deferredWakeupCount: Long = 0
     @Volatile private var coalescedCallbackCount: Long = 0
     @Volatile private var deferredDeliveryCount: Long = 0
+    @Volatile private var lastObservedDrawSerial: Long = 0
+    @Volatile private var lastObservedDrawElapsedMs: Long = 0
+    @Volatile private var lastVisualRequestId: Long = 0
+    @Volatile private var lastCommittedDrawSerial: Long = 0
+    @Volatile private var lastCopyInvokedElapsedMs: Long = 0
+    @Volatile private var lastCopyCompletedElapsedMs: Long = 0
+    @Volatile private var lastCopyResult: Int = Int.MIN_VALUE
+    @Volatile private var copyRecoveryCount: Long = 0
 
     /**
      * Creates the display, presentation and reader for the measured viewport. Recoverable
@@ -369,6 +432,11 @@ class PrivateDisplayHost(
                     localFocusListener?.run()
                 }
             })
+            presentationHost.setDrawListener(DrawListener { serial, elapsedMs ->
+                if (presentation === presentationHost && resourceSerial == createdSerial) {
+                    onWindowDraw(serial, elapsedMs)
+                }
+            })
             presentationHost.show()
         } catch (error: HostingException) {
             rollbackDisplayAllocation()
@@ -402,6 +470,7 @@ class PrivateDisplayHost(
         if (shown != null) {
             try {
                 shown.setUnavailableListener(null)
+                shown.setDrawListener(null)
                 shown.dismiss()
             } catch (ignored: RuntimeException) {
                 // Rollback best effort.
@@ -512,6 +581,7 @@ class PrivateDisplayHost(
         if (presentation != null) {
             try {
                 presentation?.setUnavailableListener(null)
+                presentation?.setDrawListener(null)
                 presentation?.dismiss()
             } catch (ignored: RuntimeException) {
                 // Teardown continues.
@@ -543,92 +613,110 @@ class PrivateDisplayHost(
     }
 
     /**
-     * Rearms frame production for the SAME live capture owner on the current reader (R6): legal
-     * only while this owner is ACTIVE with an open reader and a live capture path. Used after a
-     * geometry rebuild replaced the reader underneath an existing lease. Returns {@code false}
-     * when the owner is not actively capturable — the caller must surface that, never display a
-     * healthy capturing state over an unarmed reader.
+     * Rearms Window-backed capture for the SAME live owner. The ImageReader remains only the
+     * virtual-display sink; publication always comes from a causally committed private Window.
      */
-    fun rearmCapture(hostingGeneration: Int, boundSink: FrameSink?,
-            freshFrameRequest: Runnable?, requireFrameCommit: Boolean = false): Boolean {
+    fun rearmCapture(
+        hostingGeneration: Int,
+        boundSink: FrameSink?,
+        session: PhoneBrowserSession,
+        freshFrameRequest: FreshFrameRequest?,
+        deadlineElapsedMs: Long = Long.MAX_VALUE,
+    ): Boolean {
+        val shown = presentation
         if (!ownerPhase.isActive() || imageReader == null || boundSink == null ||
-                captureThread == null || captureHandler == null) {
-            return false
-        }
+            freshFrameRequest == null || shown == null || captureThread == null ||
+            captureHandler == null || session.view() == null) return false
+        ensureReadbackThread()
+        val binding = CaptureBinding(
+            boundSink, session, hostingGeneration, freshFrameRequest, deadlineElapsedMs,
+            ++captureAuthoritySerial, session.documentIdentity(), shown, shown.windowIdentity(),
+            profileSerial, width, height, densityDpi,
+        )
         synchronized(nativeLock) {
             cancelPendingFrameLocked()
             resetCaptureDiagnostics()
             frameSink = boundSink
+            captureBinding = binding
+            activeCaptureCycle = null
+            trailingCaptureDemand = false
+            captureTerminalFailure = false
             frameSequence = 0
             captureGeneration = hostingGeneration
             captureActive = true
             captureReleased = false
-            frameCommitReady = !requireFrameCommit
         }
         imageReader?.setOnImageAvailableListener(::onImageAvailable, captureHandler)
-        scheduleDrainThenFreshFrame(freshFrameRequest)
-        Log.i(TAG, "rearmCapture gen=$hostingGeneration on rebuilt reader")
+        scheduleDrainThenCapture()
+        Log.i(TAG, "rearmCapture gen=$hostingGeneration window=" + binding.windowIdentity)
         return true
     }
 
     /**
-     * Starts (or restarts) frame production for a NEW capture owner through the caller's bound
-     * sink; latest-only and throttled. The sink is retained as-is: delivery identity lives in the
-     * sink, not in a reassigned callback.
-     *
-     * <p>Returns {@code false} when no capture surface exists or a previous capture owner is
-     * still retiring (R2): reacquisition waits for quiescence instead of racing the outstanding
-     * teardown. The caller retries explicitly after quiescence — a null acquisition has no
-     * hidden side effects.
+     * Starts Window-backed capture for a NEW owner. Pixel readback is serialized separately from
+     * the ImageReader drainer so a blocking GPU fence can never starve the display sink.
      */
-    fun startCapture(hostingGeneration: Int, boundSink: FrameSink?,
-            freshFrameRequest: Runnable?, requireFrameCommit: Boolean = false): Boolean {
-        if (imageReader == null || boundSink == null) {
-            return false
-        }
+    fun startCapture(
+        hostingGeneration: Int,
+        boundSink: FrameSink?,
+        session: PhoneBrowserSession,
+        freshFrameRequest: FreshFrameRequest?,
+        deadlineElapsedMs: Long = Long.MAX_VALUE,
+    ): Boolean {
+        val shown = presentation
+        if (imageReader == null || boundSink == null || freshFrameRequest == null ||
+            shown == null || session.view() == null) return false
         if (!ownerPhase.beginActive()) {
             Log.i(TAG, "startCapture deferred: owner phase=" + ownerPhase.phase())
             return false
         }
+        if (captureThread == null) {
+            val thread = HandlerThread("EyeBrowseHostingCapture")
+            thread.start()
+            captureThread = thread
+            captureHandler = Handler(thread.looper)
+            retainedCaptureThread = thread
+        }
+        ensureReadbackThread()
+        val binding = CaptureBinding(
+            boundSink, session, hostingGeneration, freshFrameRequest, deadlineElapsedMs,
+            ++captureAuthoritySerial, session.documentIdentity(), shown, shown.windowIdentity(),
+            profileSerial, width, height, densityDpi,
+        )
         synchronized(nativeLock) {
             cancelPendingFrameLocked()
             resetCaptureDiagnostics()
             frameSink = boundSink
+            captureBinding = binding
+            activeCaptureCycle = null
+            trailingCaptureDemand = false
+            captureTerminalFailure = false
             frameSequence = 0
             captureGeneration = hostingGeneration
             captureActive = true
             captureReleased = false
-            frameCommitReady = !requireFrameCommit
         }
-        Log.i(TAG, "startCapture gen=$hostingGeneration reader=${imageReader != null}" +
-                " threadAlive=${captureThread != null}")
-        if (captureThread != null) {
-            // Reacquisition after lease loss: the capture thread survived; rearm the listener.
-            imageReader?.setOnImageAvailableListener(::onImageAvailable, captureHandler)
-            scheduleDrainThenFreshFrame(freshFrameRequest)
-            return true
-        }
-        val thread = HandlerThread("EyeBrowseHostingCapture")
-        thread.start()
-        captureThread = thread
-        captureHandler = Handler(thread.looper)
-        retainedCaptureThread = thread
+        Log.i(TAG, "startCapture gen=$hostingGeneration reader=" + (imageReader != null) +
+            " window=" + binding.windowIdentity)
         imageReader?.setOnImageAvailableListener(::onImageAvailable, captureHandler)
-        scheduleDrainThenFreshFrame(freshFrameRequest)
+        scheduleDrainThenCapture()
         return true
     }
 
-    /**
-     * Drain any pre-arm buffers first, then request a fresh render. The ordering is intentional:
-     * a static current document may otherwise have its only rendered frame consumed as "stale"
-     * and never produce another callback after the listener is armed.
-     */
-    private fun scheduleDrainThenFreshFrame(freshFrameRequest: Runnable?) {
+    private fun ensureReadbackThread() {
+        if (readbackThread?.isAlive == true && readbackHandler != null) return
+        val thread = HandlerThread("EyeBrowseWindowReadback")
+        thread.start()
+        readbackThread = thread
+        readbackHandler = Handler(thread.looper)
+        retainedReadbackThread = thread
+    }
+
+    /** Drain only the display sink, then explicitly request one producer-bound Window cycle. */
+    private fun scheduleDrainThenCapture() {
         captureHandler?.post {
-            CaptureDrainSequence.run(
-                drain = { drainPendingImages() },
-                requestFresh = { freshFrameRequest?.run() },
-            )
+            drainPendingImages()
+            requestCaptureDemand()
         }
     }
 
@@ -668,6 +756,10 @@ class PrivateDisplayHost(
         synchronized(nativeLock) {
             captureActive = false
             frameSink = null
+            captureBinding = null
+            activeCaptureCycle = null
+            trailingCaptureDemand = false
+            captureTerminalFailure = false
             cancelPendingFrameLocked()
         }
     }
@@ -720,24 +812,28 @@ class PrivateDisplayHost(
         }
 
         val retiringReader: ImageReader?
-        val retiringBitmap: Bitmap?
         synchronized(nativeLock) {
             retiringReader = imageReader
-            retiringBitmap = frameBitmap
-            // Current fields release now: introspection sees no live reader and any later
-            // allocation creates fresh resources the old teardown will never touch.
+            // Current reader releases now; a native PixelCopy destination remains request-owned
+            // until its actual completion callback, even after authority was revoked.
             imageReader = null
-            frameBitmap = null
+        }
+        val copyThread = readbackThread
+        if (copyThread != null) {
+            copyThread.quitSafely()
+            readbackThread = null
+            readbackHandler = null
+            retainedReadbackThread = copyThread
         }
         val thread = captureThread
         val handler = captureHandler
         if (thread != null && handler != null) {
-            handler.post { finishRetirement(retiringReader, retiringBitmap, thread) }
-            thread.quitSafely() // Pending callbacks and the teardown task run first.
+            handler.post { finishRetirement(retiringReader) }
+            thread.quitSafely() // Pending drainer callbacks and teardown run before exit.
             captureThread = null
             captureHandler = null
         } else {
-            finishRetirement(retiringReader, retiringBitmap, null) // No capture path; inline.
+            finishRetirement(retiringReader) // No display-sink capture path; inline.
         }
     }
 
@@ -748,19 +844,16 @@ class PrivateDisplayHost(
      * on that thread BEFORE it exits, so quiescence is declared only later, on the main thread,
      * once the thread has actually terminated ({@link #evaluateRetirementCompletion()}).
      */
-    private fun finishRetirement(retiringReader: ImageReader?, retiringBitmap: Bitmap?,
-            retiringThread: HandlerThread?) {
+    private fun finishRetirement(retiringReader: ImageReader?) {
         if (retiringReader != null) {
             try {
                 retiringReader.close()
             } catch (ignored: RuntimeException) {
-                // Serialized with capture-path use; a platform refusal must not block teardown.
+                // Serialized with the sink drainer; platform refusal must not block teardown.
             }
         }
-        // The retiring borrowed bitmap is dropped without recycle (a completed delivery may
-        // still hold it); reclamation stays with GC, which is safe for borrowed bitmaps.
         teardownComplete = true
-        onQuiesced?.run() // Signals the controller to evaluate completion on the main thread.
+        onQuiesced?.run()
     }
 
     /**
@@ -775,7 +868,14 @@ class PrivateDisplayHost(
         }
         val thread = retainedCaptureThread
         if (thread != null && thread.isAlive) {
-            return false // The retiring owner's thread is still terminating.
+            return false // The retiring owner's sink-drainer thread is still terminating.
+        }
+        val copyThread = retainedReadbackThread
+        if (copyThread != null && copyThread.isAlive) {
+            return false // PixelCopy invocation may still be blocked on a GPU fence.
+        }
+        if (synchronized(nativeLock) { inFlightWindowCopy != null }) {
+            return false // Native copy returned, but its completion/bitmap retirement is pending.
         }
         if (ownerPhase.completeRetirement()) {
             Log.i(TAG, "capture retirement quiescent")
@@ -796,6 +896,7 @@ class PrivateDisplayHost(
         if (shown != null) {
             try {
                 shown.setUnavailableListener(null)
+                shown.setDrawListener(null)
                 shown.dismiss()
             } catch (ignored: RuntimeException) {
                 // A dismissed presentation must not block teardown.
@@ -848,6 +949,13 @@ class PrivateDisplayHost(
         if (thread != null && thread.isAlive) {
             return true
         }
+        val copyThread = retainedReadbackThread
+        if (copyThread != null && copyThread.isAlive) {
+            return true
+        }
+        if (synchronized(nativeLock) { inFlightWindowCopy != null }) {
+            return true
+        }
         return !teardownComplete
     }
 
@@ -882,6 +990,14 @@ class PrivateDisplayHost(
         deferredWakeupCount = 0
         coalescedCallbackCount = 0
         deferredDeliveryCount = 0
+        lastObservedDrawSerial = 0
+        lastObservedDrawElapsedMs = 0
+        lastVisualRequestId = 0
+        lastCommittedDrawSerial = 0
+        lastCopyInvokedElapsedMs = 0
+        lastCopyCompletedElapsedMs = 0
+        lastCopyResult = Int.MIN_VALUE
+        copyRecoveryCount = 0
     }
 
     /** Sparse no-content diagnostics used by acceptance failures and log reconciliation. */
@@ -894,6 +1010,13 @@ class PrivateDisplayHost(
                 " coalesced=" + coalescedCallbackCount +
                 " deferredDeliveries=" + deferredDeliveryCount +
                 " pendingFrame=" + synchronized(nativeLock) { deliveryThrottle.pending != null } +
+                " activeCycle=" + synchronized(nativeLock) { activeCaptureCycle?.id ?: 0 } +
+                " nativeCopy=" + synchronized(nativeLock) { inFlightWindowCopy?.cycleId ?: 0 } +
+                " terminal=" + synchronized(nativeLock) { captureTerminalFailure } +
+                " draw=" + lastObservedDrawSerial + "@" + lastObservedDrawElapsedMs +
+                " visual=" + lastVisualRequestId + " committedDraw=" + lastCommittedDrawSerial +
+                " copyInvoke=" + lastCopyInvokedElapsedMs + " copyDone=" + lastCopyCompletedElapsedMs +
+                " copyResult=" + lastCopyResult + " recoveries=" + copyRecoveryCount +
                 " lastCallbackMs=" + lastReaderCallbackElapsedMs +
                 " image=" + lastAcquiredWidth + "x" + lastAcquiredHeight +
                 " reader=" + hasReader() +
@@ -901,137 +1024,392 @@ class PrivateDisplayHost(
                 " owner=" + ownerPhase.phase() + " display={" + displaySnapshot() + "}"
     }
 
+    /** ImageReader is only the VirtualDisplay sink. Drain latest safely; never publish its pixels. */
     private fun onImageAvailable(reader: ImageReader) {
         synchronized(nativeLock) {
             readerCallbackCount += 1
-            val now = SystemClock.elapsedRealtime()
-            lastReaderCallbackElapsedMs = now
-            if (reader !== imageReader) { staleReaderCallbacks++; return }
-            val sink = frameSink ?: return
-            val handler = captureHandler ?: return
-            if (!captureActive || captureReleased || !frameCommitReady || reader !== imageReader) return
-            val wakeup = deliveryThrottle.request(now)
+            lastReaderCallbackElapsedMs = SystemClock.elapsedRealtime()
+            if (reader !== imageReader) {
+                staleReaderCallbacks += 1
+                return
+            }
+            var image: Image? = null
+            try {
+                image = reader.acquireLatestImage()
+                if (image != null) {
+                    acquiredImageCount += 1
+                    lastAcquiredWidth = image.width
+                    lastAcquiredHeight = image.height
+                }
+            } catch (error: RuntimeException) {
+                Log.w(TAG, "display-sink drain failed", error)
+            } finally {
+                image?.close()
+            }
+        }
+    }
+
+    /** A normal app-owned container draw is the demand source; the sink queue is never freshness authority. */
+    private fun onWindowDraw(serial: Long, elapsedMs: Long) {
+        lastObservedDrawSerial = serial
+        lastObservedDrawElapsedMs = elapsedMs
+        synchronized(nativeLock) {
+            if (!captureActive || captureReleased || captureBinding == null || captureTerminalFailure) return
+            if (activeCaptureCycle != null) return // The explicit causal draw belongs to this cycle.
+            if (inFlightWindowCopy != null) {
+                if (!trailingCaptureDemand) coalescedCallbackCount += 1
+                trailingCaptureDemand = true
+                return
+            }
+        }
+        requestCaptureDemand(elapsedMs)
+    }
+
+    /** One scheduled cycle plus one coalesced trailing demand; never a frame FIFO. */
+    private fun requestCaptureDemand(nowMs: Long = SystemClock.elapsedRealtime()) {
+        var handler: Handler? = null
+        var task: Runnable? = null
+        var delayMs = 0L
+        synchronized(nativeLock) {
+            val binding = captureBinding ?: return
+            if (!captureActive || captureReleased || captureTerminalFailure ||
+                binding.session.documentIdentity() != binding.documentId) return
+            if (activeCaptureCycle != null || inFlightWindowCopy != null) {
+                if (!trailingCaptureDemand) coalescedCallbackCount += 1
+                trailingCaptureDemand = true
+                return
+            }
+            val wakeup = deliveryThrottle.request(nowMs)
             if (wakeup == null) {
                 coalescedCallbackCount += 1
-                return // One existing wakeup will acquire the latest, not a FIFO of callbacks.
+                return
             }
-            val delay = (wakeup.dueElapsedMs - now).coerceAtLeast(0)
-            val deferred = delay > 0
-            if (deferred) deferredWakeupCount += 1
-            val task = Runnable { deliverLatestAvailable(reader, sink, wakeup, deferred) }
-            pendingFrameTask = task
-            pendingFrameHandler = handler
-            if (!handler.postDelayed(task, delay)) {
-                cancelPendingFrameLocked()
-                Log.w(TAG, "capture wakeup rejected by retiring handler")
+            val h = captureHandler
+            if (h == null) {
+                deliveryThrottle.consume(wakeup)
+                return
             }
+            delayMs = (wakeup.dueElapsedMs - nowMs).coerceAtLeast(0)
+            if (delayMs > 0) deferredWakeupCount += 1
+            val t = Runnable { beginCaptureCycle(wakeup) }
+            pendingFrameTask = t
+            pendingFrameHandler = h
+            handler = h
+            task = t
+        }
+        val h = handler ?: return
+        val t = task ?: return
+        if (!h.postDelayed(t, delayMs)) {
+            synchronized(nativeLock) {
+                if (pendingFrameTask === t) cancelPendingFrameLocked()
+            }
+            Log.w(TAG, "capture-cycle wakeup rejected by retiring handler")
         }
     }
 
-    /** A real committed draw, bound to exactly the new sink; old-window callbacks cannot arm it. */
-    fun frameCommitted(sink: FrameSink) {
-        val reader: ImageReader
-        val handler: Handler
-        synchronized(nativeLock) {
-            if (frameSink !== sink || !captureActive || captureReleased) return
-            reader = imageReader ?: return
-            handler = captureHandler ?: return
-            frameCommitReady = true
-        }
-        Log.i(TAG, "profile frame commit qualified arm=$captureArmSerial")
-        handler.post { onImageAvailable(reader) } // Commit may follow an already-queued image event.
-    }
-
-    /**
-     * Throttle BEFORE acquiring. A final static-navigation frame inside the 200ms window
-     * stays in ImageReader until this one-shot wakeup, even if no more callbacks arrive.
-     * No native Image or borrowed Bitmap is held while waiting; maxImages=2 is unchanged.
-     */
-    private fun deliverLatestAvailable(
-        reader: ImageReader,
-        sink: FrameSink,
-        wakeup: CaptureDeliveryThrottle.Wakeup,
-        deferred: Boolean,
-    ) {
-        var frame: HostingFrame? = null
+    private fun beginCaptureCycle(wakeup: CaptureDeliveryThrottle.Wakeup) {
+        var cycle: CaptureCycle? = null
         synchronized(nativeLock) {
             if (!deliveryThrottle.consume(wakeup)) return
             pendingFrameTask = null
             pendingFrameHandler = null
-            if (!captureActive || captureReleased || !frameCommitReady || reader !== imageReader ||
-                    frameSink !== sink) return
-            var image: Image? = null
-            try {
-                val latest = reader.acquireLatestImage() ?: return
-                image = latest
-                acquiredImageCount += 1
-                lastAcquiredWidth = latest.width
-                lastAcquiredHeight = latest.height
-                frame = copyFrame(latest, SystemClock.elapsedRealtime())
-                if (frame != null) {
-                    deliveryThrottle.delivered(SystemClock.elapsedRealtime())
-                    if (deferred) deferredDeliveryCount += 1
+            val binding = captureBinding ?: return
+            if (!captureActive || captureReleased || captureTerminalFailure ||
+                binding.session.documentIdentity() != binding.documentId) return
+            if (activeCaptureCycle != null || inFlightWindowCopy != null) {
+                trailingCaptureDemand = true
+                return
+            }
+            if (SystemClock.elapsedRealtime() >= binding.deadlineElapsedMs) {
+                captureTerminalFailure = true
+                Log.w(TAG, "capture cycle missed original deadline authority=" + binding.authoritySerial)
+                return
+            }
+            cycle = CaptureCycle(++captureCycleSerial, binding, 0)
+            activeCaptureCycle = cycle
+        }
+        requestFreshForCycle(checkNotNull(cycle))
+    }
+
+    private fun beginRecoveryCycle(binding: CaptureBinding, attempt: Int) {
+        var cycle: CaptureCycle? = null
+        synchronized(nativeLock) {
+            if (captureBinding !== binding || !captureActive || captureReleased ||
+                captureTerminalFailure || activeCaptureCycle != null || inFlightWindowCopy != null ||
+                binding.session.documentIdentity() != binding.documentId ||
+                SystemClock.elapsedRealtime() >= binding.deadlineElapsedMs) return
+            cycle = CaptureCycle(++captureCycleSerial, binding, attempt)
+            activeCaptureCycle = cycle
+            copyRecoveryCount += 1
+        }
+        requestFreshForCycle(checkNotNull(cycle))
+    }
+
+    private fun requestFreshForCycle(cycle: CaptureCycle) {
+        try {
+            cycle.binding.freshFrameRequest.request { visualRequestId, drawSerial ->
+                onFrameCommitted(cycle, visualRequestId, drawSerial)
+            }
+        } catch (error: RuntimeException) {
+            Log.w(TAG, "fresh Window draw request failed", error)
+            abandonCaptureCycle(cycle, terminalIfCurrent = true)
+        }
+    }
+
+    /** Commit callback for the exact post-visual draw; all View/window traversal stays on Main. */
+    private fun onFrameCommitted(cycle: CaptureCycle, visualRequestId: Long, drawSerial: Long) {
+        if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
+            main.post { onFrameCommitted(cycle, visualRequestId, drawSerial) }
+            return
+        }
+        val binding = cycle.binding
+        synchronized(nativeLock) {
+            if (activeCaptureCycle !== cycle || captureBinding !== binding || !captureActive ||
+                captureReleased || captureTerminalFailure) return
+        }
+        if (SystemClock.elapsedRealtime() >= binding.deadlineElapsedMs ||
+            !captureGeometryCurrent(binding)) {
+            abandonCaptureCycle(cycle, terminalIfCurrent = true)
+            return
+        }
+        val shown = presentation
+        val view = binding.session.view()
+        val window = shown?.captureWindow()
+        val observation = shown?.drawObservation()
+        val source = if (view == null) null else sourceRectFor(view)
+        if (shown !== binding.presentation || view == null || window == null || observation == null ||
+            observation.serial < drawSerial || observation.elapsedMs <= 0 ||
+            source == null || source.width() != binding.width || source.height() != binding.height) {
+            abandonCaptureCycle(cycle, terminalIfCurrent = true)
+            return
+        }
+        val bitmap = try {
+            Bitmap.createBitmap(binding.width, binding.height, Bitmap.Config.ARGB_8888)
+        } catch (error: RuntimeException) {
+            Log.w(TAG, "PixelCopy destination allocation failed", error)
+            abandonCaptureCycle(cycle, terminalIfCurrent = true)
+            return
+        }
+        val request = WindowCopyRequest(
+            cycle.id, binding, cycle.attempt, visualRequestId, observation.serial,
+            observation.elapsedMs, window, Rect(source), bitmap,
+        )
+        var invoke: Handler? = null
+        synchronized(nativeLock) {
+            if (activeCaptureCycle !== cycle || captureBinding !== binding || !captureActive ||
+                captureReleased || captureTerminalFailure) {
+                bitmap.recycle()
+                return
+            }
+            activeCaptureCycle = null
+            inFlightWindowCopy = request
+            lastVisualRequestId = visualRequestId
+            lastCommittedDrawSerial = observation.serial
+            invoke = readbackHandler
+        }
+        val readback = invoke
+        if (readback == null || !readback.post { invokePixelCopy(request) }) {
+            onPixelCopyFinished(request, PixelCopy.ERROR_UNKNOWN)
+        }
+    }
+
+    /** Public API26 Window overload, invoked off Main and off the sink-drainer thread. */
+    private fun invokePixelCopy(request: WindowCopyRequest) {
+        lastCopyInvokedElapsedMs = SystemClock.elapsedRealtime()
+        try {
+            PixelCopy.request(
+                request.window,
+                Rect(request.sourceRect), // API31 Window overload mutates its Rect; never reuse it.
+                request.bitmap,
+                PixelCopy.OnPixelCopyFinishedListener { result ->
+                    lastCopyCompletedElapsedMs = SystemClock.elapsedRealtime()
+                    onPixelCopyFinished(request, result)
+                },
+                main,
+            )
+        } catch (error: RuntimeException) {
+            Log.w(TAG, "Window PixelCopy invocation failed", error)
+            main.post {
+                lastCopyCompletedElapsedMs = SystemClock.elapsedRealtime()
+                onPixelCopyFinished(request, PixelCopy.ERROR_UNKNOWN)
+            }
+        }
+    }
+
+    private fun onPixelCopyFinished(request: WindowCopyRequest, result: Int) {
+        if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
+            main.post { onPixelCopyFinished(request, result) }
+            return
+        }
+        lastCopyResult = result
+        if (result != PixelCopy.SUCCESS) {
+            retireWindowCopy(
+                request,
+                allowRecovery = result == PixelCopy.ERROR_SOURCE_NO_DATA || result == PixelCopy.ERROR_TIMEOUT,
+                terminalIfCurrent = result != PixelCopy.ERROR_SOURCE_NO_DATA && result != PixelCopy.ERROR_TIMEOUT,
+            )
+            return
+        }
+        if (!captureCopyStillCurrent(request)) {
+            retireWindowCopy(request, allowRecovery = false, terminalIfCurrent = true)
+            return
+        }
+        val handler = synchronized(nativeLock) {
+            if (inFlightWindowCopy === request) captureHandler else null
+        }
+        if (handler == null || !handler.post { deliverWindowCopy(request) }) {
+            retireWindowCopy(request, allowRecovery = false, terminalIfCurrent = false)
+        }
+    }
+
+    /** SUCCESS still must belong to the same document/window/profile/source rectangle at completion. */
+    private fun captureCopyStillCurrent(request: WindowCopyRequest): Boolean {
+        val binding = request.binding
+        if (captureBinding !== binding || !captureActive || captureReleased ||
+            captureTerminalFailure || binding.session.documentIdentity() != binding.documentId ||
+            presentation !== binding.presentation || profileSerial != binding.profileSerial ||
+            binding.presentation.windowIdentity() != binding.windowIdentity ||
+            binding.presentation.captureWindow() !== request.window ||
+            !captureGeometryCurrent(binding)) return false
+        val view = binding.session.view() ?: return false
+        return sourceRectFor(view) == request.sourceRect
+    }
+
+    /** Exact source geometry: native/display/reader/view remain separately checked from renderer CSS. */
+    private fun captureGeometryCurrent(binding: CaptureBinding): Boolean {
+        val shown = presentation ?: return false
+        val view = binding.session.view() ?: return false
+        if (shown !== binding.presentation || binding.session.documentIdentity() != binding.documentId ||
+            view.parent !== shown.container() || shown.windowIdentity() != binding.windowIdentity ||
+            profileSerial != binding.profileSerial || !shown.isAvailable()) return false
+        val g = profileGeometry(binding.session)
+        return g.display.valid && g.display.state == Display.STATE_ON && !g.display.surfaceDetached &&
+            g.display.actualWidth == binding.width && g.display.actualHeight == binding.height &&
+            g.display.readerWidth == binding.width && g.display.readerHeight == binding.height &&
+            g.density == binding.densityDpi && g.decorWidth == binding.width && g.decorHeight == binding.height &&
+            g.containerWidth == binding.width && g.containerHeight == binding.height &&
+            g.measuredWidth == binding.width && g.measuredHeight == binding.height &&
+            g.viewWidth == binding.width && g.viewHeight == binding.height &&
+            g.profileSerial == binding.profileSerial && g.windowId == binding.windowIdentity &&
+            g.readerOverlap == 1 && (!localFocusForRg || g.localFocus)
+    }
+
+    private fun sourceRectFor(view: android.view.View): Rect? {
+        if (view.width <= 0 || view.height <= 0 || !view.isAttachedToWindow) return null
+        val location = IntArray(2)
+        view.getLocationInWindow(location)
+        return Rect(location[0], location[1], location[0] + view.width, location[1] + view.height)
+    }
+
+    private fun deliverWindowCopy(request: WindowCopyRequest) {
+        val hash = try {
+            contentHash(request.bitmap)
+        } catch (error: RuntimeException) {
+            Log.w(TAG, "copied bitmap hash failed", error)
+            retireWindowCopy(request, allowRecovery = false, terminalIfCurrent = true)
+            return
+        }
+        var frame: HostingFrame? = null
+        var scheduleTrailing = false
+        synchronized(nativeLock) {
+            val binding = request.binding
+            if (inFlightWindowCopy !== request || captureBinding !== binding || !captureActive ||
+                captureReleased || captureTerminalFailure ||
+                binding.session.documentIdentity() != binding.documentId) {
+                // Authority changed after Main revalidation; old pixels are never reheadered.
+            } else {
+                frameSequence += 1
+                frame = HostingFrame(
+                    request.bitmap, binding.width, binding.height, binding.generation, frameSequence,
+                    request.drawElapsedMs, hash,
+                )
+                deliveryThrottle.delivered(SystemClock.elapsedRealtime())
+                inFlightWindowCopy = null
+                deliveredFrameCount += 1
+                if (trailingCaptureDemand) {
+                    trailingCaptureDemand = false
+                    scheduleTrailing = true
                 }
-            } catch (error: RuntimeException) {
-                Log.w(TAG, "hosting frame capture failed", error)
-            } finally {
-                image?.close() // Always closed before consumer admission/delivery.
             }
         }
         val delivered = frame
-        if (delivered != null) {
-            deliveredFrameCount += 1
-            // Immutable sink remains bound to this lease; FrameGate fences revocation.
-            // Consumer invocation remains outside nativeLock and the controller monitor.
-            sink.onFrame(delivered)
+        if (delivered == null) {
+            retireWindowCopy(request, allowRecovery = false, terminalIfCurrent = false)
+            return
+        }
+        try {
+            request.binding.sink.onFrame(delivered)
+        } finally {
+            if (!request.bitmap.isRecycled) request.bitmap.recycle()
+            if (scheduleTrailing) requestCaptureDemand()
+            if (ownerPhase.isRetiring()) onQuiesced?.run()
         }
     }
 
-    /** Copies the acquired image into the reused borrowed bitmap (nativeLock held by caller). */
-    private fun copyFrame(image: Image, captureElapsedMs: Long): HostingFrame? {
-        if (image.width != width || image.height != height) return null
-        val plane = image.planes[0]
-        val rowStride = plane.rowStride
-        val rowBytes = width * plane.pixelStride
-        val packed = if (rowStride == rowBytes) {
-            plane.buffer
-        } else {
-            packedRowCopy(plane, height, rowStride, rowBytes)
-        } ?: return null
-        var bmp = frameBitmap
-        if (bmp == null || bmp.width != width || bmp.height != height) {
-            bmp?.recycle()
-            bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            frameBitmap = bmp
-        }
-        packed.rewind()
-        bmp.copyPixelsFromBuffer(packed)
-        frameSequence += 1
-        return HostingFrame(bmp, width, height, captureGeneration, frameSequence,
-                captureElapsedMs, contentHash(plane))
-    }
-
-    /** Packs a stride-padded image plane into tight rows for {@code copyPixelsFromBuffer}. */
-    private fun packedRowCopy(plane: Image.Plane, rows: Int, rowStride: Int, rowBytes: Int): ByteBuffer? {
-        val source = plane.buffer.duplicate()
-        return packRows(source, source.limit(), rows, rowStride, rowBytes)
-    }
-
-    /** CRC32 over every valid pixel byte, excluding row padding, so stale frames are detectable. */
-    private fun contentHash(plane: Image.Plane): Long {
-        val crc = CRC32()
-        val source = plane.buffer.duplicate()
-        val rowStride = plane.rowStride
-        val rowBytes = width * plane.pixelStride
-        for (y in 0 until height) {
-            val rowStart = y * rowStride
-            if (rowStart + rowBytes > source.limit()) {
-                break
+    private fun retireWindowCopy(
+        request: WindowCopyRequest,
+        allowRecovery: Boolean,
+        terminalIfCurrent: Boolean,
+    ) {
+        var recovery: CaptureBinding? = null
+        var scheduleSuccessor = false
+        synchronized(nativeLock) {
+            if (inFlightWindowCopy !== request) {
+                if (!request.bitmap.isRecycled) request.bitmap.recycle()
+                return
             }
-            val row = source.duplicate()
-            row.position(rowStart)
-            row.limit(rowStart + rowBytes)
-            crc.update(row)
+            inFlightWindowCopy = null
+            val sameAuthority = captureBinding === request.binding && captureActive && !captureReleased
+            val sameDocument = request.binding.session.documentIdentity() == request.binding.documentId
+            if (sameAuthority && sameDocument && allowRecovery && request.attempt == 0 &&
+                SystemClock.elapsedRealtime() < request.binding.deadlineElapsedMs) {
+                recovery = request.binding
+            } else {
+                if (sameAuthority && terminalIfCurrent) captureTerminalFailure = true
+                if (captureActive && captureBinding != null && !captureTerminalFailure &&
+                    trailingCaptureDemand) {
+                    trailingCaptureDemand = false
+                    scheduleSuccessor = true
+                }
+            }
+        }
+        if (!request.bitmap.isRecycled) request.bitmap.recycle()
+        val binding = recovery
+        if (binding != null) {
+            captureHandler?.post { beginRecoveryCycle(binding, request.attempt + 1) }
+        } else if (scheduleSuccessor) {
+            requestCaptureDemand()
+        }
+        if (ownerPhase.isRetiring()) onQuiesced?.run()
+    }
+
+    private fun abandonCaptureCycle(cycle: CaptureCycle, terminalIfCurrent: Boolean) {
+        var scheduleTrailing = false
+        synchronized(nativeLock) {
+            if (activeCaptureCycle !== cycle) return
+            activeCaptureCycle = null
+            val sameAuthority = captureBinding === cycle.binding && captureActive && !captureReleased
+            if (sameAuthority && terminalIfCurrent) captureTerminalFailure = true
+            if (sameAuthority && !captureTerminalFailure && trailingCaptureDemand) {
+                trailingCaptureDemand = false
+                scheduleTrailing = true
+            }
+        }
+        if (scheduleTrailing) requestCaptureDemand()
+    }
+
+    /** CRC32 over copied ARGB pixels; diagnostic only, never a freshness/admission oracle. */
+    private fun contentHash(bitmap: Bitmap): Long {
+        val crc = CRC32()
+        val row = IntArray(bitmap.width)
+        for (y in 0 until bitmap.height) {
+            bitmap.getPixels(row, 0, bitmap.width, 0, y, bitmap.width, 1)
+            for (pixel in row) {
+                crc.update((pixel ushr 24) and 0xff)
+                crc.update((pixel ushr 16) and 0xff)
+                crc.update((pixel ushr 8) and 0xff)
+                crc.update(pixel and 0xff)
+            }
         }
         return crc.value
     }
@@ -1060,7 +1438,18 @@ class PrivateDisplayHost(
             android.app.Presentation(outerContext, display), PresentationHost {
 
         // Presentation.getContext(): a display/window context on API31+, NOT the outer service.
-        private val content = FrameLayout(this.context).apply { setBackgroundColor(Color.WHITE) }
+        private val content = object : FrameLayout(this.context) {
+            var captureDrawSerial: Long = 0
+            var captureDrawElapsedMs: Long = 0
+            var captureDrawListener: DrawListener? = null
+
+            override fun dispatchDraw(canvas: android.graphics.Canvas) {
+                super.dispatchDraw(canvas)
+                captureDrawSerial += 1
+                captureDrawElapsedMs = SystemClock.elapsedRealtime()
+                captureDrawListener?.onDraw(captureDrawSerial, captureDrawElapsedMs)
+            }
+        }.apply { setBackgroundColor(Color.WHITE) }
         private var focusView: android.view.View? = null
         private var localFocusRequested = false
         private var focusListener: Runnable? = null
@@ -1119,6 +1508,7 @@ class PrivateDisplayHost(
 
         override fun onStop() {
             focusAttachedView(null)
+            content.captureDrawListener = null
             content.viewTreeObserver.removeOnWindowFocusChangeListener(windowFocus)
             content.viewTreeObserver.removeOnGlobalFocusChangeListener(viewFocus)
             focusListener = null
@@ -1153,6 +1543,12 @@ class PrivateDisplayHost(
         override fun container(): FrameLayout = content
         override fun windowIdentity(): Int = System.identityHashCode(window)
         override fun focusLossSerial(): Long = lostFocusSerial
+        override fun captureWindow(): Window? = window
+        override fun drawObservation(): DrawObservation =
+            DrawObservation(content.captureDrawSerial, content.captureDrawElapsedMs)
+        override fun setDrawListener(listener: DrawListener?) {
+            content.captureDrawListener = listener
+        }
         override fun isAvailable(): Boolean = isShowing && display.isValid
         override fun setUnavailableListener(listener: Runnable?) {
             setOnDismissListener(if (listener == null) null else
