@@ -2346,11 +2346,31 @@ class HostingInstrumentedTest {
                 runOnMainSync(hosting::captureDiagnostics),
                 runOnMainSync(hosting::captureDiagnostics).contains("readinessPending=false"))
 
-            evaluateJs("window.__eyebrowseFreeze(false)")
             waitUntil("original readiness deadline has elapsed", {
                 SystemClock.elapsedRealtime() > deadline + 100
             }, 2_500)
             val countAfterDeadline = consumer.count()
+            val document = runOnMainSync(session::documentIdentity)
+            val drawBefore = runOnMainSync { currentPrivateHostForR4().drawObservationForTest().serial }
+
+            // Fixture diagnosis: background timer unfreeze did not produce a traversal on S20+.
+            // Mutate layout synchronously in the SAME document, then request a normal WebView
+            // traversal. This is test stimulus only; production admission still waits on the real
+            // hardware draw/commit/Window-copy chain.
+            evaluateJs(
+                "(function(){document.body.style.paddingBottom='96px';" +
+                    "return document.body.getBoundingClientRect().height;})()"
+            )
+            runOnMain {
+                session.view()!!.requestLayout()
+                session.view()!!.invalidate()
+                session.view()!!.postInvalidateOnAnimation()
+            }
+            waitUntilMain("same-document post-deadline hardware draw", {
+                currentPrivateHostForR4().drawObservationForTest().serial > drawBefore
+            })
+            assertEquals("T-A stimulus preserves browser document", document,
+                runOnMainSync(session::documentIdentity))
             waitUntil("same lease publishes a steady-state frame after t0+2000", {
                 consumer.count() > countAfterDeadline &&
                     consumer.latestDeliveryElapsed() > deadline
@@ -2382,7 +2402,9 @@ class HostingInstrumentedTest {
         val host = currentPrivateHostForR4()
         val consumer = CollectingConsumer()
         consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
-        val firstCopyGate = factory.armNextCopy()
+        // This gate is manually released after the trailing draw is observed. Give its test
+        // safety timeout enough headroom that it cannot auto-release and erase the precondition.
+        val firstCopyGate = factory.armNextCopy(5_000)
         val deadline = SystemClock.elapsedRealtime() + 2_000
         val lease = runOnMainSync { hosting.acquireProfileLease(normal, deadline, consumer) }
         assertNotNull("scripted transient profile lease", lease)
@@ -3197,7 +3219,7 @@ class HostingInstrumentedTest {
     }
 
     /** Test-only deterministic barriers for I9-T01 FW2; never used by production admission. */
-    private class R4Gate {
+    private class R4Gate(private val holdTimeoutMs: Long = 1_500) {
         val entered = CountDownLatch(1)
         private val releaseLatch = CountDownLatch(1)
         private val claimed = AtomicBoolean(false)
@@ -3210,7 +3232,7 @@ class HostingInstrumentedTest {
             if (!claimed.compareAndSet(false, true)) return
             entered.countDown()
             try {
-                if (!releaseLatch.await(1_500, TimeUnit.MILLISECONDS)) timedOut = true
+                if (!releaseLatch.await(holdTimeoutMs, TimeUnit.MILLISECONDS)) timedOut = true
             } catch (interrupted: InterruptedException) {
                 timedOut = true
                 Thread.currentThread().interrupt()
@@ -3240,7 +3262,8 @@ class HostingInstrumentedTest {
 
         fun armNextDraw(): R4Gate = R4Gate().also { nextDrawGate = it }
 
-        fun armNextCopy(): R4Gate = R4Gate().also { nextCopyGate = it }
+        fun armNextCopy(holdTimeoutMs: Long = 1_500): R4Gate =
+            R4Gate(holdTimeoutMs).also { nextCopyGate = it }
 
         fun scriptCopyResults(vararg results: Int) {
             results.forEach(scriptedCopyResults::add)
