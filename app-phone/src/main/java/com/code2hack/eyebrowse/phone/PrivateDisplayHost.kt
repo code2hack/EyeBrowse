@@ -130,6 +130,9 @@ class PrivateDisplayHost(
     fun localFocusReady(session: PhoneBrowserSession): Boolean =
         localFocusForRg && session.view()?.let { presentation?.localFocusReady(it) } == true
 
+    /** UI-thread draw serial of the exact private Presentation source. */
+    fun drawSerial(): Long = presentation?.drawObservation()?.serial ?: 0L
+
     data class DisplaySnapshot(
         val serial: Long, val displayId: Int, val valid: Boolean, val state: Int,
         val width: Int, val height: Int, val actualWidth: Int, val actualHeight: Int,
