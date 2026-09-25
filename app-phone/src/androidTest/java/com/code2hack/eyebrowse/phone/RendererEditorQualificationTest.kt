@@ -833,22 +833,110 @@ class RendererEditorQualificationTest {
 
     private fun rendererReplacement(scenario: ActivityScenario<MainActivity>, url: String) {
         row("actual-renderer-replacement-rejects-old-grant") {
-            reset(); focus("a"); val old = grant(); var oldView: WebView? = null
-            main { oldView = browser.view(); assertTrue(oldView!!.webViewRenderProcess!!.terminate()) }
+            // The preceding row returned to Phone UI and retired the remote grant/publisher.
+            // DOM focus() proves activeElement only; it does not focus the reattached native
+            // WebView/window. Establish this slice's Phone focus before its ONE fresh grant.
+            lateinit var oldView: WebView
+            lateinit var phoneContainer: android.view.ViewGroup
+            lateinit var phoneDecor: android.view.View
+            val oldDocument = context.documentId
+            fun assertPhoneBoundary() {
+                assertSame("replacement setup keeps the returned WebView", oldView, browser.view())
+                assertEquals("replacement setup must not navigate", oldDocument, browser.documentIdentity())
+                assertEquals(HostingController.State.HOSTING, host.status().state)
+                assertFalse("replacement starts after Phone return", host.isRgPresentationOwned())
+                assertSame("current Phone parent before renderer replacement", phoneContainer, oldView.parent)
+                assertTrue("returned Phone WebView is attached", oldView.isAttachedToWindow)
+            }
+            scenario.onActivity {
+                oldView = checkNotNull(browser.view())
+                phoneContainer = it.findViewById(R.id.web_container)
+                phoneDecor = it.window.decorView
+                assertPhoneBoundary()
+            }
+            reset(); focus("a")
+            val pageFocusedBefore = truth("document.hasFocus()")
+            main {
+                assertPhoneBoundary()
+                Log.i(TAG, "REPLACEMENT_PHONE_FOCUS_BEFORE pageFocused=$pageFocusedBefore " +
+                    "windowFocused=${oldView.hasWindowFocus()} viewFocused=${oldView.hasFocus()}")
+                assertTrue("explicit native Phone WebView focus request", oldView.requestFocus())
+            }
+            var focusChecks = emptyMap<String, Boolean>()
+            await("Phone native/document focus before replacement grant", 1000, diagnostics = { focusChecks }) {
+                main {
+                    assertPhoneBoundary()
+                    focusChecks = mapOf("phoneWindowFocused" to phoneDecor.hasWindowFocus(),
+                        "webWindowFocused" to oldView.hasWindowFocus(), "webViewFocused" to oldView.hasFocus())
+                }
+                focusChecks = focusChecks + mapOf("documentFocused" to truth("document.hasFocus()"),
+                    "targetActive" to truth("document.activeElement===document.getElementById('a')"))
+                focusChecks.values.all { it }
+            }
+            val inspected = call("replacement-grant-precondition", adapter::inspect)
+            assertEquals(RendererEditorAdapter.Status.STATE, inspected.status)
+            assertEquals("same renderer instance after Phone return", instance, inspected.instance)
+            assertFalse("previous row retired its renderer grant", inspected.ready)
+            val rendererOrder = checkNotNull(inspected.lifecycleOrder)
+            assertTrue("next grant order must already exceed the renderer order; do not rebase",
+                order >= rendererOrder && order < Long.MAX_VALUE)
+            Log.i(TAG, "REPLACEMENT_GRANT_PRECONDITION checks=${JSONObject(focusChecks)} " +
+                "rendererOrder=$rendererOrder nextOrder=${order + 1L} oldGrantRetired=${!inspected.ready}")
+            val old = grant() // Still requires READY; no retry, refocus-after-failure or new instance.
+            main {
+                assertPhoneBoundary()
+                assertTrue(oldView.webViewRenderProcess!!.terminate())
+            }
             await("owned renderer cleared", 5000) { !browser.isLive() && browser.view() == null }
             await("hosting ended after renderer loss", 5000) { host.status().state == HostingController.State.NOT_HOSTING }
-            scenario.onActivity { browser.openAddress("$url&renderer=new") }
-            await("explicit renderer recovery", 10000) { browser.isLive() && !browser.isLoading() && browser.pageTitle() == "I9 renderer fixture" }
-            main { assertNotSame(oldView, browser.view()) }
-            context = context.copy(documentId = browser.documentIdentity(), viewportEpoch = context.viewportEpoch + 1)
+            // Renderer loss leaves the old title available. Bind recovery to this actual load,
+            // not isLive && !loading before its asynchronous onPageStarted callback arrives.
+            val recoveryUrl = "$url&renderer=new"
+            lateinit var recoveryBarrier: FixtureNavigationBarrier
+            scenario.onActivity {
+                recoveryBarrier = FixtureNavigationBarrier(browser.documentIdentity(), recoveryUrl,
+                    expectedTitle = "I9 renderer fixture")
+                assertTrue(browser.openAddress(recoveryUrl).accepted())
+            }
+            var recoveryChecks = emptyMap<String, Boolean>()
+            await("explicit renderer recovery", 10000, diagnostics = { recoveryChecks }) {
+                var ready = false
+                main {
+                    val observed = FixtureNavigationBarrier.Observation(browser.documentIdentity(), browser.displayUrl(),
+                        browser.lastCommittedUrl(), browser.pageTitle(), browser.isLoading(), browser.isLive(), browser.errorMessage())
+                    recoveryChecks = mapOf("newDocument" to (observed.documentId != recoveryBarrier.previousDocumentId),
+                        "requestedUrlCommitted" to (observed.committedUrl == recoveryUrl),
+                        "notLoading" to !observed.loading, "live" to observed.live,
+                        "errorAbsent" to (observed.error == null))
+                    ready = recoveryBarrier.isReady(observed)
+                    if (ready) {
+                        assertNotSame("actual replacement WebView", oldView, browser.view())
+                        context = context.copy(documentId = observed.documentId, viewportEpoch = context.viewportEpoch + 1)
+                    }
+                }
+                ready
+            }
             instance = call("replacement-install", adapter::install).instance!!
             assertNotEquals(old.instance, instance)
             assertEquals(RendererEditorAdapter.Status.STALE_DOCUMENT, edit(old, EditorOperation.Insert("Q"), "dead-renderer-grant").status)
             assertTrue(unchanged("a", ""))
             scenario.onActivity { it.findViewById<Button>(R.id.button_hosting_toggle).performClick() }
             await("recovered hosting", 5000) { host.status().state == HostingController.State.HOSTING }
-            main { assertTrue(host.presentOnRg(HostingPresentationProfile(480, 344, 204))); lease = host.acquireLease { } }
+            main {
+                context = context.copy(hostingGeneration = host.status().generation.toLong())
+                assertTrue(host.presentOnRg(HostingPresentationProfile(480, 344, 204)))
+                lease = host.acquireLease { }
+            }
+            assertNotNull("recovered private capture lease", lease)
             scenario.moveToState(Lifecycle.State.CREATED)
+            await("recovered private local editor focus", 1000) {
+                var ready = false
+                main {
+                    assertEquals(context.documentId, browser.documentIdentity())
+                    ready = host.localEditorFocusReady()
+                }
+                ready && truth("document.hasFocus()")
+            }
         }
     }
 
