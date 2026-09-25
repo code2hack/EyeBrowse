@@ -75,6 +75,18 @@ class PrivateDisplayHost(
 
         @Throws(RuntimeException::class)
         fun createPresentation(context: Context, display: Display): PresentationHost
+
+        /** Public Window PixelCopy seam; tests may script result codes without changing admission. */
+        @Throws(RuntimeException::class)
+        fun requestWindowCopy(
+            window: Window,
+            sourceRect: Rect,
+            destination: Bitmap,
+            listener: PixelCopy.OnPixelCopyFinishedListener,
+            handler: Handler,
+        ) {
+            PixelCopy.request(window, sourceRect, destination, listener, handler)
+        }
     }
 
     data class DrawObservation(val serial: Long, val elapsedMs: Long)
@@ -311,7 +323,8 @@ class PrivateDisplayHost(
         val session: PhoneBrowserSession,
         val generation: Int,
         val freshFrameRequest: FreshFrameRequest,
-        val deadlineElapsedMs: Long,
+        /** One-time first-frame/profile-readiness deadline; retired after first successful copy. */
+        val readinessDeadlineElapsedMs: Long,
         val authoritySerial: Long,
         val documentId: String,
         val presentation: PresentationHost,
@@ -322,15 +335,31 @@ class PrivateDisplayHost(
         val densityDpi: Int,
     )
 
-    private data class CaptureCycle(
+    /**
+     * One producer-bound capture transaction: one initial cycle plus at most one recovery.
+     * A coalesced draw while this object is live belongs to this transaction and cannot mint a
+     * fresh recovery budget. After readiness succeeds, later draws create steady-state
+     * transactions with their own bounded deadline.
+     */
+    private data class CaptureTransaction(
         val id: Long,
         val binding: CaptureBinding,
-        val attempt: Int,
+        val deadlineElapsedMs: Long,
+        val readiness: Boolean,
+        var recoveryUsed: Boolean = false,
     )
+
+    private data class CaptureCycle(
+        val id: Long,
+        val transaction: CaptureTransaction,
+        val attempt: Int,
+    ) {
+        val binding: CaptureBinding get() = transaction.binding
+    }
 
     private data class WindowCopyRequest(
         val cycleId: Long,
-        val binding: CaptureBinding,
+        val transaction: CaptureTransaction,
         val attempt: Int,
         val visualRequestId: Long,
         val drawSerial: Long,
@@ -338,7 +367,9 @@ class PrivateDisplayHost(
         val window: Window,
         val sourceRect: Rect,
         val bitmap: Bitmap,
-    )
+    ) {
+        val binding: CaptureBinding get() = transaction.binding
+    }
 
     // Capture-path authority. ImageReader remains the non-null display sink only.
     private var frameSink: FrameSink? = null
@@ -351,10 +382,13 @@ class PrivateDisplayHost(
     private var pendingFrameHandler: Handler? = null
     private var captureBinding: CaptureBinding? = null
     private var captureAuthoritySerial = 0L
+    private var captureTransactionSerial = 0L
     private var captureCycleSerial = 0L
+    private var activeCaptureTransaction: CaptureTransaction? = null
     private var activeCaptureCycle: CaptureCycle? = null
     private var inFlightWindowCopy: WindowCopyRequest? = null
     private var trailingCaptureDemand = false
+    private var captureReadinessPending = false
     private var captureTerminalFailure = false
     private var readbackThread: HandlerThread? = null
     private var readbackHandler: Handler? = null
@@ -639,8 +673,10 @@ class PrivateDisplayHost(
             resetCaptureDiagnostics()
             frameSink = boundSink
             captureBinding = binding
+            activeCaptureTransaction = null
             activeCaptureCycle = null
             trailingCaptureDemand = false
+            captureReadinessPending = deadlineElapsedMs != Long.MAX_VALUE
             captureTerminalFailure = false
             frameSequence = 0
             captureGeneration = hostingGeneration
@@ -689,8 +725,10 @@ class PrivateDisplayHost(
             resetCaptureDiagnostics()
             frameSink = boundSink
             captureBinding = binding
+            activeCaptureTransaction = null
             activeCaptureCycle = null
             trailingCaptureDemand = false
+            captureReadinessPending = deadlineElapsedMs != Long.MAX_VALUE
             captureTerminalFailure = false
             frameSequence = 0
             captureGeneration = hostingGeneration
@@ -758,8 +796,10 @@ class PrivateDisplayHost(
             captureActive = false
             frameSink = null
             captureBinding = null
+            activeCaptureTransaction = null
             activeCaptureCycle = null
             trailingCaptureDemand = false
+            captureReadinessPending = false
             captureTerminalFailure = false
             cancelPendingFrameLocked()
         }
@@ -1011,6 +1051,9 @@ class PrivateDisplayHost(
                 " coalesced=" + coalescedCallbackCount +
                 " deferredDeliveries=" + deferredDeliveryCount +
                 " pendingFrame=" + synchronized(nativeLock) { deliveryThrottle.pending != null } +
+                " transaction=" + synchronized(nativeLock) { activeCaptureTransaction?.id ?: 0 } +
+                " readinessPending=" + synchronized(nativeLock) { captureReadinessPending } +
+                " recoveryUsed=" + synchronized(nativeLock) { activeCaptureTransaction?.recoveryUsed ?: false } +
                 " activeCycle=" + synchronized(nativeLock) { activeCaptureCycle?.id ?: 0 } +
                 " nativeCopy=" + synchronized(nativeLock) { inFlightWindowCopy?.cycleId ?: 0 } +
                 " terminal=" + synchronized(nativeLock) { captureTerminalFailure } +
@@ -1082,7 +1125,7 @@ class PrivateDisplayHost(
             val binding = captureBinding ?: return
             if (!captureActive || captureReleased || captureTerminalFailure ||
                 binding.session.documentIdentity() != binding.documentId) return
-            if (activeCaptureCycle != null || inFlightWindowCopy != null) {
+            if (activeCaptureTransaction != null || activeCaptureCycle != null || inFlightWindowCopy != null) {
                 if (!trailingCaptureDemand) coalescedCallbackCount += 1
                 trailingCaptureDemand = true
                 return
@@ -1124,33 +1167,55 @@ class PrivateDisplayHost(
             val binding = captureBinding ?: return
             if (!captureActive || captureReleased || captureTerminalFailure ||
                 binding.session.documentIdentity() != binding.documentId) return
-            if (activeCaptureCycle != null || inFlightWindowCopy != null) {
+            if (activeCaptureTransaction != null || activeCaptureCycle != null ||
+                inFlightWindowCopy != null) {
                 trailingCaptureDemand = true
                 return
             }
-            if (SystemClock.elapsedRealtime() >= binding.deadlineElapsedMs) {
-                captureTerminalFailure = true
-                Log.w(TAG, "capture cycle missed original deadline authority=" + binding.authoritySerial)
+            val now = SystemClock.elapsedRealtime()
+            val readiness = captureReadinessPending
+            val deadline = if (readiness) binding.readinessDeadlineElapsedMs
+                else now + STEADY_STATE_CAPTURE_DEADLINE_MS
+            if (now >= deadline) {
+                if (readiness) captureTerminalFailure = true
+                trailingCaptureDemand = false
+                Log.w(TAG, "capture transaction missed deadline authority=" + binding.authoritySerial +
+                    " readiness=" + readiness)
                 return
             }
-            cycle = CaptureCycle(++captureCycleSerial, binding, 0)
+            val transaction = CaptureTransaction(
+                ++captureTransactionSerial, binding, deadline, readiness,
+            )
+            activeCaptureTransaction = transaction
+            cycle = CaptureCycle(++captureCycleSerial, transaction, 0)
             activeCaptureCycle = cycle
         }
-        Log.i(TAG, "capture[" + checkNotNull(cycle).id + "] visual-request authority=" +
-            checkNotNull(cycle).binding.authoritySerial + " profile=" +
-            checkNotNull(cycle).binding.width + "x" + checkNotNull(cycle).binding.height +
-            " deadline=" + checkNotNull(cycle).binding.deadlineElapsedMs)
-        requestFreshForCycle(checkNotNull(cycle))
+        val started = checkNotNull(cycle)
+        Log.i(TAG, "capture[" + started.id + "] transaction=" + started.transaction.id +
+            " visual-request authority=" + started.binding.authoritySerial + " profile=" +
+            started.binding.width + "x" + started.binding.height +
+            " deadline=" + started.transaction.deadlineElapsedMs +
+            " readiness=" + started.transaction.readiness)
+        requestFreshForCycle(started)
     }
 
-    private fun beginRecoveryCycle(binding: CaptureBinding, attempt: Int) {
+    private fun beginRecoveryCycle(transaction: CaptureTransaction) {
         var cycle: CaptureCycle? = null
         synchronized(nativeLock) {
-            if (captureBinding !== binding || !captureActive || captureReleased ||
-                captureTerminalFailure || activeCaptureCycle != null || inFlightWindowCopy != null ||
-                binding.session.documentIdentity() != binding.documentId ||
-                SystemClock.elapsedRealtime() >= binding.deadlineElapsedMs) return
-            cycle = CaptureCycle(++captureCycleSerial, binding, attempt)
+            val binding = transaction.binding
+            if (activeCaptureTransaction !== transaction || captureBinding !== binding ||
+                !captureActive || captureReleased || captureTerminalFailure ||
+                activeCaptureCycle != null || inFlightWindowCopy != null ||
+                binding.session.documentIdentity() != binding.documentId) return
+            if (SystemClock.elapsedRealtime() >= transaction.deadlineElapsedMs) {
+                activeCaptureTransaction = null
+                trailingCaptureDemand = false
+                if (transaction.readiness) captureTerminalFailure = true
+                Log.w(TAG, "capture transaction recovery missed deadline transaction=" +
+                    transaction.id + " readiness=" + transaction.readiness)
+                return
+            }
+            cycle = CaptureCycle(++captureCycleSerial, transaction, 1)
             activeCaptureCycle = cycle
             copyRecoveryCount += 1
         }
@@ -1179,8 +1244,11 @@ class PrivateDisplayHost(
             if (activeCaptureCycle !== cycle || captureBinding !== binding || !captureActive ||
                 captureReleased || captureTerminalFailure) return
         }
-        if (SystemClock.elapsedRealtime() >= binding.deadlineElapsedMs ||
-            !captureGeometryCurrent(binding)) {
+        if (SystemClock.elapsedRealtime() >= cycle.transaction.deadlineElapsedMs) {
+            abandonCaptureCycle(cycle, terminalIfCurrent = cycle.transaction.readiness)
+            return
+        }
+        if (!captureGeometryCurrent(binding)) {
             abandonCaptureCycle(cycle, terminalIfCurrent = true)
             return
         }
@@ -1203,7 +1271,7 @@ class PrivateDisplayHost(
             return
         }
         val request = WindowCopyRequest(
-            cycle.id, binding, cycle.attempt, visualRequestId, observation.serial,
+            cycle.id, cycle.transaction, cycle.attempt, visualRequestId, observation.serial,
             observation.elapsedMs, window, Rect(source), bitmap,
         )
         Log.i(TAG, "capture[" + cycle.id + "] frame-commit visual=" + visualRequestId +
@@ -1235,7 +1303,7 @@ class PrivateDisplayHost(
             Thread.currentThread().name + " visual=" + request.visualRequestId +
             " draw=" + request.drawSerial + " source=" + request.sourceRect)
         try {
-            PixelCopy.request(
+            factory.requestWindowCopy(
                 request.window,
                 Rect(request.sourceRect), // API31 Window overload mutates its Rect; never reuse it.
                 request.bitmap,
@@ -1270,6 +1338,14 @@ class PrivateDisplayHost(
             )
             return
         }
+        if (SystemClock.elapsedRealtime() > request.transaction.deadlineElapsedMs) {
+            retireWindowCopy(
+                request,
+                allowRecovery = false,
+                terminalIfCurrent = request.transaction.readiness,
+            )
+            return
+        }
         if (!captureCopyStillCurrent(request)) {
             retireWindowCopy(request, allowRecovery = false, terminalIfCurrent = true)
             return
@@ -1286,8 +1362,7 @@ class PrivateDisplayHost(
     private fun captureCopyStillCurrent(request: WindowCopyRequest): Boolean {
         val binding = request.binding
         if (captureBinding !== binding || !captureActive || captureReleased ||
-            captureTerminalFailure || SystemClock.elapsedRealtime() > binding.deadlineElapsedMs ||
-            binding.session.documentIdentity() != binding.documentId ||
+            captureTerminalFailure || binding.session.documentIdentity() != binding.documentId ||
             presentation !== binding.presentation || profileSerial != binding.profileSerial ||
             binding.presentation.windowIdentity() != binding.windowIdentity ||
             binding.presentation.captureWindow() !== request.window ||
@@ -1334,9 +1409,9 @@ class PrivateDisplayHost(
         var scheduleTrailing = false
         synchronized(nativeLock) {
             val binding = request.binding
-            if (inFlightWindowCopy !== request || captureBinding !== binding || !captureActive ||
-                captureReleased || captureTerminalFailure ||
-                binding.session.documentIdentity() != binding.documentId) {
+            if (inFlightWindowCopy !== request || activeCaptureTransaction !== request.transaction ||
+                captureBinding !== binding || !captureActive || captureReleased ||
+                captureTerminalFailure || binding.session.documentIdentity() != binding.documentId) {
                 // Authority changed after Main revalidation; old pixels are never reheadered.
             } else {
                 frameSequence += 1
@@ -1346,6 +1421,8 @@ class PrivateDisplayHost(
                 )
                 deliveryThrottle.delivered(SystemClock.elapsedRealtime())
                 inFlightWindowCopy = null
+                activeCaptureTransaction = null
+                if (request.transaction.readiness) captureReadinessPending = false
                 deliveredFrameCount += 1
                 if (trailingCaptureDemand) {
                     trailingCaptureDemand = false
@@ -1375,51 +1452,60 @@ class PrivateDisplayHost(
         allowRecovery: Boolean,
         terminalIfCurrent: Boolean,
     ) {
-        var recovery: CaptureBinding? = null
-        var scheduleSuccessor = false
+        var recovery: CaptureTransaction? = null
         synchronized(nativeLock) {
             if (inFlightWindowCopy !== request) {
                 if (!request.bitmap.isRecycled) request.bitmap.recycle()
                 return
             }
             inFlightWindowCopy = null
-            val sameAuthority = captureBinding === request.binding && captureActive && !captureReleased
-            val sameDocument = request.binding.session.documentIdentity() == request.binding.documentId
-            if (sameAuthority && sameDocument && allowRecovery && request.attempt == 0 &&
-                SystemClock.elapsedRealtime() < request.binding.deadlineElapsedMs) {
-                recovery = request.binding
-            } else {
-                if (sameAuthority && terminalIfCurrent) captureTerminalFailure = true
-                if (captureActive && captureBinding != null && !captureTerminalFailure &&
-                    trailingCaptureDemand) {
-                    trailingCaptureDemand = false
-                    scheduleSuccessor = true
+            val transaction = request.transaction
+            val binding = transaction.binding
+            val sameAuthority = captureBinding === binding && captureActive && !captureReleased
+            val sameDocument = binding.session.documentIdentity() == binding.documentId
+            val transactionCurrent = activeCaptureTransaction === transaction
+            val withinDeadline = SystemClock.elapsedRealtime() < transaction.deadlineElapsedMs
+            if (sameAuthority && sameDocument && transactionCurrent && allowRecovery &&
+                !transaction.recoveryUsed && withinDeadline) {
+                // Spend the transaction's only recovery allowance before scheduling it. A trailing
+                // draw remains coalesced into THIS transaction and cannot reset the budget.
+                transaction.recoveryUsed = true
+                recovery = transaction
+            } else if (transactionCurrent) {
+                activeCaptureTransaction = null
+                // A failed transaction never promotes its coalesced trailing demand into a fresh
+                // attempt-zero transaction. A later steady-state draw may start a new transaction.
+                trailingCaptureDemand = false
+                val exhaustedReadinessRecovery = sameAuthority && sameDocument &&
+                    allowRecovery && transaction.recoveryUsed && transaction.readiness
+                if (sameAuthority && (terminalIfCurrent || exhaustedReadinessRecovery)) {
+                    captureTerminalFailure = true
                 }
+                Log.w(TAG, "capture transaction closed transaction=" + transaction.id +
+                    " result=" + lastCopyResult + " recoveryUsed=" + transaction.recoveryUsed +
+                    " readiness=" + transaction.readiness +
+                    " terminal=" + captureTerminalFailure)
             }
         }
         if (!request.bitmap.isRecycled) request.bitmap.recycle()
-        val binding = recovery
-        if (binding != null) {
-            captureHandler?.post { beginRecoveryCycle(binding, request.attempt + 1) }
-        } else if (scheduleSuccessor) {
-            requestCaptureDemand()
+        recovery?.let { transaction ->
+            captureHandler?.post { beginRecoveryCycle(transaction) }
         }
         if (ownerPhase.isRetiring()) onQuiesced?.run()
     }
 
     private fun abandonCaptureCycle(cycle: CaptureCycle, terminalIfCurrent: Boolean) {
-        var scheduleTrailing = false
         synchronized(nativeLock) {
             if (activeCaptureCycle !== cycle) return
             activeCaptureCycle = null
-            val sameAuthority = captureBinding === cycle.binding && captureActive && !captureReleased
-            if (sameAuthority && terminalIfCurrent) captureTerminalFailure = true
-            if (sameAuthority && !captureTerminalFailure && trailingCaptureDemand) {
+            val transaction = cycle.transaction
+            val sameAuthority = captureBinding === transaction.binding && captureActive && !captureReleased
+            if (activeCaptureTransaction === transaction) {
+                activeCaptureTransaction = null
                 trailingCaptureDemand = false
-                scheduleTrailing = true
             }
+            if (sameAuthority && terminalIfCurrent) captureTerminalFailure = true
         }
-        if (scheduleTrailing) requestCaptureDemand()
     }
 
     /** CRC32 over copied ARGB pixels; diagnostic only, never a freshness/admission oracle. */
@@ -1583,6 +1669,9 @@ class PrivateDisplayHost(
     companion object {
         private const val TAG = "EyeBrowseHosting"
         private const val DISPLAY_NAME = "EyeBrowseHosting"
+
+        /** Bounded readback transaction after one-time profile readiness has succeeded. */
+        private const val STEADY_STATE_CAPTURE_DEADLINE_MS = 2_000L
 
         /**
          * Pure row-packing core (JVM-testable): copies {@code rows} tight {@code rowBytes} rows from a
