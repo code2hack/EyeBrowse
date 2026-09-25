@@ -2223,6 +2223,7 @@ class HostingInstrumentedTest {
             assertEquals("$name visual scale observation",
                 viewport.scale, page.getDouble("visualScale"), 0.0001)
 
+            val drawBeforeCapture = runOnMainSync { host.drawObservationForTest().serial }
             val held = factory.holdNextCopyCompletion()
             val consumer = CollectingConsumer()
             consumer.expectQualification(profile.width, profile.height, CAPTURE_PAGE_COLOR)
@@ -2246,6 +2247,10 @@ class HostingInstrumentedTest {
             assertEquals("$name destination height", profile.height, bitmap.height)
             assertEquals("$name request owns inspected destination",
                 System.identityHashCode(bitmap), copy.bitmapIdentity)
+            assertTrue("$name copy is associated with a fresh hardware draw",
+                copy.committedDrawSerial > drawBeforeCapture)
+            assertTrue("$name draw observer reached the committed draw",
+                runOnMainSync { host.drawObservationForTest().serial } >= copy.committedDrawSerial)
 
             assertFw3RawPixelGeometry(name, bitmap, page)
             held.release()
@@ -3308,6 +3313,7 @@ class HostingInstrumentedTest {
     private data class Fw3CopyGeometry(
         val sourceRect: android.graphics.Rect,
         val bitmapIdentity: Int,
+        val committedDrawSerial: Long,
     )
 
     private fun newFw3RendererAdapter(): RendererEditorAdapter {
@@ -3426,7 +3432,14 @@ class HostingInstrumentedTest {
             val bitmap = requestType.getDeclaredField("bitmap").apply {
                 isAccessible = true
             }.get(request) as android.graphics.Bitmap
-            Fw3CopyGeometry(android.graphics.Rect(source), System.identityHashCode(bitmap))
+            val drawSerial = requestType.getDeclaredField("drawSerial").apply {
+                isAccessible = true
+            }.getLong(request)
+            Fw3CopyGeometry(
+                android.graphics.Rect(source),
+                System.identityHashCode(bitmap),
+                drawSerial,
+            )
         }
     }
 
