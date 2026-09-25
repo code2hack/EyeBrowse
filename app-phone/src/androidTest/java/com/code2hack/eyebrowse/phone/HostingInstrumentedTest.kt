@@ -2429,17 +2429,23 @@ class HostingInstrumentedTest {
         val forwardedBefore = hold.hasForwarded()
         var authorityRevoked = false
 
-        // The completion is still withheld here. Close authority through the real product path.
+        // Hold-state evidence must NEVER gate authority closure. Whether this abort happened
+        // before or after normal completion forwarding, always close authority through the real
+        // product path first.
+        attempt { runOnMain(hosting::stop) }
         attempt {
-            assertFalse("abort cleanup completion must still be withheld", hold.hasForwarded())
-            runOnMain(hosting::stop)
             authorityRevoked = !runOnMainSync(hosting::status).captureActive
-            assertTrue("abort cleanup must revoke capture authority before forwarding completion",
-                authorityRevoked)
-            assertFalse("completion forwarded before authority revocation", hold.hasForwarded())
+            assertTrue("abort cleanup must close capture authority", authorityRevoked)
+        }
+        if (!forwardedBefore) {
+            attempt {
+                assertFalse("withheld completion forwarded before authority revocation",
+                    hold.hasForwarded())
+            }
         }
 
-        // Release regardless of an authority-check failure so the test cannot orphan resources.
+        // Release regardless of earlier cleanup assertions so resources cannot be orphaned.
+        // Already-forwarded completion makes this an idempotent no-op.
         hold.release()
         attempt { runOnMain { } }
 
@@ -2467,9 +2473,16 @@ class HostingInstrumentedTest {
         }
 
         val publicationsAfter = publicationCount()
-        attempt {
-            assertEquals("revoked held completion must not publish",
-                publicationsBefore, publicationsAfter)
+        if (!forwardedBefore) {
+            attempt {
+                assertEquals("revoked withheld completion must not publish",
+                    publicationsBefore, publicationsAfter)
+            }
+        } else {
+            // Legitimate publication that completed before the abort is historical evidence; do
+            // not undo/relabel it. Cleanup only requires that authority closure/quiescence succeed.
+            println("R5_ABORT_ALREADY_FORWARDED publicationsBefore=" + publicationsBefore +
+                " publicationsAfter=" + publicationsAfter)
         }
 
         return R5AbortReceipt(
@@ -2708,6 +2721,74 @@ class HostingInstrumentedTest {
         assertFalse("clean capture remains non-terminal",
             runOnMainSync(hosting::captureDiagnostics).contains("terminal=true"))
         runOnMain(cleanLease!!::release)
+    }
+
+    /**
+     * R-05 already-forwarded abort-path check. The same shared cleanup helper must still run Stop
+     * and reach quiescence when normal completion/publication happened BEFORE the test-local
+     * sentinel. That legitimate pre-abort publication remains legitimate history.
+     */
+    @Test
+    fun alreadyForwardedCompletionAbortCleanupStillStopsAndPreservesHistory() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val held = factory.holdNextCopyCompletion()
+        val deadline = SystemClock.elapsedRealtime() + 2_000
+        val lease = runOnMainSync { hosting.acquireProfileLease(normal, deadline, consumer) }
+        assertNotNull("R5 forwarded abort test lease", lease)
+        assertTrue("R5 forwarded abort test completion captured",
+            held.awaitCaptured(1_200))
+        assertFalse("R5 forwarded abort starts withheld", held.hasForwarded())
+
+        // Complete the normal product path first. This publication is valid pre-abort history.
+        held.release()
+        waitUntil("R5 forwarded abort establishes legitimate publication", {
+            consumer.qualifyingCountFrom(0) > 0
+        }, 1_200)
+        assertTrue("R5 forwarded abort completion is forwarded", held.hasForwarded())
+        val legitimateBeforeAbort = consumer.count()
+        assertTrue("R5 forwarded abort has legitimate pre-abort publication",
+            legitimateBeforeAbort > 0)
+
+        val receipt = AtomicReference<R5AbortReceipt>()
+        var caught: R5AbortSentinel? = null
+        try {
+            withR5CompletionAbortCleanup(
+                held,
+                publicationCount = consumer::count,
+                receiptOut = receipt,
+            ) {
+                throw R5AbortSentinel()
+            }
+        } catch (expected: R5AbortSentinel) {
+            caught = expected
+        }
+
+        val original = checkNotNull(caught) { "R5 forwarded sentinel was not preserved" }
+        assertEquals("R5 forwarded sentinel identity remains visible",
+            "R5_ABORT_SENTINEL", original.message)
+        assertEquals("already-forwarded cleanup has no spurious cleanup failure",
+            0, original.suppressed.size)
+
+        val observed = checkNotNull(receipt.get()) {
+            "R5 already-forwarded abort receipt missing"
+        }
+        assertTrue("already-forwarded cleanup still closed authority",
+            observed.authorityRevokedBeforeRelease)
+        assertTrue("receipt records completion was already forwarded",
+            observed.completionForwardedBeforeRevocation)
+        assertTrue("completion remains forwarded after idempotent release",
+            observed.completionForwardedAfterRevocation)
+        assertEquals("legitimate pre-abort history is preserved in receipt",
+            legitimateBeforeAbort, observed.publicationCountBefore)
+        assertEquals("abort cleanup does not erase/relabel legitimate publication",
+            legitimateBeforeAbort, consumer.count())
+        assertTrue("already-forwarded abort reaches quiescence before @After",
+            observed.quiescent)
+        assertFalse("already-forwarded abort authority stays closed",
+            runOnMainSync(hosting::status).captureActive)
     }
 
     /**
