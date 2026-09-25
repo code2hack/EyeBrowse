@@ -798,8 +798,13 @@ class HostingController private constructor(private val appContext: Context) {
             try {
                 host.ensureCaptureSurface(hostingContext!!, profile.width, profile.height,
                     profile.densityDpi, session)
-                if (!host.rearmCapture(generation, BoundSink(demand, generation, consumer),
-                        freshFrameRequest(epoch, host))) {
+                if (!host.rearmCapture(
+                        generation,
+                        BoundSink(demand, generation, consumer),
+                        session,
+                        freshFrameRequest(epoch, host),
+                        Long.MAX_VALUE,
+                    )) {
                     throw HostingException("capture rearm failed on private handoff")
                 }
             } catch (error: HostingException) {
@@ -871,12 +876,21 @@ class HostingController private constructor(private val appContext: Context) {
 
     /** Rearm only the verified resized host: generic rebuild recovery is forbidden here. */
     @Synchronized
-    fun acquireProfileLease(profile: HostingPresentationProfile, consumer: FrameConsumer): Lease? {
-        if (profileTransfer != null || presentationEpochs.current?.profile != profile || !localEditorFocusReady()) return null
-        return acquireLeaseInternal(consumer, allowRecovery = false)
+    fun acquireProfileLease(
+        profile: HostingPresentationProfile,
+        deadlineElapsedMs: Long,
+        consumer: FrameConsumer,
+    ): Lease? {
+        if (profileTransfer != null || presentationEpochs.current?.profile != profile ||
+            !localEditorFocusReady()) return null
+        return acquireLeaseInternal(consumer, allowRecovery = false, deadlineElapsedMs = deadlineElapsedMs)
     }
 
-    private fun acquireLeaseInternal(consumer: FrameConsumer, allowRecovery: Boolean): Lease? {
+    private fun acquireLeaseInternal(
+        consumer: FrameConsumer,
+        allowRecovery: Boolean,
+        deadlineElapsedMs: Long = Long.MAX_VALUE,
+    ): Lease? {
         if (state != State.HOSTING || lease != null || displayHost == null || profileTransfer != null) {
             return null
         }
@@ -917,21 +931,22 @@ class HostingController private constructor(private val appContext: Context) {
         // reader stay for reacquisition), so a new lease after expiry/release rearms the SAME
         // active owner with the new bound sink; only a quiescent host starts a fresh owner (R2).
         val sink = BoundSink(newLease, generation, consumer)
-        val freshFrameRequest = freshFrameRequest(epoch, host,
-            if (allowRecovery) null else { { host.frameCommitted(sink) } })
+        val freshFrameRequest = freshFrameRequest(epoch, host)
         val started = if (host.isOwnerActive()) {
             host.rearmCapture(
                 generation,
                 sink,
+                session,
                 freshFrameRequest,
-                requireFrameCommit = !allowRecovery,
+                deadlineElapsedMs,
             )
         } else {
             host.startCapture(
                 generation,
                 sink,
+                session,
                 freshFrameRequest,
-                requireFrameCommit = !allowRecovery,
+                deadlineElapsedMs,
             )
         }
         if (!started) {
@@ -1147,12 +1162,18 @@ class HostingController private constructor(private val appContext: Context) {
         wakeLockKeeper?.release()
     }
 
-    private fun freshFrameRequest(epoch: PresentationEpochs.Token, host: PrivateDisplayHost,
-                                  committed: (() -> Unit)? = null): Runnable =
-        Runnable {
+    private fun freshFrameRequest(
+        epoch: PresentationEpochs.Token,
+        host: PrivateDisplayHost,
+    ): PrivateDisplayHost.FreshFrameRequest =
+        PrivateDisplayHost.FreshFrameRequest { onCommitted ->
             mainHandler.post {
-                if (presentationEpochs.owns(epoch) && displayHost === host && state == State.HOSTING) {
-                    session.requestFreshCaptureFrame(committed) {
+                if (presentationEpochs.owns(epoch) && displayHost === host &&
+                    state == State.HOSTING && attachment == Attachment.PRIVATE_DISPLAY) {
+                    session.requestFreshCaptureFrame(
+                        drawSerial = { host.drawSerial() },
+                        frameCommitted = onCommitted,
+                    ) {
                         presentationEpochs.owns(epoch) && displayHost === host &&
                             state == State.HOSTING && attachment == Attachment.PRIVATE_DISPLAY
                     }
