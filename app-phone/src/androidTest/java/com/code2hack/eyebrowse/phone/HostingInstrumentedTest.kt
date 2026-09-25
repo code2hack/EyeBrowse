@@ -2387,9 +2387,10 @@ class HostingInstrumentedTest {
     }
 
     /**
-     * T-B / R-02 negative: initial NO_DATA, permitted recovery TIMEOUT, with a real trailing draw
-     * pending while the first copy is in flight. The unresolved readiness transaction gets exactly
-     * two Window-copy invocations; the coalesced demand cannot mint a third attempt-zero cycle.
+     * T-B / R-02 negative, premise-ruling version: initial NO_DATA, one permitted recovery
+     * TIMEOUT, with scheduler DEMAND coalesced while copy #1 is unresolved. The demand enters
+     * through the real requestCaptureDemand() scheduler; this test never sets trailingCaptureDemand
+     * and never synthesizes a draw/commit callback.
      */
     @Test
     fun transientRecoveryBudgetCannotResetFromTrailingDemand() {
@@ -2403,51 +2404,115 @@ class HostingInstrumentedTest {
         val host = currentPrivateHostForR4()
         val consumer = CollectingConsumer()
         consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
-        // This gate is manually released as soon as the real trailing draw lands. Its 1.2s
-        // safety ceiling is only a deadlock guard; the readiness transaction remains exactly 2s.
+
+        // The gate is released deliberately after scheduler coalescing is observed. Its timeout
+        // is only a deadlock guard and remains shorter than the immutable 2s readiness deadline.
         val firstCopyGate = factory.armNextCopy(1_200)
         val started = SystemClock.elapsedRealtime()
         val deadline = started + 2_000
+        val generation = runOnMainSync(hosting::currentGeneration)
         val lease = runOnMainSync { hosting.acquireProfileLease(normal, deadline, consumer) }
         assertNotNull("scripted transient profile lease", lease)
         assertTrue("initial copy invocation reached test barrier",
             factory.awaitCopyInvocation(700) != null)
         assertTrue("initial copy held in flight", firstCopyGate.awaitEntered(700))
 
-        val beforeTrailing = runOnMainSync { host.drawObservationForTest().serial }
-        val trailingDraw = factory.observeNextDraw()
-        runOnMain {
-            session.view()!!.invalidate()
-            session.view()!!.postInvalidateOnAnimation()
-        }
-        assertTrue("real trailing draw occurs while first copy remains held",
-            trailingDraw.await(600, TimeUnit.MILLISECONDS))
-        val trailing = runOnMainSync { host.drawObservationForTest() }
-        assertTrue("trailing draw serial advanced inside unresolved transaction",
-            trailing.serial > beforeTrailing)
-        assertTrue("first-copy gate still held when trailing draw landed",
-            !firstCopyGate.timedOut)
-        assertTrue("trailing draw preserved readiness budget",
-            deadline - SystemClock.elapsedRealtime() > 300)
+        // P1: immutable authority/transaction receipt while copy #1 is outstanding.
+        val initial = captureAuthorityForR4(host)
+        assertTrue("readiness transaction is pending", initial.readinessPending)
+        assertTrue("copy #1 is in flight", initial.copyInFlight)
+        assertTrue("transaction identity established", initial.transactionId > 0)
+        assertEquals("transaction uses original readiness deadline", deadline, initial.transactionDeadline)
+        assertEquals("binding keeps original readiness deadline", deadline, initial.bindingDeadline)
+        assertTrue("lease/capture authority live before fault injection",
+            runOnMainSync(hosting::status).captureActive)
+        assertEquals("no frame published before injected results", 0, consumer.count())
+        assertEquals("only initial backend copy before coalescing", 1, factory.copyInvocationCount())
+        println("T_B_NEG_AUTHORITY source=0a9779d+followup gen=$generation " +
+            "binding=${initial.bindingIdentity} authority=${initial.authoritySerial} " +
+            "transaction=${initial.transactionId} deadline=${initial.transactionDeadline}")
 
+        // P2: submit demand through the ACTUAL production scheduler. The product itself observes
+        // the unresolved transaction/copy and coalesces one bounded trailing demand.
+        invokeProductionCaptureDemandForR4(host)
+        val coalesced = captureAuthorityForR4(host)
+        assertEquals("scheduler demand stays on same binding",
+            initial.bindingIdentity, coalesced.bindingIdentity)
+        assertEquals("scheduler demand stays on same authority serial",
+            initial.authoritySerial, coalesced.authoritySerial)
+        assertEquals("scheduler demand stays on unresolved transaction",
+            initial.transactionId, coalesced.transactionId)
+        assertEquals("scheduler demand cannot reset transaction deadline",
+            initial.transactionDeadline, coalesced.transactionDeadline)
+        assertTrue("production scheduler records bounded trailing demand", coalesced.trailingDemand)
+        assertTrue("copy #1 remains outstanding after coalescing", coalesced.copyInFlight)
+        assertEquals("coalesced demand cannot start another copy", 1, factory.copyInvocationCount())
+        assertEquals("coalescing cannot publish", 0, consumer.count())
+
+        // P3: release NO_DATA; one recovery must run under the SAME transaction/deadline and its
+        // fresh production visual/draw/commit fence, then scripted TIMEOUT closes it.
+        assertTrue("budget remains before releasing first result",
+            deadline - SystemClock.elapsedRealtime() > 300)
         firstCopyGate.release()
-        assertTrue("first-copy barrier released manually", !firstCopyGate.timedOut)
-        assertNotNull("single recovery copy invoked",
+        assertFalse("first-copy gate released deliberately, not by timeout", firstCopyGate.timedOut)
+        assertNotNull("single recovery backend copy invoked",
             factory.awaitCopyInvocation(700))
-        waitUntil("two transient results close readiness transaction", {
-            val d = runOnMainSync(hosting::captureDiagnostics)
-            d.contains("transaction=0") && d.contains("terminal=true") &&
-                d.contains("recoveries=1")
-        }, 900)
+        val recovery = captureAuthorityForR4(host)
+        assertEquals("recovery remains same binding", initial.bindingIdentity, recovery.bindingIdentity)
+        assertEquals("recovery remains same authority", initial.authoritySerial, recovery.authoritySerial)
+        assertEquals("recovery remains same transaction", initial.transactionId, recovery.transactionId)
+        assertEquals("recovery keeps original deadline", initial.transactionDeadline,
+            recovery.transactionDeadline)
+        assertTrue("transaction recovery budget is spent exactly once", recovery.recoveryUsed)
+        assertEquals("exactly initial plus recovery at P3", 2, factory.copyInvocationCount())
+
+        waitUntil("TIMEOUT closes failed readiness transaction before cleanup", {
+            val a = captureAuthorityForR4(host)
+            a.transactionId == 0L && a.terminal && !a.copyInFlight
+        }, 700)
+        val exhausted = captureAuthorityForR4(host)
         val diagnostics = runOnMainSync(hosting::captureDiagnostics)
         val copyDone = diagnosticLong(diagnostics, "copyDone")
         assertTrue("recovery TIMEOUT completed within original 2s readiness deadline: " +
             "copyDone=$copyDone deadline=$deadline diagnostics={$diagnostics}",
             copyDone in 1L..deadline)
-        assertFalse("coalesced trailing demand cannot create a third copy",
-            factory.awaitCopyInvocation(300) != null)
+        assertEquals("binding survives failed readiness without rearm",
+            initial.bindingIdentity, exhausted.bindingIdentity)
+        assertEquals("authority serial survives failed readiness",
+            initial.authoritySerial, exhausted.authoritySerial)
+        assertEquals("binding deadline was never reset", initial.bindingDeadline,
+            exhausted.bindingDeadline)
+        assertTrue("readiness remains unsuccessful", exhausted.readinessPending)
+        assertTrue("failed readiness authority is terminal", exhausted.terminal)
+        assertFalse("no backend copy remains in flight", exhausted.copyInFlight)
+        assertFalse("failed transaction drops its old coalesced demand", exhausted.trailingDemand)
+        assertTrue("lease remains live while exhaustion is observed",
+            runOnMainSync(hosting::status).captureActive)
+        assertFalse("surface remains attached before lease release/cleanup",
+            runOnMainSync(hosting::privateDisplaySnapshot)!!.surfaceDetached)
+        assertEquals("failed transaction published no frame", 0, consumer.count())
         assertEquals("exactly initial + one recovery copy", 2, factory.copyInvocationCount())
-        assertEquals("failed readiness transaction published no frame", 0, consumer.count())
+
+        // P4/P5: challenge closure under the SAME live binding. The real scheduler sees terminal
+        // authority and must stay inert: no attempt-zero transaction, no third copy, no frame.
+        invokeProductionCaptureDemandForR4(host)
+        val challenged = captureAuthorityForR4(host)
+        assertEquals("closure challenge keeps same binding",
+            initial.bindingIdentity, challenged.bindingIdentity)
+        assertEquals("closure challenge keeps same authority",
+            initial.authoritySerial, challenged.authoritySerial)
+        assertEquals("terminal binding cannot mint new transaction", 0L, challenged.transactionId)
+        assertTrue("terminal readiness remains unsuccessful", challenged.readinessPending)
+        assertTrue("terminal authority remains terminal", challenged.terminal)
+        assertFalse("closure challenge creates no in-flight copy", challenged.copyInFlight)
+        assertFalse("terminal scheduler does not queue new trailing demand", challenged.trailingDemand)
+        assertFalse("no third backend copy after terminal challenge",
+            factory.awaitCopyInvocation(300) != null)
+        assertEquals("total backend copies remain exactly two", 2, factory.copyInvocationCount())
+        assertEquals("terminal challenge publishes no frame", 0, consumer.count())
+        assertTrue("lease still live until explicit test release",
+            runOnMainSync(hosting::status).captureActive)
+
         runOnMain(lease!!::release)
     }
 
@@ -2582,6 +2647,84 @@ class HostingInstrumentedTest {
         waitUntilMain("R4 private local focus ready", { hosting.localEditorFocusReady() })
         awaitPrivateProfile()
         return normal
+    }
+
+    private data class R4CaptureAuthority(
+        val bindingIdentity: Int,
+        val authoritySerial: Long,
+        val bindingDeadline: Long,
+        val transactionId: Long,
+        val transactionDeadline: Long,
+        val recoveryUsed: Boolean,
+        val readinessPending: Boolean,
+        val trailingDemand: Boolean,
+        val terminal: Boolean,
+        val copyInFlight: Boolean,
+    )
+
+    /** Read-only androidTest reflection over EyeBrowse-owned transaction state. */
+    private fun captureAuthorityForR4(host: PrivateDisplayHost): R4CaptureAuthority {
+        val type = PrivateDisplayHost::class.java
+        val lockField = type.getDeclaredField("nativeLock").apply { isAccessible = true }
+        val bindingField = type.getDeclaredField("captureBinding").apply { isAccessible = true }
+        val transactionField = type.getDeclaredField("activeCaptureTransaction").apply { isAccessible = true }
+        val readinessField = type.getDeclaredField("captureReadinessPending").apply { isAccessible = true }
+        val trailingField = type.getDeclaredField("trailingCaptureDemand").apply { isAccessible = true }
+        val terminalField = type.getDeclaredField("captureTerminalFailure").apply { isAccessible = true }
+        val copyField = type.getDeclaredField("inFlightWindowCopy").apply { isAccessible = true }
+        val lock = checkNotNull(lockField.get(host))
+        return synchronized(lock) {
+            val binding = checkNotNull(bindingField.get(host)) { "capture binding unavailable" }
+            val bindingType = binding.javaClass
+            val authoritySerial = bindingType.getDeclaredField("authoritySerial").apply {
+                isAccessible = true
+            }.getLong(binding)
+            val bindingDeadline = bindingType.getDeclaredField("readinessDeadlineElapsedMs").apply {
+                isAccessible = true
+            }.getLong(binding)
+            val transaction = transactionField.get(host)
+            val transactionId: Long
+            val transactionDeadline: Long
+            val recoveryUsed: Boolean
+            if (transaction == null) {
+                transactionId = 0L
+                transactionDeadline = 0L
+                recoveryUsed = false
+            } else {
+                val transactionType = transaction.javaClass
+                transactionId = transactionType.getDeclaredField("id").apply {
+                    isAccessible = true
+                }.getLong(transaction)
+                transactionDeadline = transactionType.getDeclaredField("deadlineElapsedMs").apply {
+                    isAccessible = true
+                }.getLong(transaction)
+                recoveryUsed = transactionType.getDeclaredField("recoveryUsed").apply {
+                    isAccessible = true
+                }.getBoolean(transaction)
+            }
+            R4CaptureAuthority(
+                System.identityHashCode(binding),
+                authoritySerial,
+                bindingDeadline,
+                transactionId,
+                transactionDeadline,
+                recoveryUsed,
+                readinessField.getBoolean(host),
+                trailingField.getBoolean(host),
+                terminalField.getBoolean(host),
+                copyField.get(host) != null,
+            )
+        }
+    }
+
+    /** Fault-injection/scheduler evidence: invoke the actual production coalescing entry point. */
+    private fun invokeProductionCaptureDemandForR4(host: PrivateDisplayHost) {
+        val method = PrivateDisplayHost::class.java.getDeclaredMethod(
+            "requestCaptureDemand",
+            java.lang.Long.TYPE,
+        )
+        method.isAccessible = true
+        method.invoke(host, SystemClock.elapsedRealtime())
     }
 
     private fun diagnosticLong(diagnostics: String, key: String): Long {
