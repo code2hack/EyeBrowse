@@ -2432,10 +2432,8 @@ class HostingInstrumentedTest {
         waitUntil("$label successor autonomously publishes newly fenced frame", {
             successor.qualifyingCountFrom(0) > 0
         }, (successorDeadline - SystemClock.elapsedRealtime()).coerceAtLeast(1))
-        assertEquals("$label first successor frame has keyboard geometry",
-            keyboard.width, successor.latestWidth())
-        assertEquals("$label first successor frame has keyboard geometry",
-            keyboard.height, successor.latestHeight())
+        assertTrue("$label successor frames use keyboard geometry",
+            successor.allFramesMatchSize(keyboard.width, keyboard.height))
         assertTrue("$label successor frame stayed inside original readiness deadline",
             successor.latestDeliveryElapsed() <= successorDeadline)
         assertEquals("$label stale predecessor remains unpublished after successor readiness",
