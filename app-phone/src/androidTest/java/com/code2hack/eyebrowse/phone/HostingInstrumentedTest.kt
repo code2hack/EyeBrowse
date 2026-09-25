@@ -2359,6 +2359,130 @@ class HostingInstrumentedTest {
         runOnMain(freshLease!!::release)
     }
 
+    private class R5AbortSentinel : RuntimeException("R5_ABORT_SENTINEL")
+
+    private data class R5AbortReceipt(
+        val authorityRevokedBeforeRelease: Boolean,
+        val completionForwardedBeforeRevocation: Boolean,
+        val completionForwardedAfterRevocation: Boolean,
+        val publicationCountBefore: Int,
+        val publicationCountAfter: Int,
+        val bitmapRecycled: Boolean,
+        val quiescent: Boolean,
+    )
+
+    /**
+     * Shared failure-only cleanup for a withheld completion. The original throwable is rethrown
+     * unchanged; cleanup failures are attached as suppressed evidence so they cannot conceal it.
+     */
+    private fun <T> withR5CompletionAbortCleanup(
+        hold: R4CompletionHold,
+        publicationCount: () -> Int,
+        receiptOut: AtomicReference<R5AbortReceipt>? = null,
+        block: () -> T,
+    ): T {
+        var primary: Throwable? = null
+        try {
+            return block()
+        } catch (failure: Throwable) {
+            primary = failure
+            throw failure
+        } finally {
+            val original = primary
+            if (original != null) {
+                val (receipt, cleanupFailures) =
+                    performR5CompletionAbortCleanup(hold, publicationCount)
+                receiptOut?.set(receipt)
+                cleanupFailures.forEach { cleanupFailure ->
+                    original.addSuppressed(cleanupFailure)
+                    println("R5_ABORT_CLEANUP_FAILURE primary=" +
+                        original.javaClass.simpleName + " cleanup=" + cleanupFailure)
+                }
+            }
+        }
+    }
+
+    /**
+     * Abort order is deliberate:
+     *  1) revoke through HostingController.stop()/revokeLease(),
+     *  2) only then forward the real withheld completion,
+     *  3) let production retire the request-owned bitmap/resources,
+     *  4) prove no publication occurred after authority closure.
+     *
+     * Never recycles the bitmap, clears a request field, or bypasses a product guard.
+     */
+    private fun performR5CompletionAbortCleanup(
+        hold: R4CompletionHold,
+        publicationCount: () -> Int,
+    ): Pair<R5AbortReceipt, List<Throwable>> {
+        val failures = mutableListOf<Throwable>()
+        fun attempt(action: () -> Unit) {
+            try {
+                action()
+            } catch (failure: Throwable) {
+                failures.add(failure)
+            }
+        }
+
+        val bitmap = hold.destinationBitmap()
+        val publicationsBefore = publicationCount()
+        val forwardedBefore = hold.hasForwarded()
+        var authorityRevoked = false
+
+        // The completion is still withheld here. Close authority through the real product path.
+        attempt {
+            assertFalse("abort cleanup completion must still be withheld", hold.hasForwarded())
+            runOnMain(hosting::stop)
+            authorityRevoked = !runOnMainSync(hosting::status).captureActive
+            assertTrue("abort cleanup must revoke capture authority before forwarding completion",
+                authorityRevoked)
+            assertFalse("completion forwarded before authority revocation", hold.hasForwarded())
+        }
+
+        // Release regardless of an authority-check failure so the test cannot orphan resources.
+        hold.release()
+        attempt { runOnMain { } }
+
+        var bitmapRecycled = bitmap == null || bitmap.isRecycled
+        if (bitmap != null && !bitmapRecycled) {
+            attempt {
+                waitUntil("abort cleanup request bitmap retired by product callback", {
+                    bitmap.isRecycled
+                }, STOP_BOUND_MS)
+                bitmapRecycled = bitmap.isRecycled
+                assertTrue("abort cleanup bitmap must be recycled by production retirement",
+                    bitmapRecycled)
+            }
+        }
+
+        var quiescent = false
+        attempt {
+            waitUntilMain("abort cleanup production owner quiescent", {
+                !hosting.captureResourcesPresent() && !hosting.hasDisplayResources() &&
+                    !hosting.isWakeLockHeld()
+            }, STOP_BOUND_MS)
+            quiescent = !hosting.captureResourcesPresent() && !hosting.hasDisplayResources() &&
+                !hosting.isWakeLockHeld()
+            assertTrue("abort cleanup must reach production quiescence", quiescent)
+        }
+
+        val publicationsAfter = publicationCount()
+        attempt {
+            assertEquals("revoked held completion must not publish",
+                publicationsBefore, publicationsAfter)
+        }
+
+        return R5AbortReceipt(
+            authorityRevoked,
+            forwardedBefore,
+            hold.hasForwarded(),
+            publicationsBefore,
+            publicationsAfter,
+            bitmapRecycled,
+            quiescent,
+        ) to failures
+    }
+
     /**
      * R-04 stale-SUCCESS variant: predecessor native copy has completed, but its SUCCESS delivery
      * is held without blocking Main. A real compatible resize + successor rearm must preserve B's
@@ -2391,8 +2515,14 @@ class HostingInstrumentedTest {
         val host = currentPrivateHostForR4()
         val predecessor = CollectingConsumer()
         predecessor.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        var successorForAbort: CollectingConsumer? = null
         val held = factory.holdNextCopyCompletion()
-        try {
+        withR5CompletionAbortCleanup(
+            held,
+            publicationCount = {
+                predecessor.count() + (successorForAbort?.count() ?: 0)
+            },
+        ) {
         val predecessorDeadline = SystemClock.elapsedRealtime() + 2_000
         val predecessorLease = runOnMainSync {
             hosting.acquireProfileLease(normal, predecessorDeadline, predecessor)
@@ -2432,6 +2562,7 @@ class HostingInstrumentedTest {
         waitUntilMain("$label successor local focus ready", { hosting.localEditorFocusReady() })
 
         val successor = CollectingConsumer()
+        successorForAbort = successor
         successor.expectQualification(keyboard.width, keyboard.height, CAPTURE_PAGE_COLOR)
         val successorLease = runOnMainSync {
             hosting.acquireProfileLease(keyboard, successorDeadline, successor)
@@ -2499,11 +2630,84 @@ class HostingInstrumentedTest {
         // Resize already revoked the predecessor lease; explicit releases remain safe/no-op.
         runOnMain(predecessorLease!!::release)
         runOnMain(successorLease!!::release)
-        } finally {
-            // A failed assertion before the evidence-point release must never orphan the held
-            // completion. Idempotent with the central @After ownership registry.
-            held.release()
         }
+    }
+
+    /**
+     * R-05 deterministic abort-path check. A test-local sentinel fails while a real PixelCopy
+     * completion is withheld. Shared cleanup must preserve that exact failure while revoking
+     * authority before forwarding completion, then permit a clean subsequent capture.
+     */
+    @Test
+    fun heldCompletionAbortCleanupRevokesBeforeForwardingAndAllowsCleanCapture() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val held = factory.holdNextCopyCompletion()
+        val deadline = SystemClock.elapsedRealtime() + 2_000
+        val lease = runOnMainSync { hosting.acquireProfileLease(normal, deadline, consumer) }
+        assertNotNull("R5 abort test lease", lease)
+        assertTrue("R5 abort test completion captured", held.awaitCaptured(1_200))
+        assertFalse("R5 abort test completion not yet forwarded", held.hasForwarded())
+        val bitmap = checkNotNull(held.destinationBitmap()) {
+            "R5 abort test destination bitmap unavailable"
+        }
+        assertFalse("R5 abort test bitmap owned until completion retirement", bitmap.isRecycled)
+        assertEquals("R5 abort test has no publication before sentinel", 0, consumer.count())
+
+        val receipt = AtomicReference<R5AbortReceipt>()
+        var caught: R5AbortSentinel? = null
+        try {
+            withR5CompletionAbortCleanup(
+                held,
+                publicationCount = consumer::count,
+                receiptOut = receipt,
+            ) {
+                throw R5AbortSentinel()
+            }
+        } catch (expected: R5AbortSentinel) {
+            caught = expected
+        }
+
+        val original = checkNotNull(caught) { "R5 sentinel failure was not preserved" }
+        assertEquals("R5 sentinel identity remains visible",
+            "R5_ABORT_SENTINEL", original.message)
+        assertEquals("abort cleanup produced no secondary failures",
+            0, original.suppressed.size)
+
+        val observed = checkNotNull(receipt.get()) { "R5 abort receipt missing" }
+        assertTrue("authority revoked before withheld completion release",
+            observed.authorityRevokedBeforeRelease)
+        assertFalse("completion was not forwarded before revocation",
+            observed.completionForwardedBeforeRevocation)
+        assertTrue("withheld completion eventually forwarded after revocation",
+            observed.completionForwardedAfterRevocation)
+        assertEquals("aborted request published nothing",
+            observed.publicationCountBefore, observed.publicationCountAfter)
+        assertEquals("aborted request consumer remains empty", 0, consumer.count())
+        assertTrue("aborted request bitmap retired by production", observed.bitmapRecycled)
+        assertTrue("aborted capture owner reached quiescence", observed.quiescent)
+        assertTrue("captured request bitmap is actually recycled", bitmap.isRecycled)
+
+        // A fresh hosting/capture cycle must not be blocked by the aborted row's old resources.
+        val cleanFactory = newR4ControlledFactory()
+        val cleanProfile = prepareR4RecordedProfile(cleanFactory)
+        val cleanConsumer = CollectingConsumer()
+        cleanConsumer.expectQualification(
+            cleanProfile.width, cleanProfile.height, CAPTURE_PAGE_COLOR,
+        )
+        val cleanDeadline = SystemClock.elapsedRealtime() + 2_000
+        val cleanLease = runOnMainSync {
+            hosting.acquireProfileLease(cleanProfile, cleanDeadline, cleanConsumer)
+        }
+        assertNotNull("clean capture lease after aborted row", cleanLease)
+        waitUntil("clean capture publishes after aborted-row retirement", {
+            cleanConsumer.qualifyingCountFrom(0) > 0
+        }, 2_000)
+        assertFalse("clean capture remains non-terminal",
+            runOnMainSync(hosting::captureDiagnostics).contains("terminal=true"))
+        runOnMain(cleanLease!!::release)
     }
 
     /**
