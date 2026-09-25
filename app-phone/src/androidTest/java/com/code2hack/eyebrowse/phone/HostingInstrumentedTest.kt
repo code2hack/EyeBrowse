@@ -1959,6 +1959,141 @@ class HostingInstrumentedTest {
         tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
     }
 
+    /**
+     * I9-T01 FW1/FW2 focused physical regression: use the recorded 480x344 -> 480x240 ->
+     * 480x344 stimulus at density 204, while production still consumes measured profiles.
+     *
+     * The fixture is frozen before RG ownership so the final profile frame cannot depend on a
+     * second natural animation. Each transition keeps the same VirtualDisplay/Presentation/window,
+     * WebView and document, requires a fresh profile lease inside the ORIGINAL two-second request
+     * deadline, and verifies copied content/geometry. Separate consumers make a same-size return
+     * unable to masquerade as the original 344 epoch.
+     */
+    @Test
+    fun committedWindowCopySurvivesShrinkAndSameSizeReturn() {
+        openFixture("/hosting.html", "Hosting capture page")
+        evaluateJs("window.__eyebrowseFreeze(true)")
+        val marker = domText("load-marker")
+        val viewId = webViewIdentityHash()
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
+
+        val normal = HostingPresentationProfile(480, 344, 204)
+        val keyboard = HostingPresentationProfile(480, 240, 204)
+        assertTrue("recorded 344 profile accepted",
+            runOnMainSync { hosting.presentOnRg(normal) })
+        waitUntilMain("local private focus for recorded profile", {
+            hosting.localEditorFocusReady()
+        })
+        awaitPrivateProfile()
+        val physical = runOnMainSync { hosting.profileGeometry()!! }
+        assertEquals(viewId, physical.viewId)
+        assertTrue(physical.localFocus)
+
+        fun assertSamePhysicalSource(now: PrivateDisplayHost.ProfileGeometry) {
+            assertEquals("VirtualDisplay survives resize", physical.display.displayId, now.display.displayId)
+            assertEquals("Presentation survives resize", physical.presentationId, now.presentationId)
+            assertEquals("private Window survives resize", physical.windowId, now.windowId)
+            assertEquals("decor survives resize", physical.decorId, now.decorId)
+            assertEquals("WebView parent survives resize", physical.parentId, now.parentId)
+            assertEquals("same live WebView survives resize", physical.viewId, now.viewId)
+            assertEquals("no local-focus departure", physical.focusLossSerial, now.focusLossSerial)
+            assertTrue("local focus stays ready", now.localFocus)
+        }
+
+        fun acquireCurrent(
+            profile: HostingPresentationProfile,
+            consumer: CollectingConsumer,
+            originalEligibleUptimeMs: Long,
+            originalDeadlineElapsedMs: Long,
+        ): HostingController.Lease {
+            consumer.expectQualification(profile.width, profile.height, CAPTURE_PAGE_COLOR)
+            val lease = runOnMainSync {
+                hosting.acquireProfileLease(profile, originalDeadlineElapsedMs, consumer)
+            }
+            assertNotNull("profile lease " + profile, lease)
+            waitUntil(
+                "qualified committed-Window frame " + profile,
+                { consumer.qualifyingCountFrom(0) > 0 },
+                2_500,
+            )
+            val delay = consumer.earliestQualifyingDelayMsFrom(0, originalEligibleUptimeMs)
+            assertTrue(
+                "profile publication exceeded original 2s request deadline: " + delay + "ms",
+                OutputQualification.validWithinBound(delay),
+            )
+            val first = consumer.earliestQualifyingIndexFrom(0)
+            assertTrue("copied bitmap geometry matches profile",
+                consumer.tailFramesMatchSize(first, profile.width, profile.height))
+            assertTrue("copied pixels are the current static document",
+                consumer.tailFramesNearColor(first, CAPTURE_PAGE_COLOR))
+            assertTrue("Window PixelCopy SUCCESS recorded: " + runOnMainSync(hosting::captureDiagnostics),
+                runOnMainSync(hosting::captureDiagnostics).contains("copyResult=" + android.view.PixelCopy.SUCCESS))
+            return lease!!
+        }
+
+        // Establish a real committed baseline at 344. This page has no autonomous draw after freeze.
+        val baseEligible = SystemClock.uptimeMillis()
+        val baseDeadline = SystemClock.elapsedRealtime() + 2_000
+        val baseConsumer = CollectingConsumer()
+        val baseLease = acquireCurrent(normal, baseConsumer, baseEligible, baseDeadline)
+        val baseCount = baseConsumer.count()
+
+        fun transition(
+            profile: HostingPresentationProfile,
+            consumer: CollectingConsumer,
+        ): Pair<HostingController.Lease, PrivateDisplayHost.ProfileGeometry> {
+            val eligibleUptime = SystemClock.uptimeMillis()
+            val deadlineElapsed = SystemClock.elapsedRealtime() + 2_000
+            val settled = java.util.concurrent.CountDownLatch(1)
+            val ok = java.util.concurrent.atomic.AtomicBoolean(false)
+            runOnMain {
+                hosting.reconfigureRgProfile(profile, deadlineElapsed) { result ->
+                    ok.set(result)
+                    settled.countDown()
+                }
+            }
+            assertTrue("profile resize callback within original deadline",
+                settled.await(2_200, java.util.concurrent.TimeUnit.MILLISECONDS))
+            assertTrue("profile resize settled " + profile, ok.get())
+            val geometry = runOnMainSync { hosting.profileGeometry()!! }
+            assertEquals(profile.width, geometry.display.actualWidth)
+            assertEquals(profile.height, geometry.display.actualHeight)
+            assertEquals(profile.width, geometry.display.readerWidth)
+            assertEquals(profile.height, geometry.display.readerHeight)
+            assertEquals(profile.width, geometry.decorWidth)
+            assertEquals(profile.height, geometry.decorHeight)
+            assertEquals(profile.width, geometry.containerWidth)
+            assertEquals(profile.height, geometry.containerHeight)
+            assertEquals(profile.width, geometry.viewWidth)
+            assertEquals(profile.height, geometry.viewHeight)
+            assertEquals(1, geometry.readerOverlap)
+            assertSamePhysicalSource(geometry)
+            val lease = acquireCurrent(profile, consumer, eligibleUptime, deadlineElapsed)
+            return lease to geometry
+        }
+
+        val shrinkConsumer = CollectingConsumer()
+        val (shrinkLease, shrinkGeometry) = transition(keyboard, shrinkConsumer)
+        assertEquals("old 344 sink stays fenced after shrink", baseCount, baseConsumer.count())
+        assertTrue("shrink creates a fresh geometry epoch", shrinkGeometry.profileSerial > physical.profileSerial)
+
+        val shrinkCount = shrinkConsumer.count()
+        val growConsumer = CollectingConsumer()
+        val (growLease, growGeometry) = transition(normal, growConsumer)
+        assertEquals("old 240 sink stays fenced after grow", shrinkCount, shrinkConsumer.count())
+        assertEquals("same-size return cannot revive original 344 sink", baseCount, baseConsumer.count())
+        assertTrue("344 return is a later geometry epoch",
+            growGeometry.profileSerial > shrinkGeometry.profileSerial)
+        assertEquals(marker, domText("load-marker"))
+        assertEquals(viewId, webViewIdentityHash())
+
+        // Reconfigure revoked the older lease objects; releasing them is intentionally a no-op.
+        runOnMain(baseLease::release)
+        runOnMain(shrinkLease::release)
+        runOnMain(growLease::release)
+        runOnMain(hosting::stop)
+    }
+
     private fun expectedPrivateSize(): IntArray = runOnMainSync {
         val profile = hosting.presentationProfile()
         intArrayOf(profile.width, profile.height)
