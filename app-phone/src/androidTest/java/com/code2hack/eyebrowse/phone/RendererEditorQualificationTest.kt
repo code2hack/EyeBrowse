@@ -454,13 +454,50 @@ class RendererEditorQualificationTest {
         }
         row("malformed-oversized-and-data-not-source") {
             reset(); focus("a"); val g = grant()
-            for (payload in listOf("{", " ".repeat(32769), packet(g, ++sequence).put("action", "EXEC").toString())) {
-                val raw = js("window.__eyebrowseEditorV1.request(${JSONObject.quote(payload)})")
-                assertEquals("MALFORMED", JSONObject(JSONTokener(raw).nextValue() as String).getString("status"))
-            }
+
+            // These are deliberately different renderer-boundary classes.
+            // A raw JSON syntax error throws inside RendererEditor.request(); the product catch
+            // deliberately returns UNCERTAIN so script exception/payload details never escape.
+            // The APK-native adapter never emits malformed JSON because it serializes JSONObject.
+            val malformedSyntax = js(
+                "window.__eyebrowseEditorV1.request(" + JSONObject.quote("{") + ")"
+            )
+            assertEquals(
+                "UNCERTAIN",
+                JSONObject(JSONTokener(malformedSyntax).nextValue() as String)
+                    .getString("status"),
+            )
+
+            // Oversize is rejected before parse, so it remains a definite MALFORMED packet.
+            val oversized = " ".repeat(32769)
+            val oversizedRaw = js(
+                "window.__eyebrowseEditorV1.request(" + JSONObject.quote(oversized) + ")"
+            )
+            assertEquals(
+                "MALFORMED",
+                JSONObject(JSONTokener(oversizedRaw).nextValue() as String)
+                    .getString("status"),
+            )
+
+            // Structurally valid JSON with an unsupported edit action reaches edit() validation
+            // and is also definitively MALFORMED.
+            val invalidAction = packet(g, ++sequence).put("action", "EXEC").toString()
+            val invalidActionRaw = js(
+                "window.__eyebrowseEditorV1.request(" + JSONObject.quote(invalidAction) + ")"
+            )
+            assertEquals(
+                "MALFORMED",
+                JSONObject(JSONTokener(invalidActionRaw).nextValue() as String)
+                    .getString("status"),
+            )
+
             val text = "');window.forbidden=true;//\"\\\u2028"
-            assertEquals(RendererEditorAdapter.Status.APPLIED, edit(g, EditorOperation.Insert(text), "escaped-data").status)
-            assertTrue(unchanged("a", text)); assertTrue(truth("window.forbidden!==true"))
+            assertEquals(
+                RendererEditorAdapter.Status.APPLIED,
+                edit(g, EditorOperation.Insert(text), "escaped-data").status,
+            )
+            assertTrue(unchanged("a", text))
+            assertTrue(truth("window.forbidden!==true"))
         }
     }
 
