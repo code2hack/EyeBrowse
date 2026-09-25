@@ -281,9 +281,10 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
     }
 
     /**
-     * Requests a fresh draw after the capture path armed a new/recreated reader and drained
-     * pre-arm buffers. May be invoked from the capture thread; View.post performs the actual
-     * invalidation on the WebView/UI thread and fences renderer replacement.
+     * Requests a fresh draw for the current capture authority. With a commit callback this first
+     * establishes a unique WebView visual-state boundary, then registers a frame-commit callback
+     * before requesting the next hardware traversal. View work stays on Main and renderer
+     * replacement/current-owner checks fail closed.
      */
     fun requestFreshCaptureFrame(
         drawSerial: (() -> Long)? = null,
@@ -319,9 +320,9 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
                     val beforeDrawSerial = serial()
                     android.util.Log.i("EyeBrowseCaptureFence",
                         "visual-ready request=" + requestId + " beforeDraw=" + beforeDrawSerial)
-                    target.viewTreeObserver.registerFrameCommitCallback {
+                    target.viewTreeObserver.registerFrameCommitCallback commit@{
                         if (webView !== target || rendererGone || !target.isAttachedToWindow ||
-                            !isCurrentOwner()) return@registerFrameCommitCallback
+                            !isCurrentOwner()) return@commit
                         val committedDrawSerial = serial()
                         if (committedDrawSerial > beforeDrawSerial) {
                             android.util.Log.i("EyeBrowseCaptureFence",
