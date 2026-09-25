@@ -1054,20 +1054,21 @@ class PrivateDisplayHost(
     private fun onWindowDraw(serial: Long, elapsedMs: Long) {
         lastObservedDrawSerial = serial
         lastObservedDrawElapsedMs = elapsedMs
-        var explicitCycle = 0L
+        var explicitCycle: Long? = null
         synchronized(nativeLock) {
             if (!captureActive || captureReleased || captureBinding == null || captureTerminalFailure) return
-            activeCaptureCycle?.let {
-                explicitCycle = it.id
-                Log.i(TAG, "capture[" + it.id + "] hardware-draw serial=" + serial +
-                    " elapsed=" + elapsedMs)
-                return // The explicit causal draw belongs to this cycle.
-            }
-            if (inFlightWindowCopy != null) {
+            explicitCycle = activeCaptureCycle?.id
+            if (explicitCycle == null && inFlightWindowCopy != null) {
                 if (!trailingCaptureDemand) coalescedCallbackCount += 1
                 trailingCaptureDemand = true
                 return
             }
+        }
+        val cycleId = explicitCycle
+        if (cycleId != null) {
+            Log.i(TAG, "capture[" + cycleId + "] hardware-draw serial=" + serial +
+                " elapsed=" + elapsedMs)
+            return // The explicit causal draw belongs to this cycle.
         }
         requestCaptureDemand(elapsedMs)
     }
