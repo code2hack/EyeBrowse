@@ -2341,6 +2341,60 @@ class HostingInstrumentedTest {
         runOnMain(grow.lease::release)
     }
 
+    /** R-06 negative controls over test-owned pixels only; no production admission seam. */
+    @Test
+    fun fw3SpatialOracleRejectsCropAndShrinkStretchNegativeControls() {
+        val spec = fw3SyntheticSpatialSpec(480, 344)
+        val valid = fw3SyntheticBitmap(spec)
+        var cropped: android.graphics.Bitmap? = null
+        var cropRescaled: android.graphics.Bitmap? = null
+        var shrinkRaster: android.graphics.Bitmap? = null
+        var shrinkStretched: android.graphics.Bitmap? = null
+        try {
+            assertTrue("synthetic control must satisfy FW3 spatial oracle",
+                fw3SpatialOracle(valid, spec).accepted)
+
+            cropped = android.graphics.Bitmap.createBitmap(valid, 0, 0, 457, 319)
+            cropRescaled = android.graphics.Bitmap.createScaledBitmap(
+                cropped, spec.width, spec.height, false,
+            )
+            val cropResult = fw3SpatialOracle(cropRescaled, spec)
+            assertFalse("cropped/rescaled raster must be rejected: " + cropResult.reason,
+                cropResult.accepted)
+
+            shrinkRaster = android.graphics.Bitmap.createBitmap(valid, 0, 0, 480, 240)
+            shrinkStretched = android.graphics.Bitmap.createScaledBitmap(
+                shrinkRaster, 480, 344, false,
+            )
+            val stretchResult = fw3SpatialOracle(shrinkStretched, spec)
+            assertFalse("480x240 raster stretched to 480x344 must be rejected: " +
+                stretchResult.reason, stretchResult.accepted)
+        } finally {
+            shrinkStretched?.recycle()
+            shrinkRaster?.recycle()
+            cropRescaled?.recycle()
+            cropped?.recycle()
+            valid.recycle()
+        }
+    }
+
+    /** R-07 clock negative: recent lease acquisition cannot legalize a post-deadline delivery. */
+    @Test
+    fun fw3TimingOracleRejectsPostDeadlineDeliveryDespiteRecentLeaseAcquisition() {
+        val requestStart = 10_000L
+        val originalDeadline = requestStart + 2_000L
+        val leaseAcquired = originalDeadline - 100L
+        val lateDelivery = originalDeadline + 1L
+        assertTrue("negative setup: late delivery is <2s from lease acquisition",
+            lateDelivery - leaseAcquired < 2_000L)
+        assertFalse("post-deadline delivery must fail original-request qualification",
+            fw3DeliveryWithinOriginalRequest(requestStart, originalDeadline, lateDelivery))
+        assertTrue("on-deadline delivery remains accepted",
+            fw3DeliveryWithinOriginalRequest(
+                requestStart, originalDeadline, originalDeadline,
+            ))
+    }
+
     /**
      * R4a: hold the actual post-visual hardware traversal inside the Presentation after the
      * product draw observer ran but before traversal returns. Queue the 240 profile transition at
@@ -3404,11 +3458,12 @@ class HostingInstrumentedTest {
                         ';background:'+color+';margin:0;padding:0;border:0';
                       document.body.appendChild(e);return e;
                     };
-                    add('fw3-top','left:0;right:0;top:0;height:2px','#ff0000');
-                    add('fw3-bottom','left:0;right:0;bottom:0;height:2px','#0000ff');
-                    add('fw3-left','left:0;top:0;bottom:0;width:2px','#00ff00');
-                    add('fw3-right','right:0;top:0;bottom:0;width:2px','#ff00ff');
-                    add('fw3-center','left:40px;top:50vh;width:2px;height:2px','#00ffff');
+                    add('fw3-top','left:19px;top:0;width:31px;height:4px','#f20d4f');
+                    add('fw3-bottom','left:71px;bottom:0;width:37px;height:5px','#1647f5');
+                    add('fw3-left','left:0;top:17px;width:4px;height:29px','#11c95b');
+                    add('fw3-right','right:0;top:39px;width:5px;height:31px','#b918ed');
+                    add('fw3-fixed','left:53px;top:23px;width:9px;height:11px','#ff9700');
+                    add('fw3-center','left:119px;top:calc(50vh - 5px);width:13px;height:10px','#00bfc7');
                     return true;
                 })()"""
             ),
@@ -3419,7 +3474,12 @@ class HostingInstrumentedTest {
         val raw = decode(
             evaluateJs(
                 """(()=> {
-                    const p=document.getElementById('fw3-center').getBoundingClientRect();
+                    const ids=['fw3-top','fw3-bottom','fw3-left','fw3-right','fw3-fixed','fw3-center'];
+                    const bounds={};
+                    for(const id of ids){
+                      const r=document.getElementById(id).getBoundingClientRect();
+                      bounds[id]={left:r.left,top:r.top,width:r.width,height:r.height};
+                    }
                     return JSON.stringify({
                       visualWidth:visualViewport.width,
                       visualHeight:visualViewport.height,
@@ -3427,7 +3487,8 @@ class HostingInstrumentedTest {
                       dpr:devicePixelRatio,
                       innerWidth:innerWidth,
                       innerHeight:innerHeight,
-                      probe:{left:p.left,top:p.top,width:p.width,height:p.height}
+                      probe:bounds['fw3-center'],
+                      fiducials:bounds
                     });
                 })()"""
             )
@@ -3472,31 +3533,218 @@ class HostingInstrumentedTest {
         }
     }
 
-    private fun assertFw3RawPixelGeometry(
-        label: String,
+    private data class Fw3Fiducial(
+        val id: String,
+        val color: Int,
+        val rect: android.graphics.Rect,
+    )
+
+    private data class Fw3SpatialSpec(
+        val width: Int,
+        val height: Int,
+        val fiducials: List<Fw3Fiducial>,
+    )
+
+    private data class Fw3SpatialOracleResult(
+        val accepted: Boolean,
+        val reason: String,
+    )
+
+    private fun fw3DeliveryWithinOriginalRequest(
+        requestStartElapsedMs: Long,
+        originalDeadlineElapsedMs: Long,
+        deliveryElapsedMs: Long,
+    ): Boolean =
+        requestStartElapsedMs >= 0 &&
+            originalDeadlineElapsedMs >= requestStartElapsedMs &&
+            deliveryElapsedMs >= requestStartElapsedMs &&
+            deliveryElapsedMs <= originalDeadlineElapsedMs
+
+    private fun fw3SpatialOracle(
         bitmap: android.graphics.Bitmap,
         page: JSONObject,
-    ) {
-        fun color(name: String, actual: Int, expected: String) {
-            assertTrue("$label $name edge pixel expected=$expected actual=#" +
-                Integer.toHexString(actual),
-                nearColor(actual, Color.parseColor(expected)))
+    ): Fw3SpatialOracleResult {
+        val visualWidth = page.optDouble("visualWidth", Double.NaN)
+        val visualHeight = page.optDouble("visualHeight", Double.NaN)
+        if (!visualWidth.isFinite() || !visualHeight.isFinite() ||
+            visualWidth <= 0.0 || visualHeight <= 0.0) {
+            return Fw3SpatialOracleResult(false, "invalid visual viewport")
         }
-        color("top", bitmap.getPixel(bitmap.width / 2, 0), "#ff0000")
-        color("bottom", bitmap.getPixel(bitmap.width / 2, bitmap.height - 1), "#0000ff")
-        color("left", bitmap.getPixel(0, bitmap.height / 2), "#00ff00")
-        color("right", bitmap.getPixel(bitmap.width - 1, bitmap.height / 2), "#ff00ff")
-        color("background", bitmap.getPixel(10, 10), "#f6f3ea")
+        val bounds = page.optJSONObject("fiducials")
+            ?: return Fw3SpatialOracleResult(false, "missing fiducial geometry")
+        val xScale = bitmap.width.toDouble() / visualWidth
+        val yScale = bitmap.height.toDouble() / visualHeight
+        if (!xScale.isFinite() || !yScale.isFinite() || xScale <= 0 || yScale <= 0) {
+            return Fw3SpatialOracleResult(false, "invalid native/renderer mapping")
+        }
+        fun mapped(id: String): android.graphics.Rect {
+            val css = checkNotNull(bounds.optJSONObject(id)) { "missing CSS bounds for " + id }
+            val left = kotlin.math.round(css.getDouble("left") * xScale).toInt()
+            val top = kotlin.math.round(css.getDouble("top") * yScale).toInt()
+            val right = kotlin.math.round(
+                (css.getDouble("left") + css.getDouble("width")) * xScale
+            ).toInt()
+            val bottom = kotlin.math.round(
+                (css.getDouble("top") + css.getDouble("height")) * yScale
+            ).toInt()
+            require(left >= 0 && top >= 0 && right <= bitmap.width && bottom <= bitmap.height &&
+                right > left && bottom > top) {
+                "mapped fiducial out of bounds id=" + id + " rect=" +
+                    left + "," + top + "," + right + "," + bottom +
+                    " bitmap=" + bitmap.width + "x" + bitmap.height
+            }
+            return android.graphics.Rect(left, top, right, bottom)
+        }
+        return try {
+            fw3SpatialOracle(
+                bitmap,
+                Fw3SpatialSpec(
+                    bitmap.width,
+                    bitmap.height,
+                    listOf(
+                        Fw3Fiducial("fw3-top", Color.parseColor("#f20d4f"), mapped("fw3-top")),
+                        Fw3Fiducial("fw3-bottom", Color.parseColor("#1647f5"), mapped("fw3-bottom")),
+                        Fw3Fiducial("fw3-left", Color.parseColor("#11c95b"), mapped("fw3-left")),
+                        Fw3Fiducial("fw3-right", Color.parseColor("#b918ed"), mapped("fw3-right")),
+                        Fw3Fiducial("fw3-fixed", Color.parseColor("#ff9700"), mapped("fw3-fixed")),
+                        Fw3Fiducial("fw3-center", Color.parseColor("#00bfc7"), mapped("fw3-center")),
+                    ),
+                ),
+            )
+        } catch (failure: Throwable) {
+            Fw3SpatialOracleResult(false, failure.message ?: failure.javaClass.simpleName)
+        }
+    }
 
-        val probe = page.getJSONObject("probe")
-        val webScale = runOnMainSync { session.view()!!.scale.toDouble() }
-        val x = kotlin.math.round(
-            (probe.getDouble("left") + probe.getDouble("width") / 2.0) * webScale
-        ).toInt().coerceIn(0, bitmap.width - 1)
-        val y = kotlin.math.round(
-            (probe.getDouble("top") + probe.getDouble("height") / 2.0) * webScale
-        ).toInt().coerceIn(0, bitmap.height - 1)
-        color("mapped fixed reflow probe", bitmap.getPixel(x, y), "#00ffff")
+    private fun fw3SpatialOracle(
+        bitmap: android.graphics.Bitmap,
+        spec: Fw3SpatialSpec,
+    ): Fw3SpatialOracleResult {
+        if (bitmap.isRecycled) return Fw3SpatialOracleResult(false, "bitmap recycled")
+        if (bitmap.width != spec.width || bitmap.height != spec.height) {
+            return Fw3SpatialOracleResult(
+                false,
+                "bitmap size " + bitmap.width + "x" + bitmap.height +
+                    " != " + spec.width + "x" + spec.height,
+            )
+        }
+
+        fun boundsForColor(color: Int): android.graphics.Rect? {
+            var minX = bitmap.width
+            var minY = bitmap.height
+            var maxX = -1
+            var maxY = -1
+            for (y in 0 until bitmap.height) {
+                for (x in 0 until bitmap.width) {
+                    if (nearColor(bitmap.getPixel(x, y), color)) {
+                        minX = minOf(minX, x)
+                        minY = minOf(minY, y)
+                        maxX = maxOf(maxX, x)
+                        maxY = maxOf(maxY, y)
+                    }
+                }
+            }
+            return if (maxX < 0) null
+            else android.graphics.Rect(minX, minY, maxX + 1, maxY + 1)
+        }
+
+        fun closeAxis(a: Int, b: Int): Boolean = kotlin.math.abs(a - b) <= 1
+
+        for (fiducial in spec.fiducials) {
+            val expected = fiducial.rect
+            if (expected.left < 0 || expected.top < 0 ||
+                expected.right > bitmap.width || expected.bottom > bitmap.height ||
+                expected.width() <= 0 || expected.height() <= 0) {
+                return Fw3SpatialOracleResult(false, fiducial.id + " expected rect out of bounds")
+            }
+            val centerX = (expected.left + expected.right - 1) / 2
+            val centerY = (expected.top + expected.bottom - 1) / 2
+            if (centerX !in 0 until bitmap.width || centerY !in 0 until bitmap.height) {
+                return Fw3SpatialOracleResult(false, fiducial.id + " mapped center out of bounds")
+            }
+            if (!nearColor(bitmap.getPixel(centerX, centerY), fiducial.color)) {
+                return Fw3SpatialOracleResult(false, fiducial.id + " center color mismatch")
+            }
+            val observed = boundsForColor(fiducial.color)
+                ?: return Fw3SpatialOracleResult(false, fiducial.id + " color absent")
+            if (!closeAxis(observed.left, expected.left) ||
+                !closeAxis(observed.top, expected.top) ||
+                !closeAxis(observed.right, expected.right) ||
+                !closeAxis(observed.bottom, expected.bottom)) {
+                return Fw3SpatialOracleResult(
+                    false,
+                    fiducial.id + " bounds expected=" + expected + " observed=" + observed,
+                )
+            }
+
+            if (observed.left > 0 &&
+                nearColor(bitmap.getPixel(observed.left - 1, centerY), fiducial.color)) {
+                return Fw3SpatialOracleResult(false, fiducial.id + " left transition missing")
+            }
+            if (observed.right < bitmap.width &&
+                nearColor(bitmap.getPixel(observed.right, centerY), fiducial.color)) {
+                return Fw3SpatialOracleResult(false, fiducial.id + " right transition missing")
+            }
+            if (observed.top > 0 &&
+                nearColor(bitmap.getPixel(centerX, observed.top - 1), fiducial.color)) {
+                return Fw3SpatialOracleResult(false, fiducial.id + " top transition missing")
+            }
+            if (observed.bottom < bitmap.height &&
+                nearColor(bitmap.getPixel(centerX, observed.bottom), fiducial.color)) {
+                return Fw3SpatialOracleResult(false, fiducial.id + " bottom transition missing")
+            }
+
+            when (fiducial.id) {
+                "fw3-top" -> if (observed.top != 0)
+                    return Fw3SpatialOracleResult(false, "top edge does not reach y=0")
+                "fw3-bottom" -> if (observed.bottom != bitmap.height)
+                    return Fw3SpatialOracleResult(false, "bottom edge does not reach bitmap end")
+                "fw3-left" -> if (observed.left != 0)
+                    return Fw3SpatialOracleResult(false, "left edge does not reach x=0")
+                "fw3-right" -> if (observed.right != bitmap.width)
+                    return Fw3SpatialOracleResult(false, "right edge does not reach bitmap end")
+            }
+        }
+        return Fw3SpatialOracleResult(true, "all fiducial bounds/transitions match")
+    }
+
+    private fun fw3SyntheticSpatialSpec(width: Int, height: Int): Fw3SpatialSpec {
+        require(width == 480 && height == 344)
+        return Fw3SpatialSpec(
+            width,
+            height,
+            listOf(
+                Fw3Fiducial("fw3-top", Color.parseColor("#f20d4f"),
+                    android.graphics.Rect(54, 0, 141, 11)),
+                Fw3Fiducial("fw3-bottom", Color.parseColor("#1647f5"),
+                    android.graphics.Rect(199, 329, 303, 344)),
+                Fw3Fiducial("fw3-left", Color.parseColor("#11c95b"),
+                    android.graphics.Rect(0, 55, 12, 142)),
+                Fw3Fiducial("fw3-right", Color.parseColor("#b918ed"),
+                    android.graphics.Rect(465, 119, 480, 212)),
+                Fw3Fiducial("fw3-fixed", Color.parseColor("#ff9700"),
+                    android.graphics.Rect(149, 70, 175, 103)),
+                Fw3Fiducial("fw3-center", Color.parseColor("#00bfc7"),
+                    android.graphics.Rect(334, 157, 371, 187)),
+            ),
+        )
+    }
+
+    private fun fw3SyntheticBitmap(spec: Fw3SpatialSpec): android.graphics.Bitmap {
+        val bitmap = android.graphics.Bitmap.createBitmap(
+            spec.width, spec.height, android.graphics.Bitmap.Config.ARGB_8888,
+        )
+        val canvas = android.graphics.Canvas(bitmap)
+        canvas.drawColor(Color.parseColor("#202020"))
+        val paint = android.graphics.Paint().apply {
+            isAntiAlias = false
+            style = android.graphics.Paint.Style.FILL
+        }
+        for (fiducial in spec.fiducials) {
+            paint.color = fiducial.color
+            canvas.drawRect(fiducial.rect, paint)
+        }
+        return bitmap
     }
 
     /** Static recorded regression stimulus; production profiles remain RG-measured. */
