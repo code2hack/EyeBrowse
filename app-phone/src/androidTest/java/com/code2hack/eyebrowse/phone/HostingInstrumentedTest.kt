@@ -2310,6 +2310,8 @@ class HostingInstrumentedTest {
             ))
 
         val shrinkProbeTop = shrink.page.getJSONObject("probe").getDouble("top")
+        val shrinkFixedTop = shrink.page.getJSONObject("fiducials")
+            .getJSONObject("fw3-fixed").getDouble("top")
         val shrinkVisualHeight = shrink.page.getDouble("visualHeight")
         val shrinkCount = shrink.consumer.count()
 
@@ -2322,8 +2324,13 @@ class HostingInstrumentedTest {
             shrinkCount, shrink.consumer.count())
         assertTrue("FW3 renderer viewport genuinely grows",
             grow.viewport.height > shrink.viewport.height)
-        assertTrue("FW3 independent fixed 50vh probe reflows downward",
+        assertTrue("FW3 viewport-relative 50vh probe reflows downward",
             grow.page.getJSONObject("probe").getDouble("top") > shrinkProbeTop)
+        assertEquals("FW3 fixed-CSS fiducial remains at its independent coordinate",
+            shrinkFixedTop,
+            grow.page.getJSONObject("fiducials").getJSONObject("fw3-fixed").getDouble("top"),
+            0.0001,
+        )
         assertTrue("FW3 independent visual viewport observation grows",
             grow.page.getDouble("visualHeight") > shrinkVisualHeight)
         assertTrue("FW3 production quantizer accepts grown renderer extent",
