@@ -2176,6 +2176,7 @@ class HostingInstrumentedTest {
 
         class Stage(
             val profile: HostingPresentationProfile,
+            val requestStartElapsedMs: Long,
             val deadline: Long,
             val geometry: PrivateDisplayHost.ProfileGeometry,
             val viewport: RendererViewport,
@@ -2185,7 +2186,8 @@ class HostingInstrumentedTest {
         )
 
         fun stage(profile: HostingPresentationProfile, name: String): Stage {
-            val deadline = SystemClock.elapsedRealtime() + 2_000
+            val requestStartElapsedMs = SystemClock.elapsedRealtime()
+            val deadline = requestStartElapsedMs + 2_000
             val settled = CountDownLatch(1)
             val ok = AtomicBoolean(false)
             runOnMain {
@@ -2227,15 +2229,22 @@ class HostingInstrumentedTest {
             val held = factory.holdNextCopyCompletion()
             val consumer = CollectingConsumer()
             consumer.expectQualification(profile.width, profile.height, CAPTURE_PAGE_COLOR)
-            val eligible = SystemClock.uptimeMillis()
+            val leaseAcquiredElapsedMs = SystemClock.elapsedRealtime()
             val lease = runOnMainSync {
                 hosting.acquireProfileLease(profile, deadline, consumer)
             }
             assertNotNull("$name profile lease", lease)
-            assertTrue("$name qualified Window copy completed inside original request",
-                held.awaitCaptured((deadline - SystemClock.elapsedRealtime()).coerceAtLeast(1)))
+            // Diagnostic observation may wait beyond deadline; qualification uses the completion's
+            // RECORDED monotonic timestamp, never observation time or lease-acquisition time.
+            assertTrue("$name Window copy completion observed", held.awaitCaptured(2_500))
             assertEquals("$name Window PixelCopy SUCCESS",
                 android.view.PixelCopy.SUCCESS, held.result)
+            assertTrue("$name copy completed within ORIGINAL profile-request deadline; " +
+                "requestStart=$requestStartElapsedMs leaseAt=$leaseAcquiredElapsedMs " +
+                "copyDone=${held.capturedElapsedMs()} deadline=$deadline",
+                fw3DeliveryWithinOriginalRequest(
+                    requestStartElapsedMs, deadline, held.capturedElapsedMs(),
+                ))
 
             val bitmap = checkNotNull(held.destinationBitmap()) { "$name raw copy bitmap missing" }
             val copy = inFlightWindowCopyGeometryForFw3(host)
@@ -2252,17 +2261,36 @@ class HostingInstrumentedTest {
             assertTrue("$name draw observer reached the committed draw",
                 runOnMainSync { host.drawObservationForTest().serial } >= copy.committedDrawSerial)
 
-            assertFw3RawPixelGeometry(name, bitmap, page)
+            val spatial = fw3SpatialOracle(bitmap, page)
+            assertTrue("$name FW3 spatial oracle rejected raw Window copy: ${spatial.reason}",
+                spatial.accepted)
             held.release()
+            // Observation wait is diagnostic only; an already-delivered late frame cannot pass
+            // because its recorded deliveryElapsedAt() is compared to the ORIGINAL deadline below.
             waitUntil("$name qualified frame delivered", {
                 consumer.qualifyingCountFrom(0) > 0
-            }, (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(1))
-            val delay = consumer.earliestQualifyingDelayMsFrom(0, eligible)
-            assertTrue("$name delivery inside unchanged two-second profile request: $delay",
-                OutputQualification.validWithinBound(delay))
+            }, 2_500)
+            val firstQualified = consumer.earliestQualifyingIndexFrom(0)
+            assertTrue("$name qualifying delivery exists", firstQualified >= 0)
+            val deliveryElapsedMs = consumer.deliveryElapsedAt(firstQualified)
+            assertTrue("$name first qualifying delivery missed ORIGINAL profile deadline; " +
+                "requestStart=$requestStartElapsedMs leaseAt=$leaseAcquiredElapsedMs " +
+                "delivery=$deliveryElapsedMs deadline=$deadline",
+                fw3DeliveryWithinOriginalRequest(
+                    requestStartElapsedMs, deadline, deliveryElapsedMs,
+                ))
             assertTrue("$name all qualified bitmap dimensions exact",
                 consumer.allFramesMatchSize(profile.width, profile.height))
-            return Stage(profile, deadline, geometry, viewport, page, lease!!, consumer)
+            return Stage(
+                profile,
+                requestStartElapsedMs,
+                deadline,
+                geometry,
+                viewport,
+                page,
+                lease!!,
+                consumer,
+            )
         }
 
         val shrink = stage(keyboard, "FW3-shrink-240")
@@ -4276,6 +4304,7 @@ class HostingInstrumentedTest {
         private val released = AtomicBoolean(false)
         private val forwarded = AtomicBoolean(false)
         @Volatile private var destination: android.graphics.Bitmap? = null
+        @Volatile private var capturedElapsed: Long = Long.MIN_VALUE
         @Volatile var result: Int = Int.MIN_VALUE
             private set
 
@@ -4288,6 +4317,7 @@ class HostingInstrumentedTest {
             handler: Handler,
         ): android.view.PixelCopy.OnPixelCopyFinishedListener =
             android.view.PixelCopy.OnPixelCopyFinishedListener { value ->
+                capturedElapsed = SystemClock.elapsedRealtime()
                 result = value
                 val delivery = Runnable {
                     forwarded.set(true)
@@ -4302,6 +4332,8 @@ class HostingInstrumentedTest {
             captured.await(timeoutMs, TimeUnit.MILLISECONDS)
 
         fun destinationBitmap(): android.graphics.Bitmap? = destination
+
+        fun capturedElapsedMs(): Long = capturedElapsed
 
         fun hasForwarded(): Boolean = forwarded.get()
 
