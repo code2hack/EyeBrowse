@@ -33,13 +33,11 @@ import java.util.zip.CRC32
  * once per frame through the controller's lock-free {@link FrameGate} against that token.
  * Revocation prevents new admissions; an admitted frame may finish delivery to its own consumer
  * (in-flight borrowed use). The capture path never takes the controller monitor.</li>
- * <li><b>Native serialization.</b> Acquired Images are acquired, copied, hashed and closed inside
- * one {@code nativeLock}-serialized section on the capture path; consumers receive only the copied
- * borrowed bitmap, never a native image, and the image is closed before delivery. Reader
- * creation, swap and close share the same lock, so no close can invalidate a buffer mid-use, and
- * a superseded reader's stale callback is recognized and dropped. Main-thread rebuilds briefly
- * take {@code nativeLock}; the controller monitor is never held while {@code nativeLock} is
- * held, and delivery runs outside both.</li>
+ * <li><b>Producer-bound readback.</b> ImageReader is only the safely drained virtual-display
+ * sink. Published pixels come from a public Window PixelCopy issued only after a unique WebView
+ * visual request, a later observed hardware draw of this Presentation, and its matching frame
+ * commit. Readback runs on its own bounded HandlerThread; View/window geometry is captured and
+ * revalidated on Main, while delivery remains outside nativeLock and controller monitors.</li>
  * <li><b>Observable teardown.</b> Native capture resources are released on the capture path (a
  * posted teardown task, or inline when no capture thread exists) and the host object remains
  * reachable for introspection until that completion marker is set. Nothing joins while holding
@@ -782,8 +780,8 @@ class PrivateDisplayHost(
     /**
      * Releases the capture reader/surface/thread as one coherent ownership transition (R2): the
      * owner enters {@code RETIRING} synchronously (no replacement capture can start), the
-     * retiring reader/bitmap are snapshotted and the current fields released, and the retirement
-     * closes only those snapshots on the capture path. With a live capture thread the native
+     * retiring reader is snapshotted and the current field released, while an already-issued
+     * PixelCopy keeps its request-owned bitmap until actual completion. With a live sink thread the
      * close executes on that thread after all pending callbacks (serialized by nativeLock and the
      * handler queue); without one it executes inline. Nothing joins under a controller monitor;
      * quiescence is observable via {@link #isQuiescent()} and the quiescence callback.
@@ -1441,7 +1439,7 @@ class PrivateDisplayHost(
             android.app.Presentation(outerContext, display), PresentationHost {
 
         // Presentation.getContext(): a display/window context on API31+, NOT the outer service.
-        private val content = object : FrameLayout(this.context) {
+        private val content = object : FrameLayout(this@HostingPresentation.context) {
             var captureDrawSerial: Long = 0
             var captureDrawElapsedMs: Long = 0
             var captureDrawListener: DrawListener? = null
