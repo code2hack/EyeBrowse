@@ -2267,8 +2267,9 @@ class HostingInstrumentedTest {
 
         val shrink = stage(keyboard, "FW3-shrink-240")
         val shrinkDipBucket =
-            kotlin.math.ceil(keyboard.height /
-                shrink.viewport.devicePixelRatio.toFloat()).toInt()
+            kotlin.math.ceil(
+                keyboard.height.toDouble() / shrink.viewport.devicePixelRatio
+            ).toInt()
         val shrinkCssBucket = kotlin.math.round(shrink.viewport.height).toInt()
         assertEquals("FW3 open native-to-DIP oracle is 86", 86, shrinkDipBucket)
         assertEquals("FW3 renderer reports the same 86 bucket", 86, shrinkCssBucket)
