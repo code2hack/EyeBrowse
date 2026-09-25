@@ -1166,12 +1166,13 @@ class HostingController private constructor(private val appContext: Context) {
         epoch: PresentationEpochs.Token,
         host: PrivateDisplayHost,
     ): PrivateDisplayHost.FreshFrameRequest =
-        PrivateDisplayHost.FreshFrameRequest { onCommitted ->
+        PrivateDisplayHost.FreshFrameRequest { onVisualReady, onCommitted ->
             mainHandler.post {
                 if (presentationEpochs.owns(epoch) && displayHost === host &&
                     state == State.HOSTING && attachment == Attachment.PRIVATE_DISPLAY) {
                     session.requestFreshCaptureFrame(
                         drawSerial = { host.drawSerial() },
+                        visualReady = onVisualReady,
                         frameCommitted = onCommitted,
                     ) {
                         presentationEpochs.owns(epoch) && displayHost === host &&
