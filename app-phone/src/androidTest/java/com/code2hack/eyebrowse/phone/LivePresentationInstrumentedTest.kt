@@ -120,6 +120,261 @@ class LivePresentationInstrumentedTest {
             }
         }
     }
+    /**
+     * FW5 Phone companion. A production "encoded" receipt is emitted only after the qualified
+     * HostingFrame was WebP85-compressed into BoundedFrameOutput and sendPresentation() accepted
+     * it into the current authenticated session. The RG companion correlates the same
+     * seq/capture/profile tuple after real direct-LAN delivery.
+     */
+    @Test
+    fun fw5QualifiedWindowFramesEncodeIntoAuthenticatedRgSessionAcrossHandoff() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val app = instrumentation.targetContext
+        val browser = PhoneBrowserSession.get(app)
+        val host = HostingController.get(app)
+        val server = PhoneLinkServer.obtain(app)
+        val scenario = ActivityScenario.launch<MainActivity>(Intent(app, MainActivity::class.java))
+        var primaryFailure: Throwable? = null
+        try {
+            val fixture = StopRecoveryAssertions.openFixture(scenario, browser)
+            val originalView = fixture.view
+            val originalDocument = fixture.documentId
+
+            // Make Hosting active BEFORE exposing the server so RG cannot race an inactive handoff.
+            scenario.onActivity {
+                it.findViewById<Button>(R.id.button_hosting_toggle).performClick()
+            }
+            await("FW5 hosting active before link start", 5_000) {
+                host.status().state == HostingController.State.HOSTING
+            }
+            val firstCaptureFloor = SystemClock.elapsedRealtime()
+            scenario.onActivity { server.start() }
+            Log.i("EyeBrowseFW5", "PHONE_READY hosting=true")
+
+            await("FW5 first RG owner with authenticated presentation", 15_000) {
+                val state = server.controlCoordinator.authority.snapshot()
+                server.isLinkUp() &&
+                    state.owner == com.code2hack.eyebrowse.core.link.control.ControlOwner.RG &&
+                    state.presentationStatus ==
+                        com.code2hack.eyebrowse.core.link.control.PresentationStatus.READY &&
+                    host.isRgPresentationOwned() && host.status().captureActive
+            }
+            val firstState = server.controlCoordinator.authority.snapshot()
+            val firstProfile = checkNotNull(firstState.profile)
+            val firstGeometry = checkNotNull(host.profileGeometry())
+            assertTrue("FW5 Phone private local focus is continuously ready",
+                host.localEditorFocusReady())
+            assertEquals("FW5 Phone/WebView document unchanged for RG presentation",
+                originalDocument, browser.documentIdentity())
+            assertSame("FW5 same live WebView enters private presentation",
+                originalView, browser.view())
+
+            val firstReceipt = awaitEncodedReceipt(firstCaptureFloor, firstProfile.width, firstProfile.height)
+            assertEncodedReceiptBound(firstReceipt)
+            val firstDiagnostics = host.captureDiagnostics()
+            assertTrue("FW5 encoder receipt is downstream of qualified Window SUCCESS: " +
+                firstDiagnostics,
+                firstDiagnostics.contains("copyResult=" + android.view.PixelCopy.SUCCESS))
+            assertTrue("FW5 qualified capture delivered before encoding: " + firstDiagnostics,
+                diagnosticCount(firstDiagnostics, "delivered") > 0)
+            Log.i(
+                "EyeBrowseFW5",
+                "PHONE_ENCODED_FIRST seq=" + firstReceipt.sequence +
+                    " capture=" + firstReceipt.captureElapsedMs +
+                    " bytes=" + firstReceipt.bytes +
+                    " profile=" + firstReceipt.width + "x" + firstReceipt.height +
+                    " controlEpoch=" + firstState.context.controlEpoch +
+                    " viewportEpoch=" + firstState.context.viewportEpoch +
+                    " hostingGen=" + firstState.context.hostingGeneration,
+            )
+
+            // RG companion retires an actual pending old-context frame and hands control to Phone.
+            await("FW5 RG stale-frame phase returns ownership to Phone", 5_000) {
+                server.controlCoordinator.authority.snapshot().owner ==
+                    com.code2hack.eyebrowse.core.link.control.ControlOwner.PHONE
+            }
+            val phoneState = server.controlCoordinator.authority.snapshot()
+            assertTrue("FW5 first handoff advances control epoch",
+                phoneState.context.controlEpoch > firstState.context.controlEpoch)
+            assertTrue("FW5 authenticated link remains up during Phone ownership",
+                server.isLinkUp())
+            scenario.onActivity {
+                StopRecoveryAssertions.sameDocument(
+                    "fw5_phone_handoff",
+                    browser,
+                    originalView,
+                    originalDocument,
+                )
+            }
+
+            val secondCaptureFloor = SystemClock.elapsedRealtime()
+            await("FW5 RG reacquires current presentation", 5_000) {
+                val state = server.controlCoordinator.authority.snapshot()
+                state.owner == com.code2hack.eyebrowse.core.link.control.ControlOwner.RG &&
+                    state.context.controlEpoch > firstState.context.controlEpoch &&
+                    state.presentationStatus ==
+                        com.code2hack.eyebrowse.core.link.control.PresentationStatus.READY &&
+                    host.isRgPresentationOwned() && host.status().captureActive
+            }
+            val secondState = server.controlCoordinator.authority.snapshot()
+            val secondProfile = checkNotNull(secondState.profile)
+            val secondGeometry = checkNotNull(host.profileGeometry())
+            assertEquals("FW5 same physical VirtualDisplay across paired roundtrip",
+                firstGeometry.display.displayId, secondGeometry.display.displayId)
+            assertEquals("FW5 same private Presentation across paired roundtrip",
+                firstGeometry.presentationId, secondGeometry.presentationId)
+            assertEquals("FW5 same private Window across paired roundtrip",
+                firstGeometry.windowId, secondGeometry.windowId)
+            assertEquals("FW5 same live WebView across paired roundtrip",
+                firstGeometry.viewId, secondGeometry.viewId)
+            assertEquals("FW5 same document across paired roundtrip",
+                originalDocument, browser.documentIdentity())
+            assertEquals("FW5 no local-focus loss across paired roundtrip",
+                firstGeometry.focusLossSerial, secondGeometry.focusLossSerial)
+            assertTrue("FW5 local focus remains ready after RG reacquire",
+                host.localEditorFocusReady())
+
+            val secondReceipt = awaitEncodedReceipt(
+                secondCaptureFloor,
+                secondProfile.width,
+                secondProfile.height,
+            )
+            assertEncodedReceiptBound(secondReceipt)
+            assertTrue("FW5 fresh context produces a later capture receipt",
+                secondReceipt.captureElapsedMs >= secondCaptureFloor)
+            val secondDiagnostics = host.captureDiagnostics()
+            assertTrue("FW5 reacquired encoder remains downstream of Window SUCCESS: " +
+                secondDiagnostics,
+                secondDiagnostics.contains("copyResult=" + android.view.PixelCopy.SUCCESS))
+            Log.i(
+                "EyeBrowseFW5",
+                "PHONE_ENCODED_FRESH seq=" + secondReceipt.sequence +
+                    " capture=" + secondReceipt.captureElapsedMs +
+                    " bytes=" + secondReceipt.bytes +
+                    " profile=" + secondReceipt.width + "x" + secondReceipt.height +
+                    " controlEpoch=" + secondState.context.controlEpoch +
+                    " viewportEpoch=" + secondState.context.viewportEpoch +
+                    " hostingGen=" + secondState.context.hostingGeneration,
+            )
+
+            // RG's final handoff is the paired completion handshake.
+            await("FW5 paired RG companion completes with Phone owner", 5_000) {
+                server.controlCoordinator.authority.snapshot().owner ==
+                    com.code2hack.eyebrowse.core.link.control.ControlOwner.PHONE
+            }
+            assertTrue("FW5 link still authenticated before explicit cleanup", server.isLinkUp())
+            assertSame(originalView, browser.view())
+            assertEquals(originalDocument, browser.documentIdentity())
+        } catch (failure: Throwable) {
+            primaryFailure = failure
+            Log.e("EyeBrowseFW5", "PHONE_PRIMARY_FAILURE", failure)
+            throw failure
+        } finally {
+            val cleanup = listOf<() -> Unit>(
+                { instrumentation.runOnMainSync { host.stop() } },
+                { instrumentation.runOnMainSync { server.stop() } },
+                { scenario.close() },
+                {
+                    StopRecoveryAssertions.await("FW5 phone cleanup", 5_000) {
+                        StopRecoveryAssertions.resourcesGone(host)
+                    }
+                },
+            ).mapNotNull { runCatching(it).exceptionOrNull() }
+            cleanup.forEach { Log.e("EyeBrowseFW5", "PHONE_CLEANUP_FAILURE", it) }
+            if (primaryFailure != null) cleanup.forEach { primaryFailure.addSuppressed(it) }
+            else if (cleanup.isNotEmpty()) {
+                cleanup.drop(1).forEach { cleanup.first().addSuppressed(it) }
+                throw cleanup.first()
+            }
+        }
+    }
+
+    private data class EncodedReceipt(
+        val sequence: Long,
+        val captureElapsedMs: Long,
+        val bytes: Int,
+        val width: Int,
+        val height: Int,
+    )
+
+    private fun awaitEncodedReceipt(
+        minCaptureElapsedMs: Long,
+        width: Int,
+        height: Int,
+    ): EncodedReceipt {
+        var last: List<EncodedReceipt> = emptyList()
+        val end = SystemClock.elapsedRealtime() + 3_000
+        while (SystemClock.elapsedRealtime() < end) {
+            last = encodedReceipts().filter {
+                it.captureElapsedMs >= minCaptureElapsedMs &&
+                    it.width == width && it.height == height
+            }
+            if (last.isNotEmpty()) return last.maxByOrNull { it.captureElapsedMs }!!
+            SystemClock.sleep(50)
+        }
+        fail(
+            "FW5 no production encoder receipt for capture>=" + minCaptureElapsedMs +
+                " profile=" + width + "x" + height + " observed=" + last,
+        )
+        error("unreachable")
+    }
+
+    private fun encodedReceipts(): List<EncodedReceipt> {
+        val text = shellOutput(
+            "logcat -d -v brief -s EyeBrowsePresentation:I '*:S'"
+        )
+        val regex = Regex(
+            """encoded seq=(\d+) capture=(\d+) bytes=(\d+) profile=(\d+)x(\d+)"""
+        )
+        return regex.findAll(text).map { match ->
+            EncodedReceipt(
+                match.groupValues[1].toLong(),
+                match.groupValues[2].toLong(),
+                match.groupValues[3].toInt(),
+                match.groupValues[4].toInt(),
+                match.groupValues[5].toInt(),
+            )
+        }.toList()
+    }
+
+    private fun assertEncodedReceiptBound(receipt: EncodedReceipt) {
+        val maxPixels =
+            com.code2hack.eyebrowse.core.link.LinkProtocol.PRESENTATION_RECORD_MAX_BYTES -
+                com.code2hack.eyebrowse.core.link.LinkProtocol.PRESENTATION_METADATA_MAX_BYTES - 4
+        assertTrue("FW5 encoded payload must be non-empty", receipt.bytes > 0)
+        assertTrue(
+            "FW5 BoundedFrameOutput/wire payload must remain within bound: " + receipt,
+            receipt.bytes <= maxPixels,
+        )
+        assertTrue("FW5 frame sequence positive", receipt.sequence > 0)
+        assertTrue("FW5 capture timestamp positive", receipt.captureElapsedMs > 0)
+    }
+
+    private fun diagnosticCount(diagnostics: String, key: String): Long {
+        val match = Regex("(?:^| )" + Regex.escape(key) + "=(\\d+)").find(diagnostics)
+        return checkNotNull(match) { "missing " + key + " in {" + diagnostics + "}" }
+            .groupValues[1].toLong()
+    }
+
+    private fun shellOutput(command: String): String {
+        val descriptor = InstrumentationRegistry.getInstrumentation()
+            .uiAutomation.executeShellCommand(command)
+        return try {
+            java.io.FileInputStream(descriptor.fileDescriptor).use { input ->
+                val out = java.io.ByteArrayOutputStream()
+                val buffer = ByteArray(8192)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    out.write(buffer, 0, read)
+                }
+                out.toString("UTF-8")
+            }
+        } finally {
+            descriptor.close()
+        }
+    }
+
     private fun await(label: String, bound: Long, predicate: () -> Boolean) {
         val end = SystemClock.elapsedRealtime()+bound
         while (SystemClock.elapsedRealtime() < end) {
