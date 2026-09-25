@@ -2,9 +2,10 @@ package com.code2hack.eyebrowse.phone
 
 /**
  * A bounded trailing-edge throttle: one identity-bound wakeup, never a frame queue.
- * The caller leaves pixels in ImageReader until the due time, then acquires the LATEST
- * image. A final static frame inside the interval must not need another producer event.
- * All access is serialized by PrivateDisplayHost.nativeLock; this class is Android-free.
+ * The caller schedules a fresh producer-bound draw/commit/copy cycle at the due time. A final
+ * static update inside the interval therefore gets its own explicit draw and does not depend on
+ * another natural producer event. All access is serialized by PrivateDisplayHost.nativeLock;
+ * this class is Android-free.
  */
 internal class CaptureDeliveryThrottle(private val intervalMs: Long) {
     init {
