@@ -61,6 +61,20 @@ class HostingInstrumentedTest {
     private lateinit var scenario: ActivityScenario<MainActivity>
     private val ownedScenarios = mutableListOf<ActivityScenario<MainActivity>>()
     private val ownedRenewals = mutableListOf<LeaseRenewal>()
+    private val ownedHoldReleases = mutableListOf<() -> Unit>()
+
+    private fun registerTestHold(release: () -> Unit) {
+        ownedHoldReleases.add(release)
+    }
+
+    private fun newR4ControlledFactory(): R4ControlledFactory =
+        R4ControlledFactory(::registerTestHold)
+
+    private fun newR4Gate(holdTimeoutMs: Long = 1_500): R4Gate =
+        R4Gate(holdTimeoutMs).also { registerTestHold(it::release) }
+
+    private fun newDelayedConsumer(): DelayedConsumer =
+        DelayedConsumer().also { registerTestHold(it::releaseHold) }
 
     private fun launchScenario(): ActivityScenario<MainActivity> =
         ActivityScenario.launch(MainActivity::class.java).also { ownedScenarios.add(it) }
@@ -76,6 +90,10 @@ class HostingInstrumentedTest {
         if (::hosting.isInitialized) {
             println("HYBRID_CLEANUP_BEFORE " + runOnMainSync(hosting::captureDiagnostics))
         }
+        // Release test-owned blockers before production teardown asks the owner to quiesce.
+        // Releases are idempotent; normal-path tests still release explicitly at their evidence point.
+        for (release in ownedHoldReleases.asReversed()) attempt { release() }
+        ownedHoldReleases.clear()
         for (renewal in ownedRenewals) attempt { renewal.stopRenewing() }
         if (::hosting.isInitialized) attempt { runOnMain(hosting::stop) }
         for (owned in ownedScenarios.asReversed()) attempt { owned.close() }
@@ -1628,7 +1646,7 @@ class HostingInstrumentedTest {
                     HostingController.Attachment.PRIVATE_DISPLAY) && snapshot.viewAttached)
             },
         )
-        val first: DelayedConsumer = DelayedConsumer()
+        val first: DelayedConsumer = newDelayedConsumer()
         val lease1: HostingController.Lease? = runOnMainSync({ hosting.acquireLease(first) })
         assertNotNull(lease1)
         val second: CollectingConsumer = CollectingConsumer()
@@ -2112,7 +2130,7 @@ class HostingInstrumentedTest {
      */
     @Test
     fun delayedCommitFromSupersededProfileCannotPublish() {
-        val factory = R4ControlledFactory()
+        val factory = newR4ControlledFactory()
         val normal = prepareR4RecordedProfile(factory)
         val keyboard = HostingPresentationProfile(480, 240, 204)
         val oldConsumer = CollectingConsumer()
@@ -2163,7 +2181,7 @@ class HostingInstrumentedTest {
      */
     @Test
     fun retainedOldReaderCallbackDuringDelayedSettlementCannotUnblockReadiness() {
-        val factory = R4ControlledFactory()
+        val factory = newR4ControlledFactory()
         val normal = prepareR4RecordedProfile(factory)
         val keyboard = HostingPresentationProfile(480, 240, 204)
         val baseline = CollectingConsumer()
@@ -2181,7 +2199,7 @@ class HostingInstrumentedTest {
         val oldReader = factory.latestReader()
         val staleBefore = hosting.staleProfileImageCallbacksForTest()
 
-        val captureGate = R4Gate()
+        val captureGate = newR4Gate()
         val transitionDone = CountDownLatch(1)
         val transitionOk = AtomicBoolean(false)
         val deadline = SystemClock.elapsedRealtime() + 2_000
@@ -2243,7 +2261,7 @@ class HostingInstrumentedTest {
      */
     @Test
     fun delayedPixelCopyCompletionAfterEpochSupersessionCannotPublishOldBitmap() {
-        val factory = R4ControlledFactory()
+        val factory = newR4ControlledFactory()
         val normal = prepareR4RecordedProfile(factory)
         val keyboard = HostingPresentationProfile(480, 240, 204)
         val oldConsumer = CollectingConsumer()
@@ -2262,7 +2280,7 @@ class HostingInstrumentedTest {
 
         // Pure reflection: no Main hop while the traversal gate is holding Main.
         val readback = handlerFieldForR4(host, "readbackHandler")
-        val readbackGate = R4Gate()
+        val readbackGate = newR4Gate()
         assertTrue("readback barrier queued", readback.post(readbackGate.asRunnable()))
         assertTrue("readback thread blocked before PixelCopy", readbackGate.awaitEntered(1_000))
 
@@ -2274,7 +2292,7 @@ class HostingInstrumentedTest {
         // Flush the commit callback: the invoke runnable is now definitely queued behind readbackGate.
         runOnMain { }
 
-        val mainGate = R4Gate()
+        val mainGate = newR4Gate()
         Handler(Looper.getMainLooper()).postAtFrontOfQueue(mainGate.asRunnable())
         assertTrue("Main blocked before PixelCopy completion delivery", mainGate.awaitEntered(1_000))
 
@@ -2346,7 +2364,7 @@ class HostingInstrumentedTest {
         scriptedPredecessorResult: Int?,
         label: String,
     ) {
-        val factory = R4ControlledFactory()
+        val factory = newR4ControlledFactory()
         if (scriptedPredecessorResult != null) {
             factory.scriptCopyResults(scriptedPredecessorResult)
         }
@@ -2356,6 +2374,7 @@ class HostingInstrumentedTest {
         val predecessor = CollectingConsumer()
         predecessor.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
         val held = factory.holdNextCopyCompletion()
+        try {
         val predecessorDeadline = SystemClock.elapsedRealtime() + 2_000
         val predecessorLease = runOnMainSync {
             hosting.acquireProfileLease(normal, predecessorDeadline, predecessor)
@@ -2462,6 +2481,11 @@ class HostingInstrumentedTest {
         // Resize already revoked the predecessor lease; explicit releases remain safe/no-op.
         runOnMain(predecessorLease!!::release)
         runOnMain(successorLease!!::release)
+        } finally {
+            // A failed assertion before the evidence-point release must never orphan the held
+            // completion. Idempotent with the central @After ownership registry.
+            held.release()
+        }
     }
 
     /**
@@ -2471,7 +2495,7 @@ class HostingInstrumentedTest {
      */
     @Test
     fun sameProfileLeaseKeepsPublishingPastInitialReadinessDeadline() {
-        val factory = R4ControlledFactory()
+        val factory = newR4ControlledFactory()
         val normal = prepareR4RecordedProfile(factory)
         val consumer = CollectingConsumer()
         consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
@@ -2535,7 +2559,7 @@ class HostingInstrumentedTest {
      */
     @Test
     fun transientRecoveryBudgetCannotResetFromTrailingDemand() {
-        val factory = R4ControlledFactory().apply {
+        val factory = newR4ControlledFactory().apply {
             scriptCopyResults(
                 android.view.PixelCopy.ERROR_SOURCE_NO_DATA,
                 android.view.PixelCopy.ERROR_TIMEOUT,
@@ -2688,7 +2712,7 @@ class HostingInstrumentedTest {
     /** T-B positive: one transient NO_DATA may recover exactly once to a real Window SUCCESS. */
     @Test
     fun singleTransientRecoveryCanSucceedWithinOriginalTransaction() {
-        val factory = R4ControlledFactory().apply {
+        val factory = newR4ControlledFactory().apply {
             scriptCopyResults(
                 android.view.PixelCopy.ERROR_SOURCE_NO_DATA,
                 R4ControlledFactory.REAL_COPY,
@@ -2720,7 +2744,7 @@ class HostingInstrumentedTest {
      */
     @Test
     fun delayedSameEpochCommitKeepsFirstQualifyingDrawAnchor() {
-        val factory = R4ControlledFactory()
+        val factory = newR4ControlledFactory()
         val normal = prepareR4RecordedProfile(factory)
         val host = currentPrivateHostForR4()
         val consumer = CollectingConsumer()
@@ -3673,7 +3697,9 @@ class HostingInstrumentedTest {
      * Real platform factory with test-only observation/control: retain reader object identities
      * and delay one actual Presentation draw after the product listener has observed it.
      */
-    private class R4ControlledFactory : PrivateDisplayHost.Factory {
+    private class R4ControlledFactory(
+        private val registerRelease: ((() -> Unit) -> Unit)? = null,
+    ) : PrivateDisplayHost.Factory {
         private val platform = PrivateDisplayHost.PlatformFactory()
         private val readers = CopyOnWriteArrayList<ImageReader>()
         private val scriptedCopyResults = ConcurrentLinkedQueue<Int>()
@@ -3686,17 +3712,26 @@ class HostingInstrumentedTest {
         @Volatile private var nextCopyGate: R4Gate? = null
         @Volatile private var nextCompletionHold: R4CompletionHold? = null
 
-        fun armNextDraw(): R4Gate = R4Gate().also { nextDrawGate = it }
+        fun armNextDraw(): R4Gate = R4Gate().also { gate ->
+            nextDrawGate = gate
+            registerRelease?.invoke(gate::release)
+        }
 
         /** Observe one real Presentation draw without blocking Main. */
         fun observeNextDraw(): CountDownLatch =
             CountDownLatch(1).also { nextDrawObserved = it }
 
         fun armNextCopy(holdTimeoutMs: Long = 1_500): R4Gate =
-            R4Gate(holdTimeoutMs).also { nextCopyGate = it }
+            R4Gate(holdTimeoutMs).also { gate ->
+                nextCopyGate = gate
+                registerRelease?.invoke(gate::release)
+            }
 
         fun holdNextCopyCompletion(): R4CompletionHold =
-            R4CompletionHold().also { nextCompletionHold = it }
+            R4CompletionHold().also { hold ->
+                nextCompletionHold = hold
+                registerRelease?.invoke(hold::release)
+            }
 
         fun scriptCopyResults(vararg results: Int) {
             results.forEach(scriptedCopyResults::add)
