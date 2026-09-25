@@ -397,7 +397,13 @@ class PrivateDisplayHost(
     private var activeCaptureTransaction: CaptureTransaction? = null
     private var activeCaptureCycle: CaptureCycle? = null
     private var inFlightWindowCopy: WindowCopyRequest? = null
+    /** Same-binding demand coalesced into the currently unresolved transaction. */
     private var trailingCaptureDemand = false
+    /**
+     * Demand admitted by a NEW binding while an older binding still owns the single native-copy
+     * slot. Identity-bound so predecessor completion can wake only the current successor.
+     */
+    private var successorCaptureDemand: CaptureBinding? = null
     private var captureReadinessPending = false
     private var captureTerminalFailure = false
     private var readbackThread: HandlerThread? = null
@@ -686,6 +692,7 @@ class PrivateDisplayHost(
             activeCaptureTransaction = null
             activeCaptureCycle = null
             trailingCaptureDemand = false
+            successorCaptureDemand = null
             captureReadinessPending = deadlineElapsedMs != Long.MAX_VALUE
             captureTerminalFailure = false
             frameSequence = 0
@@ -738,6 +745,7 @@ class PrivateDisplayHost(
             activeCaptureTransaction = null
             activeCaptureCycle = null
             trailingCaptureDemand = false
+            successorCaptureDemand = null
             captureReadinessPending = deadlineElapsedMs != Long.MAX_VALUE
             captureTerminalFailure = false
             frameSequence = 0
@@ -809,6 +817,7 @@ class PrivateDisplayHost(
             activeCaptureTransaction = null
             activeCaptureCycle = null
             trailingCaptureDemand = false
+            successorCaptureDemand = null
             captureReadinessPending = false
             captureTerminalFailure = false
             cancelPendingFrameLocked()
@@ -1064,6 +1073,9 @@ class PrivateDisplayHost(
                 " transaction=" + synchronized(nativeLock) { activeCaptureTransaction?.id ?: 0 } +
                 " readinessPending=" + synchronized(nativeLock) { captureReadinessPending } +
                 " recoveryUsed=" + synchronized(nativeLock) { activeCaptureTransaction?.recoveryUsed ?: false } +
+                " successorDemand=" + synchronized(nativeLock) {
+                    successorCaptureDemand?.authoritySerial ?: 0
+                } +
                 " activeCycle=" + synchronized(nativeLock) { activeCaptureCycle?.id ?: 0 } +
                 " nativeCopy=" + synchronized(nativeLock) { inFlightWindowCopy?.cycleId ?: 0 } +
                 " terminal=" + synchronized(nativeLock) { captureTerminalFailure } +
@@ -1103,6 +1115,25 @@ class PrivateDisplayHost(
         }
     }
 
+    /**
+     * Coalesces exactly one demand while capture resources are busy. A demand from the SAME
+     * binding belongs to that transaction; a demand from a newly installed binding is retained
+     * separately so predecessor completion can free the slot without dropping successor liveness.
+     * nativeLock must be held.
+     */
+    private fun coalesceCaptureDemandLocked(binding: CaptureBinding) {
+        val busyBinding = inFlightWindowCopy?.binding
+            ?: activeCaptureCycle?.binding
+            ?: activeCaptureTransaction?.binding
+        if (busyBinding != null && busyBinding !== binding) {
+            if (successorCaptureDemand !== binding) coalescedCallbackCount += 1
+            successorCaptureDemand = binding
+        } else {
+            if (!trailingCaptureDemand) coalescedCallbackCount += 1
+            trailingCaptureDemand = true
+        }
+    }
+
     /** A normal app-owned container draw is the demand source; the sink queue is never freshness authority. */
     private fun onWindowDraw(serial: Long, elapsedMs: Long) {
         lastObservedDrawSerial = serial
@@ -1122,9 +1153,8 @@ class PrivateDisplayHost(
                     cycle.qualifyingDraw = DrawObservation(serial, elapsedMs)
                     associated = true
                 }
-            } else if (inFlightWindowCopy != null) {
-                if (!trailingCaptureDemand) coalescedCallbackCount += 1
-                trailingCaptureDemand = true
+            } else if (inFlightWindowCopy != null || activeCaptureTransaction != null) {
+                coalesceCaptureDemandLocked(checkNotNull(captureBinding))
                 return
             }
         }
@@ -1147,10 +1177,12 @@ class PrivateDisplayHost(
             if (!captureActive || captureReleased || captureTerminalFailure ||
                 binding.session.documentIdentity() != binding.documentId) return
             if (activeCaptureTransaction != null || activeCaptureCycle != null || inFlightWindowCopy != null) {
-                if (!trailingCaptureDemand) coalescedCallbackCount += 1
-                trailingCaptureDemand = true
+                coalesceCaptureDemandLocked(binding)
                 return
             }
+            // If this wakeup is the preserved demand of the current successor binding, consume
+            // only that identity-bound latch. The transaction's own trailing flag is untouched.
+            if (successorCaptureDemand === binding) successorCaptureDemand = null
             val wakeup = deliveryThrottle.request(nowMs)
             if (wakeup == null) {
                 coalescedCallbackCount += 1
@@ -1190,7 +1222,7 @@ class PrivateDisplayHost(
                 binding.session.documentIdentity() != binding.documentId) return
             if (activeCaptureTransaction != null || activeCaptureCycle != null ||
                 inFlightWindowCopy != null) {
-                trailingCaptureDemand = true
+                coalesceCaptureDemandLocked(binding)
                 return
             }
             val now = SystemClock.elapsedRealtime()
@@ -1508,6 +1540,7 @@ class PrivateDisplayHost(
         terminalIfCurrent: Boolean,
     ) {
         var recovery: CaptureTransaction? = null
+        var scheduleSuccessor = false
         synchronized(nativeLock) {
             if (inFlightWindowCopy !== request) {
                 if (!request.bitmap.isRecycled) request.bitmap.recycle()
@@ -1541,10 +1574,26 @@ class PrivateDisplayHost(
                     " readiness=" + transaction.readiness +
                     " terminal=" + captureTerminalFailure)
             }
+
+            // R-04: A stale predecessor may be the only thing occupying the one-copy slot when a
+            // successor binding B has already admitted its initial demand. Freeing A's resource
+            // slot must re-drive B under B's ORIGINAL deadline/fences. This is deliberately
+            // separate from trailingCaptureDemand, which an exhausted transaction discards.
+            val current = captureBinding
+            val successor = successorCaptureDemand
+            if (recovery == null && successor != null && current === successor &&
+                successor !== request.binding && captureActive && !captureReleased &&
+                !captureTerminalFailure &&
+                successor.session.documentIdentity() == successor.documentId) {
+                scheduleSuccessor = true
+            }
         }
         if (!request.bitmap.isRecycled) request.bitmap.recycle()
-        recovery?.let { transaction ->
-            captureHandler?.post { beginRecoveryCycle(transaction) }
+        val recoveryTransaction = recovery
+        if (recoveryTransaction != null) {
+            captureHandler?.post { beginRecoveryCycle(recoveryTransaction) }
+        } else if (scheduleSuccessor) {
+            requestCaptureDemand()
         }
         if (ownerPhase.isRetiring()) onQuiesced?.run()
     }
