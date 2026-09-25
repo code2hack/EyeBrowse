@@ -2351,7 +2351,8 @@ class HostingInstrumentedTest {
             }, 2_500)
             val countAfterDeadline = consumer.count()
             val document = runOnMainSync(session::documentIdentity)
-            val drawBefore = runOnMainSync { currentPrivateHostForR4().drawObservationForTest().serial }
+            val host = currentPrivateHostForR4()
+            val drawBefore = runOnMainSync { host.drawObservationForTest().serial }
 
             // Fixture diagnosis: background timer unfreeze did not produce a traversal on S20+.
             // Mutate layout synchronously in the SAME document, then request a normal WebView
@@ -2367,7 +2368,7 @@ class HostingInstrumentedTest {
                 session.view()!!.postInvalidateOnAnimation()
             }
             waitUntilMain("same-document post-deadline hardware draw", {
-                currentPrivateHostForR4().drawObservationForTest().serial > drawBefore
+                host.drawObservationForTest().serial > drawBefore
             })
             assertEquals("T-A stimulus preserves browser document", document,
                 runOnMainSync(session::documentIdentity))
