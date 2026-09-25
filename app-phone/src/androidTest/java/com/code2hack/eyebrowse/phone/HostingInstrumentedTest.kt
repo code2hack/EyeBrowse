@@ -2141,6 +2141,173 @@ class HostingInstrumentedTest {
 
 
     /**
+     * Stage-B FW3: re-run the recorded 344 -> 240 -> 344 grow/reflow sequence against qualified
+     * Window copies. Native/image geometry remains exact while renderer extent is checked through
+     * the production Blink quantizer. The 240-high recorded WebView99 case must resolve the open
+     * 86-vs-87 oracle as 86, with no tolerance.
+     */
+    @Test
+    fun fw3GrowReflowUsesExactRendererQuantizationAndUnscaledWindowPixels() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val keyboard = HostingPresentationProfile(480, 240, 204)
+        val host = currentPrivateHostForR4()
+        val document = runOnMainSync(session::documentIdentity)
+        val physical = runOnMainSync { hosting.profileGeometry()!! }
+        val drawAtStart = runOnMainSync { host.drawObservationForTest().serial }
+
+        installFw3ViewportProbe()
+        val adapter = newFw3RendererAdapter()
+        assertEquals(RendererEditorAdapter.Status.STATE,
+            callFw3Renderer(adapter, "install", adapter::install).status)
+
+        fun samePhysical(now: PrivateDisplayHost.ProfileGeometry) {
+            assertEquals("FW3 VirtualDisplay identity", physical.display.displayId, now.display.displayId)
+            assertEquals("FW3 Presentation identity", physical.presentationId, now.presentationId)
+            assertEquals("FW3 Window identity", physical.windowId, now.windowId)
+            assertEquals("FW3 decor identity", physical.decorId, now.decorId)
+            assertEquals("FW3 parent identity", physical.parentId, now.parentId)
+            assertEquals("FW3 WebView identity", physical.viewId, now.viewId)
+            assertEquals("FW3 uninterrupted local-focus history",
+                physical.focusLossSerial, now.focusLossSerial)
+            assertTrue("FW3 local focus remains ready", now.localFocus)
+            assertEquals("FW3 document remains live", document, runOnMainSync(session::documentIdentity))
+        }
+
+        data class Stage(
+            val profile: HostingPresentationProfile,
+            val deadline: Long,
+            val geometry: PrivateDisplayHost.ProfileGeometry,
+            val viewport: RendererViewport,
+            val page: JSONObject,
+            val lease: HostingController.Lease,
+            val consumer: CollectingConsumer,
+        )
+
+        fun stage(profile: HostingPresentationProfile, name: String): Stage {
+            val deadline = SystemClock.elapsedRealtime() + 2_000
+            val settled = CountDownLatch(1)
+            val ok = AtomicBoolean(false)
+            runOnMain {
+                hosting.reconfigureRgProfile(profile, deadline) { result ->
+                    ok.set(result)
+                    settled.countDown()
+                }
+            }
+            assertTrue("$name profile settlement callback",
+                settled.await(1_500, TimeUnit.MILLISECONDS))
+            assertTrue("$name profile settled", ok.get())
+
+            val geometry = runOnMainSync { hosting.profileGeometry()!! }
+            assertEquals("$name actual display width", profile.width, geometry.display.actualWidth)
+            assertEquals("$name actual display height", profile.height, geometry.display.actualHeight)
+            assertEquals("$name reader width", profile.width, geometry.display.readerWidth)
+            assertEquals("$name reader height", profile.height, geometry.display.readerHeight)
+            assertEquals("$name decor width", profile.width, geometry.decorWidth)
+            assertEquals("$name decor height", profile.height, geometry.decorHeight)
+            assertEquals("$name container width", profile.width, geometry.containerWidth)
+            assertEquals("$name container height", profile.height, geometry.containerHeight)
+            assertEquals("$name WebView width", profile.width, geometry.viewWidth)
+            assertEquals("$name WebView height", profile.height, geometry.viewHeight)
+            assertEquals("$name single current reader", 1, geometry.readerOverlap)
+            samePhysical(geometry)
+
+            val viewport = awaitFw3RendererViewport(adapter, profile, deadline, name)
+            val page = fw3PageObservation()
+            assertEquals("$name renderer width observation",
+                viewport.width, page.getDouble("visualWidth"), 0.0001)
+            assertEquals("$name renderer height observation",
+                viewport.height, page.getDouble("visualHeight"), 0.0001)
+            assertEquals("$name DPR observation",
+                viewport.devicePixelRatio, page.getDouble("dpr"), 0.0001)
+            assertEquals("$name visual scale observation",
+                viewport.scale, page.getDouble("visualScale"), 0.0001)
+
+            val held = factory.holdNextCopyCompletion()
+            val consumer = CollectingConsumer()
+            consumer.expectQualification(profile.width, profile.height, CAPTURE_PAGE_COLOR)
+            val eligible = SystemClock.uptimeMillis()
+            val lease = runOnMainSync {
+                hosting.acquireProfileLease(profile, deadline, consumer)
+            }
+            assertNotNull("$name profile lease", lease)
+            assertTrue("$name qualified Window copy completed inside original request",
+                held.awaitCaptured((deadline - SystemClock.elapsedRealtime()).coerceAtLeast(1)))
+            assertEquals("$name Window PixelCopy SUCCESS",
+                android.view.PixelCopy.SUCCESS, held.result)
+
+            val bitmap = checkNotNull(held.destinationBitmap()) { "$name raw copy bitmap missing" }
+            val copy = inFlightWindowCopyGeometryForFw3(host)
+            val viewRect = currentViewRectInWindowForFw3()
+            assertEquals("$name source rect is exact current WebView rect", viewRect, copy.sourceRect)
+            assertEquals("$name source width", profile.width, copy.sourceRect.width())
+            assertEquals("$name source height", profile.height, copy.sourceRect.height())
+            assertEquals("$name destination width", profile.width, bitmap.width)
+            assertEquals("$name destination height", profile.height, bitmap.height)
+            assertEquals("$name request owns inspected destination",
+                System.identityHashCode(bitmap), copy.bitmapIdentity)
+
+            assertFw3RawPixelGeometry(name, bitmap, page)
+            held.release()
+            waitUntil("$name qualified frame delivered", {
+                consumer.qualifyingCountFrom(0) > 0
+            }, (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(1))
+            val delay = consumer.earliestQualifyingDelayMsFrom(0, eligible)
+            assertTrue("$name delivery inside unchanged two-second profile request: $delay",
+                OutputQualification.validWithinBound(delay))
+            assertTrue("$name all qualified bitmap dimensions exact",
+                consumer.allFramesMatchSize(profile.width, profile.height))
+            return Stage(profile, deadline, geometry, viewport, page, lease!!, consumer)
+        }
+
+        val shrink = stage(keyboard, "FW3-shrink-240")
+        val shrinkDipBucket =
+            kotlin.math.ceil(keyboard.height /
+                shrink.viewport.devicePixelRatio.toFloat()).toInt()
+        val shrinkCssBucket = kotlin.math.round(shrink.viewport.height).toInt()
+        assertEquals("FW3 open native-to-DIP oracle is 86", 86, shrinkDipBucket)
+        assertEquals("FW3 renderer reports the same 86 bucket", 86, shrinkCssBucket)
+        assertNotEquals("FW3 87 alternative remains rejected", 87, shrinkCssBucket)
+        assertTrue("FW3 exact production quantizer accepts 240-high renderer extent",
+            shrink.viewport.matches(
+                keyboard.width,
+                keyboard.height,
+                runOnMainSync { session.view()!!.scale },
+            ))
+
+        val shrinkProbeTop = shrink.page.getJSONObject("probe").getDouble("top")
+        val shrinkVisualHeight = shrink.page.getDouble("visualHeight")
+        val shrinkCount = shrink.consumer.count()
+
+        // Reconfigure revokes shrink. Do NOT release it before grow; normal release would exercise
+        // destructive capture teardown rather than the approved in-place profile transaction.
+        val grow = stage(normal, "FW3-grow-344")
+        assertTrue("FW3 grow creates a later profile epoch",
+            grow.geometry.profileSerial > shrink.geometry.profileSerial)
+        assertEquals("FW3 grow cannot publish through old shrink consumer",
+            shrinkCount, shrink.consumer.count())
+        assertTrue("FW3 renderer viewport genuinely grows",
+            grow.viewport.height > shrink.viewport.height)
+        assertTrue("FW3 independent fixed 50vh probe reflows downward",
+            grow.page.getJSONObject("probe").getDouble("top") > shrinkProbeTop)
+        assertTrue("FW3 independent visual viewport observation grows",
+            grow.page.getDouble("visualHeight") > shrinkVisualHeight)
+        assertTrue("FW3 production quantizer accepts grown renderer extent",
+            grow.viewport.matches(
+                normal.width,
+                normal.height,
+                runOnMainSync { session.view()!!.scale },
+            ))
+        assertTrue("FW3 actual hardware draw observer advanced",
+            runOnMainSync { host.drawObservationForTest().serial } > drawAtStart)
+        samePhysical(grow.geometry)
+
+        // Old shrink lease is revoked by grow; both releases are intentionally harmless.
+        runOnMain(shrink.lease::release)
+        runOnMain(grow.lease::release)
+    }
+
+    /**
      * R4a: hold the actual post-visual hardware traversal inside the Presentation after the
      * product draw observer ran but before traversal returns. Queue the 240 profile transition at
      * the front of Main, then release the traversal. The old frame-commit callback is therefore
@@ -3136,6 +3303,158 @@ class HostingInstrumentedTest {
             runOnMain { session.captureCommitDispatcherForTest = null }
             if (!leaseRetired) runOnMain(lease!!::release)
         }
+    }
+
+    private data class Fw3CopyGeometry(
+        val sourceRect: android.graphics.Rect,
+        val bitmapIdentity: Int,
+    )
+
+    private fun newFw3RendererAdapter(): RendererEditorAdapter {
+        val app = InstrumentationRegistry.getInstrumentation().targetContext
+        val program = app.assets.open("eyebrowse-editor.js").bufferedReader().use { it.readText() }
+        return RendererEditorAdapter(session::view, session::documentIdentity, program)
+    }
+
+    private fun callFw3Renderer(
+        adapter: RendererEditorAdapter,
+        label: String,
+        call: ((RendererEditorAdapter.Result) -> Unit) -> Unit,
+    ): RendererEditorAdapter.Result {
+        val result = AtomicReference<RendererEditorAdapter.Result>()
+        val done = CountDownLatch(1)
+        runOnMain {
+            call {
+                result.set(it)
+                done.countDown()
+            }
+        }
+        assertTrue("FW3 renderer callback $label",
+            done.await(1_000, TimeUnit.MILLISECONDS))
+        return checkNotNull(result.get()) { "FW3 renderer result missing: $label" }
+    }
+
+    private fun awaitFw3RendererViewport(
+        adapter: RendererEditorAdapter,
+        profile: HostingPresentationProfile,
+        deadlineElapsedMs: Long,
+        label: String,
+    ): RendererViewport {
+        var last: RendererViewport? = null
+        while (SystemClock.elapsedRealtime() < deadlineElapsedMs) {
+            val answer = callFw3Renderer(adapter, "$label-viewport", adapter::viewport)
+            assertEquals("$label renderer viewport status",
+                RendererEditorAdapter.Status.VIEWPORT, answer.status)
+            val viewport = answer.viewport
+            if (viewport != null) {
+                last = viewport
+                val scale = runOnMainSync { session.view()!!.scale }
+                if (viewport.matches(profile.width, profile.height, scale)) return viewport
+            }
+            SystemClock.sleep(16)
+        }
+        fail("$label renderer viewport never matched exact profile; last=$last")
+        return checkNotNull(last)
+    }
+
+    private fun installFw3ViewportProbe() {
+        assertEquals(
+            "true",
+            evaluateJs(
+                """(()=> {
+                    document.querySelectorAll('[data-fw3-probe]').forEach(e=>e.remove());
+                    const add=(id,style,color)=>{
+                      const e=document.createElement('div');e.id=id;e.dataset.fw3Probe='1';
+                      e.style.cssText='position:fixed;pointer-events:none;z-index:2147483000;'+style+
+                        ';background:'+color+';margin:0;padding:0;border:0';
+                      document.body.appendChild(e);return e;
+                    };
+                    add('fw3-top','left:0;right:0;top:0;height:2px','#ff0000');
+                    add('fw3-bottom','left:0;right:0;bottom:0;height:2px','#0000ff');
+                    add('fw3-left','left:0;top:0;bottom:0;width:2px','#00ff00');
+                    add('fw3-right','right:0;top:0;bottom:0;width:2px','#ff00ff');
+                    add('fw3-center','left:40px;top:50vh;width:2px;height:2px','#00ffff');
+                    return true;
+                })()"""
+            ),
+        )
+    }
+
+    private fun fw3PageObservation(): JSONObject {
+        val raw = checkNotNull(
+            evaluateJs(
+                """(()=> {
+                    const p=document.getElementById('fw3-center').getBoundingClientRect();
+                    return {
+                      visualWidth:visualViewport.width,
+                      visualHeight:visualViewport.height,
+                      visualScale:visualViewport.scale,
+                      dpr:devicePixelRatio,
+                      innerWidth:innerWidth,
+                      innerHeight:innerHeight,
+                      probe:{left:p.left,top:p.top,width:p.width,height:p.height}
+                    };
+                })()"""
+            )
+        )
+        return JSONObject(raw)
+    }
+
+    private fun currentViewRectInWindowForFw3(): android.graphics.Rect = runOnMainSync {
+        val view = checkNotNull(session.view())
+        val location = IntArray(2)
+        view.getLocationInWindow(location)
+        android.graphics.Rect(
+            location[0],
+            location[1],
+            location[0] + view.width,
+            location[1] + view.height,
+        )
+    }
+
+    private fun inFlightWindowCopyGeometryForFw3(host: PrivateDisplayHost): Fw3CopyGeometry {
+        val type = PrivateDisplayHost::class.java
+        val lockField = type.getDeclaredField("nativeLock").apply { isAccessible = true }
+        val requestField = type.getDeclaredField("inFlightWindowCopy").apply { isAccessible = true }
+        val lock = checkNotNull(lockField.get(host))
+        return synchronized(lock) {
+            val request = checkNotNull(requestField.get(host)) { "FW3 copy request not in flight" }
+            val requestType = request.javaClass
+            val source = requestType.getDeclaredField("sourceRect").apply {
+                isAccessible = true
+            }.get(request) as android.graphics.Rect
+            val bitmap = requestType.getDeclaredField("bitmap").apply {
+                isAccessible = true
+            }.get(request) as android.graphics.Bitmap
+            Fw3CopyGeometry(android.graphics.Rect(source), System.identityHashCode(bitmap))
+        }
+    }
+
+    private fun assertFw3RawPixelGeometry(
+        label: String,
+        bitmap: android.graphics.Bitmap,
+        page: JSONObject,
+    ) {
+        fun color(name: String, actual: Int, expected: String) {
+            assertTrue("$label $name edge pixel expected=$expected actual=#" +
+                Integer.toHexString(actual),
+                nearColor(actual, Color.parseColor(expected)))
+        }
+        color("top", bitmap.getPixel(bitmap.width / 2, 0), "#ff0000")
+        color("bottom", bitmap.getPixel(bitmap.width / 2, bitmap.height - 1), "#0000ff")
+        color("left", bitmap.getPixel(0, bitmap.height / 2), "#00ff00")
+        color("right", bitmap.getPixel(bitmap.width - 1, bitmap.height / 2), "#ff00ff")
+        color("background", bitmap.getPixel(10, 10), "#f6f3ea")
+
+        val probe = page.getJSONObject("probe")
+        val webScale = runOnMainSync { session.view()!!.scale.toDouble() }
+        val x = kotlin.math.round(
+            (probe.getDouble("left") + probe.getDouble("width") / 2.0) * webScale
+        ).toInt().coerceIn(0, bitmap.width - 1)
+        val y = kotlin.math.round(
+            (probe.getDouble("top") + probe.getDouble("height") / 2.0) * webScale
+        ).toInt().coerceIn(0, bitmap.height - 1)
+        color("mapped fixed reflow probe", bitmap.getPixel(x, y), "#00ffff")
     }
 
     /** Static recorded regression stimulus; production profiles remain RG-measured. */
