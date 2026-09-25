@@ -288,11 +288,11 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Worker",
-    "scope": "v0.0.1 ticket Worker (ChatGPT); Owner-directed spawn 20260925; bootstrap ack verified 20260925 (Instant/Latest/High); switch to 6 Pro + Extra High when usage unlocks (resets 2026-09-26 18:15 or Owner adds credits); awaiting issue-9 dispatch",
+    "scope": "v0.0.1 ticket Worker (ChatGPT); Owner-directed spawn 20260925; Owner replaced the Manager-created bootstrap chat same day with this Owner-created conversation (old chat 6ab62ebb kept as 'Worker-chatgpt-bootstrap-superseded'); model verified in-conversation 'GPT-6 Astra Pro'; Manager binding envelope MGR3-WC-BIND-20260925-02 ACKed; old chat 6ab62ebb archived in ChatGPT 20260925 per Owner; awaiting issue-9 dispatch",
     "host": "chatgpt.com",
     "runtime": "chatgpt",
-    "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70-eyebrowse/c/6ab62ebb-8cc0-83ea-be81-b057b80c9de3",
-    "model": "gpt-5.6-sol / High (6 Pro pending usage unlock)",
+    "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70/c/6ab634fe-d220-83ea-8370-72c3b993bb1c",
+    "model": "gpt-6-astra pro",
     "name": "Worker-chatgpt",
     "status": "active"
   },
