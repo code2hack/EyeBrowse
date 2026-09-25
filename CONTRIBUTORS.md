@@ -12,6 +12,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "chatgpt.com",
     "runtime": "chatgpt",
     "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70/c/6a9e2461-bf2c-83ea-8271-8946fceaef84",
+    "paseo": null,
     "model": "gpt-6 Pro",
     "name": "AGENTS.md Design",
     "status": "active"
@@ -22,6 +23,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "u4090",
     "runtime": "pi",
     "id": "01a0864a-e865-7447-96f3-6b653a20d3ac",
+    "paseo": null,
     "model": "gpt-6-astra",
     "name": "EyeBrowse-Manager",
     "status": "retired"
@@ -32,6 +34,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "u4090",
     "runtime": "pi",
     "id": "01a08757-38e0-73f6-a82b-f38580993719",
+    "paseo": null,
     "model": "deepseek-v4.1-flash-expires-on-0910",
     "name": "LockProbe-Worker",
     "status": "retired"
@@ -42,6 +45,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "u4090",
     "runtime": "pi",
     "id": "01a08824-24ad-77a0-9f14-04ea2d91cbcd",
+    "paseo": null,
     "model": "gpt-6-astra",
     "name": "LockProbe-Reviewer",
     "status": "retired"
@@ -52,6 +56,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "chatgpt.com",
     "runtime": "chatgpt",
     "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70-eyebrowse/c/6aa24adb-d8f0-83ea-9f93-a68dcb21bd01",
+    "paseo": null,
     "model": "gpt-6 Pro",
     "name": "SPEC Design",
     "status": "active"
@@ -62,6 +67,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "u4090",
     "runtime": "pi",
     "id": "01a08b0d-75a8-7529-a345-e1857f506419",
+    "paseo": null,
     "model": "gpt-6-astra",
     "name": "v0.0.1 Planner-fallback",
     "status": "paused"
@@ -72,6 +78,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "u4090",
     "runtime": "pi",
     "id": "01a08b62-cce3-77c8-91fa-d9d876b907b8",
+    "paseo": null,
     "model": "deepseek-flash",
     "name": "Worker-#4",
     "status": "retired"
@@ -82,6 +89,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "u4090",
     "runtime": "pi",
     "id": "01a08c75-7ea4-73f8-b306-814c1488e4bb",
+    "paseo": null,
     "model": "gpt-6-astra",
     "name": "Reviewer-#4",
     "status": "retired"
@@ -92,6 +100,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "u4090",
     "runtime": "pi",
     "id": "01a0a004-df1e-76e1-bd18-9e974724b78a",
+    "paseo": null,
     "model": "GLM-5.3-Flash-EXL3",
     "name": "Worker-#5",
     "status": "retired"
@@ -102,6 +111,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "u4090",
     "runtime": "pi",
     "id": "01a0a0fc-eaea-77b3-a446-08df61bfc268",
+    "paseo": null,
     "model": "gpt-6-astra",
     "name": "Reviewer-#5",
     "status": "retired"
@@ -112,6 +122,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "u4090",
     "runtime": "pi",
     "id": "01a0a441-925d-7484-81cf-23dd56f1ead4",
+    "paseo": null,
     "model": "deepseek-flash",
     "name": "Worker-#5-r2",
     "status": "retired"
@@ -122,6 +133,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "u4090",
     "runtime": "pi",
     "id": "01a0a81d-2502-7084-92bd-ef29f9f2e4fd",
+    "paseo": null,
     "model": "GLM-5.3-Flash-EXL3",
     "name": "Worker-#5-r3",
     "status": "retired"
@@ -132,6 +144,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "u4090",
     "runtime": "pi",
     "id": "01a0a81d-2515-762f-9c88-02e751c04cad",
+    "paseo": null,
     "model": "gpt-6-astra Max",
     "name": "Expert-#5",
     "status": "retired"
@@ -142,6 +155,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "chatgpt.com",
     "runtime": "chatgpt",
     "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70-eyebrowse/c/6aaa09e0-af24-83ea-8105-2b56e638f94b",
+    "paseo": null,
     "model": "GPT-5.6 Sol / gpt-5-6-thinking / Extra High",
     "name": "v0.0.1 Planner",
     "status": "active"
@@ -152,6 +166,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "chatgpt.com",
     "runtime": "chatgpt",
     "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70-eyebrowse/c/6aaa1b2a-6628-83ea-b1a3-2296c513bd85",
+    "paseo": null,
     "model": "gpt-6-pro (Latest channel, pill \"Pro\"; verified 20260922; thinking Extra High)",
     "name": "v0.0.1 Reviewer",
     "status": "retired"
@@ -162,6 +177,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "chatgpt.com",
     "runtime": "chatgpt",
     "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70-eyebrowse/c/6aaa3ed7-f170-83e9-b793-000f0e2065f2",
+    "paseo": null,
     "model": "GPT-5.6 Sol / gpt-5-6-thinking / Extra High",
     "name": "Expert",
     "status": "retired"
@@ -172,6 +188,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "chatgpt.com",
     "runtime": "chatgpt",
     "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70-eyebrowse/c/6aae9eb3-2024-83e9-9377-0cb913bab243",
+    "paseo": null,
     "model": "gpt-6-pro (ChatGPT '6 Pro')",
     "name": "Expert-#6",
     "status": "retired"
@@ -182,6 +199,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "u4090",
     "runtime": "pi",
     "id": "204730f4-7032-4135-a2a9-8ea79e96174f",
+    "paseo": null,
     "model": "GLM-5.3-Flash-EXL3 / max",
     "name": "Worker-#6-r1",
     "status": "retired"
@@ -192,6 +210,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "u4090",
     "runtime": "codex",
     "id": "01a0bfbf-8f30-77d1-8c8f-756c51e5d547",
+    "paseo": null,
     "model": "GPT-5.6 Sol / gpt-5.6-sol / Extra High",
     "name": "Worker-#6-r2-Codex",
     "status": "retired"
@@ -202,6 +221,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "u4090",
     "runtime": "pi",
     "id": "01a0adea-daa5-76bc-838a-c7eb0083814b",
+    "paseo": null,
     "model": "GLM-5.3-Flash-EXL3 / max",
     "name": "Paseo-Create-Setup-1",
     "status": "retired"
@@ -212,6 +232,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "u4090",
     "runtime": "pi",
     "id": "01a0b008-4721-73da-b70e-2870ec36f8ab",
+    "paseo": null,
     "model": "GLM-5.3-Flash-EXL3 / max",
     "name": "EyeBrowse-Manager-GLM",
     "status": "retired"
@@ -222,6 +243,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "u4090",
     "runtime": "codex",
     "id": "01a0bfb9-8fc0-7981-a493-14c6894dc70c",
+    "paseo": null,
     "model": "gpt-5.6-luna / max",
     "name": "EyeBrowse-Manager-Codex",
     "status": "retired"
@@ -232,6 +254,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "u4090",
     "runtime": "codex",
     "id": "01a0bfe8-79d4-73d0-97ce-aac94b7bc438",
+    "paseo": null,
     "model": "gpt-5.6-luna / max",
     "name": "EyeBrowse-Manager-Codex-r2",
     "status": "retired"
@@ -242,6 +265,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "u4090",
     "runtime": "pi",
     "id": "01a0c021-6d15-740e-bef7-c67e2504252f",
+    "paseo": "c280b5fb-63e6-4c02-8fa6-68677f1f3151",
     "model": "GLM-5.3-Flash-EXL3 / max",
     "name": "EyeBrowse-Manager-GLM-r2",
     "status": "retired"
@@ -252,6 +276,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "u4090",
     "runtime": "codex",
     "id": "01a0bfdf-0ba4-78d0-9eb1-ff54e9ddad16",
+    "paseo": "f2d133f2-2cec-4b6b-b5d5-129829a621e1",
     "model": "gpt-6-astra / medium",
     "name": "Worker-v0.01",
     "status": "retired"
@@ -262,6 +287,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "chatgpt.com",
     "runtime": "chatgpt",
     "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70-eyebrowse/c/6ab111f3-423c-83ea-8d94-1a818786289a",
+    "paseo": null,
     "model": "gpt-6-pro (ChatGPT '6 Pro')",
     "name": "Expert-v0.01",
     "status": "active"
@@ -272,6 +298,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "u4090",
     "runtime": "codex",
     "id": "01a0c8c7-b041-7db2-b644-22ed4343de82",
+    "paseo": "18bdfd37-7a68-4334-a363-0a7ad88b5b11",
     "model": "gpt-6-astra",
     "name": "Reviewer-v0.0.1",
     "status": "retired"
@@ -282,6 +309,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "chatgpt.com",
     "runtime": "chatgpt",
     "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70/c/6ab32573-5b4c-83ea-8425-7ac31b5bd034",
+    "paseo": null,
     "model": "gpt-6-pro",
     "name": "Reviewer-chatgpt",
     "status": "active"
@@ -292,6 +320,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "chatgpt.com",
     "runtime": "chatgpt",
     "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70/c/6ab634fe-d220-83ea-8370-72c3b993bb1c",
+    "paseo": null,
     "model": "gpt-6-astra pro / extra high (effort raised manually by Owner 20260925)",
     "name": "Worker-chatgpt",
     "status": "active"
@@ -302,6 +331,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "spark",
     "runtime": "pi",
     "id": "01a0d7b4-fa62-7628-8887-6d56267259f4",
+    "paseo": "b06ce2d2-cb84-41d0-80ce-bb405c1af901",
     "model": "GLM-5.3-Flash-EXL3 / max",
     "name": "Worker-spark",
     "status": "active"
@@ -312,6 +342,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "spark",
     "runtime": "pi",
     "id": "01a0d2cb-606c-7539-8cf8-ee0ec96b4b1e",
+    "paseo": "da2bec35-54c5-4d8d-952f-092fb81ec0c5",
     "model": "GLM-5.3-Flash-EXL3 / max",
     "name": "EyeBrowse-Manager-GLM-r3",
     "status": "active"
