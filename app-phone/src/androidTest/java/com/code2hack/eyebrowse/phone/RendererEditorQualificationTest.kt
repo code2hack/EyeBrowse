@@ -453,12 +453,10 @@ class RendererEditorQualificationTest {
             context = previous.copy(lifetimeId = previous.lifetimeId + "-next")
         }
         row("malformed-oversized-and-data-not-source") {
-            reset(); focus("a"); val g = grant()
+            reset(); focus("a"); var g = grant()
 
-            // These are deliberately different renderer-boundary classes.
-            // A raw JSON syntax error throws inside RendererEditor.request(); the product catch
-            // deliberately returns UNCERTAIN so script exception/payload details never escape.
-            // The APK-native adapter never emits malformed JSON because it serializes JSONObject.
+            // RAW SYNTAX ERROR: JSON.parse throws inside RendererEditor.request(). The catch calls
+            // invalidate() and returns UNCERTAIN so exception/payload details never escape.
             val malformedSyntax = js(
                 "window.__eyebrowseEditorV1.request(" + JSONObject.quote("{") + ")"
             )
@@ -467,8 +465,19 @@ class RendererEditorQualificationTest {
                 JSONObject(JSONTokener(malformedSyntax).nextValue() as String)
                     .getString("status"),
             )
+            assertFalse(
+                "syntax-error UNCERTAIN retires the current renderer grant",
+                call("syntax-error-retired-grant", adapter::inspect).ready,
+            )
 
-            // Oversize is rejected before parse, so it remains a definite MALFORMED packet.
+            // Re-establish the editor explicitly. Without this precondition, every valid edit
+            // packet below must classify STALE_EDITOR at edit(): grant ?: return, before its
+            // operation field can be inspected.
+            focus("a")
+            g = grant()
+
+            // OVERSIZE: the >32768 guard runs before JSON.parse/reconcile and returns definite
+            // MALFORMED without invalidating the fresh current grant.
             val oversized = " ".repeat(32769)
             val oversizedRaw = js(
                 "window.__eyebrowseEditorV1.request(" + JSONObject.quote(oversized) + ")"
@@ -478,9 +487,16 @@ class RendererEditorQualificationTest {
                 JSONObject(JSONTokener(oversizedRaw).nextValue() as String)
                     .getString("status"),
             )
+            assertTrue(
+                "oversized pre-parse rejection preserves the fresh renderer grant",
+                call("oversized-preserves-grant", adapter::inspect).ready,
+            )
 
-            // Structurally valid JSON with an unsupported edit action reaches edit() validation
-            // and is also definitively MALFORMED.
+            // VALID JSON / INVALID OPERATION: context, sequence, commandId, current grant,
+            // target identity and validity all pass first. edit() then reaches
+            // operation !in [INSERT,BACKSPACE,ENTER] and returns definite MALFORMED.
+            // That definitive current-context rejection consumes this ordinal but does not
+            // invalidate the grant or increment its revision.
             val invalidAction = packet(g, ++sequence).put("action", "EXEC").toString()
             val invalidActionRaw = js(
                 "window.__eyebrowseEditorV1.request(" + JSONObject.quote(invalidAction) + ")"
@@ -490,7 +506,13 @@ class RendererEditorQualificationTest {
                 JSONObject(JSONTokener(invalidActionRaw).nextValue() as String)
                     .getString("status"),
             )
+            assertTrue(
+                "unsupported-action MALFORMED leaves the current grant ready",
+                call("invalid-action-preserves-grant", adapter::inspect).ready,
+            )
 
+            // DATA-NOT-SOURCE: adapter.edit() serializes this string as JSON data. The preceding
+            // invalid action consumed only its ordinal, so the next ordinal remains admissible.
             val text = "');window.forbidden=true;//\"\\\u2028"
             assertEquals(
                 RendererEditorAdapter.Status.APPLIED,
