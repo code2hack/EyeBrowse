@@ -61,20 +61,25 @@ class HostingInstrumentedTest {
     private lateinit var scenario: ActivityScenario<MainActivity>
     private val ownedScenarios = mutableListOf<ActivityScenario<MainActivity>>()
     private val ownedRenewals = mutableListOf<LeaseRenewal>()
-    private val ownedHoldReleases = mutableListOf<() -> Unit>()
+    private val ownedExecutionReleases = mutableListOf<() -> Unit>()
+    private val ownedCompletionHolds = mutableListOf<R4CompletionHold>()
 
-    private fun registerTestHold(release: () -> Unit) {
-        ownedHoldReleases.add(release)
+    private fun registerExecutionHold(release: () -> Unit) {
+        ownedExecutionReleases.add(release)
+    }
+
+    private fun registerCompletionHold(hold: R4CompletionHold) {
+        ownedCompletionHolds.add(hold)
     }
 
     private fun newR4ControlledFactory(): R4ControlledFactory =
-        R4ControlledFactory(::registerTestHold)
+        R4ControlledFactory(::registerExecutionHold, ::registerCompletionHold)
 
     private fun newR4Gate(holdTimeoutMs: Long = 1_500): R4Gate =
-        R4Gate(holdTimeoutMs).also { registerTestHold(it::release) }
+        R4Gate(holdTimeoutMs).also { registerExecutionHold(it::release) }
 
     private fun newDelayedConsumer(): DelayedConsumer =
-        DelayedConsumer().also { registerTestHold(it::releaseHold) }
+        DelayedConsumer().also { registerExecutionHold(it::releaseHold) }
 
     private fun launchScenario(): ActivityScenario<MainActivity> =
         ActivityScenario.launch(MainActivity::class.java).also { ownedScenarios.add(it) }
@@ -87,15 +92,28 @@ class HostingInstrumentedTest {
         fun attempt(action: () -> Unit) {
             try { action() } catch (failure: Throwable) { failures.add(failure) }
         }
-        if (::hosting.isInitialized) {
-            println("HYBRID_CLEANUP_BEFORE " + runOnMainSync(hosting::captureDiagnostics))
-        }
-        // Release test-owned blockers before production teardown asks the owner to quiesce.
-        // Releases are idempotent; normal-path tests still release explicitly at their evidence point.
-        for (release in ownedHoldReleases.asReversed()) attempt { release() }
-        ownedHoldReleases.clear()
+        // Execution gates may be holding Main/capture/readback threads. Unblock them before
+        // ANY Main-thread diagnostic or authority transition.
+        for (release in ownedExecutionReleases.asReversed()) attempt { release() }
+        ownedExecutionReleases.clear()
         for (renewal in ownedRenewals) attempt { renewal.stopRenewing() }
-        if (::hosting.isInitialized) attempt { runOnMain(hosting::stop) }
+
+        // Diagnostics are evidence only and cannot be allowed to skip cleanup.
+        if (::hosting.isInitialized) {
+            attempt {
+                println("HYBRID_CLEANUP_BEFORE " + runOnMainSync(hosting::captureDiagnostics))
+            }
+            // Abort ordering: close capture authority FIRST. Outstanding native-copy ownership
+            // remains product-owned until its real completion is forwarded below.
+            attempt { runOnMain(hosting::stop) }
+        }
+
+        // Completion delivery is distinct from execution unblocking: only forward after authority
+        // closure was attempted. release() is idempotent and safe if a normal path already used it.
+        for (hold in ownedCompletionHolds.asReversed()) attempt { hold.release() }
+        ownedCompletionHolds.clear()
+        if (::hosting.isInitialized) attempt { runOnMain { } }
+
         for (owned in ownedScenarios.asReversed()) attempt { owned.close() }
         ownedScenarios.clear()
         if (::hosting.isInitialized) {
@@ -3631,6 +3649,7 @@ class HostingInstrumentedTest {
         private val captured = CountDownLatch(1)
         private val pending = AtomicReference<Runnable?>()
         private val released = AtomicBoolean(false)
+        private val forwarded = AtomicBoolean(false)
         @Volatile private var destination: android.graphics.Bitmap? = null
         @Volatile var result: Int = Int.MIN_VALUE
             private set
@@ -3646,6 +3665,7 @@ class HostingInstrumentedTest {
             android.view.PixelCopy.OnPixelCopyFinishedListener { value ->
                 result = value
                 val delivery = Runnable {
+                    forwarded.set(true)
                     handler.post { delegate.onPixelCopyFinished(value) }
                 }
                 pending.set(delivery)
@@ -3657,6 +3677,8 @@ class HostingInstrumentedTest {
             captured.await(timeoutMs, TimeUnit.MILLISECONDS)
 
         fun destinationBitmap(): android.graphics.Bitmap? = destination
+
+        fun hasForwarded(): Boolean = forwarded.get()
 
         fun release() {
             released.set(true)
@@ -3698,7 +3720,8 @@ class HostingInstrumentedTest {
      * and delay one actual Presentation draw after the product listener has observed it.
      */
     private class R4ControlledFactory(
-        private val registerRelease: ((() -> Unit) -> Unit)? = null,
+        private val registerExecutionRelease: ((() -> Unit) -> Unit)? = null,
+        private val registerCompletion: ((R4CompletionHold) -> Unit)? = null,
     ) : PrivateDisplayHost.Factory {
         private val platform = PrivateDisplayHost.PlatformFactory()
         private val readers = CopyOnWriteArrayList<ImageReader>()
@@ -3714,7 +3737,7 @@ class HostingInstrumentedTest {
 
         fun armNextDraw(): R4Gate = R4Gate().also { gate ->
             nextDrawGate = gate
-            registerRelease?.invoke(gate::release)
+            registerExecutionRelease?.invoke(gate::release)
         }
 
         /** Observe one real Presentation draw without blocking Main. */
@@ -3724,13 +3747,13 @@ class HostingInstrumentedTest {
         fun armNextCopy(holdTimeoutMs: Long = 1_500): R4Gate =
             R4Gate(holdTimeoutMs).also { gate ->
                 nextCopyGate = gate
-                registerRelease?.invoke(gate::release)
+                registerExecutionRelease?.invoke(gate::release)
             }
 
         fun holdNextCopyCompletion(): R4CompletionHold =
             R4CompletionHold().also { hold ->
                 nextCompletionHold = hold
-                registerRelease?.invoke(hold::release)
+                registerCompletion?.invoke(hold)
             }
 
         fun scriptCopyResults(vararg results: Int) {
