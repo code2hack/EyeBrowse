@@ -2428,9 +2428,11 @@ class HostingInstrumentedTest {
             runOnMainSync(hosting::status).captureActive)
         assertEquals("no frame published before injected results", 0, consumer.count())
         assertEquals("only initial backend copy before coalescing", 1, factory.copyInvocationCount())
-        println("T_B_NEG_AUTHORITY source=0a9779d+followup gen=$generation " +
-            "binding=${initial.bindingIdentity} authority=${initial.authoritySerial} " +
-            "transaction=${initial.transactionId} deadline=${initial.transactionDeadline}")
+        val runnerCandidate = InstrumentationRegistry.getArguments()
+            .getString("candidateSha", "runner-not-specified")
+        println("T_B_NEG_AUTHORITY candidate=" + runnerCandidate + " gen=" + generation +
+            " binding=" + initial.bindingIdentity + " authority=" + initial.authoritySerial +
+            " transaction=" + initial.transactionId + " deadline=" + initial.transactionDeadline)
 
         // P2: submit demand through the ACTUAL production scheduler. The product itself observes
         // the unresolved transaction/copy and coalesces one bounded trailing demand.
@@ -2453,10 +2455,13 @@ class HostingInstrumentedTest {
         // fresh production visual/draw/commit fence, then scripted TIMEOUT closes it.
         assertTrue("budget remains before releasing first result",
             deadline - SystemClock.elapsedRealtime() > 300)
+        val recoveryGate = factory.armNextCopy(700)
         firstCopyGate.release()
         assertFalse("first-copy gate released deliberately, not by timeout", firstCopyGate.timedOut)
         assertNotNull("single recovery backend copy invoked",
             factory.awaitCopyInvocation(700))
+        assertTrue("recovery copy held for transaction observation",
+            recoveryGate.awaitEntered(500))
         val recovery = captureAuthorityForR4(host)
         assertEquals("recovery remains same binding", initial.bindingIdentity, recovery.bindingIdentity)
         assertEquals("recovery remains same authority", initial.authoritySerial, recovery.authoritySerial)
@@ -2464,7 +2469,13 @@ class HostingInstrumentedTest {
         assertEquals("recovery keeps original deadline", initial.transactionDeadline,
             recovery.transactionDeadline)
         assertTrue("transaction recovery budget is spent exactly once", recovery.recoveryUsed)
+        assertTrue("exactly one Window copy is in flight at recovery observation",
+            recovery.copyInFlight)
         assertEquals("exactly initial plus recovery at P3", 2, factory.copyInvocationCount())
+        assertTrue("recovery still has original readiness budget",
+            deadline - SystemClock.elapsedRealtime() > 100)
+        recoveryGate.release()
+        assertFalse("recovery gate released deliberately, not by timeout", recoveryGate.timedOut)
 
         waitUntil("TIMEOUT closes failed readiness transaction before cleanup", {
             val a = captureAuthorityForR4(host)
@@ -2492,6 +2503,7 @@ class HostingInstrumentedTest {
             runOnMainSync(hosting::privateDisplaySnapshot)!!.surfaceDetached)
         assertEquals("failed transaction published no frame", 0, consumer.count())
         assertEquals("exactly initial + one recovery copy", 2, factory.copyInvocationCount())
+        assertEquals("backend copy requests were never concurrent", 1, factory.maxConcurrentCopyCalls())
 
         // P4/P5: challenge closure under the SAME live binding. The real scheduler sees terminal
         // authority and must stay inert: no attempt-zero transaction, no third copy, no frame.
@@ -3458,6 +3470,8 @@ class HostingInstrumentedTest {
         private val scriptedCopyResults = ConcurrentLinkedQueue<Int>()
         private val copyEvents = LinkedBlockingQueue<Int>()
         private val copyCount = AtomicInteger(0)
+        private val activeCopyCalls = AtomicInteger(0)
+        private val maxConcurrentCopyCalls = AtomicInteger(0)
         @Volatile private var nextDrawGate: R4Gate? = null
         @Volatile private var nextDrawObserved: CountDownLatch? = null
         @Volatile private var nextCopyGate: R4Gate? = null
@@ -3479,6 +3493,8 @@ class HostingInstrumentedTest {
             copyEvents.poll(timeoutMs, TimeUnit.MILLISECONDS)
 
         fun copyInvocationCount(): Int = copyCount.get()
+
+        fun maxConcurrentCopyCalls(): Int = maxConcurrentCopyCalls.get()
 
         fun latestReader(): ImageReader = checkNotNull(readers.lastOrNull())
 
@@ -3502,18 +3518,24 @@ class HostingInstrumentedTest {
             listener: android.view.PixelCopy.OnPixelCopyFinishedListener,
             handler: Handler,
         ) {
-            val invocation = copyCount.incrementAndGet()
-            copyEvents.offer(invocation)
-            val gate = nextCopyGate
-            if (gate != null && nextCopyGate === gate) {
-                nextCopyGate = null
-                gate.blockOnce()
-            }
-            val scripted = scriptedCopyResults.poll()
-            if (scripted == null || scripted == REAL_COPY) {
-                platform.requestWindowCopy(window, sourceRect, destination, listener, handler)
-            } else {
-                handler.post { listener.onPixelCopyFinished(scripted) }
+            val active = activeCopyCalls.incrementAndGet()
+            maxConcurrentCopyCalls.updateAndGet { previous -> maxOf(previous, active) }
+            try {
+                val invocation = copyCount.incrementAndGet()
+                copyEvents.offer(invocation)
+                val gate = nextCopyGate
+                if (gate != null && nextCopyGate === gate) {
+                    nextCopyGate = null
+                    gate.blockOnce()
+                }
+                val scripted = scriptedCopyResults.poll()
+                if (scripted == null || scripted == REAL_COPY) {
+                    platform.requestWindowCopy(window, sourceRect, destination, listener, handler)
+                } else {
+                    handler.post { listener.onPixelCopyFinished(scripted) }
+                }
+            } finally {
+                activeCopyCalls.decrementAndGet()
             }
         }
 
