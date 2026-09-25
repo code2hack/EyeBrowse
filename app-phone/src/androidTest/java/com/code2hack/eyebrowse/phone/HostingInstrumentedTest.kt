@@ -2324,6 +2324,138 @@ class HostingInstrumentedTest {
     }
 
     /**
+     * R-04 stale-SUCCESS variant: predecessor native copy has completed, but its SUCCESS delivery
+     * is held without blocking Main. A real compatible resize + successor rearm must preserve B's
+     * admitted demand until A releases the single product copy slot.
+     */
+    @Test
+    fun successorDemandSurvivesHeldStaleSuccessCompletion() {
+        runSuccessorDemandAfterHeldPredecessorCompletion(null, "stale-success")
+    }
+
+    /** R-04 stale-error variant: identical successor-liveness proof for an old NO_DATA completion. */
+    @Test
+    fun successorDemandSurvivesHeldStaleErrorCompletion() {
+        runSuccessorDemandAfterHeldPredecessorCompletion(
+            android.view.PixelCopy.ERROR_SOURCE_NO_DATA,
+            "stale-error",
+        )
+    }
+
+    private fun runSuccessorDemandAfterHeldPredecessorCompletion(
+        scriptedPredecessorResult: Int?,
+        label: String,
+    ) {
+        val factory = R4ControlledFactory()
+        if (scriptedPredecessorResult != null) {
+            factory.scriptCopyResults(scriptedPredecessorResult)
+        }
+        val normal = prepareR4RecordedProfile(factory)
+        val keyboard = HostingPresentationProfile(480, 240, 204)
+        val host = currentPrivateHostForR4()
+        val predecessor = CollectingConsumer()
+        predecessor.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val held = factory.holdNextCopyCompletion()
+        val predecessorDeadline = SystemClock.elapsedRealtime() + 2_000
+        val predecessorLease = runOnMainSync {
+            hosting.acquireProfileLease(normal, predecessorDeadline, predecessor)
+        }
+        assertNotNull("$label predecessor lease", predecessorLease)
+        assertTrue("$label predecessor completion captured without blocking Main",
+            held.awaitCaptured(1_200))
+        assertEquals("$label only predecessor backend copy requested", 1, factory.copyInvocationCount())
+        val predecessorState = captureAuthorityForR4(host)
+        assertTrue("$label predecessor product copy slot remains occupied",
+            predecessorState.copyInFlight)
+        assertTrue("$label predecessor transaction established",
+            predecessorState.transactionId > 0)
+        assertEquals("$label predecessor unpublished while completion held", 0, predecessor.count())
+        val predecessorBitmap = checkNotNull(held.destinationBitmap()) {
+            "$label predecessor destination not captured"
+        }
+        assertFalse("$label predecessor destination retained until completion delivery",
+            predecessorBitmap.isRecycled)
+
+        // Real compatible resize; no test draw/commit callback is synthesized.
+        val successorDeadline = SystemClock.elapsedRealtime() + 2_000
+        val settled = CountDownLatch(1)
+        val settledOk = AtomicBoolean(false)
+        runOnMain {
+            hosting.reconfigureRgProfile(keyboard, successorDeadline) { ok ->
+                settledOk.set(ok)
+                settled.countDown()
+            }
+        }
+        assertTrue("$label compatible resize callback", settled.await(1_200, TimeUnit.MILLISECONDS))
+        assertTrue("$label compatible resize settled", settledOk.get())
+        waitUntilMain("$label successor local focus ready", { hosting.localEditorFocusReady() })
+
+        val successor = CollectingConsumer()
+        successor.expectQualification(keyboard.width, keyboard.height, CAPTURE_PAGE_COLOR)
+        val successorLease = runOnMainSync {
+            hosting.acquireProfileLease(keyboard, successorDeadline, successor)
+        }
+        assertNotNull("$label successor lease", successorLease)
+
+        // B is admitted while A still occupies the resource slot. No extra stimulus after this:
+        // the only path to B's first frame is A completion -> scheduler re-evaluation.
+        waitUntil("$label successor demand is recorded behind predecessor slot", {
+            val a = captureAuthorityForR4(host)
+            a.successorDemandAuthority == a.authoritySerial &&
+                a.copyInFlight && a.transactionId == 0L
+        }, 500)
+        val admitted = captureAuthorityForR4(host)
+        assertNotEquals("$label successor binding differs from predecessor",
+            predecessorState.bindingIdentity, admitted.bindingIdentity)
+        assertNotEquals("$label successor authority differs from predecessor",
+            predecessorState.authoritySerial, admitted.authoritySerial)
+        assertEquals("$label successor keeps original readiness deadline",
+            successorDeadline, admitted.bindingDeadline)
+        assertTrue("$label successor readiness pending", admitted.readinessPending)
+        assertFalse("$label successor is not terminal", admitted.terminal)
+        assertEquals("$label old copy remains the only backend request before release",
+            1, factory.copyInvocationCount())
+        assertEquals("$label old consumer still unpublished", 0, predecessor.count())
+        assertEquals("$label successor still unpublished before slot release", 0, successor.count())
+        assertTrue("$label completion release stays inside successor budget",
+            successorDeadline - SystemClock.elapsedRealtime() > 200)
+
+        held.release()
+        waitUntil("$label predecessor bitmap retired after stale completion", {
+            predecessorBitmap.isRecycled
+        }, 500)
+        assertEquals("$label stale predecessor completion never publishes old pixels",
+            0, predecessor.count())
+
+        // No invalidate/navigation/draw stimulus here. B's already-admitted demand must launch its
+        // own normal visual-state -> hardware draw -> commit -> Window-copy fence.
+        waitUntil("$label successor autonomously publishes newly fenced frame", {
+            successor.qualifyingCountFrom(0) > 0
+        }, (successorDeadline - SystemClock.elapsedRealtime()).coerceAtLeast(1))
+        assertEquals("$label first successor frame has keyboard geometry",
+            keyboard.width, successor.latestWidth())
+        assertEquals("$label first successor frame has keyboard geometry",
+            keyboard.height, successor.latestHeight())
+        assertTrue("$label successor frame stayed inside original readiness deadline",
+            successor.latestDeliveryElapsed() <= successorDeadline)
+        assertEquals("$label stale predecessor remains unpublished after successor readiness",
+            0, predecessor.count())
+        assertTrue("$label successor uses a later backend copy",
+            factory.copyInvocationCount() >= 2)
+        assertEquals("$label backend copy invocation calls never overlap",
+            1, factory.maxConcurrentCopyCalls())
+
+        val ready = captureAuthorityForR4(host)
+        assertEquals("$label successor demand consumed", 0L, ready.successorDemandAuthority)
+        assertFalse("$label successor readiness retired after success", ready.readinessPending)
+        assertFalse("$label successor remains non-terminal", ready.terminal)
+
+        // Resize already revoked the predecessor lease; explicit releases remain safe/no-op.
+        runOnMain(predecessorLease!!::release)
+        runOnMain(successorLease!!::release)
+    }
+
+    /**
      * T-A / R-01: the two-second profile-readiness deadline is one-time. After the first
      * committed Window frame succeeds, the SAME renewed lease must keep publishing autonomous
      * page updates after t0+2000 through independent steady-state transactions.
@@ -2686,6 +2818,7 @@ class HostingInstrumentedTest {
         val recoveryUsed: Boolean,
         val readinessPending: Boolean,
         val trailingDemand: Boolean,
+        val successorDemandAuthority: Long,
         val terminal: Boolean,
         val copyInFlight: Boolean,
     )
@@ -2698,6 +2831,7 @@ class HostingInstrumentedTest {
         val transactionField = type.getDeclaredField("activeCaptureTransaction").apply { isAccessible = true }
         val readinessField = type.getDeclaredField("captureReadinessPending").apply { isAccessible = true }
         val trailingField = type.getDeclaredField("trailingCaptureDemand").apply { isAccessible = true }
+        val successorField = type.getDeclaredField("successorCaptureDemand").apply { isAccessible = true }
         val terminalField = type.getDeclaredField("captureTerminalFailure").apply { isAccessible = true }
         val copyField = type.getDeclaredField("inFlightWindowCopy").apply { isAccessible = true }
         val lock = checkNotNull(lockField.get(host))
@@ -2730,6 +2864,14 @@ class HostingInstrumentedTest {
                     isAccessible = true
                 }.getBoolean(transaction)
             }
+            val successorBinding = successorField.get(host)
+            val successorAuthority = if (successorBinding == null) {
+                0L
+            } else {
+                successorBinding.javaClass.getDeclaredField("authoritySerial").apply {
+                    isAccessible = true
+                }.getLong(successorBinding)
+            }
             R4CaptureAuthority(
                 System.identityHashCode(binding),
                 authoritySerial,
@@ -2739,6 +2881,7 @@ class HostingInstrumentedTest {
                 recoveryUsed,
                 readinessField.getBoolean(host),
                 trailingField.getBoolean(host),
+                successorAuthority,
                 terminalField.getBoolean(host),
                 copyField.get(host) != null,
             )
@@ -3447,6 +3590,47 @@ class HostingInstrumentedTest {
         }
     }
 
+    /**
+     * Holds only product callback DELIVERY. The platform/scripted request completes and Main
+     * returns normally; release() later posts the original listener back to its original handler.
+     */
+    private class R4CompletionHold {
+        private val captured = CountDownLatch(1)
+        private val pending = AtomicReference<Runnable?>()
+        private val released = AtomicBoolean(false)
+        @Volatile private var destination: android.graphics.Bitmap? = null
+        @Volatile var result: Int = Int.MIN_VALUE
+            private set
+
+        fun bindDestination(bitmap: android.graphics.Bitmap) {
+            destination = bitmap
+        }
+
+        fun wrap(
+            delegate: android.view.PixelCopy.OnPixelCopyFinishedListener,
+            handler: Handler,
+        ): android.view.PixelCopy.OnPixelCopyFinishedListener =
+            android.view.PixelCopy.OnPixelCopyFinishedListener { value ->
+                result = value
+                val delivery = Runnable {
+                    handler.post { delegate.onPixelCopyFinished(value) }
+                }
+                pending.set(delivery)
+                captured.countDown()
+                if (released.get()) pending.getAndSet(null)?.run()
+            }
+
+        fun awaitCaptured(timeoutMs: Long): Boolean =
+            captured.await(timeoutMs, TimeUnit.MILLISECONDS)
+
+        fun destinationBitmap(): android.graphics.Bitmap? = destination
+
+        fun release() {
+            released.set(true)
+            pending.getAndSet(null)?.run()
+        }
+    }
+
     /** Test-only deterministic barriers for I9-T01 FW2; never used by production admission. */
     private class R4Gate(private val holdTimeoutMs: Long = 1_500) {
         val entered = CountDownLatch(1)
@@ -3491,6 +3675,7 @@ class HostingInstrumentedTest {
         @Volatile private var nextDrawGate: R4Gate? = null
         @Volatile private var nextDrawObserved: CountDownLatch? = null
         @Volatile private var nextCopyGate: R4Gate? = null
+        @Volatile private var nextCompletionHold: R4CompletionHold? = null
 
         fun armNextDraw(): R4Gate = R4Gate().also { nextDrawGate = it }
 
@@ -3500,6 +3685,9 @@ class HostingInstrumentedTest {
 
         fun armNextCopy(holdTimeoutMs: Long = 1_500): R4Gate =
             R4Gate(holdTimeoutMs).also { nextCopyGate = it }
+
+        fun holdNextCopyCompletion(): R4CompletionHold =
+            R4CompletionHold().also { nextCompletionHold = it }
 
         fun scriptCopyResults(vararg results: Int) {
             results.forEach(scriptedCopyResults::add)
@@ -3544,11 +3732,20 @@ class HostingInstrumentedTest {
                     nextCopyGate = null
                     gate.blockOnce()
                 }
+                val hold = nextCompletionHold
+                val completionListener =
+                    if (hold != null && nextCompletionHold === hold) {
+                        nextCompletionHold = null
+                        hold.bindDestination(destination)
+                        hold.wrap(listener, handler)
+                    } else listener
                 val scripted = scriptedCopyResults.poll()
                 if (scripted == null || scripted == REAL_COPY) {
-                    platform.requestWindowCopy(window, sourceRect, destination, listener, handler)
+                    platform.requestWindowCopy(
+                        window, sourceRect, destination, completionListener, handler,
+                    )
                 } else {
-                    handler.post { listener.onPixelCopyFinished(scripted) }
+                    handler.post { completionListener.onPixelCopyFinished(scripted) }
                 }
             } finally {
                 activeCopyCalls.decrementAndGet()
