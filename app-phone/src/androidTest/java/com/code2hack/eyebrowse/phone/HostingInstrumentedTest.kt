@@ -2245,6 +2245,12 @@ class HostingInstrumentedTest {
         val keyboard = HostingPresentationProfile(480, 240, 204)
         val oldConsumer = CollectingConsumer()
         oldConsumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+
+        // Resolve every Main-thread/reflection dependency before the draw barrier can hold Main.
+        // After armNextDraw(), the test thread must not need runOnMainSync until the gate releases.
+        val host = currentPrivateHostForR4()
+        val readback = handlerFieldForR4(host, "readbackHandler")
+        val readbackGate = R4Gate()
         val drawGate = factory.armNextDraw()
         val deadline = SystemClock.elapsedRealtime() + 2_000
         val oldLease = runOnMainSync {
@@ -2253,9 +2259,6 @@ class HostingInstrumentedTest {
         assertNotNull("old profile lease", oldLease)
         assertTrue("hardware draw reached R4c barrier", drawGate.awaitEntered(1_000))
 
-        val host = currentPrivateHostForR4()
-        val readback = handlerFieldForR4(host, "readbackHandler")
-        val readbackGate = R4Gate()
         assertTrue("readback barrier queued", readback.post(readbackGate.asRunnable()))
         assertTrue("readback thread blocked before PixelCopy", readbackGate.awaitEntered(1_000))
 
