@@ -301,7 +301,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "scope": "standalone local ticket Worker (spark); Owner-directed spawn 20260925; managed worktree wks_fadd06c26bff8b59, branch work/worker-spark off origin/main 16aa2e3; bootstrap ack verified 20260925; awaiting assignment",
     "host": "spark",
     "runtime": "pi",
-    "id": "b06ce2d2-cb84-41d0-80ce-bb405c1af901",
+    "id": "01a0d7b4-fa62-7628-8887-6d56267259f4",
     "model": "GLM-5.3-Flash-EXL3 / max",
     "name": "Worker-spark",
     "status": "active"
