@@ -2390,10 +2390,17 @@ class HostingInstrumentedTest {
         } finally {
             val original = primary
             if (original != null) {
-                val (receipt, cleanupFailures) =
-                    performR5CompletionAbortCleanup(hold, publicationCount)
-                receiptOut?.set(receipt)
-                cleanupFailures.forEach { cleanupFailure ->
+                try {
+                    val (receipt, cleanupFailures) =
+                        performR5CompletionAbortCleanup(hold, publicationCount)
+                    receiptOut?.set(receipt)
+                    cleanupFailures.forEach { cleanupFailure ->
+                        original.addSuppressed(cleanupFailure)
+                        println("R5_ABORT_CLEANUP_FAILURE primary=" +
+                            original.javaClass.simpleName + " cleanup=" + cleanupFailure)
+                    }
+                } catch (cleanupFailure: Throwable) {
+                    // Even a bug inside cleanup itself cannot replace the original row failure.
                     original.addSuppressed(cleanupFailure)
                     println("R5_ABORT_CLEANUP_FAILURE primary=" +
                         original.javaClass.simpleName + " cleanup=" + cleanupFailure)
