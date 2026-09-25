@@ -2174,7 +2174,7 @@ class HostingInstrumentedTest {
             assertEquals("FW3 document remains live", document, runOnMainSync(session::documentIdentity))
         }
 
-        data class Stage(
+        class Stage(
             val profile: HostingPresentationProfile,
             val deadline: Long,
             val geometry: PrivateDisplayHost.ProfileGeometry,
@@ -3381,11 +3381,11 @@ class HostingInstrumentedTest {
     }
 
     private fun fw3PageObservation(): JSONObject {
-        val raw = checkNotNull(
+        val raw = decode(
             evaluateJs(
                 """(()=> {
                     const p=document.getElementById('fw3-center').getBoundingClientRect();
-                    return {
+                    return JSON.stringify({
                       visualWidth:visualViewport.width,
                       visualHeight:visualViewport.height,
                       visualScale:visualViewport.scale,
@@ -3393,11 +3393,11 @@ class HostingInstrumentedTest {
                       innerWidth:innerWidth,
                       innerHeight:innerHeight,
                       probe:{left:p.left,top:p.top,width:p.width,height:p.height}
-                    };
+                    });
                 })()"""
             )
         )
-        return JSONObject(raw)
+        return JSONObject(checkNotNull(raw) { "FW3 page observation missing" })
     }
 
     private fun currentViewRectInWindowForFw3(): android.graphics.Rect = runOnMainSync {
