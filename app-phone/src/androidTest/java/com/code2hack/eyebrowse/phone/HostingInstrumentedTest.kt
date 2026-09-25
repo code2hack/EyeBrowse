@@ -2489,30 +2489,46 @@ class HostingInstrumentedTest {
                 }
             }
         }
-        val deadline = SystemClock.elapsedRealtime() + 2_000
+        val started = SystemClock.elapsedRealtime()
+        val deadline = started + 2_000
         val lease = runOnMainSync { hosting.acquireProfileLease(normal, deadline, consumer) }
         assertNotNull("delayed-commit profile lease", lease)
+        var leaseRetired = false
         try {
             assertTrue("real frame-commit callback captured",
-                commitCaptured.await(1_000, TimeUnit.MILLISECONDS))
+                commitCaptured.await(700, TimeUnit.MILLISECONDS))
             val associated = runOnMainSync { host.drawObservationForTest() }
             assertTrue("qualifying draw observed", associated.serial > 0 && associated.elapsedMs > 0)
 
+            // Hold only commit DELIVERY, not Main or the lease. Force one real same-document
+            // traversal and observe it non-blockingly while substantial original-deadline budget
+            // remains. This replaces the earlier over-deadline T-C execution retained in evidence.
+            val interveningDraw = factory.observeNextDraw()
+            evaluateJs(
+                "(function(){document.body.style.paddingTop='17px';" +
+                    "return document.body.getBoundingClientRect().height;})()"
+            )
             runOnMain {
+                session.view()!!.requestLayout()
                 session.view()!!.invalidate()
                 session.view()!!.postInvalidateOnAnimation()
             }
-            waitUntilMain("intervening same-epoch draw occurs", {
-                host.drawObservationForTest().serial > associated.serial
-            })
+            assertTrue("intervening same-epoch hardware draw inside readiness transaction",
+                interveningDraw.await(600, TimeUnit.MILLISECONDS))
             val later = runOnMainSync { host.drawObservationForTest() }
             assertTrue("test actually advanced the Presentation draw", later.serial > associated.serial)
             assertTrue("later draw has a later time", later.elapsedMs >= associated.elapsedMs)
+            val remainingBeforeCommit = deadline - SystemClock.elapsedRealtime()
+            assertTrue("held commit must be released with original readiness budget remaining: " +
+                remainingBeforeCommit + "ms", remainingBeforeCommit > 200)
 
             runOnMain(checkNotNull(delayedCommit.get()))
-            waitUntil("delayed commit publishes one qualified frame", {
+            val remainingForPublication = (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(1)
+            waitUntil("delayed commit publishes within ORIGINAL 2s readiness transaction", {
                 consumer.qualifyingCountFrom(0) > 0
-            }, 1_500)
+            }, remainingForPublication)
+            assertTrue("publication stayed inside original deadline",
+                consumer.latestDeliveryElapsed() <= deadline)
             assertEquals("freshness lower-bound remains the qualifying draw",
                 associated.elapsedMs, consumer.latestCaptureElapsed())
             val diagnostics = runOnMainSync(hosting::captureDiagnostics)
@@ -2520,9 +2536,24 @@ class HostingInstrumentedTest {
                 diagnostics.contains("committedDraw=" + associated.serial))
             assertTrue("latest observed draw advanced independently: $diagnostics",
                 diagnostics.contains("draw=" + later.serial + "@"))
+
+            // Retirement remains authoritative. Replaying the exact already-delivered callback
+            // after lease/capture retirement cannot publish again or revive capture authority.
+            val deliveredBeforeRetire = consumer.count()
+            runOnMain(lease!!::release)
+            leaseRetired = true
+            waitUntilMain("T-C lease capture resources retire", {
+                !hosting.captureResourcesPresent() && !hosting.status().captureActive
+            })
+            runOnMain(checkNotNull(delayedCommit.get()))
+            runOnMain { } // Flush any callback work that could have been posted to Main.
+            assertEquals("post-retirement commit replay is inert",
+                deliveredBeforeRetire, consumer.count())
+            assertFalse("post-retirement replay cannot revive capture",
+                runOnMainSync(hosting::status).captureActive)
         } finally {
             runOnMain { session.captureCommitDispatcherForTest = null }
-            runOnMain(lease!!::release)
+            if (!leaseRetired) runOnMain(lease!!::release)
         }
     }
 
@@ -3259,9 +3290,14 @@ class HostingInstrumentedTest {
         private val copyEvents = LinkedBlockingQueue<Int>()
         private val copyCount = AtomicInteger(0)
         @Volatile private var nextDrawGate: R4Gate? = null
+        @Volatile private var nextDrawObserved: CountDownLatch? = null
         @Volatile private var nextCopyGate: R4Gate? = null
 
         fun armNextDraw(): R4Gate = R4Gate().also { nextDrawGate = it }
+
+        /** Observe one real Presentation draw without blocking Main. */
+        fun observeNextDraw(): CountDownLatch =
+            CountDownLatch(1).also { nextDrawObserved = it }
 
         fun armNextCopy(holdTimeoutMs: Long = 1_500): R4Gate =
             R4Gate(holdTimeoutMs).also { nextCopyGate = it }
@@ -3325,6 +3361,11 @@ class HostingInstrumentedTest {
                     }
                     delegate.setDrawListener(PrivateDisplayHost.DrawListener { serial, elapsedMs ->
                         listener.onDraw(serial, elapsedMs)
+                        val observed = nextDrawObserved
+                        if (observed != null && nextDrawObserved === observed) {
+                            nextDrawObserved = null
+                            observed.countDown()
+                        }
                         val gate = nextDrawGate
                         if (gate != null && nextDrawGate === gate) {
                             nextDrawGate = null
