@@ -2443,7 +2443,7 @@ class HostingInstrumentedTest {
         val copyDone = diagnosticLong(diagnostics, "copyDone")
         assertTrue("recovery TIMEOUT completed within original 2s readiness deadline: " +
             "copyDone=$copyDone deadline=$deadline diagnostics={$diagnostics}",
-            copyDone in 1..deadline)
+            copyDone in 1L..deadline)
         assertFalse("coalesced trailing demand cannot create a third copy",
             factory.awaitCopyInvocation(300) != null)
         assertEquals("exactly initial + one recovery copy", 2, factory.copyInvocationCount())
