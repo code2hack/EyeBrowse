@@ -2354,19 +2354,23 @@ class HostingInstrumentedTest {
             assertTrue("synthetic control must satisfy FW3 spatial oracle",
                 fw3SpatialOracle(valid, spec).accepted)
 
-            cropped = android.graphics.Bitmap.createBitmap(valid, 0, 0, 457, 319)
-            cropRescaled = android.graphics.Bitmap.createScaledBitmap(
-                cropped, spec.width, spec.height, false,
+            val croppedBitmap = android.graphics.Bitmap.createBitmap(valid, 0, 0, 457, 319)
+            cropped = croppedBitmap
+            val cropScaledBitmap = android.graphics.Bitmap.createScaledBitmap(
+                croppedBitmap, spec.width, spec.height, false,
             )
-            val cropResult = fw3SpatialOracle(cropRescaled, spec)
+            cropRescaled = cropScaledBitmap
+            val cropResult = fw3SpatialOracle(cropScaledBitmap, spec)
             assertFalse("cropped/rescaled raster must be rejected: " + cropResult.reason,
                 cropResult.accepted)
 
-            shrinkRaster = android.graphics.Bitmap.createBitmap(valid, 0, 0, 480, 240)
-            shrinkStretched = android.graphics.Bitmap.createScaledBitmap(
-                shrinkRaster, 480, 344, false,
+            val shrinkBitmap = android.graphics.Bitmap.createBitmap(valid, 0, 0, 480, 240)
+            shrinkRaster = shrinkBitmap
+            val shrinkScaledBitmap = android.graphics.Bitmap.createScaledBitmap(
+                shrinkBitmap, 480, 344, false,
             )
-            val stretchResult = fw3SpatialOracle(shrinkStretched, spec)
+            shrinkStretched = shrinkScaledBitmap
+            val stretchResult = fw3SpatialOracle(shrinkScaledBitmap, spec)
             assertFalse("480x240 raster stretched to 480x344 must be rejected: " +
                 stretchResult.reason, stretchResult.accepted)
         } finally {
@@ -3742,7 +3746,13 @@ class HostingInstrumentedTest {
         }
         for (fiducial in spec.fiducials) {
             paint.color = fiducial.color
-            canvas.drawRect(fiducial.rect, paint)
+            canvas.drawRect(
+                fiducial.rect.left.toFloat(),
+                fiducial.rect.top.toFloat(),
+                fiducial.rect.right.toFloat(),
+                fiducial.rect.bottom.toFloat(),
+                paint,
+            )
         }
         return bitmap
     }
