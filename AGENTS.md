@@ -383,21 +383,21 @@ A hold solely caused by the superseded retry ceiling can transition to Expert wo
 
 ### 15.1 Contributor registry
 
-Root `CONTRIBUTORS.md` is jointly maintained by Planner and Manager. It contains one canonical fenced JSON array with eight fields per actual participant:
+Root `CONTRIBUTORS.md` is jointly maintained by Planner and Manager. It contains one canonical fenced JSON array with nine fields per actual participant:
 
 ```text
-role, scope, host, runtime, id, model, name, status
+role, scope, host, runtime, id, paseo, model, name, status
 ```
 
 Register each session before its first project mission or attributable repository action. Workers, Experts, Reviewers, and local helpers supply metadata/changes to either maintainer. A new Planner's registration may accompany its first authorized governance commit.
 
 Register an Expert with `role: Expert` and its actual scope. Register a local helper with `role: Worker` and a scope/name identifying its supporting assignment. Keep todo IDs, pairing links, write ownership, and attempt counters in runtime/todo records rather than adding registry fields.
 
-The exact `(host, runtime, id)` tuple identifies a session. Maintain one record per tuple, with a stable name unique within its role. Use the full Owner-supplied or browser-observed conversation URL for ChatGPT and the native session ID for other runtimes; runtime labels are lowercase. Model labels are Owner/runtime-supplied metadata; use `null` when unknown.
+The exact `(host, runtime, id)` tuple identifies a session. Maintain one record per tuple, with a stable name unique within its role. Use the full Owner-supplied or browser-observed conversation URL for ChatGPT and the native session ID for other runtimes; runtime labels are lowercase. Model labels are Owner/runtime-supplied metadata; use `null` when unknown. The `paseo` field records the Paseo agent identifier for Paseo-managed local instances and is the transport address qualified local routing tools target; it is `null` for participants without a Paseo-managed instance, including unknown or historical records. The `id` field continues to carry the native session locator; do not replace it with the Paseo identifier.
 
 `active`, `paused`, and `retired` describe registration lifecycle, not current execution progress. Active means assigned, not continuously running. Retain retired records. A same-session model or operating-surface change does not create a new native identity or reset assignments/attempts; update verified metadata/bindings. A replacement native session gets a new record and retains the transferred work history.
 
-For every Paseo-managed local instance, maintain a verified runtime binding from its native registry tuple to the Paseo host/server, agent ID, EyeBrowse project/workspace, native session record, assigned source CWD, effective model/effort, and lifecycle. Reconcile the binding after import/recreation before routing. Keep these transport details outside the unchanged eight-field registry; titles and Paseo IDs alone do not grant authority.
+For every Paseo-managed local instance, maintain a verified runtime binding from its registry tuple to the Paseo host/server, EyeBrowse project/workspace, native runtime session record, assigned source CWD, effective model/effort, and lifecycle. Reconcile the binding after import/recreation before routing. Keep the remaining transport details outside the registry; titles and Paseo IDs alone do not grant authority.
 
 Retirement is a coordinated lifecycle operation: block new work routing and mark retiring in runtime; safely settle/cancel or hand off assigned operations; preserve history, evidence, pending requests and remote-conversation references; complete cleanup and resource/write-ownership obligations; detach or transfer still-active child agents and verify their continued assignments; then archive the exact Paseo-managed agent and verify both its archived state and cessation of its agent runtime before recording registry retirement/closeout. Parent archival must not stop still-assigned children. If that preservation cannot be verified, keep archival pending and report the blocker.
 
