@@ -470,6 +470,22 @@ class RendererEditorQualificationTest {
                 call("syntax-error-retired-grant", adapter::inspect).ready,
             )
 
+            // C12A's observed STALE_EDITOR is correct in this lifecycle state:
+            // edit() validates context/sequence/id, then finds no current grant and returns
+            // STALE_EDITOR before it can inspect the unsupported action field. This stale packet
+            // does not advance highWater because that return precedes replay reservation.
+            val retiredInvalidAction =
+                packet(g, ++sequence).put("action", "EXEC").toString()
+            val retiredInvalidActionRaw = js(
+                "window.__eyebrowseEditorV1.request(" +
+                    JSONObject.quote(retiredInvalidAction) + ")"
+            )
+            assertEquals(
+                "STALE_EDITOR",
+                JSONObject(JSONTokener(retiredInvalidActionRaw).nextValue() as String)
+                    .getString("status"),
+            )
+
             // Re-establish the editor explicitly. Without this precondition, every valid edit
             // packet below must classify STALE_EDITOR at edit(): grant ?: return, before its
             // operation field can be inspected.
