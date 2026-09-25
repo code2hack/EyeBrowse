@@ -2363,6 +2363,10 @@ class HostingInstrumentedTest {
         assertNotNull("$label predecessor lease", predecessorLease)
         assertTrue("$label predecessor completion captured without blocking Main",
             held.awaitCaptured(1_200))
+        val expectedPredecessorResult =
+            scriptedPredecessorResult ?: android.view.PixelCopy.SUCCESS
+        assertEquals("$label captured intended predecessor completion result",
+            expectedPredecessorResult, held.result)
         assertEquals("$label only predecessor backend copy requested", 1, factory.copyInvocationCount())
         val predecessorState = captureAuthorityForR4(host)
         assertTrue("$label predecessor product copy slot remains occupied",
@@ -2444,9 +2448,16 @@ class HostingInstrumentedTest {
             1, factory.maxConcurrentCopyCalls())
 
         val ready = captureAuthorityForR4(host)
+        val readyDiagnostics = runOnMainSync(hosting::captureDiagnostics)
         assertEquals("$label successor demand consumed", 0L, ready.successorDemandAuthority)
         assertFalse("$label successor readiness retired after success", ready.readinessPending)
         assertFalse("$label successor remains non-terminal", ready.terminal)
+        assertTrue("$label successor frame used a fresh visual-state fence: $readyDiagnostics",
+            diagnosticLong(readyDiagnostics, "visual") > 0)
+        assertTrue("$label successor frame used a committed hardware draw: $readyDiagnostics",
+            diagnosticLong(readyDiagnostics, "committedDraw") > 0)
+        assertTrue("$label successor issued Window copy only after predecessor release: $readyDiagnostics",
+            diagnosticLong(readyDiagnostics, "copyInvoke") > 0)
 
         // Resize already revoked the predecessor lease; explicit releases remain safe/no-op.
         runOnMain(predecessorLease!!::release)
