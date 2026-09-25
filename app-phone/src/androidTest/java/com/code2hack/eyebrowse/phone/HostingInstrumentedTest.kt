@@ -2450,6 +2450,11 @@ class HostingInstrumentedTest {
         assertTrue("copy #1 remains outstanding after coalescing", coalesced.copyInFlight)
         assertEquals("coalesced demand cannot start another copy", 1, factory.copyInvocationCount())
         assertEquals("coalescing cannot publish", 0, consumer.count())
+        val firstFenceDiagnostics = runOnMainSync(hosting::captureDiagnostics)
+        val firstVisual = diagnosticLong(firstFenceDiagnostics, "visual")
+        val firstCommittedDraw = diagnosticLong(firstFenceDiagnostics, "committedDraw")
+        assertTrue("initial production fence was recorded: $firstFenceDiagnostics",
+            firstVisual > 0 && firstCommittedDraw > 0)
 
         // P3: release NO_DATA; one recovery must run under the SAME transaction/deadline and its
         // fresh production visual/draw/commit fence, then scripted TIMEOUT closes it.
@@ -2472,6 +2477,13 @@ class HostingInstrumentedTest {
         assertTrue("exactly one Window copy is in flight at recovery observation",
             recovery.copyInFlight)
         assertEquals("exactly initial plus recovery at P3", 2, factory.copyInvocationCount())
+        val recoveryFenceDiagnostics = runOnMainSync(hosting::captureDiagnostics)
+        val recoveryVisual = diagnosticLong(recoveryFenceDiagnostics, "visual")
+        val recoveryCommittedDraw = diagnosticLong(recoveryFenceDiagnostics, "committedDraw")
+        assertTrue("recovery used a fresh visual request: $recoveryFenceDiagnostics",
+            recoveryVisual > firstVisual)
+        assertTrue("recovery used a fresh committed hardware draw: $recoveryFenceDiagnostics",
+            recoveryCommittedDraw > firstCommittedDraw)
         assertTrue("recovery still has original readiness budget",
             deadline - SystemClock.elapsedRealtime() > 100)
         recoveryGate.release()
@@ -2499,6 +2511,8 @@ class HostingInstrumentedTest {
         assertFalse("failed transaction drops its old coalesced demand", exhausted.trailingDemand)
         assertTrue("lease remains live while exhaustion is observed",
             runOnMainSync(hosting::status).captureActive)
+        assertEquals("hosting generation unchanged through failed transaction",
+            generation, runOnMainSync(hosting::currentGeneration))
         assertFalse("surface remains attached before lease release/cleanup",
             runOnMainSync(hosting::privateDisplaySnapshot)!!.surfaceDetached)
         assertEquals("failed transaction published no frame", 0, consumer.count())
@@ -2524,6 +2538,8 @@ class HostingInstrumentedTest {
         assertEquals("terminal challenge publishes no frame", 0, consumer.count())
         assertTrue("lease still live until explicit test release",
             runOnMainSync(hosting::status).captureActive)
+        assertEquals("closure challenge cannot change hosting generation",
+            generation, runOnMainSync(hosting::currentGeneration))
 
         runOnMain(lease!!::release)
     }
