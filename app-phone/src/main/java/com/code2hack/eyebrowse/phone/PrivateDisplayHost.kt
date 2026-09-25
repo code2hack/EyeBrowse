@@ -96,7 +96,10 @@ class PrivateDisplayHost(
     }
 
     fun interface FreshFrameRequest {
-        fun request(onCommitted: (Long, Long) -> Unit)
+        fun request(
+            onVisualReady: (visualRequestId: Long, beforeDrawSerial: Long) -> Unit,
+            onCommitted: (visualRequestId: Long) -> Unit,
+        )
     }
 
     /** The shown presentation holding the container the WebView is attached to. */
@@ -142,6 +145,10 @@ class PrivateDisplayHost(
 
     /** UI-thread draw serial of the exact private Presentation source. */
     fun drawSerial(): Long = presentation?.drawObservation()?.serial ?: 0L
+
+    /** Instrumentation-only observation of the real app-owned Presentation draw. */
+    internal fun drawObservationForTest(): DrawObservation =
+        presentation?.drawObservation() ?: DrawObservation(0, 0)
 
     data class DisplaySnapshot(
         val serial: Long, val displayId: Int, val valid: Boolean, val state: Int,
@@ -353,6 +360,9 @@ class PrivateDisplayHost(
         val id: Long,
         val transaction: CaptureTransaction,
         val attempt: Int,
+        var visualRequestId: Long = 0,
+        var beforeDrawSerial: Long = 0,
+        var qualifyingDraw: DrawObservation? = null,
     ) {
         val binding: CaptureBinding get() = transaction.binding
     }
@@ -1098,10 +1108,21 @@ class PrivateDisplayHost(
         lastObservedDrawSerial = serial
         lastObservedDrawElapsedMs = elapsedMs
         var explicitCycle: Long? = null
+        var associated = false
         synchronized(nativeLock) {
             if (!captureActive || captureReleased || captureBinding == null || captureTerminalFailure) return
-            explicitCycle = activeCaptureCycle?.id
-            if (explicitCycle == null && inFlightWindowCopy != null) {
+            val cycle = activeCaptureCycle
+            if (cycle != null) {
+                explicitCycle = cycle.id
+                // The visual callback arms the serial boundary before invalidation. Preserve the
+                // FIRST later app-owned draw immutably; a later same-epoch traversal may advance
+                // Presentation.drawObservation(), but cannot advance this transaction's anchor.
+                if (cycle.visualRequestId != 0L && serial > cycle.beforeDrawSerial &&
+                    cycle.qualifyingDraw == null) {
+                    cycle.qualifyingDraw = DrawObservation(serial, elapsedMs)
+                    associated = true
+                }
+            } else if (inFlightWindowCopy != null) {
                 if (!trailingCaptureDemand) coalescedCallbackCount += 1
                 trailingCaptureDemand = true
                 return
@@ -1110,8 +1131,8 @@ class PrivateDisplayHost(
         val cycleId = explicitCycle
         if (cycleId != null) {
             Log.i(TAG, "capture[" + cycleId + "] hardware-draw serial=" + serial +
-                " elapsed=" + elapsedMs)
-            return // The explicit causal draw belongs to this cycle.
+                " elapsed=" + elapsedMs + " associated=" + associated)
+            return
         }
         requestCaptureDemand(elapsedMs)
     }
@@ -1224,25 +1245,61 @@ class PrivateDisplayHost(
 
     private fun requestFreshForCycle(cycle: CaptureCycle) {
         try {
-            cycle.binding.freshFrameRequest.request { visualRequestId, drawSerial ->
-                onFrameCommitted(cycle, visualRequestId, drawSerial)
-            }
+            cycle.binding.freshFrameRequest.request(
+                onVisualReady = { visualRequestId, beforeDrawSerial ->
+                    onVisualReady(cycle, visualRequestId, beforeDrawSerial)
+                },
+                onCommitted = { visualRequestId ->
+                    onFrameCommitted(cycle, visualRequestId)
+                },
+            )
         } catch (error: RuntimeException) {
             Log.w(TAG, "fresh Window draw request failed", error)
             abandonCaptureCycle(cycle, terminalIfCurrent = true)
         }
     }
 
-    /** Commit callback for the exact post-visual draw; all View/window traversal stays on Main. */
-    private fun onFrameCommitted(cycle: CaptureCycle, visualRequestId: Long, drawSerial: Long) {
+    /** Arms the exact serial boundary before the product invalidates the WebView. */
+    private fun onVisualReady(cycle: CaptureCycle, visualRequestId: Long, beforeDrawSerial: Long) {
         if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
-            main.post { onFrameCommitted(cycle, visualRequestId, drawSerial) }
+            main.post { onVisualReady(cycle, visualRequestId, beforeDrawSerial) }
+            return
+        }
+        synchronized(nativeLock) {
+            if (activeCaptureCycle !== cycle || captureBinding !== cycle.binding ||
+                !captureActive || captureReleased || captureTerminalFailure ||
+                cycle.visualRequestId != 0L) return
+            cycle.visualRequestId = visualRequestId
+            cycle.beforeDrawSerial = beforeDrawSerial
+            cycle.qualifyingDraw = null
+        }
+        Log.i(TAG, "capture[" + cycle.id + "] visual-ready request=" + visualRequestId +
+            " beforeDraw=" + beforeDrawSerial)
+    }
+
+    /**
+     * Commit callback for the exact post-visual traversal. The freshness anchor is the immutable
+     * first draw observed after that visual boundary, not Presentation's latest draw at callback
+     * delivery time.
+     */
+    private fun onFrameCommitted(cycle: CaptureCycle, visualRequestId: Long) {
+        if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
+            main.post { onFrameCommitted(cycle, visualRequestId) }
             return
         }
         val binding = cycle.binding
+        val observation: DrawObservation
         synchronized(nativeLock) {
             if (activeCaptureCycle !== cycle || captureBinding !== binding || !captureActive ||
-                captureReleased || captureTerminalFailure) return
+                captureReleased || captureTerminalFailure ||
+                cycle.visualRequestId != visualRequestId) return
+            val associated = cycle.qualifyingDraw
+            if (associated == null || associated.serial <= cycle.beforeDrawSerial ||
+                associated.elapsedMs <= 0) {
+                abandonCaptureCycle(cycle, terminalIfCurrent = true)
+                return
+            }
+            observation = associated
         }
         if (SystemClock.elapsedRealtime() >= cycle.transaction.deadlineElapsedMs) {
             abandonCaptureCycle(cycle, terminalIfCurrent = cycle.transaction.readiness)
@@ -1255,10 +1312,8 @@ class PrivateDisplayHost(
         val shown = presentation
         val view = binding.session.view()
         val window = shown?.captureWindow()
-        val observation = shown?.drawObservation()
         val source = if (view == null) null else sourceRectFor(view)
-        if (shown !== binding.presentation || view == null || window == null || observation == null ||
-            observation.serial < drawSerial || observation.elapsedMs <= 0 ||
+        if (shown !== binding.presentation || view == null || window == null ||
             source == null || source.width() != binding.width || source.height() != binding.height) {
             abandonCaptureCycle(cycle, terminalIfCurrent = true)
             return
