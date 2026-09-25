@@ -114,8 +114,10 @@ class PhonePresentationPublisher(
                 }
             }
             lease = if (compatible) hosting.acquireProfileLease(
-                HostingPresentationProfile(profile.width, profile.height, profile.densityDpi), consumer)
-                else hosting.acquireLease(consumer)
+                HostingPresentationProfile(profile.width, profile.height, profile.densityDpi),
+                deadline,
+                consumer,
+            ) else hosting.acquireLease(consumer)
             if (lease == null) {
                 if (compatible) failProfile("Capture unavailable")
                 else { context = null; degraded(grant, "Capture unavailable") }
