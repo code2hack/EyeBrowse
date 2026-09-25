@@ -2403,36 +2403,49 @@ class HostingInstrumentedTest {
         val host = currentPrivateHostForR4()
         val consumer = CollectingConsumer()
         consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
-        // This gate is manually released after the trailing draw is observed. Give its test
-        // safety timeout enough headroom that it cannot auto-release and erase the precondition.
-        val firstCopyGate = factory.armNextCopy(5_000)
-        val deadline = SystemClock.elapsedRealtime() + 2_000
+        // This gate is manually released as soon as the real trailing draw lands. Its 1.2s
+        // safety ceiling is only a deadlock guard; the readiness transaction remains exactly 2s.
+        val firstCopyGate = factory.armNextCopy(1_200)
+        val started = SystemClock.elapsedRealtime()
+        val deadline = started + 2_000
         val lease = runOnMainSync { hosting.acquireProfileLease(normal, deadline, consumer) }
         assertNotNull("scripted transient profile lease", lease)
         assertTrue("initial copy invocation reached test barrier",
-            factory.awaitCopyInvocation(1_000) != null)
-        assertTrue("initial copy held in flight", firstCopyGate.awaitEntered(1_000))
+            factory.awaitCopyInvocation(700) != null)
+        assertTrue("initial copy held in flight", firstCopyGate.awaitEntered(700))
 
         val beforeTrailing = runOnMainSync { host.drawObservationForTest().serial }
+        val trailingDraw = factory.observeNextDraw()
         runOnMain {
             session.view()!!.invalidate()
             session.view()!!.postInvalidateOnAnimation()
         }
-        waitUntilMain("real trailing draw occurred during unresolved transaction", {
-            host.drawObservationForTest().serial > beforeTrailing
-        })
+        assertTrue("real trailing draw occurs while first copy remains held",
+            trailingDraw.await(600, TimeUnit.MILLISECONDS))
+        val trailing = runOnMainSync { host.drawObservationForTest() }
+        assertTrue("trailing draw serial advanced inside unresolved transaction",
+            trailing.serial > beforeTrailing)
+        assertTrue("first-copy gate still held when trailing draw landed",
+            !firstCopyGate.timedOut)
+        assertTrue("trailing draw preserved readiness budget",
+            deadline - SystemClock.elapsedRealtime() > 300)
 
         firstCopyGate.release()
-        assertTrue("first-copy barrier released", !firstCopyGate.timedOut)
+        assertTrue("first-copy barrier released manually", !firstCopyGate.timedOut)
         assertNotNull("single recovery copy invoked",
-            factory.awaitCopyInvocation(1_500))
-        waitUntilMain("two transient results close readiness transaction", {
-            val d = hosting.captureDiagnostics()
+            factory.awaitCopyInvocation(700))
+        waitUntil("two transient results close readiness transaction", {
+            val d = runOnMainSync(hosting::captureDiagnostics)
             d.contains("transaction=0") && d.contains("terminal=true") &&
                 d.contains("recoveries=1")
-        })
+        }, 900)
+        val diagnostics = runOnMainSync(hosting::captureDiagnostics)
+        val copyDone = diagnosticLong(diagnostics, "copyDone")
+        assertTrue("recovery TIMEOUT completed within original 2s readiness deadline: " +
+            "copyDone=$copyDone deadline=$deadline diagnostics={$diagnostics}",
+            copyDone in 1..deadline)
         assertFalse("coalesced trailing demand cannot create a third copy",
-            factory.awaitCopyInvocation(600) != null)
+            factory.awaitCopyInvocation(300) != null)
         assertEquals("exactly initial + one recovery copy", 2, factory.copyInvocationCount())
         assertEquals("failed readiness transaction published no frame", 0, consumer.count())
         runOnMain(lease!!::release)
@@ -2569,6 +2582,19 @@ class HostingInstrumentedTest {
         waitUntilMain("R4 private local focus ready", { hosting.localEditorFocusReady() })
         awaitPrivateProfile()
         return normal
+    }
+
+    private fun diagnosticLong(diagnostics: String, key: String): Long {
+        val marker = "$key="
+        val start = diagnostics.indexOf(marker)
+        require(start >= 0) { "missing diagnostic $key in {$diagnostics}" }
+        val valueStart = start + marker.length
+        var end = valueStart
+        while (end < diagnostics.length &&
+            (diagnostics[end] == '-' || diagnostics[end].isDigit())) {
+            end++
+        }
+        return diagnostics.substring(valueStart, end).toLong()
     }
 
     private fun currentPrivateHostForR4(): PrivateDisplayHost = runOnMainSync {
