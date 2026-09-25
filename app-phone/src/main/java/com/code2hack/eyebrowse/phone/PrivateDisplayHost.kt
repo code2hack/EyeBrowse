@@ -1054,9 +1054,15 @@ class PrivateDisplayHost(
     private fun onWindowDraw(serial: Long, elapsedMs: Long) {
         lastObservedDrawSerial = serial
         lastObservedDrawElapsedMs = elapsedMs
+        var explicitCycle = 0L
         synchronized(nativeLock) {
             if (!captureActive || captureReleased || captureBinding == null || captureTerminalFailure) return
-            if (activeCaptureCycle != null) return // The explicit causal draw belongs to this cycle.
+            activeCaptureCycle?.let {
+                explicitCycle = it.id
+                Log.i(TAG, "capture[" + it.id + "] hardware-draw serial=" + serial +
+                    " elapsed=" + elapsedMs)
+                return // The explicit causal draw belongs to this cycle.
+            }
             if (inFlightWindowCopy != null) {
                 if (!trailingCaptureDemand) coalescedCallbackCount += 1
                 trailingCaptureDemand = true
@@ -1129,6 +1135,10 @@ class PrivateDisplayHost(
             cycle = CaptureCycle(++captureCycleSerial, binding, 0)
             activeCaptureCycle = cycle
         }
+        Log.i(TAG, "capture[" + checkNotNull(cycle).id + "] visual-request authority=" +
+            checkNotNull(cycle).binding.authoritySerial + " profile=" +
+            checkNotNull(cycle).binding.width + "x" + checkNotNull(cycle).binding.height +
+            " deadline=" + checkNotNull(cycle).binding.deadlineElapsedMs)
         requestFreshForCycle(checkNotNull(cycle))
     }
 
@@ -1195,6 +1205,9 @@ class PrivateDisplayHost(
             cycle.id, binding, cycle.attempt, visualRequestId, observation.serial,
             observation.elapsedMs, window, Rect(source), bitmap,
         )
+        Log.i(TAG, "capture[" + cycle.id + "] frame-commit visual=" + visualRequestId +
+            " draw=" + observation.serial + " window=" + binding.windowIdentity +
+            " source=" + source + " dest=" + binding.width + "x" + binding.height)
         var invoke: Handler? = null
         synchronized(nativeLock) {
             if (activeCaptureCycle !== cycle || captureBinding !== binding || !captureActive ||
@@ -1217,6 +1230,9 @@ class PrivateDisplayHost(
     /** Public API26 Window overload, invoked off Main and off the sink-drainer thread. */
     private fun invokePixelCopy(request: WindowCopyRequest) {
         lastCopyInvokedElapsedMs = SystemClock.elapsedRealtime()
+        Log.i(TAG, "capture[" + request.cycleId + "] pixelcopy-invoke thread=" +
+            Thread.currentThread().name + " visual=" + request.visualRequestId +
+            " draw=" + request.drawSerial + " source=" + request.sourceRect)
         try {
             PixelCopy.request(
                 request.window,
@@ -1243,6 +1259,8 @@ class PrivateDisplayHost(
             return
         }
         lastCopyResult = result
+        Log.i(TAG, "capture[" + request.cycleId + "] pixelcopy-complete result=" + result +
+            " elapsed=" + lastCopyCompletedElapsedMs)
         if (result != PixelCopy.SUCCESS) {
             retireWindowCopy(
                 request,
@@ -1267,7 +1285,8 @@ class PrivateDisplayHost(
     private fun captureCopyStillCurrent(request: WindowCopyRequest): Boolean {
         val binding = request.binding
         if (captureBinding !== binding || !captureActive || captureReleased ||
-            captureTerminalFailure || binding.session.documentIdentity() != binding.documentId ||
+            captureTerminalFailure || SystemClock.elapsedRealtime() > binding.deadlineElapsedMs ||
+            binding.session.documentIdentity() != binding.documentId ||
             presentation !== binding.presentation || profileSerial != binding.profileSerial ||
             binding.presentation.windowIdentity() != binding.windowIdentity ||
             binding.presentation.captureWindow() !== request.window ||
@@ -1338,6 +1357,9 @@ class PrivateDisplayHost(
             retireWindowCopy(request, allowRecovery = false, terminalIfCurrent = false)
             return
         }
+        Log.i(TAG, "capture[" + request.cycleId + "] publish seq=" + delivered.sequence +
+            " drawElapsed=" + delivered.captureElapsedMs + " size=" +
+            delivered.width + "x" + delivered.height)
         try {
             request.binding.sink.onFrame(delivered)
         } finally {
