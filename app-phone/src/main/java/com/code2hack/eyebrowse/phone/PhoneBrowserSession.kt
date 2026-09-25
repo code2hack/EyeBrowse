@@ -317,12 +317,20 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
                     // observed after this point therefore belongs to a traversal after the visual
                     // boundary, not an already in-flight earlier draw.
                     val beforeDrawSerial = serial()
+                    android.util.Log.i("EyeBrowseCaptureFence",
+                        "visual-ready request=" + requestId + " beforeDraw=" + beforeDrawSerial)
                     target.viewTreeObserver.registerFrameCommitCallback {
                         if (webView !== target || rendererGone || !target.isAttachedToWindow ||
                             !isCurrentOwner()) return@registerFrameCommitCallback
                         val committedDrawSerial = serial()
                         if (committedDrawSerial > beforeDrawSerial) {
+                            android.util.Log.i("EyeBrowseCaptureFence",
+                                "frame-commit request=" + requestId + " draw=" + committedDrawSerial)
                             frameCommitted(requestId, committedDrawSerial)
+                        } else {
+                            android.util.Log.w("EyeBrowseCaptureFence",
+                                "frame-commit rejected request=" + requestId + " draw=" +
+                                    committedDrawSerial + " beforeDraw=" + beforeDrawSerial)
                         }
                     }
                     draw()
