@@ -3564,6 +3564,300 @@ class HostingInstrumentedTest {
     }
 
     /**
+     * FW4-T1: the synchronous public PixelCopy invocation may block the readback worker, but it
+     * must not block Main/controller work or the independent ImageReader drainer. Multiple real
+     * draw demands while the one copy slot is occupied coalesce into one trailing cycle. The two
+     * delivered capture stamps must remain >=200ms apart (<=5fps), with no concurrent copy calls.
+     */
+    @Test
+    fun fw4ReadbackStallDoesNotBlockMainOrDrainerAndBurstStaysAtFiveFps() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val host = currentPrivateHostForR4()
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val copyGate = factory.armNextCopy(1_400)
+        val requestStart = SystemClock.elapsedRealtime()
+        val deadline = requestStart + 2_000
+        val lease = runOnMainSync {
+            hosting.acquireProfileLease(normal, deadline, consumer)
+        }
+        assertNotNull("FW4 stalled-readback profile lease", lease)
+        assertTrue("FW4 readback worker entered deterministic stall",
+            copyGate.awaitEntered(800))
+        assertTrue(
+            "FW4 factory entry itself is the dedicated readback thread: " +
+                factory.copyEntryThreads(),
+            factory.copyEntryThreads().last().contains("EyeBrowseWindowReadback"),
+        )
+
+        val before = runOnMainSync(hosting::captureDiagnostics)
+        val callbacksBefore = diagnosticLong(before, "callbacks")
+        val acquiredBefore = diagnosticLong(before, "acquired")
+        val drawBefore = runOnMainSync { host.drawObservationForTest().serial }
+
+        val mainPing = CountDownLatch(1)
+        Handler(Looper.getMainLooper()).post {
+            hosting.status()
+            hosting.currentGeneration()
+            mainPing.countDown()
+        }
+        assertTrue(
+            "FW4 Main/controller lock remains runnable while readback worker is blocked",
+            mainPing.await(250, TimeUnit.MILLISECONDS),
+        )
+
+        val observedDraw = factory.observeNextDraw()
+        runOnMain {
+            repeat(6) {
+                session.requestFreshCaptureFrame()
+            }
+        }
+        assertTrue("FW4 real Presentation draw occurs during readback stall",
+            observedDraw.await(600, TimeUnit.MILLISECONDS))
+        waitUntil("FW4 sink drainer advances while readback worker remains blocked", {
+            val d = runOnMainSync(hosting::captureDiagnostics)
+            diagnosticLong(d, "callbacks") > callbacksBefore &&
+                diagnosticLong(d, "acquired") > acquiredBefore
+        }, 700)
+        assertTrue("FW4 hardware draw serial advanced",
+            runOnMainSync { host.drawObservationForTest().serial } > drawBefore)
+        val stalledAuthority = captureAuthorityForR4(host)
+        assertTrue("FW4 burst demand coalesced while one copy owns the slot",
+            stalledAuthority.trailingDemand)
+        assertEquals("FW4 burst cannot start a concurrent backend copy",
+            1, factory.copyInvocationCount())
+
+        copyGate.release()
+        assertFalse("FW4 readback stall released deliberately", copyGate.timedOut)
+        waitUntil("FW4 initial + one trailing qualified frame delivered", {
+            consumer.qualifyingCountFrom(0) >= 2
+        }, 1_500)
+        assertTrue("FW4 first readiness delivery remains inside original t0+2s",
+            consumer.deliveryElapsedAt(consumer.earliestQualifyingIndexFrom(0)) <= deadline)
+        assertEquals("FW4 six burst demands coalesce to exactly one trailing copy",
+            2, factory.copyInvocationCount())
+        assertEquals("FW4 Window-copy invocations never overlap",
+            1, factory.maxConcurrentCopyCalls())
+        assertTrue(
+            "FW4 capture timestamps respect 200ms minimum interval (<=5fps): " +
+                consumer.minCaptureGapFrom(0),
+            consumer.minCaptureGapFrom(0) >= HostingPolicy.MIN_FRAME_INTERVAL_MS,
+        )
+        assertTrue("FW4 all platform copy invocations stay off Main",
+            factory.copyEntryThreads().all { it.contains("EyeBrowseWindowReadback") })
+        assertTrue("FW4 real platform results are successful",
+            factory.platformResults().take(2).all { it.result == android.view.PixelCopy.SUCCESS })
+        runOnMain(lease!!::release)
+    }
+
+    /**
+     * FW4-T2: Stop while the readback worker owns an in-flight request. Stop must close authority
+     * and wake-lock state without joining that worker. The request bitmap remains owned/unrecycled
+     * until the actual late platform call/callback retires it; the readback handler is retired and
+     * a later fresh owner must allocate a different bitmap.
+     */
+    @Test
+    fun fw4StopDuringBlockedReadbackRevokesWithoutDeadlockAndNeverReusesBitmap() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val host = currentPrivateHostForR4()
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val copyGate = factory.armNextCopy(3_000)
+        val lease = runOnMainSync { hosting.acquireLease(consumer) }
+        assertNotNull("FW4 Stop-cancel lease", lease)
+        assertTrue("FW4 Stop-cancel readback request entered",
+            copyGate.awaitEntered(1_000))
+        val oldBitmap = checkNotNull(factory.requestedBitmaps().lastOrNull())
+        assertFalse("FW4 request bitmap owned while native copy is unresolved",
+            oldBitmap.isRecycled)
+        val readbackThread = checkNotNull(threadFieldForR4(host, "retainedReadbackThread"))
+        assertTrue("FW4 readback thread is live before Stop", readbackThread.isAlive)
+
+        val stopStarted = SystemClock.elapsedRealtime()
+        runOnMain(hosting::stop)
+        val stopReturned = SystemClock.elapsedRealtime()
+        assertEquals("FW4 Stop publishes settled state without joining readback",
+            HostingController.State.NOT_HOSTING, runOnMainSync(hosting::status).state)
+        assertFalse("FW4 Stop revokes capture synchronously",
+            runOnMainSync(hosting::status).captureActive)
+        assertFalse("FW4 Stop releases wake lock synchronously",
+            runOnMainSync(hosting::isWakeLockHeld))
+        assertTrue(
+            "FW4 Stop Main return must precede the blocked worker's 3s guard",
+            stopReturned - stopStarted < 750,
+        )
+        assertNull("FW4 Stop retires mutable readback handler immediately",
+            handlerFieldOrNullForR4(host, "readbackHandler"))
+        assertFalse(
+            "FW4 Stop cannot recycle request-owned destination before native completion",
+            oldBitmap.isRecycled,
+        )
+        assertEquals("FW4 cancelled old request publishes nothing", 0, consumer.count())
+
+        copyGate.release()
+        assertFalse("FW4 Stop-cancel gate released deliberately", copyGate.timedOut)
+        waitUntil("FW4 late cancelled request bitmap retired", {
+            oldBitmap.isRecycled
+        }, 2_000)
+        waitUntil("FW4 Stop capture resources quiescent", {
+            !runOnMainSync(hosting::captureResourcesPresent)
+        }, 2_000)
+        readbackThread.join(1_000)
+        assertFalse("FW4 retired readback thread exits after outstanding call returns",
+            readbackThread.isAlive)
+        assertEquals("FW4 late cancelled request never publishes", 0, consumer.count())
+        assertTrue(
+            "FW4 Stop cleanup completes inside global Stop bound",
+            SystemClock.elapsedRealtime() - stopStarted <= STOP_BOUND_MS,
+        )
+
+        // Fresh owner after full retirement must allocate a new destination object.
+        val freshProfile = prepareR4RecordedProfile(factory)
+        val freshConsumer = CollectingConsumer()
+        freshConsumer.expectQualification(
+            freshProfile.width, freshProfile.height, CAPTURE_PAGE_COLOR,
+        )
+        val freshGate = factory.armNextCopy(1_000)
+        val freshDeadline = SystemClock.elapsedRealtime() + 2_000
+        val freshLease = runOnMainSync {
+            hosting.acquireProfileLease(freshProfile, freshDeadline, freshConsumer)
+        }
+        assertNotNull("FW4 fresh lease after Stop retirement", freshLease)
+        assertTrue("FW4 fresh copy allocation observed", freshGate.awaitEntered(700))
+        val newBitmap = checkNotNull(factory.requestedBitmaps().lastOrNull())
+        assertTrue("FW4 old destination remains recycled", oldBitmap.isRecycled)
+        assertTrue("FW4 fresh owner uses a distinct bitmap object", newBitmap !== oldBitmap)
+        assertFalse("FW4 fresh destination is live before its own completion", newBitmap.isRecycled)
+        freshGate.release()
+        waitUntil("FW4 fresh owner publishes normally", {
+            freshConsumer.qualifyingCountFrom(0) > 0
+        }, 1_200)
+        runOnMain(freshLease!!::release)
+    }
+
+    /**
+     * FW4-T3: lease authority expires while requestWindowCopy is blocked on the dedicated worker.
+     * FrameGate expiry/Watchdog must revoke delivery + wake lock by the existing +6s endpoint even
+     * though the native request still owns its bitmap. Handler retirement cannot orphan the late
+     * callback; after the worker is released the bitmap retires and resources become quiescent.
+     */
+    @Test
+    fun fw4LeaseExpiryDuringBlockedReadbackRejectsLateCompletionAndRetiresHandler() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val host = currentPrivateHostForR4()
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val copyGate = factory.armNextCopy(7_000)
+        val lease = runOnMainSync { hosting.acquireLease(consumer) }
+        assertNotNull("FW4 expiry lease", lease)
+        assertTrue("FW4 expiry readback request entered",
+            copyGate.awaitEntered(1_000))
+        val bitmap = checkNotNull(factory.requestedBitmaps().lastOrNull())
+        val anchor = runOnMainSync(hosting::lastDemandAnchorElapsedMs)
+        val authorityDeadline = anchor + HostingPolicy.LEASE_TTL_MS
+        val cleanupEndpoint = anchor + 6_000
+
+        var revokedAt = 0L
+        while (SystemClock.elapsedRealtime() <= cleanupEndpoint) {
+            val status = runOnMainSync(hosting::status)
+            if (!status.captureActive && !status.wakeLockHeld) {
+                revokedAt = SystemClock.elapsedRealtime()
+                break
+            }
+            SystemClock.sleep(25)
+        }
+        assertTrue(
+            "FW4 expiry authority/wake cleanup by last demand +6s; " +
+                "anchor=$anchor authDeadline=$authorityDeadline observed=$revokedAt",
+            revokedAt in authorityDeadline..cleanupEndpoint,
+        )
+        assertFalse("FW4 expiry late request has no admitted consumer frame",
+            consumer.count() > 0)
+        assertNull("FW4 expiry retires readback handler while worker is still outstanding",
+            handlerFieldOrNullForR4(host, "readbackHandler"))
+        assertFalse("FW4 request-owned bitmap survives until actual late completion",
+            bitmap.isRecycled)
+
+        copyGate.release()
+        assertFalse("FW4 expiry gate released deliberately", copyGate.timedOut)
+        waitUntil("FW4 expiry late bitmap retired through product callback", {
+            bitmap.isRecycled
+        }, 2_000)
+        waitUntil("FW4 expiry capture resources quiescent after worker release", {
+            !runOnMainSync(hosting::captureResourcesPresent)
+        }, 2_000)
+        assertEquals("FW4 expired lease admits no late completion", 0, consumer.count())
+        assertTrue("FW4 no retry flood after expired authority",
+            factory.copyInvocationCount() == 1)
+    }
+
+    /**
+     * FW4-T4: hold callback DELIVERY of a real SUCCESS, then replace the browser document while
+     * that old request still owns its bitmap. Releasing the late callback must retire only the old
+     * bitmap/context. After old lease/resource retirement, a fresh lease on the replacement
+     * document must capture/publish its own Window without old-context reheadering.
+     */
+    @Test
+    fun fw4DocumentReplacementRejectsHeldOldSuccessAndFreshDocumentRecovers() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val oldDocument = runOnMainSync(session::documentIdentity)
+        val oldConsumer = CollectingConsumer()
+        oldConsumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val held = factory.holdNextCopyCompletion()
+        val deadline = SystemClock.elapsedRealtime() + 2_000
+        val oldLease = runOnMainSync {
+            hosting.acquireProfileLease(normal, deadline, oldConsumer)
+        }
+        assertNotNull("FW4 document-replacement old lease", oldLease)
+        assertTrue("FW4 old Window SUCCESS captured before product delivery",
+            held.awaitCaptured(1_500))
+        assertEquals(android.view.PixelCopy.SUCCESS, held.result)
+        val oldBitmap = checkNotNull(held.destinationBitmap())
+        assertFalse("FW4 held old SUCCESS bitmap remains request-owned", oldBitmap.isRecycled)
+        assertEquals("FW4 held old SUCCESS not yet published", 0, oldConsumer.count())
+
+        runOnMain {
+            session.openAddress(FIXTURE_BASE + "/hosting-two.html")
+        }
+        waitUntil("FW4 replacement document committed", {
+            runOnMainSync(session::documentIdentity) != oldDocument &&
+                "Second hosting page" == domText("page-title")
+        }, 5_000)
+        val newDocument = runOnMainSync(session::documentIdentity)
+        assertNotEquals("FW4 source document genuinely replaced", oldDocument, newDocument)
+
+        held.release()
+        waitUntil("FW4 old held bitmap retired after document replacement", {
+            oldBitmap.isRecycled
+        }, 1_000)
+        assertEquals("FW4 late old SUCCESS cannot publish after source replacement",
+            0, oldConsumer.count())
+
+        runOnMain(oldLease!!::release)
+        waitUntilMain("FW4 old binding resources retire before successor lease", {
+            !hosting.captureResourcesPresent()
+        })
+
+        val freshConsumer = CollectingConsumer()
+        freshConsumer.expectQualification(normal.width, normal.height, SECOND_PAGE_COLOR)
+        val freshLease = runOnMainSync { hosting.acquireLease(freshConsumer) }
+        assertNotNull("FW4 fresh replacement-document lease", freshLease)
+        waitUntil("FW4 replacement document publishes fresh qualified pixels", {
+            freshConsumer.qualifyingCountFrom(0) > 0
+        }, 2_000)
+        assertEquals("FW4 replacement document identity remains current",
+            newDocument, runOnMainSync(session::documentIdentity))
+        assertTrue("FW4 fresh replacement pixels are second-page content",
+            freshConsumer.latestFrameNearColor(SECOND_PAGE_COLOR))
+        assertEquals("FW4 old consumer remains permanently fenced", 0, oldConsumer.count())
+        runOnMain(freshLease!!::release)
+    }
+
+    /**
      * T-C / R-03: delay delivery of the REAL frame-commit callback while allowing another actual
      * draw in the same epoch. The later draw may become PixelCopy's newest same-context pixels,
      * but it must not advance the recorded commit association or HostingFrame freshness anchor.
@@ -4234,6 +4528,12 @@ class HostingInstrumentedTest {
         val field = PrivateDisplayHost::class.java.getDeclaredField(name)
         field.isAccessible = true
         return field.get(host) as? Thread
+    }
+
+    private fun handlerFieldOrNullForR4(host: PrivateDisplayHost, name: String): Handler? {
+        val field = PrivateDisplayHost::class.java.getDeclaredField(name)
+        field.isAccessible = true
+        return field.get(host) as? Handler
     }
 
     private fun presentationWindowForR4(host: PrivateDisplayHost): android.view.Window {
@@ -5039,6 +5339,7 @@ class HostingInstrumentedTest {
         private val platformCalls = LinkedBlockingQueue<R4PlatformCall>()
         private val platformResults = CopyOnWriteArrayList<R4PlatformResult>()
         private val requestedDestinations = CopyOnWriteArrayList<android.graphics.Bitmap>()
+        private val copyEntryThreads = CopyOnWriteArrayList<String>()
         private val copyCount = AtomicInteger(0)
         private val activeCopyCalls = AtomicInteger(0)
         private val maxConcurrentCopyCalls = AtomicInteger(0)
@@ -5087,6 +5388,8 @@ class HostingInstrumentedTest {
 
         fun requestedBitmaps(): List<android.graphics.Bitmap> = requestedDestinations.toList()
 
+        fun copyEntryThreads(): List<String> = copyEntryThreads.toList()
+
         fun controlledPresentation(): ControlledPresentation =
             checkNotNull(latestPresentation) { "controlled Presentation unavailable" }
 
@@ -5118,6 +5421,7 @@ class HostingInstrumentedTest {
                 val invocation = copyCount.incrementAndGet()
                 copyEvents.offer(invocation)
                 requestedDestinations.add(destination)
+                copyEntryThreads.add(Thread.currentThread().name)
                 val gate = nextCopyGate
                 if (gate != null && nextCopyGate === gate) {
                     nextCopyGate = null
