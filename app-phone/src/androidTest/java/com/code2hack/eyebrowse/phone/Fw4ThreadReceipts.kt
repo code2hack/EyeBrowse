@@ -11,6 +11,35 @@ import java.util.concurrent.locks.LockSupport
 
 private const val FW4_RECEIPT_TAG = "EyeBrowseFW4"
 
+/**
+ * A finite test-dispatch wait, not a product Stop/readiness allowance. The original row clocks
+ * still start before dispatch and keep their 750ms/2000ms assertions. This 5000ms outer guard
+ * matches the existing Start/Stop cleanup guard and reports a blocked call instead of waiting
+ * forever inside Instrumentation.runOnMainSync. ActivityScenario/Espresso waits are not covered.
+ */
+internal fun <T> fw4RunOnMainChecked(action: () -> T): T {
+    check(Looper.myLooper() != Looper.getMainLooper()) { "Main test dispatcher called from Main" }
+    val call = Fw4BoundedMainCall(action)
+    val handler = Handler(Looper.getMainLooper())
+    val source = Throwable().stackTrace.firstOrNull {
+        it.className.endsWith("HostingInstrumentedTest") &&
+            it.methodName != "runOnMain" && it.methodName != "runOnMainSync"
+    }
+    val requested = SystemClock.elapsedRealtime()
+    check(handler.post(call)) { "Main test dispatcher rejected call at $source" }
+    try {
+        return call.await(5_000)
+    } catch (failure: Throwable) {
+        // Removing an already executing callback cannot stop it. phase=RUNNING explicitly leaves
+        // resource completion unresolved; neither test cleanup nor a later row may infer success.
+        handler.removeCallbacks(call)
+        Log.e(FW4_RECEIPT_TAG, "MAIN_TEST_CALL_FAILED source=$source requested=$requested " +
+            "observed=${SystemClock.elapsedRealtime()} phase=${call.phase()} " +
+            "failure=${failure.javaClass.name}")
+        throw failure
+    }
+}
+
 /** Public API snapshots only; a null park blocker does NOT exclude monitor/native blocking.
  * https://developer.android.com/reference/java/util/concurrent/locks/LockSupport#getBlocker(java.lang.Thread)
  * https://developer.android.com/reference/android/os/Looper#dump(android.util.Printer,%20java.lang.String)
@@ -151,6 +180,8 @@ internal class Fw4StopReceipt(
 
     fun enterMain() { enteredElapsed = SystemClock.elapsedRealtime() }
     fun exitMain() { returnedElapsed = SystemClock.elapsedRealtime() }
+    fun mainEntryElapsedMs(): Long = enteredElapsed
+    fun mainExitElapsedMs(): Long = returnedElapsed
 
     override fun close() {
         done.countDown()

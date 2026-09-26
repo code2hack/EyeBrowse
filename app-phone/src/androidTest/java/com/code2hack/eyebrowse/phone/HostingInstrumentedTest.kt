@@ -3317,12 +3317,14 @@ class HostingInstrumentedTest {
 
     /**
      * FW4-E1: the real API31 Window PixelCopy returns SOURCE_NO_DATA for a re-shown source whose
-     * replacement Window has not queued a buffer. Accept one real recovery result: SUCCESS with
-     * timely qualified publication, or a second NO_DATA with terminal readiness. Never a third copy.
-     * Source @0448330: PrivateDisplayHost.HostingPresentation.onStop clears captureDrawListener;
-     * create installs it, and onFrameCommitted rejects a missing qualifyingDraw. Thus this re-show
-     * has no production path to qualified SUCCESS after dismissal. A missing second invocation is
-     * NOT a second NO_DATA: retain that explicit failure, never reinstall or synthesize a listener.
+     * replacement Window has not queued a buffer. Dismissal clears captureDrawListener; re-show
+     * does not reinstall it. beginRecoveryCycle spends ONE allowance, but onFrameCommitted then
+     * rejects its missing qualifyingDraw BEFORE a second backend invocation. C22c's one real
+     * NO_DATA plus terminal readiness is therefore the required fail-closed result, not a second
+     * NO_DATA and not a successful recovery. Require 1 request, 1 attempted recovery, 0 publication,
+     * the original deadline, and closure under further live-binding demand. The independent
+     * singleTransientRecoveryCanSucceedWithinOriginalTransaction positive stays unchanged.
+     * Never reinstall the listener, synthesize callbacks, or accept deadline-only abandonment.
      */
     @Test
     fun fw4RealNoDataFromReplacedWindowSurfaceRecoversOnceWithinOriginalDeadline() {
@@ -3419,84 +3421,69 @@ class HostingInstrumentedTest {
             SystemClock.elapsedRealtime() < deadline)
 
         held.release()
-        // All observations share remaining = original deadline - now; no new readiness budget.
+        // One original deadline covers recovery fencing as well as actual API calls. Losing the
+        // qualifying draw is a terminal fence failure, not permission to issue an unqualified copy.
         while (SystemClock.elapsedRealtime() < deadline &&
-            factory.platformResults().size < 2 && !captureAuthorityForR4(host).terminal) {
+            factory.copyInvocationCount() == 1 && !captureAuthorityForR4(host).terminal) {
             SystemClock.sleep(10)
         }
         val results = factory.platformResults()
         val outcomeDiagnostics = runOnMainSync(hosting::captureDiagnostics)
-        Log.i("EyeBrowseFW4", "NO_DATA_OUTCOME results=${results.map { it.result }} " +
-            "drawBefore=$drawBefore drawAfter=${runOnMainSync { presentation.drawObservation().serial }} " +
-            "diagnostics={$outcomeDiagnostics}")
-        assertEquals("FW4 requires two REAL results; lost qualifyingDraw is not second NO_DATA: " +
-            "requests=${factory.copyInvocationCount()} diagnostics={$outcomeDiagnostics}",
-            2, results.size)
-        assertTrue("FW4 both actual callbacks satisfy ORIGINAL t0+2s deadline",
-            results.all { it.callbackElapsedMs in requestStart..deadline })
-        when (results[1].result) {
-            android.view.PixelCopy.SUCCESS -> {
-                waitUntil("FW4 successful recovery publishes qualified current pixels", {
-                    consumer.qualifyingCountFrom(0) > 0
-                }, (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(1))
-                val first = consumer.earliestQualifyingIndexFrom(0)
-                assertTrue("FW4 NO_DATA recovery delivery satisfies ORIGINAL t0+2s deadline",
-                    first >= 0 && consumer.deliveryElapsedAt(first) <= deadline)
-                assertTrue("FW4 SUCCESS has a real post-unblock Presentation draw",
-                    runOnMainSync { presentation.drawObservation().serial } > drawBefore)
-                val d = runOnMainSync(hosting::captureDiagnostics)
-                assertTrue("FW4 SUCCESS source advanced the independently drained sink",
-                    diagnosticLong(d, "callbacks") > callbacksBefore &&
-                        diagnosticLong(d, "acquired") > acquiredBefore)
-                val a = captureAuthorityForR4(host)
-                assertFalse("FW4 SUCCESS clears readiness", a.readinessPending)
-                assertFalse("FW4 SUCCESS is not terminal", a.terminal)
-            }
-            android.view.PixelCopy.ERROR_SOURCE_NO_DATA -> {
-                waitUntil("FW4 second real NO_DATA terminates readiness", {
-                    val a = captureAuthorityForR4(host)
-                    a.terminal && a.readinessPending && !a.copyInFlight && a.transactionId == 0L
-                }, (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(1))
-                assertTrue("FW4 terminal readiness observed inside ORIGINAL deadline",
-                    SystemClock.elapsedRealtime() <= deadline)
-                assertEquals("FW4 exhausted recovery publishes nothing", 0, consumer.count())
-                // Challenge retry closure while the SAME lease remains live, not just after Stop.
-                invokeProductionCaptureDemandForR4(host)
-            }
-            else -> fail("FW4 unexpected real recovery result: ${results[1].result}")
-        }
-        val recoveredDiagnostics = runOnMainSync(hosting::captureDiagnostics)
+        val drawAfter = runOnMainSync { presentation.drawObservation().serial }
         val finalAuthority = captureAuthorityForR4(host)
+        Log.i("EyeBrowseFW4", "NO_DATA_OUTCOME results=${results.map { it.result }} " +
+            "drawBefore=$drawBefore drawAfter=$drawAfter callbacksBefore=$callbacksBefore " +
+            "acquiredBefore=$acquiredBefore expected=RECOVERY_FENCE_REJECTED_BEFORE_COPY " +
+            "diagnostics={$outcomeDiagnostics}")
+        assertEquals("FW4 exactly one REAL NO_DATA; no fabricated recovery result", 1, results.size)
+        assertEquals(android.view.PixelCopy.ERROR_SOURCE_NO_DATA, results.single().result)
+        assertTrue("FW4 actual NO_DATA callback satisfies ORIGINAL t0+2s deadline",
+            results.single().callbackElapsedMs in requestStart..deadline)
+        assertTrue("FW4 real post-unblock draw occurred, but cannot recreate the cleared listener",
+            drawAfter > drawBefore)
+        assertTrue("FW4 recovery fence terminates inside ORIGINAL deadline",
+            SystemClock.elapsedRealtime() <= deadline)
+        assertTrue("FW4 missing recovery draw is terminal", finalAuthority.terminal)
+        assertTrue("FW4 no successful readiness was manufactured", finalAuthority.readinessPending)
+        assertFalse("FW4 no backend copy remains in flight", finalAuthority.copyInFlight)
+        assertEquals("FW4 failed recovery transaction is closed", 0L, finalAuthority.transactionId)
+        assertEquals("FW4 failed recovery cycle is closed", 0L,
+            diagnosticLong(outcomeDiagnostics, "activeCycle"))
+        assertFalse("FW4 failed transaction discards trailing demand", finalAuthority.trailingDemand)
         assertEquals("FW4 recovery keeps binding", originalAuthority.bindingIdentity,
             finalAuthority.bindingIdentity)
-        assertEquals("FW4 recovery keeps original deadline", originalAuthority.bindingDeadline,
-            finalAuthority.bindingDeadline)
-        assertEquals("FW4 NO_DATA spends exactly one recovery allowance",
-            1L, diagnosticLong(recoveredDiagnostics, "recoveries"))
-        assertEquals("FW4 NO_DATA backend requests serialized",
-            1, factory.maxConcurrentCopyCalls())
-        assertTrue("FW4 NO_DATA old destination retired after recovery",
-            checkNotNull(held.destinationBitmap()).isRecycled)
+        assertEquals("FW4 recovery keeps authority", originalAuthority.authoritySerial,
+            finalAuthority.authoritySerial)
+        assertEquals("FW4 recovery keeps ORIGINAL deadline", deadline, finalAuthority.bindingDeadline)
+        assertEquals("FW4 exactly one attempted recovery cycle", 1L,
+            diagnosticLong(outcomeDiagnostics, "recoveries"))
+        assertEquals("FW4 recovery fence prevents second backend invocation", 1,
+            factory.copyInvocationCount())
+        assertEquals("FW4 NO_DATA backend requests serialized", 1, factory.maxConcurrentCopyCalls())
+        assertEquals("FW4 fence failure publishes nothing", 0, consumer.count())
+        assertTrue("FW4 initial destination retired", checkNotNull(held.destinationBitmap()).isRecycled)
 
-        // SUCCESS may have one legitimate trailing demand; revoke before its 200ms due time.
-        // Exhaustion must remain closed for 200+75ms even under the live-binding challenge above.
-        if (results[1].result == android.view.PixelCopy.ERROR_SOURCE_NO_DATA) {
-            SystemClock.sleep(HostingPolicy.MIN_FRAME_INTERVAL_MS + 75)
-            assertEquals("FW4 terminal live binding cannot issue a third request",
-                2, factory.copyInvocationCount())
-            assertEquals("FW4 terminal challenge cannot publish", 0, consumer.count())
-        }
+        // Challenge closure BEFORE releasing the SAME live lease. 200ms rate interval + 75ms
+        // observation margin is a no-retry soak, not additional profile-readiness time.
+        assertTrue("FW4 closure challenge retains live lease", runOnMainSync(hosting::status).captureActive)
+        invokeProductionCaptureDemandForR4(host)
+        SystemClock.sleep(HostingPolicy.MIN_FRAME_INTERVAL_MS + 75)
+        val challenged = captureAuthorityForR4(host)
+        assertTrue("FW4 terminal authority stays closed", challenged.terminal && challenged.readinessPending)
+        assertEquals("FW4 live challenge cannot mint a transaction", 0L, challenged.transactionId)
+        assertFalse("FW4 live challenge cannot start another copy", challenged.copyInFlight)
+        assertEquals("FW4 live challenge leaves the one real request count unchanged", 1,
+            factory.copyInvocationCount())
+        assertEquals("FW4 live challenge publishes nothing", 0, consumer.count())
         val releaseAt = SystemClock.elapsedRealtime()
         runOnMain(lease!!::release)
-        waitUntil("FW4 both outcomes retire all destinations and capture resources", {
+        waitUntil("FW4 terminal NO_DATA retires all destinations and capture resources", {
             factory.requestedBitmaps().all { it.isRecycled } &&
                 !runOnMainSync(hosting::captureResourcesPresent)
         }, STOP_BOUND_MS)
-        assertTrue("FW4 cleanup remains bounded",
-            SystemClock.elapsedRealtime() - releaseAt <= STOP_BOUND_MS)
+        assertTrue("FW4 cleanup remains bounded", SystemClock.elapsedRealtime() - releaseAt <= STOP_BOUND_MS)
         SystemClock.sleep(HostingPolicy.MIN_FRAME_INTERVAL_MS + 75)
-        assertEquals("FW4 NO_DATA exactly initial + one recovery; no retry flood",
-            2, factory.copyInvocationCount())
+        assertEquals("FW4 no late backend retry after retirement", 1, factory.copyInvocationCount())
     }
 
     /**
@@ -3590,6 +3577,10 @@ class HostingInstrumentedTest {
      *
      * The product deadline remains requestStart+2000ms. Observation waits do not extend it:
      * the actual callback and qualifying delivery timestamps are both compared to that deadline.
+     * C22c had no captured callback, attributed to synchronous backing-surface validation failure.
+     * Draw/elapsed workload alone does NOT prove a GPU fence timeout. Record the exact invocation
+     * outcome, verify terminal safety on a synchronous failure, and FAIL as unqualified TIMEOUT;
+     * ERROR_UNKNOWN must never substitute for the real ERROR_TIMEOUT requirement below.
      */
     @Test
     fun fw4RealPixelCopyTimeoutRunsOffMainAndRecoversOnceWithinOriginalDeadline() {
@@ -3651,7 +3642,39 @@ class HostingInstrumentedTest {
             Log.i("EyeBrowseFW4", "MAIN_WINDOW copyStart=${call.startedElapsedMs} " +
                 "copyReturn=${call.returnedElapsedMs} deadline=$deadline")
         }
-        assertTrue("FW4 TIMEOUT actual callback captured",
+        if (call.failureClass != null) {
+            Log.e("EyeBrowseFW4", "REAL_TIMEOUT_NOT_ESTABLISHED invocation=${call.invocation} " +
+                "bitmap=${call.bitmapIdentity} failure=${call.failureClass} " +
+                "missingBackingSurface=${call.missingBackingSurface} " +
+                "start=${call.startedElapsedMs} return=${call.returnedElapsedMs} deadline=$deadline")
+            assertEquals("FW4 observed synchronous Window validation failure",
+                IllegalArgumentException::class.java.name, call.failureClass)
+            assertTrue("FW4 exact failed invocation identifies missing backing surface",
+                call.missingBackingSurface)
+            assertFalse("FW4 synchronous exception is not a PixelCopy callback", held.awaitCaptured(0))
+            assertTrue("FW4 no actual result fabricated for the throwing invocation",
+                factory.platformResults().none { it.invocation == call.invocation })
+            val remaining = deadline - SystemClock.elapsedRealtime()
+            assertTrue("FW4 exception handling retains ORIGINAL readiness budget", remaining > 0)
+            val failedHost = currentPrivateHostForR4()
+            waitUntil("FW4 synchronous failure terminates without retry", {
+                val a = captureAuthorityForR4(failedHost)
+                a.terminal && a.readinessPending && !a.copyInFlight && a.transactionId == 0L
+            }, remaining)
+            val diagnostics = runOnMainSync(hosting::captureDiagnostics)
+            assertTrue("FW4 synchronous failure handled before ORIGINAL deadline",
+                SystemClock.elapsedRealtime() <= deadline)
+            assertEquals("FW4 product maps synchronous failure to ERROR_UNKNOWN",
+                android.view.PixelCopy.ERROR_UNKNOWN.toLong(), diagnosticLong(diagnostics, "copyResult"))
+            assertEquals("FW4 synchronous validation failure gets no recovery", 0L,
+                diagnosticLong(diagnostics, "recoveries"))
+            assertEquals("FW4 synchronous failure makes one request", 1, factory.copyInvocationCount())
+            assertEquals("FW4 synchronous failure cannot publish", 0, consumer.count())
+            assertTrue("FW4 failed request destination retired", checkNotNull(held.destinationBitmap()).isRecycled)
+            fail("FW4_REAL_TIMEOUT_NOT_ESTABLISHED: real Window call threw synchronously; " +
+                "terminal safety is not TIMEOUT qualification (invocation=${call.invocation})")
+        }
+        assertTrue("FW4 TIMEOUT actual callback captured for non-throwing invocation=${call.invocation}",
             held.awaitCaptured(500))
         assertEquals("FW4 GPU-fence readback produces real ERROR_TIMEOUT",
             android.view.PixelCopy.ERROR_TIMEOUT, held.result)
@@ -3744,6 +3767,8 @@ class HostingInstrumentedTest {
         assertFalse("FW4 actual-copy destination is live before Stop", bitmap.isRecycled)
 
         val stopAt = SystemClock.elapsedRealtime()
+        var nativeCopyOutstandingOnMainEntry = false
+        var copyReturnAtMainEntry = Long.MIN_VALUE
         val receipt = Fw4StopReceipt(stopAt) {
             "copyStart=${call.startedElapsedMs} copyReturn=${call.returnedElapsedMs} " +
                 "outstanding=${call.returned.count} bitmapRecycled=${bitmap.isRecycled}"
@@ -3751,12 +3776,24 @@ class HostingInstrumentedTest {
         val stopReturned = try {
             runOnMain {
                 receipt.enterMain()
+                nativeCopyOutstandingOnMainEntry = call.returned.count != 0L
+                copyReturnAtMainEntry = call.returnedElapsedMs
                 try { hosting.stop() } finally { receipt.exitMain() }
             }
             SystemClock.elapsedRealtime() // Preserve the ORIGINAL wrapper stopwatch below.
         } finally {
             receipt.close() // Observer join/logging is outside the measured wrapper duration.
         }
+        // Never subtract queue delay or native time from the ORIGINAL <750ms assertion.
+        // C22c: 746ms queued + 3528ms inside Main; copy returned 7ms before Main entry.
+        // A copy no longer outstanding at entry cannot explain the whole in-Stop interval.
+        // Preserve the failure for capture-qualification/Planner disposition, not a larger budget.
+        Log.i("EyeBrowseFW4", "STOP_INTERVALS queueMs=${receipt.mainEntryElapsedMs() - stopAt} " +
+            "bodyMs=${receipt.mainExitElapsedMs() - receipt.mainEntryElapsedMs()} " +
+            "wrapperMs=${stopReturned - stopAt} " +
+            "nativeOutstandingAtMainEntry=$nativeCopyOutstandingOnMainEntry " +
+            "copyReturnAtMainEntry=$copyReturnAtMainEntry " +
+            "platformFailure=${call.failureClass}")
         assertEquals(HostingController.State.NOT_HOSTING, runOnMainSync(hosting::status).state)
         assertFalse("FW4 actual-copy Stop revokes capture",
             runOnMainSync(hosting::status).captureActive)
@@ -4964,6 +5001,8 @@ class HostingInstrumentedTest {
                 if (condition.getAsBoolean()) {
                     return
                 }
+            } catch (blocked: Fw4BoundedMainCall.DeadlineExceeded) {
+                throw blocked // Do not repeatedly dispatch behind an unresolved Main operation.
             } catch (ignored: RuntimeException) {} catch (ignored: AssertionError) {}
 
             SystemClock.sleep(100)
@@ -5003,14 +5042,11 @@ class HostingInstrumentedTest {
     }
 
     private fun runOnMain(runnable: Runnable) {
-        InstrumentationRegistry.getInstrumentation().runOnMainSync(runnable)
+        fw4RunOnMainChecked { runnable.run() }
     }
 
-    private fun <T> runOnMainSync(supplier: java.util.function.Supplier<T>): T {
-        val result: AtomicReference<T> = AtomicReference()
-        InstrumentationRegistry.getInstrumentation().runOnMainSync({ result.set(supplier.get()) })
-        return result.get()
-    }
+    private fun <T> runOnMainSync(supplier: java.util.function.Supplier<T>): T =
+        fw4RunOnMainChecked { supplier.get() }
 
     private fun webViewIdentityHash(): Int {
         val identity: Int? =
@@ -5588,6 +5624,8 @@ class HostingInstrumentedTest {
     ) {
         val returned = CountDownLatch(1)
         @Volatile var returnedElapsedMs: Long = Long.MIN_VALUE
+        @Volatile var failureClass: String? = null
+        @Volatile var missingBackingSurface: Boolean = false
     }
 
     /**
@@ -5709,7 +5747,13 @@ class HostingInstrumentedTest {
                         System.identityHashCode(destination),
                     )
                     platformCalls.offer(call)
+                    Log.i("EyeBrowseFW4", "PLATFORM_CALL invocation=$invocation " +
+                        "bitmap=${call.bitmapIdentity} start=${call.startedElapsedMs} " +
+                        "thread=${call.requestThread}")
                     val observed = android.view.PixelCopy.OnPixelCopyFinishedListener { result ->
+                        Log.i("EyeBrowseFW4", "PLATFORM_CALLBACK invocation=$invocation " +
+                            "bitmap=${call.bitmapIdentity} result=$result " +
+                            "at=${SystemClock.elapsedRealtime()} thread=${Thread.currentThread().name}")
                         platformResults.add(
                             R4PlatformResult(
                                 invocation,
@@ -5725,8 +5769,17 @@ class HostingInstrumentedTest {
                         platform.requestWindowCopy(
                             window, sourceRect, destination, observed, handler,
                         )
+                    } catch (failure: RuntimeException) {
+                        call.failureClass = failure.javaClass.name
+                        call.missingBackingSurface = failure is IllegalArgumentException &&
+                            failure.message?.contains("backing surface", ignoreCase = true) == true
+                        throw failure // Preserve the real exception for the unchanged product catch.
                     } finally {
                         call.returnedElapsedMs = SystemClock.elapsedRealtime()
+                        Log.i("EyeBrowseFW4", "PLATFORM_RETURN invocation=$invocation " +
+                            "bitmap=${call.bitmapIdentity} start=${call.startedElapsedMs} " +
+                            "end=${call.returnedElapsedMs} failure=${call.failureClass} " +
+                            "missingBackingSurface=${call.missingBackingSurface}")
                         call.returned.countDown()
                     }
                 } else {
