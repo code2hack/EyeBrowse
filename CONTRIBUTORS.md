@@ -316,10 +316,10 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Worker",
-    "scope": "v0.0.1 ticket Worker (ChatGPT); Owner-directed spawn 20260925; Owner replaced the Manager-created bootstrap chat same day with this Owner-created conversation (old chat 6ab62ebb kept as 'Worker-chatgpt-bootstrap-superseded'); model verified in-conversation 'GPT-6 Astra Pro'; Manager binding envelope MGR3-WC-BIND-20260925-02 ACKed; old chat 6ab62ebb archived in ChatGPT 20260925 per Owner; awaiting issue-9 dispatch",
+    "scope": "v0.0.1 ticket Worker (ChatGPT); Owner-directed spawn 20260925; conversation 6ab634fe hit ChatGPT max conversation length 20260926 mid-FW4-report; Manager created continuation conversation 6ab76bf0 in the same project 20260926 (old chat retained read-only as history); model verified 'GPT-6 Astra Pro' / extra high; work history (verdicts 1-10 era, FW3/FW5/FW4 commits) transfers uninterrupted",
     "host": "chatgpt.com",
     "runtime": "chatgpt",
-    "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70/c/6ab634fe-d220-83ea-8370-72c3b993bb1c",
+    "id": "https://chatgpt.com/c/6ab76bf0-077c-83ea-9b69-3cc283bc6ce1",
     "paseo": null,
     "model": "gpt-6-astra pro / extra high (effort raised manually by Owner 20260925)",
     "name": "Worker-chatgpt",
