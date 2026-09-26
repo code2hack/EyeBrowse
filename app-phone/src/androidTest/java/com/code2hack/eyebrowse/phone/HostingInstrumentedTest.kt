@@ -3569,18 +3569,18 @@ class HostingInstrumentedTest {
     }
 
     /**
-     * FW4-E3 / slow GPU-readback: first let production create its WindowCopyRequest and enter the
-     * test factory on the dedicated readback worker. ONLY THEN install the 256-pass RenderEffect
-     * source and observe a real Presentation draw; releasing the factory gate makes the real API31
-     * PixelCopy consume that GPU-fenced source. This avoids C21's setup bug where the expensive
-     * effect delayed the initial frame commit so requestWindowCopy was never reached.
+     * FW4-E3, Planner HYBRID disposition #5846902192: qualify off-Main readback and actual
+     * timeout/error safety, not a 200ms Main-service SLA. The historical method name is retained.
+     * Arm production's request first, then draw the GPU workload; dispatchDraw/elapsed workload
+     * does not prove an unsignaled fence. Distinguish a real TIMEOUT callback and bounded recovery
+     * from synchronous source validation mapped to terminal ERROR_UNKNOWN. Never relabel either.
      *
-     * The product deadline remains requestStart+2000ms. Observation waits do not extend it:
-     * the actual callback and qualifying delivery timestamps are both compared to that deadline.
-     * C22c had no captured callback, attributed to synchronous backing-surface validation failure.
-     * Draw/elapsed workload alone does NOT prove a GPU fence timeout. Record the exact invocation
-     * outcome, verify terminal safety on a synchronous failure, and FAIL as unqualified TIMEOUT;
-     * ERROR_UNKNOWN must never substitute for the real ERROR_TIMEOUT requirement below.
+     * Keep the original requestStart+2000ms readiness deadline and 5000ms Stop/resource cleanup
+     * contract. The probe's 200ms first observation is diagnostic only; its unserved/late samples
+     * remain receipts, not PASS. C23's ~1101ms Main stall is retained in #5846860753 and routed
+     * to I9-T02, not erased. Production invokes the factory on its dedicated readback worker,
+     * outside nativeLock/controller/dispatch monitors; the unchanged deterministic stall row
+     * separately challenges Main/controller and dispatch-lock service while that worker is held.
      */
     @Test
     fun fw4RealPixelCopyTimeoutRunsOffMainAndRecoversOnceWithinOriginalDeadline() {
@@ -3618,21 +3618,15 @@ class HostingInstrumentedTest {
         val probe = Fw4MainServiceProbe(deadline, { call.returned.count != 0L }) {
             hosting.status()
         }
-        val mainPing = probe.first
+        var mainServedAt200Ms = false
         try {
-            assertTrue("FW4 Main/controller remains runnable during synchronous PixelCopy readback",
-                mainPing.await(200, TimeUnit.MILLISECONDS))
-            assertFalse("FW4 staged readback is actually outstanding during Main ping",
-                call.returned.await(0, TimeUnit.MILLISECONDS))
-            assertTrue("FW4 slow platform readback eventually returns",
-                call.returned.await(1_000, TimeUnit.MILLISECONDS))
-        } catch (failure: AssertionError) {
-            fw4WaitSnapshot("timeout-probe-failed", "copyStart=${call.startedElapsedMs} " +
-                "copyReturn=${call.returnedElapsedMs} outstanding=${call.returned.count}")
-            throw failure
+            mainServedAt200Ms = probe.first.await(200, TimeUnit.MILLISECONDS)
+            // A delayed/unserved marker is a recorded product observation, not an FW4 failure.
+            // Remaining readback observation = original t0+2000 - now, never a new deadline.
+            assertTrue("FW4 real Window invocation returns within original observation window",
+                call.returned.await((deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0),
+                    TimeUnit.MILLISECONDS))
         } finally {
-            // After a failed assertion, collect the rest of THIS native window, at most t0+2000.
-            // This is observation only: neither the 200ms assertion nor product deadline changes.
             try {
                 call.returned.await((deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0),
                     TimeUnit.MILLISECONDS)
@@ -3640,10 +3634,12 @@ class HostingInstrumentedTest {
                 probe.close()
             }
             Log.i("EyeBrowseFW4", "MAIN_WINDOW copyStart=${call.startedElapsedMs} " +
-                "copyReturn=${call.returnedElapsedMs} deadline=$deadline")
+                "copyReturn=${call.returnedElapsedMs} deadline=$deadline " +
+                "firstServedAt200Ms=$mainServedAt200Ms responsivenessPassClaim=false")
         }
+        val expectedRequests: Int
         if (call.failureClass != null) {
-            Log.e("EyeBrowseFW4", "REAL_TIMEOUT_NOT_ESTABLISHED invocation=${call.invocation} " +
+            Log.i("EyeBrowseFW4", "FW4_ERROR_OUTCOME realTimeout=false invocation=${call.invocation} " +
                 "bitmap=${call.bitmapIdentity} failure=${call.failureClass} " +
                 "missingBackingSurface=${call.missingBackingSurface} " +
                 "start=${call.startedElapsedMs} return=${call.returnedElapsedMs} deadline=$deadline")
@@ -3671,58 +3667,79 @@ class HostingInstrumentedTest {
             assertEquals("FW4 synchronous failure makes one request", 1, factory.copyInvocationCount())
             assertEquals("FW4 synchronous failure cannot publish", 0, consumer.count())
             assertTrue("FW4 failed request destination retired", checkNotNull(held.destinationBitmap()).isRecycled)
-            fail("FW4_REAL_TIMEOUT_NOT_ESTABLISHED: real Window call threw synchronously; " +
-                "terminal safety is not TIMEOUT qualification (invocation=${call.invocation})")
+            // HYBRID explicitly accepts demonstrated error safety. This is NOT real TIMEOUT
+            // coverage: retain the exception receipt and require complete resource retirement.
+            expectedRequests = 1
+            removeFw4GpuStress(stress)
+            held.release()
+        } else {
+            assertTrue("FW4 TIMEOUT actual callback captured for non-throwing invocation=${call.invocation}",
+                held.awaitCaptured(500))
+            assertEquals("FW4 GPU-fence readback produces real ERROR_TIMEOUT",
+                android.view.PixelCopy.ERROR_TIMEOUT, held.result)
+            val firstResult = factory.platformResults().single()
+            assertEquals(android.view.PixelCopy.ERROR_TIMEOUT, firstResult.result)
+            assertEquals("FW4 TIMEOUT platform callback thread", "main",
+                firstResult.callbackThread)
+            val realDuration = call.returnedElapsedMs - call.startedElapsedMs
+            assertTrue("FW4 ERROR_TIMEOUT real platform duration >=250ms: " + realDuration,
+                realDuration >= 250)
+            assertTrue("FW4 TIMEOUT callback still inside original t0+2s deadline",
+                firstResult.callbackElapsedMs <= deadline)
+            assertEquals("FW4 TIMEOUT publishes nothing before recovery", 0, consumer.count())
+
+            removeFw4GpuStress(stress)
+            held.release()
+            waitUntil("FW4 TIMEOUT one recovery publishes current Window", {
+                consumer.qualifyingCountFrom(0) > 0
+            }, 1_200)
+            val first = consumer.earliestQualifyingIndexFrom(0)
+            assertTrue("FW4 TIMEOUT recovery delivery before original deadline",
+                first >= 0 && consumer.deliveryElapsedAt(first) <= deadline)
+            waitUntil("FW4 TIMEOUT recovery platform result", {
+                factory.platformResults().size >= 2
+            }, 500)
+            assertEquals(
+                listOf(android.view.PixelCopy.ERROR_TIMEOUT, android.view.PixelCopy.SUCCESS),
+                factory.platformResults().take(2).map { it.result },
+            )
+            val recoveredDiagnostics = runOnMainSync(hosting::captureDiagnostics)
+            assertEquals("FW4 TIMEOUT spends exactly one recovery allowance",
+                1L, diagnosticLong(recoveredDiagnostics, "recoveries"))
+            assertEquals("FW4 TIMEOUT requests serialized",
+                1, factory.maxConcurrentCopyCalls())
+            expectedRequests = 2
+            Log.i("EyeBrowseFW4", "FW4_ERROR_OUTCOME realTimeout=true invocation=${call.invocation} " +
+                "recovery=SUCCESS callback=${firstResult.callbackElapsedMs} deadline=$deadline")
         }
-        assertTrue("FW4 TIMEOUT actual callback captured for non-throwing invocation=${call.invocation}",
-            held.awaitCaptured(500))
-        assertEquals("FW4 GPU-fence readback produces real ERROR_TIMEOUT",
-            android.view.PixelCopy.ERROR_TIMEOUT, held.result)
-        val firstResult = factory.platformResults().single()
-        assertEquals(android.view.PixelCopy.ERROR_TIMEOUT, firstResult.result)
-        assertEquals("FW4 TIMEOUT platform callback thread", "main",
-            firstResult.callbackThread)
-        val realDuration = call.returnedElapsedMs - call.startedElapsedMs
-        assertTrue("FW4 ERROR_TIMEOUT real platform duration >=250ms: " + realDuration,
-            realDuration >= 250)
-        assertTrue("FW4 TIMEOUT callback still inside original t0+2s deadline",
-            firstResult.callbackElapsedMs <= deadline)
-        assertEquals("FW4 TIMEOUT publishes nothing before recovery", 0, consumer.count())
 
-        removeFw4GpuStress(stress)
-        held.release()
-        waitUntil("FW4 TIMEOUT one recovery publishes current Window", {
-            consumer.qualifyingCountFrom(0) > 0
-        }, 1_200)
-        val first = consumer.earliestQualifyingIndexFrom(0)
-        assertTrue("FW4 TIMEOUT recovery delivery before original deadline",
-            first >= 0 && consumer.deliveryElapsedAt(first) <= deadline)
-        waitUntil("FW4 TIMEOUT recovery platform result", {
-            factory.platformResults().size >= 2
-        }, 500)
-        assertEquals(
-            listOf(android.view.PixelCopy.ERROR_TIMEOUT, android.view.PixelCopy.SUCCESS),
-            factory.platformResults().take(2).map { it.result },
-        )
-        val recoveredDiagnostics = runOnMainSync(hosting::captureDiagnostics)
-        assertEquals("FW4 TIMEOUT spends exactly one recovery allowance",
-            1L, diagnosticLong(recoveredDiagnostics, "recoveries"))
-        assertEquals("FW4 TIMEOUT requests serialized",
-            1, factory.maxConcurrentCopyCalls())
-
-        // Installing stress caused one known trailing draw. Cancel that normal trailing demand
-        // before its 200ms due time so invocation count remains an exact retry-flood oracle.
+        // Installing/removing stress may create coalesced demand. Revoke before the next cycle;
+        // the same global cleanup contract applies to real TIMEOUT and synchronous terminal error.
+        val deliveredBeforeRelease = consumer.count()
+        val releaseAt = SystemClock.elapsedRealtime()
         runOnMain(lease!!::release)
+        waitUntil("FW4 timeout/error bitmap and capture resources retire", {
+            factory.requestedBitmaps().all { it.isRecycled } &&
+                !runOnMainSync(hosting::status).captureActive &&
+                !runOnMainSync(hosting::isWakeLockHeld) &&
+                !runOnMainSync(hosting::captureResourcesPresent)
+        }, STOP_BOUND_MS)
+        assertTrue("FW4 timeout/error cleanup retains global Stop bound",
+            SystemClock.elapsedRealtime() - releaseAt <= STOP_BOUND_MS)
         SystemClock.sleep(HostingPolicy.MIN_FRAME_INTERVAL_MS + 75)
-        assertEquals("FW4 TIMEOUT exactly initial + one recovery; no retry flood",
-            2, factory.copyInvocationCount())
+        assertEquals("FW4 timeout/error exact request accounting; no retry flood",
+            expectedRequests, factory.copyInvocationCount())
+        assertEquals("FW4 no post-retirement publication", deliveredBeforeRelease, consumer.count())
+        assertEquals("FW4 timeout/error requests remain serialized", 1, factory.maxConcurrentCopyCalls())
     }
 
     /**
-     * FW4-E4: cancellation while the REAL public PixelCopy call is synchronously waiting on a
-     * staged GPU source fence. Production first reaches the factory gate under normal rendering;
-     * the GPU stress is then drawn, the gate releases into the real platform call, and the row
-     * requires that call to remain outstanding for >=250ms BEFORE Stop is issued.
+     * FW4-E4, Planner HYBRID disposition #5846902192: Stop revokes capture authority without an
+     * application-level latch/join/wait on readback; native Window teardown may contend. Keep
+     * the real >=250ms in-flight stimulus, request/entry/exit/copy receipts and 5000ms global
+     * Stop/cleanup contract. The historical method name is not a native non-contention claim.
+     * The five verified deterministic rows separately exercise application-level cancellation,
+     * lock service and bitmap ownership while the readback worker is explicitly held.
      */
     @Test
     fun fw4StopDuringActualSlowPixelCopyRevokesWithoutWaitingForNativeReadback() {
@@ -3779,15 +3796,18 @@ class HostingInstrumentedTest {
                 nativeCopyOutstandingOnMainEntry = call.returned.count != 0L
                 copyReturnAtMainEntry = call.returnedElapsedMs
                 try { hosting.stop() } finally { receipt.exitMain() }
+                assertFalse("FW4 capture authority is revoked in the Stop turn",
+                    hosting.status().captureActive)
+                assertFalse("FW4 Stop turn releases the wake lock", hosting.isWakeLockHeld())
             }
-            SystemClock.elapsedRealtime() // Preserve the ORIGINAL wrapper stopwatch below.
+            SystemClock.elapsedRealtime() // Observed wrapper duration, not a 750ms acceptance SLA.
         } finally {
             receipt.close() // Observer join/logging is outside the measured wrapper duration.
         }
-        // Never subtract queue delay or native time from the ORIGINAL <750ms assertion.
+        // Planner #5846902192 removes the estimated 750ms wrapper SLA, NOT this observation.
         // C22c: 746ms queued + 3528ms inside Main; copy returned 7ms before Main entry.
-        // A copy no longer outstanding at entry cannot explain the whole in-Stop interval.
-        // Preserve the failure for capture-qualification/Planner disposition, not a larger budget.
+        // C23: 978ms queued + 3308ms inside Main. These ~4.3s observations remain in I9-T02.
+        // Neither subtract native/queue time nor infer Java waiting from native contention.
         Log.i("EyeBrowseFW4", "STOP_INTERVALS queueMs=${receipt.mainEntryElapsedMs() - stopAt} " +
             "bodyMs=${receipt.mainExitElapsedMs() - receipt.mainEntryElapsedMs()} " +
             "wrapperMs=${stopReturned - stopAt} " +
@@ -3799,8 +3819,10 @@ class HostingInstrumentedTest {
             runOnMainSync(hosting::status).captureActive)
         assertFalse("FW4 actual-copy Stop releases wake lock",
             runOnMainSync(hosting::isWakeLockHeld))
-        assertTrue("FW4 Stop cannot synchronously wait on native readback",
-            stopReturned - stopAt < 750)
+        // An unfinished request still owns its destination even after authority is revoked.
+        if (call.returned.count != 0L) {
+            assertFalse("FW4 Stop cannot recycle a still-outstanding request bitmap", bitmap.isRecycled)
+        }
         assertEquals("FW4 outstanding native copy cannot publish during Stop",
             0, consumer.count())
 

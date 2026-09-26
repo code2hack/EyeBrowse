@@ -12,8 +12,9 @@ import java.util.concurrent.locks.LockSupport
 private const val FW4_RECEIPT_TAG = "EyeBrowseFW4"
 
 /**
- * A finite test-dispatch wait, not a product Stop/readiness allowance. The original row clocks
- * still start before dispatch and keep their 750ms/2000ms assertions. This 5000ms outer guard
+ * A finite test-dispatch wait, not a product Stop/readiness allowance. Row clocks still start
+ * before dispatch; Planner #5846902192 removes only the slow-native rows' estimated 750/200ms
+ * SLAs, not the original readiness or cleanup deadlines. This 5000ms outer guard
  * matches the existing Start/Stop cleanup guard and reports a blocked call instead of waiting
  * forever inside Instrumentation.runOnMainSync. ActivityScenario/Espresso waits are not covered.
  */
@@ -126,7 +127,8 @@ internal class Fw4MainServiceProbe(
 
     override fun close() {
         try {
-            // Finish a pending sample only within the unchanged window and existing 200ms bound.
+            // Finish a pending sample within the window and 200ms observer-close budget only.
+            // An unserved/late sample is preserved, not an FW4 responsiveness verdict.
             val last = synchronized(lock) { samples.lastOrNull() }
             last?.done?.await((deadlineElapsedMs - SystemClock.elapsedRealtime()).coerceIn(0, 200),
                 TimeUnit.MILLISECONDS)
@@ -158,7 +160,8 @@ internal class Fw4MainServiceProbe(
 
 /** HostingController.stop/completeStop @0448330 execute on Main; editor retirement is posted.
  * PrivateDisplayHost.releaseCaptureResources uses quitSafely, not join. Neither source proves
- * native teardown cannot block. Capture a live snapshot at the UNCHANGED 750ms wrapper bound.
+ * native teardown cannot block. Keep the historical +750ms snapshot as instrumentation only;
+ * Planner #5846902192 removes that estimated wrapper SLA, not the measured latency receipt.
  * The latch below controls ONLY this observer; it is not a product cancellation/readback latch.
  */
 internal class Fw4StopReceipt(
