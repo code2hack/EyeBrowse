@@ -3693,6 +3693,8 @@ class HostingInstrumentedTest {
         )
         assertNull("FW4 Stop retires mutable readback handler immediately",
             handlerFieldOrNullForR4(host, "readbackHandler"))
+        assertNull("FW4 Stop retires mutable capture handler before late callback",
+            handlerFieldOrNullForR4(host, "captureHandler"))
         assertFalse(
             "FW4 Stop cannot recycle request-owned destination before native completion",
             oldBitmap.isRecycled,
@@ -3781,6 +3783,8 @@ class HostingInstrumentedTest {
             consumer.count() > 0)
         assertNull("FW4 expiry retires readback handler while worker is still outstanding",
             handlerFieldOrNullForR4(host, "readbackHandler"))
+        assertNull("FW4 expiry retires capture handler before late callback",
+            handlerFieldOrNullForR4(host, "captureHandler"))
         assertFalse("FW4 request-owned bitmap survives until actual late completion",
             bitmap.isRecycled)
 
