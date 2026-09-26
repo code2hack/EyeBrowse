@@ -216,7 +216,8 @@ class LivePresentationInstrumentedTest {
                 diagnosticCount(firstDiagnostics, "delivered") > 0)
             Log.i(
                 "EyeBrowseFW5",
-                "PHONE_ENCODED_FIRST seq=" + firstReceipt.sequence +
+                "PHONE_ENCODED_FIRST mission=" + mission +
+                    " seq=" + firstReceipt.sequence +
                     " capture=" + firstReceipt.captureElapsedMs +
                     " bytes=" + firstReceipt.bytes +
                     " profile=" + firstReceipt.width + "x" + firstReceipt.height +
@@ -286,7 +287,8 @@ class LivePresentationInstrumentedTest {
                 secondDiagnostics.contains("copyResult=" + android.view.PixelCopy.SUCCESS))
             Log.i(
                 "EyeBrowseFW5",
-                "PHONE_ENCODED_FRESH seq=" + secondReceipt.sequence +
+                "PHONE_ENCODED_FRESH mission=" + mission +
+                    " seq=" + secondReceipt.sequence +
                     " capture=" + secondReceipt.captureElapsedMs +
                     " bytes=" + secondReceipt.bytes +
                     " profile=" + secondReceipt.width + "x" + secondReceipt.height +
