@@ -312,7 +312,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "paseo": null,
     "model": "gpt-6-pro",
     "name": "Reviewer-chatgpt",
-    "status": "active"
+    "status": "retired"
   },
   {
     "role": "Worker",
@@ -323,7 +323,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "paseo": null,
     "model": "gpt-6-astra pro / extra high (effort raised manually by Owner 20260925)",
     "name": "Worker-chatgpt",
-    "status": "active"
+    "status": "retired"
   },
   {
     "role": "Worker",
@@ -334,7 +334,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "paseo": "b06ce2d2-cb84-41d0-80ce-bb405c1af901",
     "model": "GLM-5.3-Flash-EXL3 / max",
     "name": "Worker-spark",
-    "status": "active"
+    "status": "retired"
   },
   {
     "role": "Manager",
@@ -352,7 +352,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "scope": "v0.0.1 (I9 successor implementation; unassigned)",
     "host": "spark",
     "runtime": "codex",
-    "id": "32657205-32b8-4056-acca-aeec6702adac",
+    "id": "7d71f993-4210-4515-ad0c-50d56631e274",
     "model": "gpt-6-astra/thinking-medium",
     "name": "Worker-codex-astra",
     "status": "active"
@@ -362,7 +362,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "scope": "v0.0.1 (I9 successor review; unassigned)",
     "host": "spark",
     "runtime": "codex",
-    "id": "48cd210c-27ea-408e-90d2-b116226318d0",
+    "id": "26f5375d-958e-48fe-ba7d-eb3423aacca8",
     "model": "gpt-6-astra/thinking-max",
     "name": "Reviewer-codex-astra",
     "status": "active"
