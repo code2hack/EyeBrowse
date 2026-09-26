@@ -5,15 +5,17 @@ package com.code2hack.eyebrowse.core.link
  * not agent work-time budgets.
  */
 object LinkProtocol {
-    /** Application protocol major/minor. Minor 1 adds the #7 control/presentation contract. */
+    /** Minor 2 adds bounded editor/address and same-owner viewport messages; trust is unchanged. */
     const val MAJOR: Int = 1
-    const val MINOR: Int = 1
+    const val MINOR: Int = 2
 
     const val CAP_PAIRING_V1: String = "PAIRING_V1"
     const val CAP_STATUS_V1: String = "STATUS_V1"
     const val CAP_PRESENTATION_V1: String = "PRESENTATION_V1"
     const val CAP_HANDOFF_V1: String = "HANDOFF_V1"
     const val CAP_BROWSER_ACTIONS_V1: String = "BROWSER_ACTIONS_V1"
+    const val CAP_TEXT_INPUT_V1: String = "TEXT_INPUT_V1"
+    const val CAP_RG_VIEWPORT_UPDATE_V1: String = "RG_VIEWPORT_UPDATE_V1"
 
     /** Capability strings every v1 endpoint must advertise and require for the base link. */
     val REQUIRED_CAPABILITIES: List<String> = listOf(
@@ -28,7 +30,8 @@ object LinkProtocol {
         CAP_BROWSER_ACTIONS_V1,
     )
 
-    val ALL_CAPABILITIES: List<String> = REQUIRED_CAPABILITIES + PRESENTATION_CAPABILITIES
+    val KEYBOARD_CAPABILITIES: List<String> = listOf(CAP_TEXT_INPUT_V1, CAP_RG_VIEWPORT_UPDATE_V1)
+    val ALL_CAPABILITIES: List<String> = REQUIRED_CAPABILITIES + PRESENTATION_CAPABILITIES + KEYBOARD_CAPABILITIES
 
     /** The one documented fixed application port for v0.0.1. */
     const val LOCAL_PORT: Int = 39818

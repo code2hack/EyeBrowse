@@ -49,6 +49,11 @@ object LinkMessageCodec {
             is BrowserActionResultMessage -> "browser_action_result" to json.encodeToJsonElement(BrowserActionResultMessage.serializer(), message)
             is PresentationStopMessage -> "presentation_stop" to json.encodeToJsonElement(PresentationStopMessage.serializer(), message)
             is PresentationStaleMessage -> "presentation_stale" to json.encodeToJsonElement(PresentationStaleMessage.serializer(), message)
+            is EditorStateMessage -> "editor_state" to json.encodeToJsonElement(EditorStateMessage.serializer(), message)
+            is EditorCloseMessage -> "editor_close" to json.encodeToJsonElement(EditorCloseMessage.serializer(), message)
+            is EditorCloseResultMessage -> "editor_close_result" to json.encodeToJsonElement(EditorCloseResultMessage.serializer(), message)
+            is ViewportUpdateMessage -> "viewport_update" to json.encodeToJsonElement(ViewportUpdateMessage.serializer(), message)
+            is ViewportUpdateResultMessage -> "viewport_update_result" to json.encodeToJsonElement(ViewportUpdateResultMessage.serializer(), message)
             else -> throw IllegalArgumentException("unsupported message type ${message::class.simpleName}")
         }
         val envelope = buildJsonObject {
@@ -82,12 +87,18 @@ object LinkMessageCodec {
                 "browser_action_result" -> json.decodeFromJsonElement(BrowserActionResultMessage.serializer(), obj)
                 "presentation_stop" -> json.decodeFromJsonElement(PresentationStopMessage.serializer(), obj)
                 "presentation_stale" -> json.decodeFromJsonElement(PresentationStaleMessage.serializer(), obj)
+                "editor_state" -> json.decodeFromJsonElement(EditorStateMessage.serializer(), obj)
+                "editor_close" -> json.decodeFromJsonElement(EditorCloseMessage.serializer(), obj)
+                "editor_close_result" -> json.decodeFromJsonElement(EditorCloseResultMessage.serializer(), obj)
+                "viewport_update" -> json.decodeFromJsonElement(ViewportUpdateMessage.serializer(), obj)
+                "viewport_update_result" -> json.decodeFromJsonElement(ViewportUpdateResultMessage.serializer(), obj)
                 else -> null
             }
             if (message == null) Result.success(Incoming.Unknown(type))
             else Result.success(Incoming.Known(message))
         } catch (e: Exception) {
-            Result.failure(e)
+            // Serializer exceptions can include offending fields/JSON. Never export typed text.
+            Result.failure(IllegalArgumentException("malformed control message"))
         }
     }
 }

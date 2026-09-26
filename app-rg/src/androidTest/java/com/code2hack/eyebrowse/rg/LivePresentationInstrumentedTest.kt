@@ -12,6 +12,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class LivePresentationInstrumentedTest {
@@ -72,6 +75,318 @@ class LivePresentationInstrumentedTest {
             Log.i("EyeBrowseT02", "CURRENT_FRAMES=${controller.displayedFrames} DISTINCT_PIXEL_HASHES=${pixelHashes.size}")
         } finally { scenario.close() }
     }
+    /**
+     * FW5 paired companion. Every frame used here arrives through the stored authenticated
+     * direct-LAN session. The decoder-thread barrier is androidTest-only: it blocks decoding, not
+     * Main/link receive, so a real old-context frame can be observed pending and then retired by
+     * the real Phone handoff before decode/display resumes.
+     */
+    @Test
+    fun fw5AuthenticatedPendingOldFrameIsRejectedAndFreshContextDisplaysAfterReacquire() {
+        val app = InstrumentationRegistry.getInstrumentation().targetContext
+        val scenario = ActivityScenario.launch<MainActivity>(Intent(app, MainActivity::class.java))
+        lateinit var controller: RgPresentationController
+        val mission = java.util.UUID.fromString(
+            checkNotNull(InstrumentationRegistry.getArguments().getString("missionId")) {
+                "FW5 paired missionId is required"
+            },
+        ).toString()
+        val readyTitle = "FW5 READY " + mission
+        var gate: DecoderGate? = null
+        try {
+            scenario.onActivity {
+                controller = it.presentation
+                controller.reconnect()
+            }
+            // Bind this RG run to the exact Phone companion generation. A pre-existing/stale
+            // authenticated session cannot satisfy the mission-specific BrowserState title.
+            await("FW5 authenticated current Phone run", 10_000) {
+                val state = controller.browserState()
+                state?.owner ==
+                    com.code2hack.eyebrowse.core.link.control.ControlOwner.PHONE &&
+                    controller.profile() != null &&
+                    state.title == readyTitle
+            }
+            val profile = checkNotNull(controller.profile())
+            val boundState = checkNotNull(controller.browserState())
+            assertNotNull(
+                "FW5 mission-bound Phone state carries active Hosting generation",
+                boundState.context.hostingGeneration,
+            )
+            Log.i(
+                "EyeBrowseFW5",
+                "RG_PHASE_BOUND mission=" + mission +
+                    " titleBound=true hostingGen=" + boundState.context.hostingGeneration,
+            )
+
+            /*
+             * Source-aligned stale-frame construction:
+             * PrivateDisplayHost explicitly requests ONE initial producer-bound cycle when the
+             * lease starts. Later captures are draw-demand-driven; a JS DOM timer is not guaranteed
+             * to cause HostingPresentation.content.dispatchDraw. Therefore block the RG decoder
+             * BEFORE the first request and use that guaranteed first authenticated frame as the
+             * pending OLD frame.
+             */
+            await("FW5 decoder idle before initial barrier", 1_000) {
+                !decoderBusyForTest(controller)
+            }
+            gate = blockDecoderForTest(controller)
+            assertTrue(
+                "FW5 decoder barrier entered without blocking Main",
+                gate!!.entered.await(1_000, TimeUnit.MILLISECONDS),
+            )
+
+            val firstRequestAt = SystemClock.elapsedRealtime()
+            scenario.onActivity { assertTrue(controller.requestPresentation()) }
+            await("FW5 initial authenticated old-context frame pending", 2_000) {
+                val state = controller.browserState()
+                val pending = pendingFrameForTest(controller)
+                state?.owner == com.code2hack.eyebrowse.core.link.control.ControlOwner.RG &&
+                    state.stale == false &&
+                    pending?.header?.context == state.context
+            }
+            assertTrue(
+                "FW5 initial authenticated frame reaches RG inside 2s",
+                SystemClock.elapsedRealtime() - firstRequestAt <= 2_000,
+            )
+
+            val oldState = checkNotNull(controller.browserState())
+            val staleCandidate = checkNotNull(pendingFrameForTest(controller))
+            assertEquals(oldState.context, staleCandidate.header.context)
+            assertEquals(profile.width, staleCandidate.header.width)
+            assertEquals(profile.height, staleCandidate.header.height)
+            assertTrue("FW5 pending old frame sequence is positive",
+                staleCandidate.header.frameSeq > 0)
+            val displayedBeforeRetire = controller.displayedFrames
+            assertEquals(
+                "FW5 decoder barrier prevents old frame display before retirement",
+                0L,
+                displayedBeforeRetire,
+            )
+            Log.i(
+                "EyeBrowseFW5",
+                "RG_OLD_FRAME_PENDING mission=" + mission +
+                    " seq=" + staleCandidate.header.frameSeq +
+                    " capture=" + staleCandidate.header.captureTsMs +
+                    " profile=" + staleCandidate.header.width + "x" + staleCandidate.header.height +
+                    " controlEpoch=" + staleCandidate.header.context.controlEpoch +
+                    " viewportEpoch=" + staleCandidate.header.context.viewportEpoch,
+            )
+
+            // B must first independently observe the production encoder receipt for this exact
+            // old-context frame. Its ACK arrives as an ordinary authenticated BrowserState title.
+            val firstEncodedTitle = "FW5 FIRST ENCODED " + mission
+            await("FW5 Phone observed first encoder receipt", 3_000) {
+                val state = controller.browserState()
+                state?.owner == com.code2hack.eyebrowse.core.link.control.ControlOwner.RG &&
+                    state.context == oldState.context &&
+                    state.title == firstEncodedTitle
+            }
+            Log.i("EyeBrowseFW5", "RG_PHASE_FIRST_ENCODE_ACK mission=" + mission)
+
+            // The Phone-side phase-title ACK is itself a legitimate renderer mutation and may
+            // replace the one-slot pending frame with a newer frame of the SAME old context.
+            // Bind retirement evidence to whatever real authenticated old-context frame is
+            // actually pending immediately before the ownership barrier.
+            val retireTarget = checkNotNull(pendingFrameForTest(controller)) {
+                "FW5 old-context frame disappeared before authority retirement"
+            }
+            assertEquals(oldState.context, retireTarget.header.context)
+            assertEquals(profile.width, retireTarget.header.width)
+            assertEquals(profile.height, retireTarget.header.height)
+            assertTrue(
+                "FW5 retirement target does not regress frame sequence",
+                retireTarget.header.frameSeq >= staleCandidate.header.frameSeq,
+            )
+            Log.i(
+                "EyeBrowseFW5",
+                "RG_OLD_FRAME_RETIRE_TARGET mission=" + mission +
+                    " seq=" + retireTarget.header.frameSeq +
+                    " capture=" + retireTarget.header.captureTsMs +
+                    " profile=" + retireTarget.header.width + "x" + retireTarget.header.height +
+                    " controlEpoch=" + retireTarget.header.context.controlEpoch +
+                    " viewportEpoch=" + retireTarget.header.context.viewportEpoch,
+            )
+
+            scenario.onActivity { assertTrue(controller.requestPhone()) }
+            await("FW5 Phone handoff retires old presentation grant", 2_000) {
+                controller.browserState()?.owner ==
+                    com.code2hack.eyebrowse.core.link.control.ControlOwner.PHONE
+            }
+            val phoneState = checkNotNull(controller.browserState())
+            assertTrue("FW5 handoff advances control epoch",
+                phoneState.context.controlEpoch > oldState.context.controlEpoch)
+            assertNull("FW5 real old pending frame removed by retired inbox grant",
+                pendingFrameForTest(controller))
+            assertEquals("FW5 old frame never displayed before decoder release",
+                displayedBeforeRetire, controller.displayedFrames)
+
+            gate!!.release.countDown()
+            await("FW5 decoder drains retired work", 1_000) {
+                !decoderBusyForTest(controller)
+            }
+            SystemClock.sleep(200)
+            assertEquals("FW5 retired authenticated frame cannot display after decode resumes",
+                displayedBeforeRetire, controller.displayedFrames)
+
+            val secondRequestAt = SystemClock.elapsedRealtime()
+            scenario.onActivity { assertTrue(controller.requestPresentation()) }
+            await("FW5 fresh-context authenticated frame after reacquire", 2_000) {
+                val state = controller.browserState()
+                val header = controller.lastFrameHeader
+                state?.owner == com.code2hack.eyebrowse.core.link.control.ControlOwner.RG &&
+                    state.context != oldState.context && state.stale == false &&
+                    header?.context == state.context &&
+                    controller.displayedFrames > displayedBeforeRetire
+            }
+            assertTrue("FW5 reacquired presentation ready inside 2s",
+                SystemClock.elapsedRealtime() - secondRequestAt <= 2_000)
+            val freshState = checkNotNull(controller.browserState())
+            val freshHeader = checkNotNull(controller.lastFrameHeader)
+            assertTrue("FW5 reacquired context advances control epoch",
+                freshState.context.controlEpoch > oldState.context.controlEpoch)
+            assertEquals(freshState.context, freshHeader.context)
+            assertEquals(profile.width, freshHeader.width)
+            assertEquals(profile.height, freshHeader.height)
+            val freshBitmapHash = displayedBitmapHash(scenario)
+            Log.i(
+                "EyeBrowseFW5",
+                "RG_FRESH_DISPLAY mission=" + mission + " seq=" + freshHeader.frameSeq +
+                    " capture=" + freshHeader.captureTsMs +
+                    " profile=" + freshHeader.width + "x" + freshHeader.height +
+                    " controlEpoch=" + freshHeader.context.controlEpoch +
+                    " viewportEpoch=" + freshHeader.context.viewportEpoch +
+                    " hash=" + freshBitmapHash,
+            )
+
+            scenario.onActivity { activity ->
+                val drawable = activity.findViewById<ImageView>(R.id.rg_page).drawable
+                    as BitmapDrawable
+                assertEquals("FW5 decoded bitmap width is unscaled header width",
+                    freshHeader.width, drawable.bitmap.width)
+                assertEquals("FW5 decoded bitmap height is unscaled header height",
+                    freshHeader.height, drawable.bitmap.height)
+                assertTrue("FW5 RG UI identifies authenticated live page",
+                    activity.findViewById<android.widget.TextView>(R.id.rg_status)
+                        .text.toString().contains("authenticated", ignoreCase = true))
+            }
+
+            // B must independently observe the fresh-context encoder receipt before C performs
+            // the final return-to-Phone handshake.
+            val freshEncodedTitle = "FW5 FRESH ENCODED " + mission
+            await("FW5 Phone observed fresh encoder receipt", 3_000) {
+                val state = controller.browserState()
+                state?.owner == com.code2hack.eyebrowse.core.link.control.ControlOwner.RG &&
+                    state.context == freshState.context &&
+                    state.title == freshEncodedTitle
+            }
+            Log.i("EyeBrowseFW5", "RG_PHASE_FRESH_ENCODE_ACK mission=" + mission)
+
+            val finalRequestAt = SystemClock.elapsedRealtime()
+            Log.i("EyeBrowseFW5", "RG_FINAL_RETURN_REQUEST mission=" + mission +
+                " fromControlEpoch=" + freshState.context.controlEpoch +
+                " localElapsedMs=" + finalRequestAt)
+            scenario.onActivity { assertTrue(controller.requestPhone()) }
+            await("FW5 final Phone owner", 2_000) {
+                val state = controller.browserState()
+                state?.owner == com.code2hack.eyebrowse.core.link.control.ControlOwner.PHONE &&
+                    state.context.controlEpoch > freshState.context.controlEpoch
+            }
+            val finalElapsed = SystemClock.elapsedRealtime() - finalRequestAt
+            assertTrue("FW5 final request-to-observed Phone owner inside 2s", finalElapsed <= 2_000)
+            val finalState = checkNotNull(controller.browserState())
+            assertEquals(freshState.context.lifetimeId, finalState.context.lifetimeId)
+            assertEquals(freshState.context.documentId, finalState.context.documentId)
+            assertEquals(freshState.context.hostingGeneration, finalState.context.hostingGeneration)
+            Log.i("EyeBrowseFW5", "RG_FINAL_OWNER_OBSERVED mission=" + mission +
+                " controlEpoch=" + finalState.context.controlEpoch +
+                " requestToObservedMs=" + finalElapsed)
+
+            // Separate test-completion ACK, AFTER the unchanged 2s product-latency proof.
+            // B retains the real session until this scenario closes, rather than racing its
+            // own local-owner observation into finally/server.stop(). No test wire endpoint.
+            val finalOwnerTitle = "FW5 FINAL OWNER " + mission + " " + finalState.context.controlEpoch
+            await("FW5 Phone final-owner receipt acknowledged", 3_000) {
+                val state = controller.browserState()
+                state?.owner == com.code2hack.eyebrowse.core.link.control.ControlOwner.PHONE &&
+                    state.context.controlEpoch == finalState.context.controlEpoch &&
+                    state.context.lifetimeId == finalState.context.lifetimeId &&
+                    state.context.documentId == finalState.context.documentId &&
+                    state.context.hostingGeneration == finalState.context.hostingGeneration &&
+                    state.title == finalOwnerTitle
+            }
+            Log.i("EyeBrowseFW5", "RG_PHASE_COMPLETE mission=" + mission +
+                " finalOwnerAck=true controlEpoch=" + finalState.context.controlEpoch)
+        } finally {
+            gate?.release?.countDown()
+            scenario.close()
+        }
+    }
+
+    private data class DecoderGate(
+        val entered: CountDownLatch,
+        val release: CountDownLatch,
+    )
+
+    private fun blockDecoderForTest(controller: RgPresentationController): DecoderGate {
+        val executor = RgPresentationController::class.java.getDeclaredField("decoder").let {
+            it.isAccessible = true
+            it.get(controller) as ExecutorService
+        }
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        executor.execute {
+            entered.countDown()
+            try {
+                release.await(3_000, TimeUnit.MILLISECONDS)
+            } catch (interrupted: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
+        return DecoderGate(entered, release)
+    }
+
+    private fun decoderBusyForTest(controller: RgPresentationController): Boolean =
+        RgPresentationController::class.java.getDeclaredField("decoding").let {
+            it.isAccessible = true
+            it.getBoolean(controller)
+        }
+
+    private fun pendingFrameForTest(
+        controller: RgPresentationController,
+    ): com.code2hack.eyebrowse.core.link.framing.PresentationFrame? {
+        val inbox = RgPresentationController::class.java.getDeclaredField("inbox").let {
+            it.isAccessible = true
+            it.get(controller)
+        }
+        val pendingField = PresentationInbox::class.java.getDeclaredField("pending").apply {
+            isAccessible = true
+        }
+        return synchronized(inbox) {
+            pendingField.get(inbox) as?
+                com.code2hack.eyebrowse.core.link.framing.PresentationFrame
+        }
+    }
+
+    private fun displayedBitmapHash(
+        scenario: ActivityScenario<MainActivity>,
+    ): Int {
+        var hash = 0
+        scenario.onActivity { activity ->
+            val bitmap = (activity.findViewById<ImageView>(R.id.rg_page).drawable
+                as BitmapDrawable).bitmap
+            assertTrue(bitmap.width > 0 && bitmap.height > 0)
+            var value = 1
+            for (y in 0 until bitmap.height step 4) {
+                for (x in 0 until bitmap.width step 4) {
+                    value = 31 * value + bitmap.getPixel(x, y)
+                }
+            }
+            hash = value
+        }
+        return hash
+    }
+
     private fun await(label: String, bound: Long, predicate: () -> Boolean) {
         val end=SystemClock.elapsedRealtime()+bound
         while(SystemClock.elapsedRealtime()<end) { if(predicate()) return; SystemClock.sleep(25) }

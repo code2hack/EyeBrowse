@@ -5,7 +5,10 @@ import android.content.Context
 import android.graphics.Color
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.util.Log
 import android.media.ImageReader
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.view.View
@@ -19,6 +22,13 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.ArrayList
 import java.util.HashSet
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import java.util.function.BooleanSupplier
 import org.json.JSONObject
@@ -52,6 +62,25 @@ class HostingInstrumentedTest {
     private lateinit var scenario: ActivityScenario<MainActivity>
     private val ownedScenarios = mutableListOf<ActivityScenario<MainActivity>>()
     private val ownedRenewals = mutableListOf<LeaseRenewal>()
+    private val ownedExecutionReleases = mutableListOf<() -> Unit>()
+    private val ownedCompletionHolds = mutableListOf<R4CompletionHold>()
+
+    private fun registerExecutionHold(release: () -> Unit) {
+        ownedExecutionReleases.add(release)
+    }
+
+    private fun registerCompletionHold(hold: R4CompletionHold) {
+        ownedCompletionHolds.add(hold)
+    }
+
+    private fun newR4ControlledFactory(): R4ControlledFactory =
+        R4ControlledFactory(::registerExecutionHold, ::registerCompletionHold)
+
+    private fun newR4Gate(holdTimeoutMs: Long = 1_500): R4Gate =
+        R4Gate(holdTimeoutMs).also { registerExecutionHold(it::release) }
+
+    private fun newDelayedConsumer(): DelayedConsumer =
+        DelayedConsumer().also { registerExecutionHold(it::releaseHold) }
 
     private fun launchScenario(): ActivityScenario<MainActivity> =
         ActivityScenario.launch(MainActivity::class.java).also { ownedScenarios.add(it) }
@@ -64,11 +93,28 @@ class HostingInstrumentedTest {
         fun attempt(action: () -> Unit) {
             try { action() } catch (failure: Throwable) { failures.add(failure) }
         }
-        if (::hosting.isInitialized) {
-            println("HYBRID_CLEANUP_BEFORE " + runOnMainSync(hosting::captureDiagnostics))
-        }
+        // Execution gates may be holding Main/capture/readback threads. Unblock them before
+        // ANY Main-thread diagnostic or authority transition.
+        for (release in ownedExecutionReleases.asReversed()) attempt { release() }
+        ownedExecutionReleases.clear()
         for (renewal in ownedRenewals) attempt { renewal.stopRenewing() }
-        if (::hosting.isInitialized) attempt { runOnMain(hosting::stop) }
+
+        // Diagnostics are evidence only and cannot be allowed to skip cleanup.
+        if (::hosting.isInitialized) {
+            attempt {
+                println("HYBRID_CLEANUP_BEFORE " + runOnMainSync(hosting::captureDiagnostics))
+            }
+            // Abort ordering: close capture authority FIRST. Outstanding native-copy ownership
+            // remains product-owned until its real completion is forwarded below.
+            attempt { runOnMain(hosting::stop) }
+        }
+
+        // Completion delivery is distinct from execution unblocking: only forward after authority
+        // closure was attempted. release() is idempotent and safe if a normal path already used it.
+        for (hold in ownedCompletionHolds.asReversed()) attempt { hold.release() }
+        ownedCompletionHolds.clear()
+        if (::hosting.isInitialized) attempt { runOnMain { } }
+
         for (owned in ownedScenarios.asReversed()) attempt { owned.close() }
         ownedScenarios.clear()
         if (::hosting.isInitialized) {
@@ -1619,7 +1665,7 @@ class HostingInstrumentedTest {
                     HostingController.Attachment.PRIVATE_DISPLAY) && snapshot.viewAttached)
             },
         )
-        val first: DelayedConsumer = DelayedConsumer()
+        val first: DelayedConsumer = newDelayedConsumer()
         val lease1: HostingController.Lease? = runOnMainSync({ hosting.acquireLease(first) })
         assertNotNull(lease1)
         val second: CollectingConsumer = CollectingConsumer()
@@ -1959,6 +2005,3097 @@ class HostingInstrumentedTest {
         tapHostingToggleOnce(HostingController.State.NOT_HOSTING, STOP_BOUND_MS)
     }
 
+    /**
+     * I9-T01 FW1/FW2 focused physical regression: use the recorded 480x344 -> 480x240 ->
+     * 480x344 stimulus at density 204, while production still consumes measured profiles.
+     *
+     * The fixture is frozen before RG ownership so the final profile frame cannot depend on a
+     * second natural animation. Each transition keeps the same VirtualDisplay/Presentation/window,
+     * WebView and document, requires a fresh profile lease inside the ORIGINAL two-second request
+     * deadline, and verifies copied content/geometry. Separate consumers make a same-size return
+     * unable to masquerade as the original 344 epoch.
+     */
+    @Test
+    fun committedWindowCopySurvivesShrinkAndSameSizeReturn() {
+        openFixture("/hosting.html", "Hosting capture page")
+        evaluateJs("window.__eyebrowseFreeze(true)")
+        val marker = domText("load-marker")
+        val viewId = webViewIdentityHash()
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
+
+        val normal = HostingPresentationProfile(480, 344, 204)
+        val keyboard = HostingPresentationProfile(480, 240, 204)
+        assertTrue("recorded 344 profile accepted",
+            runOnMainSync { hosting.presentOnRg(normal) })
+        waitUntilMain("local private focus for recorded profile", {
+            hosting.localEditorFocusReady()
+        })
+        awaitPrivateProfile()
+        val physical = runOnMainSync { hosting.profileGeometry()!! }
+        assertEquals(viewId, physical.viewId)
+        assertTrue(physical.localFocus)
+
+        fun assertSamePhysicalSource(now: PrivateDisplayHost.ProfileGeometry) {
+            assertEquals("VirtualDisplay survives resize", physical.display.displayId, now.display.displayId)
+            assertEquals("Presentation survives resize", physical.presentationId, now.presentationId)
+            assertEquals("private Window survives resize", physical.windowId, now.windowId)
+            assertEquals("decor survives resize", physical.decorId, now.decorId)
+            assertEquals("WebView parent survives resize", physical.parentId, now.parentId)
+            assertEquals("same live WebView survives resize", physical.viewId, now.viewId)
+            assertEquals("no local-focus departure", physical.focusLossSerial, now.focusLossSerial)
+            assertTrue("local focus stays ready", now.localFocus)
+        }
+
+        fun acquireCurrent(
+            profile: HostingPresentationProfile,
+            consumer: CollectingConsumer,
+            originalEligibleUptimeMs: Long,
+            originalDeadlineElapsedMs: Long,
+        ): HostingController.Lease {
+            consumer.expectQualification(profile.width, profile.height, CAPTURE_PAGE_COLOR)
+            val lease = runOnMainSync {
+                hosting.acquireProfileLease(profile, originalDeadlineElapsedMs, consumer)
+            }
+            assertNotNull("profile lease " + profile, lease)
+            waitUntil(
+                "qualified committed-Window frame " + profile,
+                { consumer.qualifyingCountFrom(0) > 0 },
+                2_500,
+            )
+            val delay = consumer.earliestQualifyingDelayMsFrom(0, originalEligibleUptimeMs)
+            assertTrue(
+                "profile publication exceeded original 2s request deadline: " + delay + "ms",
+                OutputQualification.validWithinBound(delay),
+            )
+            val first = consumer.earliestQualifyingIndexFrom(0)
+            assertTrue("copied bitmap geometry matches profile",
+                consumer.tailFramesMatchSize(first, profile.width, profile.height))
+            assertTrue("copied pixels are the current static document",
+                consumer.tailFramesNearColor(first, CAPTURE_PAGE_COLOR))
+            assertTrue("Window PixelCopy SUCCESS recorded: " + runOnMainSync(hosting::captureDiagnostics),
+                runOnMainSync(hosting::captureDiagnostics).contains("copyResult=" + android.view.PixelCopy.SUCCESS))
+            return lease!!
+        }
+
+        // Establish a real committed baseline at 344. This page has no autonomous draw after freeze.
+        val baseEligible = SystemClock.uptimeMillis()
+        val baseDeadline = SystemClock.elapsedRealtime() + 2_000
+        val baseConsumer = CollectingConsumer()
+        val baseLease = acquireCurrent(normal, baseConsumer, baseEligible, baseDeadline)
+        val baseCount = baseConsumer.count()
+
+        fun transition(
+            profile: HostingPresentationProfile,
+            consumer: CollectingConsumer,
+        ): Pair<HostingController.Lease, PrivateDisplayHost.ProfileGeometry> {
+            val eligibleUptime = SystemClock.uptimeMillis()
+            val deadlineElapsed = SystemClock.elapsedRealtime() + 2_000
+            val settled = java.util.concurrent.CountDownLatch(1)
+            val ok = java.util.concurrent.atomic.AtomicBoolean(false)
+            runOnMain {
+                hosting.reconfigureRgProfile(profile, deadlineElapsed) { result ->
+                    ok.set(result)
+                    settled.countDown()
+                }
+            }
+            assertTrue("profile resize callback within original deadline",
+                settled.await(2_200, java.util.concurrent.TimeUnit.MILLISECONDS))
+            assertTrue("profile resize settled " + profile, ok.get())
+            val geometry = runOnMainSync { hosting.profileGeometry()!! }
+            assertEquals(profile.width, geometry.display.actualWidth)
+            assertEquals(profile.height, geometry.display.actualHeight)
+            assertEquals(profile.width, geometry.display.readerWidth)
+            assertEquals(profile.height, geometry.display.readerHeight)
+            assertEquals(profile.width, geometry.decorWidth)
+            assertEquals(profile.height, geometry.decorHeight)
+            assertEquals(profile.width, geometry.containerWidth)
+            assertEquals(profile.height, geometry.containerHeight)
+            assertEquals(profile.width, geometry.viewWidth)
+            assertEquals(profile.height, geometry.viewHeight)
+            assertEquals(1, geometry.readerOverlap)
+            assertSamePhysicalSource(geometry)
+            val lease = acquireCurrent(profile, consumer, eligibleUptime, deadlineElapsed)
+            return lease to geometry
+        }
+
+        val shrinkConsumer = CollectingConsumer()
+        val (shrinkLease, shrinkGeometry) = transition(keyboard, shrinkConsumer)
+        assertEquals("old 344 sink stays fenced after shrink", baseCount, baseConsumer.count())
+        assertTrue("shrink creates a fresh geometry epoch", shrinkGeometry.profileSerial > physical.profileSerial)
+
+        val shrinkCount = shrinkConsumer.count()
+        val growConsumer = CollectingConsumer()
+        val (growLease, growGeometry) = transition(normal, growConsumer)
+        assertEquals("old 240 sink stays fenced after grow", shrinkCount, shrinkConsumer.count())
+        assertEquals("same-size return cannot revive original 344 sink", baseCount, baseConsumer.count())
+        assertTrue("344 return is a later geometry epoch",
+            growGeometry.profileSerial > shrinkGeometry.profileSerial)
+        assertEquals(marker, domText("load-marker"))
+        assertEquals(viewId, webViewIdentityHash())
+
+        // Reconfigure revoked the older lease objects; releasing them is intentionally a no-op.
+        runOnMain(baseLease::release)
+        runOnMain(shrinkLease::release)
+        runOnMain(growLease::release)
+        runOnMain(hosting::stop)
+    }
+
+
+    /**
+     * Stage-B FW3: re-run the recorded 344 -> 240 -> 344 grow/reflow sequence against qualified
+     * Window copies. Native/image geometry remains exact while renderer extent is checked through
+     * the production Blink quantizer. The 240-high recorded WebView99 case must resolve the open
+     * 86-vs-87 oracle as 86, with no tolerance.
+     */
+    @Test
+    fun fw3GrowReflowUsesExactRendererQuantizationAndUnscaledWindowPixels() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val keyboard = HostingPresentationProfile(480, 240, 204)
+        val host = currentPrivateHostForR4()
+        val document = runOnMainSync(session::documentIdentity)
+        val physical = runOnMainSync { hosting.profileGeometry()!! }
+        val drawAtStart = runOnMainSync { host.drawObservationForTest().serial }
+
+        installFw3ViewportProbe()
+        val adapter = newFw3RendererAdapter()
+        assertEquals(RendererEditorAdapter.Status.STATE,
+            callFw3Renderer(adapter, "install", adapter::install).status)
+
+        fun samePhysical(now: PrivateDisplayHost.ProfileGeometry) {
+            assertEquals("FW3 VirtualDisplay identity", physical.display.displayId, now.display.displayId)
+            assertEquals("FW3 Presentation identity", physical.presentationId, now.presentationId)
+            assertEquals("FW3 Window identity", physical.windowId, now.windowId)
+            assertEquals("FW3 decor identity", physical.decorId, now.decorId)
+            assertEquals("FW3 parent identity", physical.parentId, now.parentId)
+            assertEquals("FW3 WebView identity", physical.viewId, now.viewId)
+            assertEquals("FW3 uninterrupted local-focus history",
+                physical.focusLossSerial, now.focusLossSerial)
+            assertTrue("FW3 local focus remains ready", now.localFocus)
+            assertEquals("FW3 document remains live", document, runOnMainSync(session::documentIdentity))
+        }
+
+        class Stage(
+            val profile: HostingPresentationProfile,
+            val requestStartElapsedMs: Long,
+            val deadline: Long,
+            val geometry: PrivateDisplayHost.ProfileGeometry,
+            val viewport: RendererViewport,
+            val page: JSONObject,
+            val lease: HostingController.Lease,
+            val consumer: CollectingConsumer,
+        )
+
+        fun stage(profile: HostingPresentationProfile, name: String): Stage {
+            val requestStartElapsedMs = SystemClock.elapsedRealtime()
+            val deadline = requestStartElapsedMs + 2_000
+            val settled = CountDownLatch(1)
+            val ok = AtomicBoolean(false)
+            runOnMain {
+                hosting.reconfigureRgProfile(profile, deadline) { result ->
+                    ok.set(result)
+                    settled.countDown()
+                }
+            }
+            assertTrue("$name profile settlement callback",
+                settled.await(1_500, TimeUnit.MILLISECONDS))
+            assertTrue("$name profile settled", ok.get())
+
+            val geometry = runOnMainSync { hosting.profileGeometry()!! }
+            assertEquals("$name actual display width", profile.width, geometry.display.actualWidth)
+            assertEquals("$name actual display height", profile.height, geometry.display.actualHeight)
+            assertEquals("$name reader width", profile.width, geometry.display.readerWidth)
+            assertEquals("$name reader height", profile.height, geometry.display.readerHeight)
+            assertEquals("$name decor width", profile.width, geometry.decorWidth)
+            assertEquals("$name decor height", profile.height, geometry.decorHeight)
+            assertEquals("$name container width", profile.width, geometry.containerWidth)
+            assertEquals("$name container height", profile.height, geometry.containerHeight)
+            assertEquals("$name WebView width", profile.width, geometry.viewWidth)
+            assertEquals("$name WebView height", profile.height, geometry.viewHeight)
+            assertEquals("$name single current reader", 1, geometry.readerOverlap)
+            samePhysical(geometry)
+
+            val viewport = awaitFw3RendererViewport(adapter, profile, deadline, name)
+            val page = fw3PageObservation()
+            assertEquals("$name renderer width observation",
+                viewport.width, page.getDouble("visualWidth"), 0.0001)
+            assertEquals("$name renderer height observation",
+                viewport.height, page.getDouble("visualHeight"), 0.0001)
+            assertEquals("$name DPR observation",
+                viewport.devicePixelRatio, page.getDouble("dpr"), 0.0001)
+            assertEquals("$name visual scale observation",
+                viewport.scale, page.getDouble("visualScale"), 0.0001)
+
+            val drawBeforeCapture = runOnMainSync { host.drawObservationForTest().serial }
+            val held = factory.holdNextCopyCompletion()
+            val consumer = CollectingConsumer()
+            consumer.expectQualification(profile.width, profile.height, CAPTURE_PAGE_COLOR)
+            val leaseAcquiredElapsedMs = SystemClock.elapsedRealtime()
+            val lease = runOnMainSync {
+                hosting.acquireProfileLease(profile, deadline, consumer)
+            }
+            assertNotNull("$name profile lease", lease)
+            // Diagnostic observation may wait beyond deadline; qualification uses the completion's
+            // RECORDED monotonic timestamp, never observation time or lease-acquisition time.
+            assertTrue("$name Window copy completion observed", held.awaitCaptured(2_500))
+            assertEquals("$name Window PixelCopy SUCCESS",
+                android.view.PixelCopy.SUCCESS, held.result)
+            assertTrue("$name copy completed within ORIGINAL profile-request deadline; " +
+                "requestStart=$requestStartElapsedMs leaseAt=$leaseAcquiredElapsedMs " +
+                "copyDone=${held.capturedElapsedMs()} deadline=$deadline",
+                fw3DeliveryWithinOriginalRequest(
+                    requestStartElapsedMs, deadline, held.capturedElapsedMs(),
+                ))
+
+            val bitmap = checkNotNull(held.destinationBitmap()) { "$name raw copy bitmap missing" }
+            val copy = inFlightWindowCopyGeometryForFw3(host)
+            val viewRect = currentViewRectInWindowForFw3()
+            assertEquals("$name source rect is exact current WebView rect", viewRect, copy.sourceRect)
+            assertEquals("$name source width", profile.width, copy.sourceRect.width())
+            assertEquals("$name source height", profile.height, copy.sourceRect.height())
+            assertEquals("$name destination width", profile.width, bitmap.width)
+            assertEquals("$name destination height", profile.height, bitmap.height)
+            assertEquals("$name request owns inspected destination",
+                System.identityHashCode(bitmap), copy.bitmapIdentity)
+            assertTrue("$name copy is associated with a fresh hardware draw",
+                copy.committedDrawSerial > drawBeforeCapture)
+            assertTrue("$name draw observer reached the committed draw",
+                runOnMainSync { host.drawObservationForTest().serial } >= copy.committedDrawSerial)
+
+            val spatialScale = runOnMainSync { session.view()!!.scale.toDouble() }
+            val spatial = fw3SpatialOracle(bitmap, page, spatialScale)
+            assertTrue("$name FW3 spatial oracle rejected raw Window copy: ${spatial.reason}",
+                spatial.accepted)
+            held.release()
+            // Observation wait is diagnostic only; an already-delivered late frame cannot pass
+            // because its recorded deliveryElapsedAt() is compared to the ORIGINAL deadline below.
+            waitUntil("$name qualified frame delivered", {
+                consumer.qualifyingCountFrom(0) > 0
+            }, 2_500)
+            val firstQualified = consumer.earliestQualifyingIndexFrom(0)
+            assertTrue("$name qualifying delivery exists", firstQualified >= 0)
+            val deliveryElapsedMs = consumer.deliveryElapsedAt(firstQualified)
+            assertTrue("$name first qualifying delivery missed ORIGINAL profile deadline; " +
+                "requestStart=$requestStartElapsedMs leaseAt=$leaseAcquiredElapsedMs " +
+                "delivery=$deliveryElapsedMs deadline=$deadline",
+                fw3DeliveryWithinOriginalRequest(
+                    requestStartElapsedMs, deadline, deliveryElapsedMs,
+                ))
+            assertTrue("$name all qualified bitmap dimensions exact",
+                consumer.allFramesMatchSize(profile.width, profile.height))
+            return Stage(
+                profile,
+                requestStartElapsedMs,
+                deadline,
+                geometry,
+                viewport,
+                page,
+                lease!!,
+                consumer,
+            )
+        }
+
+        val shrink = stage(keyboard, "FW3-shrink-240")
+        val shrinkDipBucket =
+            kotlin.math.ceil(
+                keyboard.height.toDouble() / shrink.viewport.devicePixelRatio
+            ).toInt()
+        val shrinkCssBucket = kotlin.math.round(shrink.viewport.height).toInt()
+        assertEquals("FW3 open native-to-DIP oracle is 86", 86, shrinkDipBucket)
+        assertEquals("FW3 renderer reports the same 86 bucket", 86, shrinkCssBucket)
+        assertNotEquals("FW3 87 alternative remains rejected", 87, shrinkCssBucket)
+        assertTrue("FW3 exact production quantizer accepts 240-high renderer extent",
+            shrink.viewport.matches(
+                keyboard.width,
+                keyboard.height,
+                runOnMainSync { session.view()!!.scale },
+            ))
+
+        val shrinkProbeTop = shrink.page.getJSONObject("probe").getDouble("top")
+        val shrinkFixedTop = shrink.page.getJSONObject("fiducials")
+            .getJSONObject("fw3-fixed").getDouble("top")
+        val shrinkVisualHeight = shrink.page.getDouble("visualHeight")
+        val shrinkCount = shrink.consumer.count()
+
+        // Reconfigure revokes shrink. Do NOT release it before grow; normal release would exercise
+        // destructive capture teardown rather than the approved in-place profile transaction.
+        val grow = stage(normal, "FW3-grow-344")
+        assertTrue("FW3 grow creates a later profile epoch",
+            grow.geometry.profileSerial > shrink.geometry.profileSerial)
+        assertEquals("FW3 grow cannot publish through old shrink consumer",
+            shrinkCount, shrink.consumer.count())
+        assertTrue("FW3 renderer viewport genuinely grows",
+            grow.viewport.height > shrink.viewport.height)
+        assertTrue("FW3 viewport-relative 50vh probe reflows downward",
+            grow.page.getJSONObject("probe").getDouble("top") > shrinkProbeTop)
+        assertEquals("FW3 fixed-CSS fiducial remains at its independent coordinate",
+            shrinkFixedTop,
+            grow.page.getJSONObject("fiducials").getJSONObject("fw3-fixed").getDouble("top"),
+            0.0001,
+        )
+        assertTrue("FW3 independent visual viewport observation grows",
+            grow.page.getDouble("visualHeight") > shrinkVisualHeight)
+        assertTrue("FW3 production quantizer accepts grown renderer extent",
+            grow.viewport.matches(
+                normal.width,
+                normal.height,
+                runOnMainSync { session.view()!!.scale },
+            ))
+        assertTrue("FW3 actual hardware draw observer advanced",
+            runOnMainSync { host.drawObservationForTest().serial } > drawAtStart)
+        samePhysical(grow.geometry)
+
+        // Old shrink lease is revoked by grow; both releases are intentionally harmless.
+        runOnMain(shrink.lease::release)
+        runOnMain(grow.lease::release)
+    }
+
+    /** R-06 negative controls over test-owned pixels only; no production admission seam. */
+    @Test
+    fun fw3SpatialOracleRejectsCropAndShrinkStretchNegativeControls() {
+        val spec = fw3SyntheticSpatialSpec(480, 344)
+        val valid = fw3SyntheticBitmap(spec)
+        var cropped: android.graphics.Bitmap? = null
+        var cropRescaled: android.graphics.Bitmap? = null
+        var shrinkRaster: android.graphics.Bitmap? = null
+        var shrinkStretched: android.graphics.Bitmap? = null
+        try {
+            assertTrue("synthetic control must satisfy FW3 spatial oracle",
+                fw3SpatialOracle(valid, spec).accepted)
+
+            val croppedBitmap = android.graphics.Bitmap.createBitmap(valid, 0, 0, 457, 319)
+            cropped = croppedBitmap
+            val cropScaledBitmap = android.graphics.Bitmap.createScaledBitmap(
+                croppedBitmap, spec.width, spec.height, false,
+            )
+            cropRescaled = cropScaledBitmap
+            val cropResult = fw3SpatialOracle(cropScaledBitmap, spec)
+            assertFalse("cropped/rescaled raster must be rejected: " + cropResult.reason,
+                cropResult.accepted)
+
+            val shrinkBitmap = android.graphics.Bitmap.createBitmap(valid, 0, 0, 480, 240)
+            shrinkRaster = shrinkBitmap
+            val shrinkScaledBitmap = android.graphics.Bitmap.createScaledBitmap(
+                shrinkBitmap, 480, 344, false,
+            )
+            shrinkStretched = shrinkScaledBitmap
+            val stretchResult = fw3SpatialOracle(shrinkScaledBitmap, spec)
+            assertFalse("480x240 raster stretched to 480x344 must be rejected: " +
+                stretchResult.reason, stretchResult.accepted)
+        } finally {
+            shrinkStretched?.recycle()
+            shrinkRaster?.recycle()
+            cropRescaled?.recycle()
+            cropped?.recycle()
+            valid.recycle()
+        }
+    }
+
+    /** R-07 clock negative: recent lease acquisition cannot legalize a post-deadline delivery. */
+    @Test
+    fun fw3TimingOracleRejectsPostDeadlineDeliveryDespiteRecentLeaseAcquisition() {
+        val requestStart = 10_000L
+        val originalDeadline = requestStart + 2_000L
+        val leaseAcquired = originalDeadline - 100L
+        val lateDelivery = originalDeadline + 1L
+        assertTrue("negative setup: late delivery is <2s from lease acquisition",
+            lateDelivery - leaseAcquired < 2_000L)
+        assertFalse("post-deadline delivery must fail original-request qualification",
+            fw3DeliveryWithinOriginalRequest(requestStart, originalDeadline, lateDelivery))
+        assertTrue("on-deadline delivery remains accepted",
+            fw3DeliveryWithinOriginalRequest(
+                requestStart, originalDeadline, originalDeadline,
+            ))
+    }
+
+    /**
+     * R4a: hold the actual post-visual hardware traversal inside the Presentation after the
+     * product draw observer ran but before traversal returns. Queue the 240 profile transition at
+     * the front of Main, then release the traversal. The old frame-commit callback is therefore
+     * delivered only after its capture/profile authority was superseded and must publish nothing.
+     */
+    @Test
+    fun delayedCommitFromSupersededProfileCannotPublish() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val keyboard = HostingPresentationProfile(480, 240, 204)
+        val oldConsumer = CollectingConsumer()
+        oldConsumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val drawGate = factory.armNextDraw()
+        val deadline = SystemClock.elapsedRealtime() + 2_000
+        val oldLease = runOnMainSync {
+            hosting.acquireProfileLease(normal, deadline, oldConsumer)
+        }
+        assertNotNull("old profile lease", oldLease)
+        assertTrue("real hardware draw reached delayed-commit barrier",
+            drawGate.awaitEntered(1_000))
+
+        val transitionDone = CountDownLatch(1)
+        val transitionOk = AtomicBoolean(false)
+        Handler(Looper.getMainLooper()).postAtFrontOfQueue {
+            hosting.reconfigureRgProfile(keyboard, deadline) { ok ->
+                transitionOk.set(ok)
+                transitionDone.countDown()
+            }
+        }
+        drawGate.release()
+        assertTrue("draw barrier released without timeout", !drawGate.timedOut)
+        assertTrue("superseding profile settled inside original deadline",
+            transitionDone.await(2_000, TimeUnit.MILLISECONDS))
+        assertTrue("superseding profile accepted", transitionOk.get())
+        assertEquals("delayed old commit cannot publish", 0, oldConsumer.count())
+
+        val fresh = CollectingConsumer()
+        fresh.expectQualification(keyboard.width, keyboard.height, CAPTURE_PAGE_COLOR)
+        val freshLease = runOnMainSync {
+            hosting.acquireProfileLease(keyboard, deadline, fresh)
+        }
+        assertNotNull("successor profile lease", freshLease)
+        waitUntil("successor publishes after delayed old commit rejects", {
+            fresh.qualifyingCountFrom(0) > 0
+        }, 2_000)
+        assertEquals("old consumer remains fenced after successor readiness", 0, oldConsumer.count())
+        runOnMain(oldLease!!::release)
+        runOnMain(freshLease!!::release)
+    }
+
+    /**
+     * R4b: keep the capture HandlerThread between the swap-post and old-reader retirement. That
+     * leaves the prior ImageReader retained while the new 240 reader is current. Replay the old
+     * callback through the production callback seam and explicitly run the settlement seam while
+     * overlap=2: neither may complete readiness or deliver an old frame.
+     */
+    @Test
+    fun retainedOldReaderCallbackDuringDelayedSettlementCannotUnblockReadiness() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val keyboard = HostingPresentationProfile(480, 240, 204)
+        val baseline = CollectingConsumer()
+        baseline.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val baselineDeadline = SystemClock.elapsedRealtime() + 2_000
+        val baselineLease = runOnMainSync {
+            hosting.acquireProfileLease(normal, baselineDeadline, baseline)
+        }
+        assertNotNull("baseline profile lease", baselineLease)
+        waitUntil("baseline committed-Window frame", {
+            baseline.qualifyingCountFrom(0) > 0
+        }, 2_000)
+        val baselineCount = baseline.count()
+        val host = currentPrivateHostForR4()
+        val oldReader = factory.latestReader()
+        val staleBefore = hosting.staleProfileImageCallbacksForTest()
+
+        val captureGate = newR4Gate()
+        val transitionDone = CountDownLatch(1)
+        val transitionOk = AtomicBoolean(false)
+        val deadline = SystemClock.elapsedRealtime() + 2_000
+        runOnMain {
+            hosting.reconfigureRgProfile(keyboard, deadline) { ok ->
+                transitionOk.set(ok)
+                transitionDone.countDown()
+            }
+            // resizeProfile already queued swap-post on this handler; this barrier is next.
+            assertTrue("capture barrier queued",
+                handlerFieldForR4(host, "captureHandler").post(captureGate.asRunnable()))
+        }
+        assertTrue("capture thread reached retirement-delay barrier",
+            captureGate.awaitEntered(1_000))
+        waitUntilMain("new reader installed while old reader retained", {
+            val g = hosting.profileGeometry()
+            g != null && g.display.readerWidth == keyboard.width &&
+                g.display.readerHeight == keyboard.height && g.readerOverlap == 2
+        })
+
+        val settlement = runOnMainSync { hosting.profileSettlementForTest() }
+        assertNotNull("profile settlement seam wired", settlement)
+        runOnMain(settlement!!)
+        assertEquals("settlement cannot complete while old reader is retained",
+            1L, transitionDone.count)
+
+        hosting.replayProfileImageCallbackForTest(oldReader)
+        assertEquals("retained old reader callback classified stale",
+            staleBefore + 1, hosting.staleProfileImageCallbacksForTest())
+        assertEquals("stale reader callback cannot publish/unblock old sink",
+            baselineCount, baseline.count())
+
+        captureGate.release()
+        assertTrue("capture barrier released without timeout", !captureGate.timedOut)
+        assertTrue("profile settles after old reader retirement",
+            transitionDone.await(2_000, TimeUnit.MILLISECONDS))
+        assertTrue("profile resize succeeds after delayed retirement", transitionOk.get())
+        assertEquals("old sink stays fenced after settlement", baselineCount, baseline.count())
+
+        val fresh = CollectingConsumer()
+        fresh.expectQualification(keyboard.width, keyboard.height, CAPTURE_PAGE_COLOR)
+        val freshLease = runOnMainSync {
+            hosting.acquireProfileLease(keyboard, deadline, fresh)
+        }
+        assertNotNull("successor lease after stale reader replay", freshLease)
+        waitUntil("successor frame after stale reader replay", {
+            fresh.qualifyingCountFrom(0) > 0
+        }, 2_000)
+        runOnMain(baselineLease!!::release)
+        runOnMain(freshLease!!::release)
+    }
+
+    /**
+     * R4c: block the dedicated readback thread before the old request invokes PixelCopy. After
+     * the committed request is in-flight, block Main, queue the 240 profile supersession, release
+     * readback and wait for the synchronous Window PixelCopy invocation to return. Its SUCCESS
+     * listener is now queued behind the already-enqueued supersession. Releasing Main proves a
+     * late successful old bitmap cannot be reheadered or publish into the successor epoch.
+     */
+    @Test
+    fun delayedPixelCopyCompletionAfterEpochSupersessionCannotPublishOldBitmap() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val keyboard = HostingPresentationProfile(480, 240, 204)
+        val oldConsumer = CollectingConsumer()
+        oldConsumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+
+        // Resolve the Main-thread-owned host before the draw barrier can hold Main. The
+        // readback Handler is lazy, so reflect it only after acquireProfileLease starts capture.
+        val host = currentPrivateHostForR4()
+        val drawGate = factory.armNextDraw()
+        val deadline = SystemClock.elapsedRealtime() + 2_000
+        val oldLease = runOnMainSync {
+            hosting.acquireProfileLease(normal, deadline, oldConsumer)
+        }
+        assertNotNull("old profile lease", oldLease)
+        assertTrue("hardware draw reached R4c barrier", drawGate.awaitEntered(1_000))
+
+        // Pure reflection: no Main hop while the traversal gate is holding Main.
+        val readback = handlerFieldForR4(host, "readbackHandler")
+        val readbackGate = newR4Gate()
+        assertTrue("readback barrier queued", readback.post(readbackGate.asRunnable()))
+        assertTrue("readback thread blocked before PixelCopy", readbackGate.awaitEntered(1_000))
+
+        drawGate.release()
+        assertTrue("draw barrier released without timeout", !drawGate.timedOut)
+        waitUntil("committed old Window copy request becomes in-flight", {
+            inFlightWindowCopyForR4(host)
+        }, 1_000)
+        // Flush the commit callback: the invoke runnable is now definitely queued behind readbackGate.
+        runOnMain { }
+
+        val mainGate = newR4Gate()
+        Handler(Looper.getMainLooper()).postAtFrontOfQueue(mainGate.asRunnable())
+        assertTrue("Main blocked before PixelCopy completion delivery", mainGate.awaitEntered(1_000))
+
+        val transitionDone = CountDownLatch(1)
+        val transitionOk = AtomicBoolean(false)
+        Handler(Looper.getMainLooper()).post {
+            hosting.reconfigureRgProfile(keyboard, deadline) { ok ->
+                transitionOk.set(ok)
+                transitionDone.countDown()
+            }
+        }
+
+        // This marker is queued after the already-posted invoke runnable. Android 12's Window
+        // PixelCopy call has returned (and its Main listener is queued) before this marker runs.
+        val readbackReturned = CountDownLatch(1)
+        assertTrue("readback return marker queued",
+            readback.post { readbackReturned.countDown() })
+        readbackGate.release()
+        assertTrue("readback barrier released without timeout", !readbackGate.timedOut)
+        assertTrue("Window PixelCopy invocation returned while Main callback remained delayed",
+            readbackReturned.await(1_500, TimeUnit.MILLISECONDS))
+
+        mainGate.release()
+        assertTrue("Main barrier released without timeout", !mainGate.timedOut)
+        assertTrue("superseding profile completes before deadline",
+            transitionDone.await(2_000, TimeUnit.MILLISECONDS))
+        assertTrue("superseding profile accepted", transitionOk.get())
+        waitUntilMain("late PixelCopy completion retired", {
+            val d = hosting.captureDiagnostics()
+            d.contains("nativeCopy=0") && d.contains("copyResult=" + android.view.PixelCopy.SUCCESS)
+        })
+        assertEquals("late SUCCESS bitmap cannot publish into superseded epoch",
+            0, oldConsumer.count())
+
+        val fresh = CollectingConsumer()
+        fresh.expectQualification(keyboard.width, keyboard.height, CAPTURE_PAGE_COLOR)
+        val freshLease = runOnMainSync {
+            hosting.acquireProfileLease(keyboard, deadline, fresh)
+        }
+        assertNotNull("successor lease after delayed PixelCopy completion", freshLease)
+        waitUntil("successor publishes only its own committed Window copy", {
+            fresh.qualifyingCountFrom(0) > 0
+        }, 2_000)
+        assertEquals("old bitmap remains retired after successor readiness", 0, oldConsumer.count())
+        runOnMain(oldLease!!::release)
+        runOnMain(freshLease!!::release)
+    }
+
+    private class R5AbortSentinel : RuntimeException("R5_ABORT_SENTINEL")
+
+    private data class R5AbortReceipt(
+        val authorityRevokedBeforeRelease: Boolean,
+        val completionForwardedBeforeRevocation: Boolean,
+        val completionForwardedAfterRevocation: Boolean,
+        val publicationCountBefore: Int,
+        val publicationCountAfter: Int,
+        val bitmapRecycled: Boolean,
+        val quiescent: Boolean,
+    )
+
+    /**
+     * Shared failure-only cleanup for a withheld completion. The original throwable is rethrown
+     * unchanged; cleanup failures are attached as suppressed evidence so they cannot conceal it.
+     */
+    private fun <T> withR5CompletionAbortCleanup(
+        hold: R4CompletionHold,
+        publicationCount: () -> Int,
+        receiptOut: AtomicReference<R5AbortReceipt>? = null,
+        block: () -> T,
+    ): T {
+        var primary: Throwable? = null
+        try {
+            return block()
+        } catch (failure: Throwable) {
+            primary = failure
+            throw failure
+        } finally {
+            val original = primary
+            if (original != null) {
+                try {
+                    val (receipt, cleanupFailures) =
+                        performR5CompletionAbortCleanup(hold, publicationCount)
+                    receiptOut?.set(receipt)
+                    cleanupFailures.forEach { cleanupFailure ->
+                        original.addSuppressed(cleanupFailure)
+                        println("R5_ABORT_CLEANUP_FAILURE primary=" +
+                            original.javaClass.simpleName + " cleanup=" + cleanupFailure)
+                    }
+                } catch (cleanupFailure: Throwable) {
+                    // Even a bug inside cleanup itself cannot replace the original row failure.
+                    original.addSuppressed(cleanupFailure)
+                    println("R5_ABORT_CLEANUP_FAILURE primary=" +
+                        original.javaClass.simpleName + " cleanup=" + cleanupFailure)
+                }
+            }
+        }
+    }
+
+    /**
+     * Abort order is deliberate:
+     *  1) revoke through HostingController.stop()/revokeLease(),
+     *  2) only then forward the real withheld completion,
+     *  3) let production retire the request-owned bitmap/resources,
+     *  4) prove no publication occurred after authority closure.
+     *
+     * Never recycles the bitmap, clears a request field, or bypasses a product guard.
+     */
+    private fun performR5CompletionAbortCleanup(
+        hold: R4CompletionHold,
+        publicationCount: () -> Int,
+    ): Pair<R5AbortReceipt, List<Throwable>> {
+        val failures = mutableListOf<Throwable>()
+        fun attempt(action: () -> Unit) {
+            try {
+                action()
+            } catch (failure: Throwable) {
+                failures.add(failure)
+            }
+        }
+
+        val bitmap = hold.destinationBitmap()
+        val publicationsBefore = publicationCount()
+        val forwardedBefore = hold.hasForwarded()
+        var authorityRevoked = false
+
+        // Hold-state evidence must NEVER gate authority closure. Whether this abort happened
+        // before or after normal completion forwarding, always close authority through the real
+        // product path first.
+        attempt { runOnMain(hosting::stop) }
+        attempt {
+            authorityRevoked = !runOnMainSync(hosting::status).captureActive
+            assertTrue("abort cleanup must close capture authority", authorityRevoked)
+        }
+        if (!forwardedBefore) {
+            attempt {
+                assertFalse("withheld completion forwarded before authority revocation",
+                    hold.hasForwarded())
+            }
+        }
+
+        // Release regardless of earlier cleanup assertions so resources cannot be orphaned.
+        // Already-forwarded completion makes this an idempotent no-op.
+        hold.release()
+        attempt { runOnMain { } }
+
+        var bitmapRecycled = bitmap == null || bitmap.isRecycled
+        if (bitmap != null && !bitmapRecycled) {
+            attempt {
+                waitUntil("abort cleanup request bitmap retired by product callback", {
+                    bitmap.isRecycled
+                }, STOP_BOUND_MS)
+                bitmapRecycled = bitmap.isRecycled
+                assertTrue("abort cleanup bitmap must be recycled by production retirement",
+                    bitmapRecycled)
+            }
+        }
+
+        var quiescent = false
+        attempt {
+            waitUntilMain("abort cleanup production owner quiescent", {
+                !hosting.captureResourcesPresent() && !hosting.hasDisplayResources() &&
+                    !hosting.isWakeLockHeld()
+            })
+            quiescent = !hosting.captureResourcesPresent() && !hosting.hasDisplayResources() &&
+                !hosting.isWakeLockHeld()
+            assertTrue("abort cleanup must reach production quiescence", quiescent)
+        }
+
+        val publicationsAfter = publicationCount()
+        if (!forwardedBefore) {
+            attempt {
+                assertEquals("revoked withheld completion must not publish",
+                    publicationsBefore, publicationsAfter)
+            }
+        } else {
+            // Legitimate publication that completed before the abort is historical evidence; do
+            // not undo/relabel it. Cleanup only requires that authority closure/quiescence succeed.
+            println("R5_ABORT_ALREADY_FORWARDED publicationsBefore=" + publicationsBefore +
+                " publicationsAfter=" + publicationsAfter)
+        }
+
+        return R5AbortReceipt(
+            authorityRevoked,
+            forwardedBefore,
+            hold.hasForwarded(),
+            publicationsBefore,
+            publicationsAfter,
+            bitmapRecycled,
+            quiescent,
+        ) to failures
+    }
+
+    /**
+     * R-04 stale-SUCCESS variant: predecessor native copy has completed, but its SUCCESS delivery
+     * is held without blocking Main. A real compatible resize + successor rearm must preserve B's
+     * admitted demand until A releases the single product copy slot.
+     */
+    @Test
+    fun successorDemandSurvivesHeldStaleSuccessCompletion() {
+        runSuccessorDemandAfterHeldPredecessorCompletion(null, "stale-success")
+    }
+
+    /** R-04 stale-error variant: identical successor-liveness proof for an old NO_DATA completion. */
+    @Test
+    fun successorDemandSurvivesHeldStaleErrorCompletion() {
+        runSuccessorDemandAfterHeldPredecessorCompletion(
+            android.view.PixelCopy.ERROR_SOURCE_NO_DATA,
+            "stale-error",
+        )
+    }
+
+    private fun runSuccessorDemandAfterHeldPredecessorCompletion(
+        scriptedPredecessorResult: Int?,
+        label: String,
+    ) {
+        val factory = newR4ControlledFactory()
+        if (scriptedPredecessorResult != null) {
+            factory.scriptCopyResults(scriptedPredecessorResult)
+        }
+        val normal = prepareR4RecordedProfile(factory)
+        val keyboard = HostingPresentationProfile(480, 240, 204)
+        val host = currentPrivateHostForR4()
+        val predecessor = CollectingConsumer()
+        predecessor.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        var successorForAbort: CollectingConsumer? = null
+        val held = factory.holdNextCopyCompletion()
+        withR5CompletionAbortCleanup(
+            held,
+            publicationCount = {
+                predecessor.count() + (successorForAbort?.count() ?: 0)
+            },
+        ) {
+        val predecessorDeadline = SystemClock.elapsedRealtime() + 2_000
+        val predecessorLease = runOnMainSync {
+            hosting.acquireProfileLease(normal, predecessorDeadline, predecessor)
+        }
+        assertNotNull("$label predecessor lease", predecessorLease)
+        assertTrue("$label predecessor completion captured without blocking Main",
+            held.awaitCaptured(1_200))
+        val expectedPredecessorResult =
+            scriptedPredecessorResult ?: android.view.PixelCopy.SUCCESS
+        assertEquals("$label captured intended predecessor completion result",
+            expectedPredecessorResult, held.result)
+        assertEquals("$label only predecessor backend copy requested", 1, factory.copyInvocationCount())
+        val predecessorState = captureAuthorityForR4(host)
+        assertTrue("$label predecessor product copy slot remains occupied",
+            predecessorState.copyInFlight)
+        assertTrue("$label predecessor transaction established",
+            predecessorState.transactionId > 0)
+        assertEquals("$label predecessor unpublished while completion held", 0, predecessor.count())
+        val predecessorBitmap = checkNotNull(held.destinationBitmap()) {
+            "$label predecessor destination not captured"
+        }
+        assertFalse("$label predecessor destination retained until completion delivery",
+            predecessorBitmap.isRecycled)
+
+        // Real compatible resize; no test draw/commit callback is synthesized.
+        val successorDeadline = SystemClock.elapsedRealtime() + 2_000
+        val settled = CountDownLatch(1)
+        val settledOk = AtomicBoolean(false)
+        runOnMain {
+            hosting.reconfigureRgProfile(keyboard, successorDeadline) { ok ->
+                settledOk.set(ok)
+                settled.countDown()
+            }
+        }
+        assertTrue("$label compatible resize callback", settled.await(1_200, TimeUnit.MILLISECONDS))
+        assertTrue("$label compatible resize settled", settledOk.get())
+        waitUntilMain("$label successor local focus ready", { hosting.localEditorFocusReady() })
+
+        val successor = CollectingConsumer()
+        successorForAbort = successor
+        successor.expectQualification(keyboard.width, keyboard.height, CAPTURE_PAGE_COLOR)
+        val successorLease = runOnMainSync {
+            hosting.acquireProfileLease(keyboard, successorDeadline, successor)
+        }
+        assertNotNull("$label successor lease", successorLease)
+
+        // B is admitted while A still occupies the resource slot. No extra stimulus after this:
+        // the only path to B's first frame is A completion -> scheduler re-evaluation.
+        waitUntil("$label successor demand is recorded behind predecessor slot", {
+            val a = captureAuthorityForR4(host)
+            a.successorDemandAuthority == a.authoritySerial &&
+                a.copyInFlight && a.transactionId == 0L
+        }, 500)
+        val admitted = captureAuthorityForR4(host)
+        assertNotEquals("$label successor binding differs from predecessor",
+            predecessorState.bindingIdentity, admitted.bindingIdentity)
+        assertNotEquals("$label successor authority differs from predecessor",
+            predecessorState.authoritySerial, admitted.authoritySerial)
+        assertEquals("$label successor keeps original readiness deadline",
+            successorDeadline, admitted.bindingDeadline)
+        assertTrue("$label successor readiness pending", admitted.readinessPending)
+        assertFalse("$label successor is not terminal", admitted.terminal)
+        assertEquals("$label old copy remains the only backend request before release",
+            1, factory.copyInvocationCount())
+        assertEquals("$label old consumer still unpublished", 0, predecessor.count())
+        assertEquals("$label successor still unpublished before slot release", 0, successor.count())
+        assertTrue("$label completion release stays inside successor budget",
+            successorDeadline - SystemClock.elapsedRealtime() > 200)
+
+        held.release()
+        waitUntil("$label predecessor bitmap retired after stale completion", {
+            predecessorBitmap.isRecycled
+        }, 500)
+        assertEquals("$label stale predecessor completion never publishes old pixels",
+            0, predecessor.count())
+
+        // No invalidate/navigation/draw stimulus here. B's already-admitted demand must launch its
+        // own normal visual-state -> hardware draw -> commit -> Window-copy fence.
+        waitUntil("$label successor autonomously publishes newly fenced frame", {
+            successor.qualifyingCountFrom(0) > 0
+        }, (successorDeadline - SystemClock.elapsedRealtime()).coerceAtLeast(1))
+        assertTrue("$label successor frames use keyboard geometry",
+            successor.allFramesMatchSize(keyboard.width, keyboard.height))
+        assertTrue("$label successor frame stayed inside original readiness deadline",
+            successor.latestDeliveryElapsed() <= successorDeadline)
+        assertEquals("$label stale predecessor remains unpublished after successor readiness",
+            0, predecessor.count())
+        assertTrue("$label successor uses a later backend copy",
+            factory.copyInvocationCount() >= 2)
+        assertEquals("$label backend copy invocation calls never overlap",
+            1, factory.maxConcurrentCopyCalls())
+
+        val ready = captureAuthorityForR4(host)
+        val readyDiagnostics = runOnMainSync(hosting::captureDiagnostics)
+        assertEquals("$label successor demand consumed", 0L, ready.successorDemandAuthority)
+        assertFalse("$label successor readiness retired after success", ready.readinessPending)
+        assertFalse("$label successor remains non-terminal", ready.terminal)
+        assertTrue("$label successor frame used a fresh visual-state fence: $readyDiagnostics",
+            diagnosticLong(readyDiagnostics, "visual") > 0)
+        assertTrue("$label successor frame used a committed hardware draw: $readyDiagnostics",
+            diagnosticLong(readyDiagnostics, "committedDraw") > 0)
+        assertTrue("$label successor issued Window copy only after predecessor release: $readyDiagnostics",
+            diagnosticLong(readyDiagnostics, "copyInvoke") > 0)
+
+        // Resize already revoked the predecessor lease; explicit releases remain safe/no-op.
+        runOnMain(predecessorLease!!::release)
+        runOnMain(successorLease!!::release)
+        }
+    }
+
+    /**
+     * R-05 deterministic abort-path check. A test-local sentinel fails while a real PixelCopy
+     * completion is withheld. Shared cleanup must preserve that exact failure while revoking
+     * authority before forwarding completion, then permit a clean subsequent capture.
+     */
+    @Test
+    fun heldCompletionAbortCleanupRevokesBeforeForwardingAndAllowsCleanCapture() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val held = factory.holdNextCopyCompletion()
+        val deadline = SystemClock.elapsedRealtime() + 2_000
+        val lease = runOnMainSync { hosting.acquireProfileLease(normal, deadline, consumer) }
+        assertNotNull("R5 abort test lease", lease)
+        assertTrue("R5 abort test completion captured", held.awaitCaptured(1_200))
+        assertFalse("R5 abort test completion not yet forwarded", held.hasForwarded())
+        val bitmap = checkNotNull(held.destinationBitmap()) {
+            "R5 abort test destination bitmap unavailable"
+        }
+        assertFalse("R5 abort test bitmap owned until completion retirement", bitmap.isRecycled)
+        assertEquals("R5 abort test has no publication before sentinel", 0, consumer.count())
+
+        val receipt = AtomicReference<R5AbortReceipt>()
+        var caught: R5AbortSentinel? = null
+        try {
+            withR5CompletionAbortCleanup(
+                held,
+                publicationCount = consumer::count,
+                receiptOut = receipt,
+            ) {
+                throw R5AbortSentinel()
+            }
+        } catch (expected: R5AbortSentinel) {
+            caught = expected
+        }
+
+        val original = checkNotNull(caught) { "R5 sentinel failure was not preserved" }
+        assertEquals("R5 sentinel identity remains visible",
+            "R5_ABORT_SENTINEL", original.message)
+        assertEquals("abort cleanup produced no secondary failures",
+            0, original.suppressed.size)
+
+        val observed = checkNotNull(receipt.get()) { "R5 abort receipt missing" }
+        assertTrue("authority revoked before withheld completion release",
+            observed.authorityRevokedBeforeRelease)
+        assertFalse("completion was not forwarded before revocation",
+            observed.completionForwardedBeforeRevocation)
+        assertTrue("withheld completion eventually forwarded after revocation",
+            observed.completionForwardedAfterRevocation)
+        assertEquals("aborted request published nothing",
+            observed.publicationCountBefore, observed.publicationCountAfter)
+        assertEquals("aborted request consumer remains empty", 0, consumer.count())
+        assertTrue("aborted request bitmap retired by production", observed.bitmapRecycled)
+        assertTrue("aborted capture owner reached quiescence", observed.quiescent)
+        assertTrue("captured request bitmap is actually recycled", bitmap.isRecycled)
+
+        // A fresh hosting/capture cycle must not be blocked by the aborted row's old resources.
+        val cleanFactory = newR4ControlledFactory()
+        val cleanProfile = prepareR4RecordedProfile(cleanFactory)
+        val cleanConsumer = CollectingConsumer()
+        cleanConsumer.expectQualification(
+            cleanProfile.width, cleanProfile.height, CAPTURE_PAGE_COLOR,
+        )
+        val cleanDeadline = SystemClock.elapsedRealtime() + 2_000
+        val cleanLease = runOnMainSync {
+            hosting.acquireProfileLease(cleanProfile, cleanDeadline, cleanConsumer)
+        }
+        assertNotNull("clean capture lease after aborted row", cleanLease)
+        waitUntil("clean capture publishes after aborted-row retirement", {
+            cleanConsumer.qualifyingCountFrom(0) > 0
+        }, 2_000)
+        assertFalse("clean capture remains non-terminal",
+            runOnMainSync(hosting::captureDiagnostics).contains("terminal=true"))
+        runOnMain(cleanLease!!::release)
+    }
+
+    /**
+     * R-05 already-forwarded abort-path check. The same shared cleanup helper must still run Stop
+     * and reach quiescence when normal completion/publication happened BEFORE the test-local
+     * sentinel. That legitimate pre-abort publication remains legitimate history.
+     */
+    @Test
+    fun alreadyForwardedCompletionAbortCleanupStillStopsAndPreservesHistory() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val held = factory.holdNextCopyCompletion()
+        val deadline = SystemClock.elapsedRealtime() + 2_000
+        val lease = runOnMainSync { hosting.acquireProfileLease(normal, deadline, consumer) }
+        assertNotNull("R5 forwarded abort test lease", lease)
+        assertTrue("R5 forwarded abort test completion captured",
+            held.awaitCaptured(1_200))
+        assertFalse("R5 forwarded abort starts withheld", held.hasForwarded())
+
+        // Complete the normal product path first. This publication is valid pre-abort history.
+        held.release()
+        waitUntil("R5 forwarded abort establishes legitimate publication", {
+            consumer.qualifyingCountFrom(0) > 0
+        }, 1_200)
+        assertTrue("R5 forwarded abort completion is forwarded", held.hasForwarded())
+        val legitimateBeforeAbort = consumer.count()
+        assertTrue("R5 forwarded abort has legitimate pre-abort publication",
+            legitimateBeforeAbort > 0)
+
+        val receipt = AtomicReference<R5AbortReceipt>()
+        var caught: R5AbortSentinel? = null
+        try {
+            withR5CompletionAbortCleanup(
+                held,
+                publicationCount = consumer::count,
+                receiptOut = receipt,
+            ) {
+                throw R5AbortSentinel()
+            }
+        } catch (expected: R5AbortSentinel) {
+            caught = expected
+        }
+
+        val original = checkNotNull(caught) { "R5 forwarded sentinel was not preserved" }
+        assertEquals("R5 forwarded sentinel identity remains visible",
+            "R5_ABORT_SENTINEL", original.message)
+        assertEquals("already-forwarded cleanup has no spurious cleanup failure",
+            0, original.suppressed.size)
+
+        val observed = checkNotNull(receipt.get()) {
+            "R5 already-forwarded abort receipt missing"
+        }
+        assertTrue("already-forwarded cleanup still closed authority",
+            observed.authorityRevokedBeforeRelease)
+        assertTrue("receipt records completion was already forwarded",
+            observed.completionForwardedBeforeRevocation)
+        assertTrue("completion remains forwarded after idempotent release",
+            observed.completionForwardedAfterRevocation)
+        assertEquals("legitimate pre-abort history is preserved in receipt",
+            legitimateBeforeAbort, observed.publicationCountBefore)
+        assertEquals("abort cleanup does not erase/relabel legitimate publication",
+            legitimateBeforeAbort, consumer.count())
+        assertTrue("already-forwarded abort reaches quiescence before @After",
+            observed.quiescent)
+        assertFalse("already-forwarded abort authority stays closed",
+            runOnMainSync(hosting::status).captureActive)
+    }
+
+    /**
+     * T-A / R-01: the two-second profile-readiness deadline is one-time. After the first
+     * committed Window frame succeeds, the SAME renewed lease must keep publishing autonomous
+     * page updates after t0+2000 through independent steady-state transactions.
+     */
+    @Test
+    fun sameProfileLeaseKeepsPublishingPastInitialReadinessDeadline() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val deadline = SystemClock.elapsedRealtime() + 2_000
+        val lease = runOnMainSync { hosting.acquireProfileLease(normal, deadline, consumer) }
+        assertNotNull("finite-deadline profile lease", lease)
+        val renewal = LeaseRenewal(lease!!)
+        renewal.start()
+        try {
+            waitUntil("first readiness frame", { consumer.qualifyingCountFrom(0) > 0 }, 2_000)
+            val firstCount = consumer.count()
+            assertTrue("readiness retired after first successful frame: " +
+                runOnMainSync(hosting::captureDiagnostics),
+                runOnMainSync(hosting::captureDiagnostics).contains("readinessPending=false"))
+
+            waitUntil("original readiness deadline has elapsed", {
+                SystemClock.elapsedRealtime() > deadline + 100
+            }, 2_500)
+            val countAfterDeadline = consumer.count()
+            val document = runOnMainSync(session::documentIdentity)
+            val host = currentPrivateHostForR4()
+            val drawBefore = runOnMainSync { host.drawObservationForTest().serial }
+
+            // Fixture diagnosis: background timer unfreeze did not produce a traversal on S20+.
+            // Mutate layout synchronously in the SAME document, then request a normal WebView
+            // traversal. This is test stimulus only; production admission still waits on the real
+            // hardware draw/commit/Window-copy chain.
+            evaluateJs(
+                "(function(){document.body.style.paddingBottom='96px';" +
+                    "return document.body.getBoundingClientRect().height;})()"
+            )
+            runOnMain {
+                session.view()!!.requestLayout()
+                session.view()!!.invalidate()
+                session.view()!!.postInvalidateOnAnimation()
+            }
+            waitUntilMain("same-document post-deadline hardware draw", {
+                host.drawObservationForTest().serial > drawBefore
+            })
+            assertEquals("T-A stimulus preserves browser document", document,
+                runOnMainSync(session::documentIdentity))
+            waitUntil("same lease publishes a steady-state frame after t0+2000", {
+                consumer.count() > countAfterDeadline &&
+                    consumer.latestDeliveryElapsed() > deadline
+            }, 2_500)
+            assertTrue("same lease delivered beyond initial deadline", consumer.count() > firstCount)
+            assertTrue("steady-state capture authority remains live: " +
+                runOnMainSync(hosting::captureDiagnostics),
+                !runOnMainSync(hosting::captureDiagnostics).contains("terminal=true"))
+        } finally {
+            renewal.stopRenewing()
+            runOnMain(lease::release)
+        }
+    }
+
+    /**
+     * T-B / R-02 negative, premise-ruling version: initial NO_DATA, one permitted recovery
+     * TIMEOUT, with scheduler DEMAND coalesced while copy #1 is unresolved. The demand enters
+     * through the real requestCaptureDemand() scheduler; this test never sets trailingCaptureDemand
+     * and never synthesizes a draw/commit callback.
+     */
+    @Test
+    fun transientRecoveryBudgetCannotResetFromTrailingDemand() {
+        val factory = newR4ControlledFactory().apply {
+            scriptCopyResults(
+                android.view.PixelCopy.ERROR_SOURCE_NO_DATA,
+                android.view.PixelCopy.ERROR_TIMEOUT,
+            )
+        }
+        val normal = prepareR4RecordedProfile(factory)
+        val host = currentPrivateHostForR4()
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+
+        // The gate is released deliberately after scheduler coalescing is observed. Its timeout
+        // is only a deadlock guard and remains shorter than the immutable 2s readiness deadline.
+        val firstCopyGate = factory.armNextCopy(1_200)
+        val started = SystemClock.elapsedRealtime()
+        val deadline = started + 2_000
+        val generation = runOnMainSync(hosting::currentGeneration)
+        val lease = runOnMainSync { hosting.acquireProfileLease(normal, deadline, consumer) }
+        assertNotNull("scripted transient profile lease", lease)
+        assertTrue("initial copy invocation reached test barrier",
+            factory.awaitCopyInvocation(700) != null)
+        assertTrue("initial copy held in flight", firstCopyGate.awaitEntered(700))
+
+        // P1: immutable authority/transaction receipt while copy #1 is outstanding.
+        val initial = captureAuthorityForR4(host)
+        assertTrue("readiness transaction is pending", initial.readinessPending)
+        assertTrue("copy #1 is in flight", initial.copyInFlight)
+        assertTrue("transaction identity established", initial.transactionId > 0)
+        assertEquals("transaction uses original readiness deadline", deadline, initial.transactionDeadline)
+        assertEquals("binding keeps original readiness deadline", deadline, initial.bindingDeadline)
+        assertTrue("lease/capture authority live before fault injection",
+            runOnMainSync(hosting::status).captureActive)
+        assertEquals("no frame published before injected results", 0, consumer.count())
+        assertEquals("only initial backend copy before coalescing", 1, factory.copyInvocationCount())
+        val runnerCandidate = InstrumentationRegistry.getArguments()
+            .getString("candidateSha", "runner-not-specified")
+        println("T_B_NEG_AUTHORITY candidate=" + runnerCandidate + " gen=" + generation +
+            " binding=" + initial.bindingIdentity + " authority=" + initial.authoritySerial +
+            " transaction=" + initial.transactionId + " deadline=" + initial.transactionDeadline)
+
+        // P2: submit demand through the ACTUAL production scheduler. The product itself observes
+        // the unresolved transaction/copy and coalesces one bounded trailing demand.
+        invokeProductionCaptureDemandForR4(host)
+        val coalesced = captureAuthorityForR4(host)
+        assertEquals("scheduler demand stays on same binding",
+            initial.bindingIdentity, coalesced.bindingIdentity)
+        assertEquals("scheduler demand stays on same authority serial",
+            initial.authoritySerial, coalesced.authoritySerial)
+        assertEquals("scheduler demand stays on unresolved transaction",
+            initial.transactionId, coalesced.transactionId)
+        assertEquals("scheduler demand cannot reset transaction deadline",
+            initial.transactionDeadline, coalesced.transactionDeadline)
+        assertTrue("production scheduler records bounded trailing demand", coalesced.trailingDemand)
+        assertTrue("copy #1 remains outstanding after coalescing", coalesced.copyInFlight)
+        assertEquals("coalesced demand cannot start another copy", 1, factory.copyInvocationCount())
+        assertEquals("coalescing cannot publish", 0, consumer.count())
+        val firstFenceDiagnostics = runOnMainSync(hosting::captureDiagnostics)
+        val firstVisual = diagnosticLong(firstFenceDiagnostics, "visual")
+        val firstCommittedDraw = diagnosticLong(firstFenceDiagnostics, "committedDraw")
+        assertTrue("initial production fence was recorded: $firstFenceDiagnostics",
+            firstVisual > 0 && firstCommittedDraw > 0)
+
+        // P3: release NO_DATA; one recovery must run under the SAME transaction/deadline and its
+        // fresh production visual/draw/commit fence, then scripted TIMEOUT closes it.
+        assertTrue("budget remains before releasing first result",
+            deadline - SystemClock.elapsedRealtime() > 300)
+        val recoveryGate = factory.armNextCopy(700)
+        firstCopyGate.release()
+        assertFalse("first-copy gate released deliberately, not by timeout", firstCopyGate.timedOut)
+        assertNotNull("single recovery backend copy invoked",
+            factory.awaitCopyInvocation(700))
+        assertTrue("recovery copy held for transaction observation",
+            recoveryGate.awaitEntered(500))
+        val recovery = captureAuthorityForR4(host)
+        assertEquals("recovery remains same binding", initial.bindingIdentity, recovery.bindingIdentity)
+        assertEquals("recovery remains same authority", initial.authoritySerial, recovery.authoritySerial)
+        assertEquals("recovery remains same transaction", initial.transactionId, recovery.transactionId)
+        assertEquals("recovery keeps original deadline", initial.transactionDeadline,
+            recovery.transactionDeadline)
+        assertTrue("transaction recovery budget is spent exactly once", recovery.recoveryUsed)
+        assertTrue("exactly one Window copy is in flight at recovery observation",
+            recovery.copyInFlight)
+        assertEquals("exactly initial plus recovery at P3", 2, factory.copyInvocationCount())
+        val recoveryFenceDiagnostics = runOnMainSync(hosting::captureDiagnostics)
+        val recoveryVisual = diagnosticLong(recoveryFenceDiagnostics, "visual")
+        val recoveryCommittedDraw = diagnosticLong(recoveryFenceDiagnostics, "committedDraw")
+        assertTrue("recovery used a fresh visual request: $recoveryFenceDiagnostics",
+            recoveryVisual > firstVisual)
+        assertTrue("recovery used a fresh committed hardware draw: $recoveryFenceDiagnostics",
+            recoveryCommittedDraw > firstCommittedDraw)
+        assertTrue("recovery still has original readiness budget",
+            deadline - SystemClock.elapsedRealtime() > 100)
+        recoveryGate.release()
+        assertFalse("recovery gate released deliberately, not by timeout", recoveryGate.timedOut)
+
+        waitUntil("TIMEOUT closes failed readiness transaction before cleanup", {
+            val a = captureAuthorityForR4(host)
+            a.transactionId == 0L && a.terminal && !a.copyInFlight
+        }, 450)
+        val exhausted = captureAuthorityForR4(host)
+        val diagnostics = runOnMainSync(hosting::captureDiagnostics)
+        val copyDone = diagnosticLong(diagnostics, "copyDone")
+        assertTrue("recovery TIMEOUT completed within original 2s readiness deadline: " +
+            "copyDone=$copyDone deadline=$deadline diagnostics={$diagnostics}",
+            copyDone in 1L..deadline)
+        assertEquals("binding survives failed readiness without rearm",
+            initial.bindingIdentity, exhausted.bindingIdentity)
+        assertEquals("authority serial survives failed readiness",
+            initial.authoritySerial, exhausted.authoritySerial)
+        assertEquals("binding deadline was never reset", initial.bindingDeadline,
+            exhausted.bindingDeadline)
+        assertTrue("readiness remains unsuccessful", exhausted.readinessPending)
+        assertTrue("failed readiness authority is terminal", exhausted.terminal)
+        assertFalse("no backend copy remains in flight", exhausted.copyInFlight)
+        assertFalse("failed transaction drops its old coalesced demand", exhausted.trailingDemand)
+        assertTrue("lease remains live while exhaustion is observed",
+            runOnMainSync(hosting::status).captureActive)
+        assertEquals("hosting generation unchanged through failed transaction",
+            generation, runOnMainSync(hosting::currentGeneration))
+        assertFalse("surface remains attached before lease release/cleanup",
+            runOnMainSync(hosting::privateDisplaySnapshot)!!.surfaceDetached)
+        assertEquals("failed transaction published no frame", 0, consumer.count())
+        assertEquals("exactly initial + one recovery copy", 2, factory.copyInvocationCount())
+        assertEquals("backend copy requests were never concurrent", 1, factory.maxConcurrentCopyCalls())
+
+        // P4/P5: challenge closure under the SAME live binding. The real scheduler sees terminal
+        // authority and must stay inert: no attempt-zero transaction, no third copy, no frame.
+        invokeProductionCaptureDemandForR4(host)
+        val challenged = captureAuthorityForR4(host)
+        assertEquals("closure challenge keeps same binding",
+            initial.bindingIdentity, challenged.bindingIdentity)
+        assertEquals("closure challenge keeps same authority",
+            initial.authoritySerial, challenged.authoritySerial)
+        assertEquals("terminal binding cannot mint new transaction", 0L, challenged.transactionId)
+        assertTrue("terminal readiness remains unsuccessful", challenged.readinessPending)
+        assertTrue("terminal authority remains terminal", challenged.terminal)
+        assertFalse("closure challenge creates no in-flight copy", challenged.copyInFlight)
+        assertFalse("terminal scheduler does not queue new trailing demand", challenged.trailingDemand)
+        assertFalse("no third backend copy after terminal challenge",
+            factory.awaitCopyInvocation(300) != null)
+        assertEquals("total backend copies remain exactly two", 2, factory.copyInvocationCount())
+        assertEquals("terminal challenge publishes no frame", 0, consumer.count())
+        assertTrue("lease still live until explicit test release",
+            runOnMainSync(hosting::status).captureActive)
+        assertEquals("closure challenge cannot change hosting generation",
+            generation, runOnMainSync(hosting::currentGeneration))
+
+        runOnMain(lease!!::release)
+    }
+
+    /** T-B positive: one transient NO_DATA may recover exactly once to a real Window SUCCESS. */
+    @Test
+    fun singleTransientRecoveryCanSucceedWithinOriginalTransaction() {
+        val factory = newR4ControlledFactory().apply {
+            scriptCopyResults(
+                android.view.PixelCopy.ERROR_SOURCE_NO_DATA,
+                R4ControlledFactory.REAL_COPY,
+            )
+        }
+        val normal = prepareR4RecordedProfile(factory)
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val deadline = SystemClock.elapsedRealtime() + 2_000
+        val lease = runOnMainSync { hosting.acquireProfileLease(normal, deadline, consumer) }
+        assertNotNull("recoverable profile lease", lease)
+        waitUntil("recovery SUCCESS publishes current Window pixels", {
+            consumer.qualifyingCountFrom(0) > 0
+        }, 2_000)
+        assertEquals("initial transient + one real recovery", 2, factory.copyInvocationCount())
+        val diagnostics = runOnMainSync(hosting::captureDiagnostics)
+        assertTrue("one recovery recorded: $diagnostics", diagnostics.contains("recoveries=1"))
+        assertTrue("successful recovery retires readiness: $diagnostics",
+            diagnostics.contains("readinessPending=false"))
+        assertTrue("successful recovery does not terminally fail capture: $diagnostics",
+            !diagnostics.contains("terminal=true"))
+        runOnMain(lease!!::release)
+    }
+
+    /**
+     * FW4-E1: the real API31 Window PixelCopy returns SOURCE_NO_DATA for a re-shown source whose
+     * replacement Window has not queued a buffer. Dismissal clears captureDrawListener; re-show
+     * does not reinstall it. beginRecoveryCycle spends ONE allowance, but onFrameCommitted then
+     * rejects its missing qualifyingDraw BEFORE a second backend invocation. C22c's one real
+     * NO_DATA plus terminal readiness is therefore the required fail-closed result, not a second
+     * NO_DATA and not a successful recovery. Require 1 request, 1 attempted recovery, 0 publication,
+     * the original deadline, and closure under further live-binding demand. The independent
+     * singleTransientRecoveryCanSucceedWithinOriginalTransaction positive stays unchanged.
+     * Never reinstall the listener, synthesize callbacks, or accept deadline-only abandonment.
+     */
+    @Test
+    fun fw4RealNoDataFromReplacedWindowSurfaceRecoversOnceWithinOriginalDeadline() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val host = currentPrivateHostForR4()
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val copyGate = factory.armNextCopy(1_800)
+        val held = factory.holdNextCopyCompletion()
+        val requestStart = SystemClock.elapsedRealtime()
+        val deadline = requestStart + 2_000
+        val lease = runOnMainSync {
+            hosting.acquireProfileLease(normal, deadline, consumer)
+        }
+        assertNotNull("FW4 NO_DATA profile lease", lease)
+        assertTrue("FW4 NO_DATA reached readback worker before platform request",
+            copyGate.awaitEntered(800))
+
+        val preDrawReached = CountDownLatch(1)
+        val presentation = factory.controlledPresentation()
+        var blocker: android.view.ViewTreeObserver.OnPreDrawListener? = null
+        runOnMain {
+            presentation.dismissWithoutUnavailableForTest()
+            presentation.showWithoutUnavailableForTest()
+            blocker = android.view.ViewTreeObserver.OnPreDrawListener {
+                preDrawReached.countDown()
+                false
+            }
+            presentation.container().viewTreeObserver
+                .addOnPreDrawListener(checkNotNull(blocker))
+            presentation.focusAttachedView(session.view())
+            presentation.container().requestLayout()
+            presentation.container().invalidate()
+        }
+        registerExecutionHold {
+            runOnMain {
+                val currentBlocker = blocker
+                if (currentBlocker != null &&
+                    presentation.container().viewTreeObserver.isAlive) {
+                    presentation.container().viewTreeObserver
+                        .removeOnPreDrawListener(currentBlocker)
+                    blocker = null
+                }
+                presentation.showWithoutUnavailableForTest()
+                presentation.focusAttachedView(session.view())
+                presentation.container().requestLayout()
+                presentation.container().invalidate()
+            }
+        }
+        assertTrue("FW4 NO_DATA replacement Window reaches pre-draw with no queued buffer",
+            preDrawReached.await(800, TimeUnit.MILLISECONDS))
+
+        copyGate.release()
+        assertFalse("FW4 NO_DATA readback gate released deliberately", copyGate.timedOut)
+        val call = checkNotNull(factory.awaitPlatformCall(500)) {
+            "FW4 NO_DATA real Window PixelCopy call missing"
+        }
+        assertTrue("FW4 NO_DATA uses dedicated readback thread: " + call.requestThread,
+            call.requestThread.contains("EyeBrowseWindowReadback"))
+        assertTrue("FW4 NO_DATA real platform request returns",
+            call.returned.await(700, TimeUnit.MILLISECONDS))
+        assertTrue("FW4 NO_DATA actual callback captured",
+            held.awaitCaptured(700))
+        assertEquals("FW4 actual public PixelCopy result",
+            android.view.PixelCopy.ERROR_SOURCE_NO_DATA, held.result)
+        val noDataReceipt = factory.platformResults().single()
+        assertEquals(android.view.PixelCopy.ERROR_SOURCE_NO_DATA, noDataReceipt.result)
+        assertEquals("FW4 NO_DATA platform callback is Main", "main",
+            noDataReceipt.callbackThread)
+        assertEquals("FW4 NO_DATA publishes nothing before recovery", 0, consumer.count())
+
+        // Observe dispatchDraw's serial directly: dismissal cleared the listener used by
+        // observeNextDraw(), not the serial counter. Only real drawing may advance this receipt.
+        val originalAuthority = captureAuthorityForR4(host)
+        val beforeBuffer = runOnMainSync(hosting::captureDiagnostics)
+        val callbacksBefore = diagnosticLong(beforeBuffer, "callbacks")
+        val acquiredBefore = diagnosticLong(beforeBuffer, "acquired")
+        val drawBefore = runOnMainSync { presentation.drawObservation().serial }
+        runOnMain {
+            val currentBlocker = blocker
+            if (currentBlocker != null &&
+                presentation.container().viewTreeObserver.isAlive) {
+                presentation.container().viewTreeObserver
+                    .removeOnPreDrawListener(currentBlocker)
+                blocker = null
+            }
+            presentation.focusAttachedView(session.view())
+            presentation.container().requestLayout()
+            presentation.container().invalidate()
+            session.requestFreshCaptureFrame()
+        }
+        assertTrue("FW4 NO_DATA source-preparation remains inside original deadline",
+            SystemClock.elapsedRealtime() < deadline)
+
+        held.release()
+        // One original deadline covers recovery fencing as well as actual API calls. Losing the
+        // qualifying draw is a terminal fence failure, not permission to issue an unqualified copy.
+        while (SystemClock.elapsedRealtime() < deadline &&
+            factory.copyInvocationCount() == 1 && !captureAuthorityForR4(host).terminal) {
+            SystemClock.sleep(10)
+        }
+        val results = factory.platformResults()
+        val outcomeDiagnostics = runOnMainSync(hosting::captureDiagnostics)
+        val drawAfter = runOnMainSync { presentation.drawObservation().serial }
+        val finalAuthority = captureAuthorityForR4(host)
+        Log.i("EyeBrowseFW4", "NO_DATA_OUTCOME results=${results.map { it.result }} " +
+            "drawBefore=$drawBefore drawAfter=$drawAfter callbacksBefore=$callbacksBefore " +
+            "acquiredBefore=$acquiredBefore expected=RECOVERY_FENCE_REJECTED_BEFORE_COPY " +
+            "diagnostics={$outcomeDiagnostics}")
+        assertEquals("FW4 exactly one REAL NO_DATA; no fabricated recovery result", 1, results.size)
+        assertEquals(android.view.PixelCopy.ERROR_SOURCE_NO_DATA, results.single().result)
+        assertTrue("FW4 actual NO_DATA callback satisfies ORIGINAL t0+2s deadline",
+            results.single().callbackElapsedMs in requestStart..deadline)
+        assertTrue("FW4 real post-unblock draw occurred, but cannot recreate the cleared listener",
+            drawAfter > drawBefore)
+        assertTrue("FW4 recovery fence terminates inside ORIGINAL deadline",
+            SystemClock.elapsedRealtime() <= deadline)
+        assertTrue("FW4 missing recovery draw is terminal", finalAuthority.terminal)
+        assertTrue("FW4 no successful readiness was manufactured", finalAuthority.readinessPending)
+        assertFalse("FW4 no backend copy remains in flight", finalAuthority.copyInFlight)
+        assertEquals("FW4 failed recovery transaction is closed", 0L, finalAuthority.transactionId)
+        assertEquals("FW4 failed recovery cycle is closed", 0L,
+            diagnosticLong(outcomeDiagnostics, "activeCycle"))
+        assertFalse("FW4 failed transaction discards trailing demand", finalAuthority.trailingDemand)
+        assertEquals("FW4 recovery keeps binding", originalAuthority.bindingIdentity,
+            finalAuthority.bindingIdentity)
+        assertEquals("FW4 recovery keeps authority", originalAuthority.authoritySerial,
+            finalAuthority.authoritySerial)
+        assertEquals("FW4 recovery keeps ORIGINAL deadline", deadline, finalAuthority.bindingDeadline)
+        assertEquals("FW4 exactly one attempted recovery cycle", 1L,
+            diagnosticLong(outcomeDiagnostics, "recoveries"))
+        assertEquals("FW4 recovery fence prevents second backend invocation", 1,
+            factory.copyInvocationCount())
+        assertEquals("FW4 NO_DATA backend requests serialized", 1, factory.maxConcurrentCopyCalls())
+        assertEquals("FW4 fence failure publishes nothing", 0, consumer.count())
+        assertTrue("FW4 initial destination retired", checkNotNull(held.destinationBitmap()).isRecycled)
+
+        // Challenge closure BEFORE releasing the SAME live lease. 200ms rate interval + 75ms
+        // observation margin is a no-retry soak, not additional profile-readiness time.
+        assertTrue("FW4 closure challenge retains live lease", runOnMainSync(hosting::status).captureActive)
+        invokeProductionCaptureDemandForR4(host)
+        SystemClock.sleep(HostingPolicy.MIN_FRAME_INTERVAL_MS + 75)
+        val challenged = captureAuthorityForR4(host)
+        assertTrue("FW4 terminal authority stays closed", challenged.terminal && challenged.readinessPending)
+        assertEquals("FW4 live challenge cannot mint a transaction", 0L, challenged.transactionId)
+        assertFalse("FW4 live challenge cannot start another copy", challenged.copyInFlight)
+        assertEquals("FW4 live challenge leaves the one real request count unchanged", 1,
+            factory.copyInvocationCount())
+        assertEquals("FW4 live challenge publishes nothing", 0, consumer.count())
+        val releaseAt = SystemClock.elapsedRealtime()
+        runOnMain(lease!!::release)
+        waitUntil("FW4 terminal NO_DATA retires all destinations and capture resources", {
+            factory.requestedBitmaps().all { it.isRecycled } &&
+                !runOnMainSync(hosting::captureResourcesPresent)
+        }, STOP_BOUND_MS)
+        assertTrue("FW4 cleanup remains bounded", SystemClock.elapsedRealtime() - releaseAt <= STOP_BOUND_MS)
+        SystemClock.sleep(HostingPolicy.MIN_FRAME_INTERVAL_MS + 75)
+        assertEquals("FW4 no late backend retry after retirement", 1, factory.copyInvocationCount())
+    }
+
+    /**
+     * FW4-E2: real invalid-source state through the API31 public Window PixelCopy path. API31's
+     * legacy Window overload validates the backing Surface synchronously and throws when the
+     * dismissed Window no longer has a valid source. EyeBrowse catches that RuntimeException and
+     * routes it through its production ERROR_UNKNOWN terminal path. FLAG_SECURE is deliberately
+     * NOT used: C21 proved Samsung can return SUCCESS/redacted content rather than SOURCE_INVALID.
+     *
+     * Historical method identity is retained for the C21 dispatch list.
+     */
+    @Test
+    fun fw4RealSecureWindowSourceInvalidIsTerminalWithoutRetry() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val host = currentPrivateHostForR4()
+        val presentation = factory.controlledPresentation()
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val copyGate = factory.armNextCopy(1_500)
+        val requestStart = SystemClock.elapsedRealtime()
+        val deadline = requestStart + 2_000
+        val lease = runOnMainSync {
+            hosting.acquireProfileLease(normal, deadline, consumer)
+        }
+        assertNotNull("FW4 invalid-source profile lease", lease)
+        assertTrue("FW4 invalid-source request reaches factory before platform validation",
+            copyGate.awaitEntered(800))
+        val bitmap = checkNotNull(factory.requestedBitmaps().lastOrNull())
+        assertFalse("FW4 invalid-source destination is request-owned", bitmap.isRecycled)
+
+        registerExecutionHold {
+            runOnMain {
+                presentation.showWithoutUnavailableForTest()
+                presentation.focusAttachedView(session.view())
+                presentation.container().requestLayout()
+                presentation.container().invalidate()
+            }
+        }
+        runOnMain {
+            presentation.dismissWithoutUnavailableForTest()
+        }
+        assertFalse("FW4 invalid-source Window is genuinely unavailable before delegate",
+            presentation.isAvailable())
+        waitUntilMain("FW4 invalid-source decor is actually detached before delegate", {
+            !presentation.container().isAttachedToWindow
+        })
+
+        copyGate.release()
+        assertFalse("FW4 invalid-source gate released deliberately", copyGate.timedOut)
+        val call = checkNotNull(factory.awaitPlatformCall(500)) {
+            "FW4 invalid-source platform delegate was not attempted"
+        }
+        assertTrue("FW4 invalid-source delegate is on dedicated readback worker",
+            call.requestThread.contains("EyeBrowseWindowReadback"))
+        assertTrue("FW4 invalid Window validation returns/throws promptly",
+            call.returned.await(700, TimeUnit.MILLISECONDS))
+
+        waitUntil("FW4 invalid-source terminal production state", {
+            val a = captureAuthorityForR4(host)
+            a.terminal && a.transactionId == 0L && !a.copyInFlight
+        }, 700)
+        val diagnostics = runOnMainSync(hosting::captureDiagnostics)
+        assertEquals("FW4 API31 invalid Window is mapped by production catch to ERROR_UNKNOWN",
+            android.view.PixelCopy.ERROR_UNKNOWN.toLong(),
+            diagnosticLong(diagnostics, "copyResult"))
+        assertTrue("FW4 invalid-source terminal result is inside original deadline",
+            SystemClock.elapsedRealtime() <= deadline)
+        assertTrue("FW4 synchronous source validation has no platform callback receipt",
+            factory.platformResults().isEmpty())
+        assertEquals("FW4 invalid source never publishes", 0, consumer.count())
+        assertEquals("FW4 invalid source is terminal and never retried",
+            1, factory.copyInvocationCount())
+        waitUntil("FW4 invalid-source destination retires through product error path", {
+            bitmap.isRecycled
+        }, 700)
+
+        runOnMain {
+            presentation.showWithoutUnavailableForTest()
+            presentation.focusAttachedView(session.view())
+        }
+        runOnMain(lease!!::release)
+    }
+
+    /**
+     * FW4-E3, Planner HYBRID disposition #5846902192: qualify off-Main readback and actual
+     * timeout/error safety, not a 200ms Main-service SLA. The historical method name is retained.
+     * Arm production's request first, then draw the GPU workload; dispatchDraw/elapsed workload
+     * does not prove an unsignaled fence. Distinguish a real TIMEOUT callback and bounded recovery
+     * from synchronous source validation mapped to terminal ERROR_UNKNOWN. Never relabel either.
+     *
+     * Planner scope ruling #5847119388: for this artificial stress only, requestStart+2000ms is
+     * an observation endpoint, not a native-return verdict. A still-pending request must prove
+     * zero publication/results and bounded retirement; it is NOT a real ERROR_TIMEOUT result.
+     * The existing completed-call branches retain their deadlines. Keep the 5000ms cleanup
+     * contract. The probe's 200ms first observation is diagnostic only; its unserved/late samples
+     * remain receipts, not PASS. C23's ~1101ms Main stall is retained in #5846860753 and routed
+     * to I9-T02, not erased. Production invokes the factory on its dedicated readback worker,
+     * outside nativeLock/controller/dispatch monitors; the unchanged deterministic stall row
+     * separately challenges Main/controller and dispatch-lock service while that worker is held.
+     */
+    @Test
+    fun fw4RealPixelCopyTimeoutRunsOffMainAndRecoversOnceWithinOriginalDeadline() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val copyGate = factory.armNextCopy(1_800)
+        val held = factory.holdNextCopyCompletion()
+        val requestStart = SystemClock.elapsedRealtime()
+        val deadline = requestStart + 2_000
+        val lease = runOnMainSync {
+            hosting.acquireProfileLease(normal, deadline, consumer)
+        }
+        assertNotNull("FW4 TIMEOUT profile lease", lease)
+        assertTrue("FW4 TIMEOUT request reaches pre-platform gate",
+            copyGate.awaitEntered(700))
+
+        val stressDraw = factory.observeNextDraw()
+        val stress = installFw4GpuStress(factory)
+        registerExecutionHold { removeFw4GpuStress(stress) }
+        assertTrue("FW4 TIMEOUT GPU stress participates in real Presentation draw",
+            stressDraw.await(500, TimeUnit.MILLISECONDS))
+        Log.i("EyeBrowseFW4",
+            "GPU_STRESS_ENGAGED row=timeout draw=true at=" + SystemClock.elapsedRealtime())
+
+        copyGate.release()
+        assertFalse("FW4 TIMEOUT pre-platform gate released deliberately", copyGate.timedOut)
+        val call = checkNotNull(factory.awaitPlatformCall(400)) {
+            "FW4 TIMEOUT real platform call never started after staged draw"
+        }
+        assertTrue("FW4 TIMEOUT readback thread identity: " + call.requestThread,
+            call.requestThread.contains("EyeBrowseWindowReadback"))
+
+        val probe = Fw4MainServiceProbe(deadline, { call.returned.count != 0L }) {
+            hosting.status()
+        }
+        var mainServedAt200Ms = false
+        var returnedAtWindowObservation = false
+        try {
+            mainServedAt200Ms = probe.first.await(200, TimeUnit.MILLISECONDS)
+            // Scope ruling #5847119388: non-return is recorded, not an early assertion exit.
+            // Remaining observation = original t0+2000 - now; finally keeps the same bound.
+            returnedAtWindowObservation = call.returned.await(
+                (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0), TimeUnit.MILLISECONDS)
+        } finally {
+            try {
+                call.returned.await((deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0),
+                    TimeUnit.MILLISECONDS)
+            } finally {
+                probe.close()
+            }
+            Log.i("EyeBrowseFW4", "MAIN_WINDOW copyStart=${call.startedElapsedMs} " +
+                "copyReturn=${call.returnedElapsedMs} deadline=$deadline " +
+                "firstServedAt200Ms=$mainServedAt200Ms " +
+                "returnedAtWindowObservation=$returnedAtWindowObservation " +
+                "outstandingAtObservation=${call.returned.count} responsivenessPassClaim=false")
+        }
+        if (call.returned.count != 0L) {
+            // The probe has closed and emitted its samples above. This is pending at the bounded
+            // observation, not an invented timeout callback or permission to abandon native work.
+            Log.i("EyeBrowseFW4", "FW4_PENDING_OBSERVATION realTimeout=false " +
+                "invocation=${call.invocation} bitmap=${call.bitmapIdentity} " +
+                "observed=${SystemClock.elapsedRealtime()} deadline=$deadline " +
+                "copyStart=${call.startedElapsedMs} copyReturn=${call.returnedElapsedMs}")
+            assertFalse("FW4 pending invocation has no fabricated callback", held.awaitCaptured(0))
+            assertTrue("FW4 pending invocation has no fabricated platform result",
+                factory.platformResults().isEmpty())
+            assertEquals("FW4 pending invocation cannot publish", 0, consumer.count())
+            assertEquals("FW4 pending invocation remains the only request", 1, factory.copyInvocationCount())
+            assertEquals("FW4 pending requests remain serialized", 1, factory.maxConcurrentCopyCalls())
+            val pendingBitmap = checkNotNull(held.destinationBitmap())
+            assertFalse("FW4 pending destination remains request-owned", pendingBitmap.isRecycled)
+
+            // Close admission BEFORE forwarding a withheld late completion. Release is the same
+            // production lease path as the completed branches, never a worker join/copy cancel.
+            // All retirement steps share remaining = releaseAt+5000-now; no fresh cleanup budget.
+            val pendingReleaseAt = SystemClock.elapsedRealtime()
+            runOnMain {
+                lease!!.release()
+                assertFalse("FW4 pending cleanup revokes capture", hosting.status().captureActive)
+                assertFalse("FW4 pending cleanup releases wake lock", hosting.isWakeLockHeld())
+            }
+            removeFw4GpuStress(stress)
+            held.release()
+            val cleanupRemaining = pendingReleaseAt + STOP_BOUND_MS - SystemClock.elapsedRealtime()
+            assertTrue("FW4 pending cleanup retains original cleanup budget", cleanupRemaining > 0)
+            waitUntil("FW4 pending call and owned resources actually retire", {
+                call.returned.count == 0L && pendingBitmap.isRecycled &&
+                    factory.requestedBitmaps().all { it.isRecycled } &&
+                    !runOnMainSync(hosting::status).captureActive &&
+                    !runOnMainSync(hosting::isWakeLockHeld) &&
+                    !runOnMainSync(hosting::captureResourcesPresent)
+            }, cleanupRemaining)
+            assertTrue("FW4 pending cleanup retains global Stop bound",
+                SystemClock.elapsedRealtime() - pendingReleaseAt <= STOP_BOUND_MS)
+            SystemClock.sleep(HostingPolicy.MIN_FRAME_INTERVAL_MS + 75)
+            assertEquals("FW4 late completion cannot publish after pending retirement", 0, consumer.count())
+            assertEquals("FW4 pending retirement cannot retry", 1, factory.copyInvocationCount())
+            assertEquals("FW4 pending retirement stays serialized", 1, factory.maxConcurrentCopyCalls())
+            Log.i("EyeBrowseFW4", "FW4_PENDING_RETIRED invocation=${call.invocation} " +
+                "copyReturn=${call.returnedElapsedMs} failure=${call.failureClass} " +
+                "results=${factory.platformResults().map { it.result }} " +
+                "bitmapRecycled=${pendingBitmap.isRecycled} realTimeout=false")
+            return
+        }
+        val expectedRequests: Int
+        if (call.failureClass != null) {
+            Log.i("EyeBrowseFW4", "FW4_ERROR_OUTCOME realTimeout=false invocation=${call.invocation} " +
+                "bitmap=${call.bitmapIdentity} failure=${call.failureClass} " +
+                "missingBackingSurface=${call.missingBackingSurface} " +
+                "start=${call.startedElapsedMs} return=${call.returnedElapsedMs} deadline=$deadline")
+            assertEquals("FW4 observed synchronous Window validation failure",
+                IllegalArgumentException::class.java.name, call.failureClass)
+            assertTrue("FW4 exact failed invocation identifies missing backing surface",
+                call.missingBackingSurface)
+            assertFalse("FW4 synchronous exception is not a PixelCopy callback", held.awaitCaptured(0))
+            assertTrue("FW4 no actual result fabricated for the throwing invocation",
+                factory.platformResults().none { it.invocation == call.invocation })
+            val remaining = deadline - SystemClock.elapsedRealtime()
+            assertTrue("FW4 exception handling retains ORIGINAL readiness budget", remaining > 0)
+            val failedHost = currentPrivateHostForR4()
+            waitUntil("FW4 synchronous failure terminates without retry", {
+                val a = captureAuthorityForR4(failedHost)
+                a.terminal && a.readinessPending && !a.copyInFlight && a.transactionId == 0L
+            }, remaining)
+            val diagnostics = runOnMainSync(hosting::captureDiagnostics)
+            assertTrue("FW4 synchronous failure handled before ORIGINAL deadline",
+                SystemClock.elapsedRealtime() <= deadline)
+            assertEquals("FW4 product maps synchronous failure to ERROR_UNKNOWN",
+                android.view.PixelCopy.ERROR_UNKNOWN.toLong(), diagnosticLong(diagnostics, "copyResult"))
+            assertEquals("FW4 synchronous validation failure gets no recovery", 0L,
+                diagnosticLong(diagnostics, "recoveries"))
+            assertEquals("FW4 synchronous failure makes one request", 1, factory.copyInvocationCount())
+            assertEquals("FW4 synchronous failure cannot publish", 0, consumer.count())
+            assertTrue("FW4 failed request destination retired", checkNotNull(held.destinationBitmap()).isRecycled)
+            // HYBRID explicitly accepts demonstrated error safety. This is NOT real TIMEOUT
+            // coverage: retain the exception receipt and require complete resource retirement.
+            expectedRequests = 1
+            removeFw4GpuStress(stress)
+            held.release()
+        } else {
+            assertTrue("FW4 TIMEOUT actual callback captured for non-throwing invocation=${call.invocation}",
+                held.awaitCaptured(500))
+            assertEquals("FW4 GPU-fence readback produces real ERROR_TIMEOUT",
+                android.view.PixelCopy.ERROR_TIMEOUT, held.result)
+            val firstResult = factory.platformResults().single()
+            assertEquals(android.view.PixelCopy.ERROR_TIMEOUT, firstResult.result)
+            assertEquals("FW4 TIMEOUT platform callback thread", "main",
+                firstResult.callbackThread)
+            val realDuration = call.returnedElapsedMs - call.startedElapsedMs
+            assertTrue("FW4 ERROR_TIMEOUT real platform duration >=250ms: " + realDuration,
+                realDuration >= 250)
+            assertTrue("FW4 TIMEOUT callback still inside original t0+2s deadline",
+                firstResult.callbackElapsedMs <= deadline)
+            assertEquals("FW4 TIMEOUT publishes nothing before recovery", 0, consumer.count())
+
+            // R-08 (#5847426578): callback capture is NOT product receipt. Workload removal
+            // may consume the remainder, and release() posts rather than invokes the listener.
+            // Observe the original listener and real fresh-commit callbacks without holding them.
+            val host = currentPrivateHostForR4()
+            val originalDocument = runOnMainSync(session::documentIdentity)
+            val original = captureAuthorityForR4(host)
+            assertEquals("R08 original binding deadline", deadline, original.bindingDeadline)
+            assertEquals("R08 original transaction deadline", deadline, original.transactionDeadline)
+            assertTrue("R08 original unresolved copy/transaction", original.copyInFlight && original.transactionId > 0)
+            assertFalse("R08 original recovery unused", original.recoveryUsed)
+            assertFalse("R08 original authority nonterminal", original.terminal)
+            val nativeLock = checkNotNull(PrivateDisplayHost::class.java.getDeclaredField("nativeLock").apply {
+                isAccessible = true
+            }.get(host))
+            val transactionField = PrivateDisplayHost::class.java.getDeclaredField("activeCaptureTransaction").apply {
+                isAccessible = true
+            }
+            val transaction = synchronized(nativeLock) { checkNotNull(transactionField.get(host)) }
+            val usedField = transaction.javaClass.getDeclaredField("recoveryUsed").apply { isAccessible = true }
+            // Retain this exact transaction's read-only allowance even after product retirement.
+            fun recoveryWasAllowed(): Boolean = synchronized(nativeLock) { usedField.getBoolean(transaction) }
+            data class Decision(val entered: Long, val exited: Long,
+                val before: R4CaptureAuthority?, val after: R4CaptureAuthority?,
+                val documentBefore: String?, val documentAfter: String?)
+            fun observedAuthority(): R4CaptureAuthority? =
+                runCatching { captureAuthorityForR4(host) }.getOrNull()
+            fun observeDecision(label: String, action: Runnable): Decision {
+                // Diagnostic failure must never suppress the actual original callback.
+                val before = observedAuthority()
+                val documentBefore = session.documentIdentity()
+                val entered = SystemClock.elapsedRealtime()
+                var exited = Long.MIN_VALUE
+                try { action.run() } finally { exited = SystemClock.elapsedRealtime() }
+                val after = observedAuthority()
+                Log.i("EyeBrowseFW4", "R08_DECISION label=$label deadline=$deadline " +
+                    "enter=$entered exit=$exited before=$before after=$after " +
+                    "diagnostics={${host.captureDiagnostics()}}")
+                return Decision(entered, exited, before, after, documentBefore, session.documentIdentity())
+            }
+            val listenerDecision = AtomicReference<Decision>()
+            val listenerDone = CountDownLatch(1)
+            val fenceDecisions = CopyOnWriteArrayList<Decision>()
+            val observing = AtomicBoolean(true)
+            held.observeProductDelivery { action ->
+                try {
+                    if (observing.get()) listenerDecision.set(observeDecision("product-listener", action))
+                    else action.run()
+                } finally { listenerDone.countDown() }
+            }
+            val fenceObserver: (Runnable) -> Unit = { action ->
+                if (observing.get()) fenceDecisions.add(observeDecision("fresh-commit", action))
+                else action.run()
+            }
+            runOnMain {
+                assertNull("R08 does not replace another commit observer", session.captureCommitDispatcherForTest)
+                session.captureCommitDispatcherForTest = fenceObserver
+            }
+            try {
+                val removalStarted = SystemClock.elapsedRealtime()
+                removeFw4GpuStress(stress)
+                val removalFinished = SystemClock.elapsedRealtime()
+                val forwardRequested = SystemClock.elapsedRealtime()
+                held.release()
+                // This is a bounded diagnostic dispatch wait, NOT additional readiness time.
+                // All success/expiry decisions below still use the immutable original deadline.
+                assertTrue("R08 original product listener eventually processed",
+                    listenerDone.await(STOP_BOUND_MS, TimeUnit.MILLISECONDS))
+                val delivery = checkNotNull(listenerDecision.get())
+                var earlyTerminalObserved = Long.MIN_VALUE
+                while (SystemClock.elapsedRealtime() < deadline && consumer.count() == 0) {
+                    val a = captureAuthorityForR4(host)
+                    if (a.terminal && a.transactionId == 0L && !a.copyInFlight) {
+                        earlyTerminalObserved = SystemClock.elapsedRealtime()
+                        break
+                    }
+                    SystemClock.sleep(10)
+                }
+                val observation = runOnMainSync {
+                    val a = captureAuthorityForR4(host)
+                    Triple(a, SystemClock.elapsedRealtime(), host.captureDiagnostics())
+                }
+                val state = observation.first
+                val observedAt = observation.second
+                val diagnostics = observation.third
+                val recoveries = diagnosticLong(diagnostics, "recoveries")
+                val allowed = recoveryWasAllowed()
+                val requests = factory.copyInvocationCount()
+                Log.i("EyeBrowseFW4", "R08_TIMELINE invocation=${call.invocation} bitmap=${call.bitmapIdentity} " +
+                    "deadline=$deadline capture=${held.capturedElapsedMs()} removeStart=$removalStarted " +
+                    "removeEnd=$removalFinished forwardRequested=$forwardRequested listenerEnter=${delivery.entered} " +
+                    "listenerExit=${delivery.exited} observed=$observedAt recoveryAllowed=$allowed " +
+                    "recoveries=$recoveries requests=$requests state=$state diagnostics={$diagnostics}")
+                val atEntry = checkNotNull(delivery.before) { "R08 listener-entry authority unavailable" }
+                assertTrue("R08 original timeout still owns unresolved slot at listener entry",
+                    atEntry.copyInFlight && atEntry.transactionId == original.transactionId &&
+                        atEntry.readinessPending && !atEntry.recoveryUsed && !atEntry.terminal)
+                assertEquals("R08 document current at listener entry", originalDocument, delivery.documentBefore)
+                assertEquals("R08 document current at listener exit", originalDocument, delivery.documentAfter)
+                assertEquals("R08 document current at outcome", originalDocument, runOnMainSync(session::documentIdentity))
+                for (a in listOf(atEntry,
+                    checkNotNull(delivery.after) { "R08 listener-exit authority unavailable" }, state)) {
+                    assertEquals("R08 same binding", original.bindingIdentity, a.bindingIdentity)
+                    assertEquals("R08 same authority", original.authoritySerial, a.authoritySerial)
+                    assertEquals("R08 unchanged original deadline", deadline, a.bindingDeadline)
+                    if (a.transactionId != 0L) {
+                        assertEquals("R08 no replacement transaction", original.transactionId, a.transactionId)
+                        assertEquals("R08 no deadline rebasing", deadline, a.transactionDeadline)
+                    }
+                }
+                assertTrue("R08 callback/remove/forward chronology",
+                    held.capturedElapsedMs() <= removalStarted && removalStarted <= removalFinished &&
+                        removalFinished <= forwardRequested && forwardRequested <= delivery.entered &&
+                        delivery.entered <= delivery.exited && delivery.exited <= observedAt)
+                assertTrue("R08 bounded recovery attempts", recoveries in 0L..1L && requests in 1..2)
+                assertTrue("R08 first destination retired by original listener", checkNotNull(held.destinationBitmap()).isRecycled)
+
+                if (consumer.count() > 0) {
+                    val first = consumer.earliestQualifyingIndexFrom(0)
+                    assertTrue("R08 successful recovery is qualified and inside original deadline",
+                        first >= 0 && consumer.deliveryElapsedAt(first) <= deadline &&
+                            consumer.latestDeliveryElapsed() <= deadline)
+                    assertEquals("R08 exactly one recovery for SUCCESS", 1L, recoveries)
+                    assertEquals("R08 exact TIMEOUT/SUCCESS results",
+                        listOf(android.view.PixelCopy.ERROR_TIMEOUT, android.view.PixelCopy.SUCCESS),
+                        factory.platformResults().map { it.result })
+                    expectedRequests = 2
+                    Log.i("EyeBrowseFW4", "R08_OUTCOME IN_BUDGET_SUCCESS deadline=$deadline " +
+                        "delivery=${consumer.latestDeliveryElapsed()} realTimeout=true")
+                } else {
+                    assertTrue("R08 exhausted opportunity requires original deadline reached", observedAt >= deadline)
+                    assertTrue("R08 an early terminal failure is not deadline exhaustion",
+                        earlyTerminalObserved == Long.MIN_VALUE || earlyTerminalObserved >= deadline)
+                    assertTrue("R08 unsuccessful readiness remains pending", state.readinessPending)
+                    val pendingOriginal = state.transactionId == original.transactionId && state.recoveryUsed
+                    val lastResult = factory.platformResults().drop(1).singleOrNull()
+                    // Match source decisions, not just 'no frame'. Before-deadline unexpected
+                    // terminal/error paths are NOT promoted to an expired-opportunity PASS.
+                    val route = when {
+                        !allowed && delivery.exited >= deadline && recoveries == 0L && requests == 1 &&
+                            state.transactionId == 0L && !state.copyInFlight -> "EXPIRED_AT_LISTENER"
+                        allowed && recoveries == 0L && requests == 1 &&
+                            (pendingOriginal || (state.terminal && state.transactionId == 0L)) -> "EXPIRED_BEFORE_RECOVERY_START"
+                        allowed && recoveries == 1L && pendingOriginal -> "EXPIRED_WITH_RECOVERY_PENDING"
+                        allowed && recoveries == 1L && state.terminal && state.transactionId == 0L &&
+                            fenceDecisions.any { it.entered >= deadline &&
+                                it.before?.transactionId == original.transactionId && it.after?.transactionId == 0L } -> "EXPIRED_AT_FRESH_COMMIT"
+                        allowed && recoveries == 1L && state.transactionId == 0L && lastResult != null &&
+                            lastResult.callbackElapsedMs >= deadline && lastResult.result in listOf(
+                                android.view.PixelCopy.SUCCESS, android.view.PixelCopy.ERROR_TIMEOUT,
+                                android.view.PixelCopy.ERROR_SOURCE_NO_DATA) -> "EXPIRED_AT_RECOVERY_RESULT"
+                        else -> throw AssertionError("R08 missing source-correlated expiry route: $state / $diagnostics")
+                    }
+                    Log.i("EyeBrowseFW4", "R08_OUTCOME SAFE_RETIREMENT_REQUIRED route=$route " +
+                        "deadline=$deadline observed=$observedAt realTimeout=true")
+                    val retireAt = SystemClock.elapsedRealtime()
+                    runOnMain {
+                        observing.set(false)
+                        if (session.captureCommitDispatcherForTest === fenceObserver) session.captureCommitDispatcherForTest = null
+                        lease!!.release()
+                        assertFalse("R08 expired authority revoked", hosting.status().captureActive)
+                        assertFalse("R08 expired wake lock released", hosting.isWakeLockHeld())
+                    }
+                    val remainingCleanup = retireAt + STOP_BOUND_MS - SystemClock.elapsedRealtime()
+                    assertTrue("R08 original cleanup budget remains", remainingCleanup > 0)
+                    waitUntil("R08 expired opportunity actually retires native ownership", {
+                        factory.requestedBitmaps().all { it.isRecycled } &&
+                            !runOnMainSync(hosting::captureResourcesPresent)
+                    }, remainingCleanup)
+                    assertTrue("R08 cleanup reaches safe state inside original cleanup bound",
+                        SystemClock.elapsedRealtime() - retireAt <= STOP_BOUND_MS)
+                    SystemClock.sleep(HostingPolicy.MIN_FRAME_INTERVAL_MS + 75)
+                    assertEquals("R08 no late publication before or after expiry retirement", 0, consumer.count())
+                    assertTrue("R08 no retry flood after retirement",
+                        factory.copyInvocationCount() in 1..(if (allowed) 2 else 1))
+                    assertEquals("R08 native calls serialized", 1, factory.maxConcurrentCopyCalls())
+                    assertTrue("R08 all destinations retired", factory.requestedBitmaps().all { it.isRecycled })
+                    Log.i("EyeBrowseFW4", "R08_RETIRED route=$route deadline=$deadline start=$retireAt " +
+                        "end=${SystemClock.elapsedRealtime()} requests=${factory.copyInvocationCount()} " +
+                        "results=${factory.platformResults()} diagnostics={${runOnMainSync(hosting::captureDiagnostics)}}")
+                    return
+                }
+            } finally {
+                observing.set(false)
+                runOnMain {
+                    if (session.captureCommitDispatcherForTest === fenceObserver) session.captureCommitDispatcherForTest = null
+                }
+            }
+        }
+
+        // Installing/removing stress may create coalesced demand. Revoke before the next cycle;
+        // the same global cleanup contract applies to real TIMEOUT and synchronous terminal error.
+        val deliveredBeforeRelease = consumer.count()
+        val releaseAt = SystemClock.elapsedRealtime()
+        runOnMain(lease!!::release)
+        waitUntil("FW4 timeout/error bitmap and capture resources retire", {
+            factory.requestedBitmaps().all { it.isRecycled } &&
+                !runOnMainSync(hosting::status).captureActive &&
+                !runOnMainSync(hosting::isWakeLockHeld) &&
+                !runOnMainSync(hosting::captureResourcesPresent)
+        }, STOP_BOUND_MS)
+        assertTrue("FW4 timeout/error cleanup retains global Stop bound",
+            SystemClock.elapsedRealtime() - releaseAt <= STOP_BOUND_MS)
+        SystemClock.sleep(HostingPolicy.MIN_FRAME_INTERVAL_MS + 75)
+        assertEquals("FW4 timeout/error exact request accounting; no retry flood",
+            expectedRequests, factory.copyInvocationCount())
+        assertEquals("FW4 no post-retirement publication", deliveredBeforeRelease, consumer.count())
+        assertEquals("FW4 timeout/error requests remain serialized", 1, factory.maxConcurrentCopyCalls())
+    }
+
+    /**
+     * FW4-E4, Planner HYBRID disposition #5846902192: Stop revokes capture authority without an
+     * application-level latch/join/wait on readback; native Window teardown may contend. Keep
+     * the real >=250ms in-flight stimulus, request/entry/exit/copy receipts and 5000ms global
+     * Stop/cleanup contract. The historical method name is not a native non-contention claim.
+     * The five verified deterministic rows separately exercise application-level cancellation,
+     * lock service and bitmap ownership while the readback worker is explicitly held.
+     */
+    @Test
+    fun fw4StopDuringActualSlowPixelCopyRevokesWithoutWaitingForNativeReadback() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val copyGate = factory.armNextCopy(2_000)
+        val lease = runOnMainSync { hosting.acquireLease(consumer) }
+        assertNotNull("FW4 actual-copy Stop lease", lease)
+        assertTrue("FW4 slow-copy request reaches pre-platform gate",
+            copyGate.awaitEntered(700))
+
+        val stressDraw = factory.observeNextDraw()
+        val stress = installFw4GpuStress(factory)
+        registerExecutionHold { removeFw4GpuStress(stress) }
+        assertTrue("FW4 cancellation stress participates in real Presentation draw",
+            stressDraw.await(500, TimeUnit.MILLISECONDS))
+        Log.i("EyeBrowseFW4",
+            "GPU_STRESS_ENGAGED row=stop draw=true at=" + SystemClock.elapsedRealtime())
+
+        copyGate.release()
+        assertFalse("FW4 slow-copy pre-platform gate released deliberately", copyGate.timedOut)
+        val call = checkNotNull(factory.awaitPlatformCall(400)) {
+            "FW4 actual slow PixelCopy never entered PlatformFactory"
+        }
+        assertTrue("FW4 actual-copy invocation uses dedicated readback worker",
+            call.requestThread.contains("EyeBrowseWindowReadback"))
+
+        // Establish real duration, not a callback-delay simulation. If the platform returns before
+        // 250ms this setup is NOT a slow-readback row and must fail before Stop.
+        val slowEvidenceDeadline = call.startedElapsedMs + 250
+        while (SystemClock.elapsedRealtime() < slowEvidenceDeadline &&
+            !call.returned.await(10, TimeUnit.MILLISECONDS)) {
+            // bounded observation only
+        }
+        assertFalse("FW4 slow-copy must remain outstanding for >=250ms before Stop",
+            call.returned.await(0, TimeUnit.MILLISECONDS))
+        assertTrue(SystemClock.elapsedRealtime() >= slowEvidenceDeadline)
+
+        val bitmap = checkNotNull(factory.requestedBitmaps().lastOrNull())
+        assertFalse("FW4 actual-copy destination is live before Stop", bitmap.isRecycled)
+
+        val stopAt = SystemClock.elapsedRealtime()
+        var nativeCopyOutstandingOnMainEntry = false
+        var copyReturnAtMainEntry = Long.MIN_VALUE
+        val receipt = Fw4StopReceipt(stopAt) {
+            "copyStart=${call.startedElapsedMs} copyReturn=${call.returnedElapsedMs} " +
+                "outstanding=${call.returned.count} bitmapRecycled=${bitmap.isRecycled}"
+        }
+        val stopReturned = try {
+            runOnMain {
+                receipt.enterMain()
+                nativeCopyOutstandingOnMainEntry = call.returned.count != 0L
+                copyReturnAtMainEntry = call.returnedElapsedMs
+                try { hosting.stop() } finally { receipt.exitMain() }
+                assertFalse("FW4 capture authority is revoked in the Stop turn",
+                    hosting.status().captureActive)
+                assertFalse("FW4 Stop turn releases the wake lock", hosting.isWakeLockHeld())
+            }
+            SystemClock.elapsedRealtime() // Observed wrapper duration, not a 750ms acceptance SLA.
+        } finally {
+            receipt.close() // Observer join/logging is outside the measured wrapper duration.
+        }
+        // Planner #5846902192 removes the estimated 750ms wrapper SLA, NOT this observation.
+        // C22c: 746ms queued + 3528ms inside Main; copy returned 7ms before Main entry.
+        // C23: 978ms queued + 3308ms inside Main. These ~4.3s observations remain in I9-T02.
+        // Neither subtract native/queue time nor infer Java waiting from native contention.
+        Log.i("EyeBrowseFW4", "STOP_INTERVALS queueMs=${receipt.mainEntryElapsedMs() - stopAt} " +
+            "bodyMs=${receipt.mainExitElapsedMs() - receipt.mainEntryElapsedMs()} " +
+            "wrapperMs=${stopReturned - stopAt} " +
+            "nativeOutstandingAtMainEntry=$nativeCopyOutstandingOnMainEntry " +
+            "copyReturnAtMainEntry=$copyReturnAtMainEntry " +
+            "platformFailure=${call.failureClass}")
+        assertEquals(HostingController.State.NOT_HOSTING, runOnMainSync(hosting::status).state)
+        assertFalse("FW4 actual-copy Stop revokes capture",
+            runOnMainSync(hosting::status).captureActive)
+        assertFalse("FW4 actual-copy Stop releases wake lock",
+            runOnMainSync(hosting::isWakeLockHeld))
+        // An unfinished request still owns its destination even after authority is revoked.
+        if (call.returned.count != 0L) {
+            assertFalse("FW4 Stop cannot recycle a still-outstanding request bitmap", bitmap.isRecycled)
+        }
+        assertEquals("FW4 outstanding native copy cannot publish during Stop",
+            0, consumer.count())
+
+        removeFw4GpuStress(stress)
+        assertTrue("FW4 outstanding native call eventually returns",
+            call.returned.await(1_500, TimeUnit.MILLISECONDS))
+        val realDuration = call.returnedElapsedMs - call.startedElapsedMs
+        assertTrue("FW4 cancelled platform readback duration >=250ms: " + realDuration,
+            realDuration >= 250)
+        waitUntil("FW4 actual-copy late destination retires", {
+            bitmap.isRecycled
+        }, 1_500)
+        waitUntil("FW4 actual-copy Stop resources quiesce", {
+            !runOnMainSync(hosting::captureResourcesPresent)
+        }, 1_500)
+        assertEquals("FW4 actual slow copy remains fenced after retirement", 0, consumer.count())
+        assertEquals("FW4 Stop cannot trigger a retry after authority revocation",
+            1, factory.copyInvocationCount())
+        assertTrue("FW4 actual-copy complete cleanup stays inside global Stop bound",
+            SystemClock.elapsedRealtime() - stopAt <= STOP_BOUND_MS)
+    }
+
+    /**
+     * FW4-T1: the synchronous public PixelCopy invocation may block the readback worker, but it
+     * must not block Main/controller work or the independent ImageReader drainer. Multiple real
+     * draw demands while the one copy slot is occupied coalesce into one trailing cycle. The two
+     * delivered capture stamps must remain >=200ms apart (<=5fps), with no concurrent copy calls.
+     */
+    @Test
+    fun fw4ReadbackStallDoesNotBlockMainOrDrainerAndBurstStaysAtFiveFps() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val host = currentPrivateHostForR4()
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        // Observation budget before manual release is <=1300ms:
+        // Main ping 200 + dispatch-monitor ping 200 + probe join 100 + real draw 400 +
+        // sink drain 400. The immutable readiness budget is 2000ms, so even the worst
+        // test-side sequence leaves ~700ms for the real PixelCopy completion + first
+        // publication. Gate 1750ms is only a deadlock guard.
+        val copyGate = factory.armNextCopy(1_750)
+        val requestStart = SystemClock.elapsedRealtime()
+        val deadline = requestStart + 2_000
+        val lease = runOnMainSync {
+            hosting.acquireProfileLease(normal, deadline, consumer)
+        }
+        assertNotNull("FW4 stalled-readback profile lease", lease)
+        assertTrue("FW4 readback worker entered deterministic stall",
+            copyGate.awaitEntered(800))
+        assertTrue(
+            "FW4 factory entry itself is the dedicated readback thread: " +
+                factory.copyEntryThreads(),
+            factory.copyEntryThreads().last().contains("EyeBrowseWindowReadback"),
+        )
+
+        val captureHandler = handlerFieldForR4(host, "captureHandler")
+        assertTrue(
+            "FW4 sink drainer owns a separate capture thread: " +
+                captureHandler.looper.thread.name,
+            captureHandler.looper.thread.name.contains("EyeBrowseHostingCapture"),
+        )
+        assertTrue(
+            "FW4 capture/drainer thread differs from readback worker",
+            captureHandler.looper.thread.name != factory.copyEntryThreads().last(),
+        )
+        val before = runOnMainSync(hosting::captureDiagnostics)
+        val callbacksBefore = diagnosticLong(before, "callbacks")
+        val acquiredBefore = diagnosticLong(before, "acquired")
+        val drawBefore = runOnMainSync { host.drawObservationForTest().serial }
+
+        val mainPing = CountDownLatch(1)
+        Handler(Looper.getMainLooper()).post {
+            hosting.status()
+            hosting.currentGeneration()
+            mainPing.countDown()
+        }
+        assertTrue(
+            "FW4 Main/controller lock remains runnable while readback worker is blocked",
+            mainPing.await(200, TimeUnit.MILLISECONDS),
+        )
+
+        // P7/control-dispatch monitor evidence: resolve the singleton before this probe so the
+        // measurement is only authority-lock access. A separate thread snapshots the same monitor
+        // used by authenticated control admission while synchronous readback remains blocked.
+        val link = com.code2hack.eyebrowse.phone.link.PhoneLinkServer.obtain(
+            InstrumentationRegistry.getInstrumentation().targetContext,
+        )
+        val dispatchPing = CountDownLatch(1)
+        val dispatchProbe = Thread({
+            link.controlCoordinator.authority.snapshot()
+            dispatchPing.countDown()
+        }, "fw4-dispatch-lock-probe").apply {
+            isDaemon = true
+            start()
+        }
+        assertTrue(
+            "FW4 dispatch-authority monitor remains runnable during synchronous readback",
+            dispatchPing.await(200, TimeUnit.MILLISECONDS),
+        )
+        dispatchProbe.join(100)
+        assertFalse("FW4 dispatch-lock probe terminates", dispatchProbe.isAlive)
+
+        val observedDraw = factory.observeNextDraw()
+        runOnMain {
+            repeat(6) {
+                session.requestFreshCaptureFrame()
+            }
+        }
+        assertTrue("FW4 real Presentation draw occurs during readback stall",
+            observedDraw.await(400, TimeUnit.MILLISECONDS))
+        waitUntil("FW4 sink drainer advances while readback worker remains blocked", {
+            val d = runOnMainSync(hosting::captureDiagnostics)
+            diagnosticLong(d, "callbacks") > callbacksBefore &&
+                diagnosticLong(d, "acquired") > acquiredBefore
+        }, 400)
+        assertTrue("FW4 hardware draw serial advanced",
+            runOnMainSync { host.drawObservationForTest().serial } > drawBefore)
+        val stalledAuthority = captureAuthorityForR4(host)
+        assertTrue("FW4 burst demand coalesced while one copy owns the slot",
+            stalledAuthority.trailingDemand)
+        assertEquals("FW4 burst cannot start a concurrent backend copy",
+            1, factory.copyInvocationCount())
+
+        copyGate.release()
+        assertFalse("FW4 readback stall released deliberately", copyGate.timedOut)
+        waitUntil("FW4 initial + one trailing qualified frame delivered", {
+            consumer.qualifyingCountFrom(0) >= 2
+        }, 1_500)
+        assertTrue("FW4 first readiness delivery remains inside original t0+2s",
+            consumer.deliveryElapsedAt(consumer.earliestQualifyingIndexFrom(0)) <= deadline)
+        assertEquals("FW4 six burst demands coalesce to exactly one trailing copy",
+            2, factory.copyInvocationCount())
+        assertEquals("FW4 Window-copy invocations never overlap",
+            1, factory.maxConcurrentCopyCalls())
+        assertTrue(
+            "FW4 capture timestamps respect 200ms minimum interval (<=5fps): " +
+                consumer.minCaptureGapFrom(0),
+            consumer.minCaptureGapFrom(0) >= HostingPolicy.MIN_FRAME_INTERVAL_MS,
+        )
+        assertTrue("FW4 all platform copy invocations stay off Main",
+            factory.copyEntryThreads().all { it.contains("EyeBrowseWindowReadback") })
+        assertTrue("FW4 real platform results are successful",
+            factory.platformResults().take(2).all { it.result == android.view.PixelCopy.SUCCESS })
+        runOnMain(lease!!::release)
+    }
+
+    /**
+     * FW4-T2: Stop while the readback worker owns an in-flight request. Stop must close authority
+     * and wake-lock state without joining that worker. The request bitmap remains owned/unrecycled
+     * until the actual late platform call/callback retires it; the readback handler is retired and
+     * a later fresh owner must allocate a different bitmap.
+     */
+    @Test
+    fun fw4StopDuringBlockedReadbackRevokesWithoutDeadlockAndNeverReusesBitmap() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val host = currentPrivateHostForR4()
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val copyGate = factory.armNextCopy(3_000)
+        val lease = runOnMainSync { hosting.acquireLease(consumer) }
+        assertNotNull("FW4 Stop-cancel lease", lease)
+        assertTrue("FW4 Stop-cancel readback request entered",
+            copyGate.awaitEntered(1_000))
+        val oldBitmap = checkNotNull(factory.requestedBitmaps().lastOrNull())
+        assertFalse("FW4 request bitmap owned while native copy is unresolved",
+            oldBitmap.isRecycled)
+        val readbackThread = checkNotNull(threadFieldForR4(host, "retainedReadbackThread"))
+        assertTrue("FW4 readback thread is live before Stop", readbackThread.isAlive)
+
+        val stopStarted = SystemClock.elapsedRealtime()
+        runOnMain(hosting::stop)
+        val stopReturned = SystemClock.elapsedRealtime()
+        assertEquals("FW4 Stop publishes settled state without joining readback",
+            HostingController.State.NOT_HOSTING, runOnMainSync(hosting::status).state)
+        assertFalse("FW4 Stop revokes capture synchronously",
+            runOnMainSync(hosting::status).captureActive)
+        assertFalse("FW4 Stop releases wake lock synchronously",
+            runOnMainSync(hosting::isWakeLockHeld))
+        assertTrue(
+            "FW4 Stop Main return must precede the blocked worker's 3s guard",
+            stopReturned - stopStarted < 750,
+        )
+        assertNull("FW4 Stop retires mutable readback handler immediately",
+            handlerFieldOrNullForR4(host, "readbackHandler"))
+        assertNull("FW4 Stop retires mutable capture handler before late callback",
+            handlerFieldOrNullForR4(host, "captureHandler"))
+        assertFalse(
+            "FW4 Stop cannot recycle request-owned destination before native completion",
+            oldBitmap.isRecycled,
+        )
+        assertEquals("FW4 cancelled old request publishes nothing", 0, consumer.count())
+
+        copyGate.release()
+        assertFalse("FW4 Stop-cancel gate released deliberately", copyGate.timedOut)
+        waitUntil("FW4 late cancelled request bitmap retired", {
+            oldBitmap.isRecycled
+        }, 2_000)
+        waitUntil("FW4 Stop capture resources quiescent", {
+            !runOnMainSync(hosting::captureResourcesPresent)
+        }, 2_000)
+        readbackThread.join(1_000)
+        assertFalse("FW4 retired readback thread exits after outstanding call returns",
+            readbackThread.isAlive)
+        assertEquals("FW4 late cancelled request never publishes", 0, consumer.count())
+        assertTrue(
+            "FW4 Stop cleanup completes inside global Stop bound",
+            SystemClock.elapsedRealtime() - stopStarted <= STOP_BOUND_MS,
+        )
+
+        // Fresh owner after full retirement must allocate a new destination object.
+        val freshProfile = prepareR4RecordedProfile(factory)
+        val freshConsumer = CollectingConsumer()
+        freshConsumer.expectQualification(
+            freshProfile.width, freshProfile.height, CAPTURE_PAGE_COLOR,
+        )
+        val freshGate = factory.armNextCopy(1_000)
+        val freshDeadline = SystemClock.elapsedRealtime() + 2_000
+        val freshLease = runOnMainSync {
+            hosting.acquireProfileLease(freshProfile, freshDeadline, freshConsumer)
+        }
+        assertNotNull("FW4 fresh lease after Stop retirement", freshLease)
+        assertTrue("FW4 fresh copy allocation observed", freshGate.awaitEntered(700))
+        val newBitmap = checkNotNull(factory.requestedBitmaps().lastOrNull())
+        assertTrue("FW4 old destination remains recycled", oldBitmap.isRecycled)
+        assertTrue("FW4 fresh owner uses a distinct bitmap object", newBitmap !== oldBitmap)
+        assertFalse("FW4 fresh destination is live before its own completion", newBitmap.isRecycled)
+        freshGate.release()
+        waitUntil("FW4 fresh owner publishes normally", {
+            freshConsumer.qualifyingCountFrom(0) > 0
+        }, 1_200)
+        runOnMain(freshLease!!::release)
+    }
+
+    /**
+     * FW4-T3: lease authority expires while requestWindowCopy is blocked on the dedicated worker.
+     * FrameGate expiry/Watchdog must revoke delivery + wake lock by the existing +6s endpoint even
+     * though the native request still owns its bitmap. Handler retirement cannot orphan the late
+     * callback; after the worker is released the bitmap retires and resources become quiescent.
+     */
+    @Test
+    fun fw4LeaseExpiryDuringBlockedReadbackRejectsLateCompletionAndRetiresHandler() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val host = currentPrivateHostForR4()
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val copyGate = factory.armNextCopy(7_000)
+        val lease = runOnMainSync { hosting.acquireLease(consumer) }
+        assertNotNull("FW4 expiry lease", lease)
+        assertTrue("FW4 expiry readback request entered",
+            copyGate.awaitEntered(1_000))
+        val bitmap = checkNotNull(factory.requestedBitmaps().lastOrNull())
+        val anchor = runOnMainSync(hosting::lastDemandAnchorElapsedMs)
+        val authorityDeadline = anchor + HostingPolicy.LEASE_TTL_MS
+        val cleanupEndpoint = anchor + 6_000
+
+        var revokedAt = 0L
+        while (SystemClock.elapsedRealtime() <= cleanupEndpoint) {
+            val status = runOnMainSync(hosting::status)
+            if (!status.captureActive && !status.wakeLockHeld) {
+                revokedAt = SystemClock.elapsedRealtime()
+                break
+            }
+            SystemClock.sleep(25)
+        }
+        assertTrue(
+            "FW4 expiry authority/wake cleanup by last demand +6s; " +
+                "anchor=$anchor authDeadline=$authorityDeadline observed=$revokedAt",
+            revokedAt in authorityDeadline..cleanupEndpoint,
+        )
+        assertFalse("FW4 expiry late request has no admitted consumer frame",
+            consumer.count() > 0)
+        assertNull("FW4 expiry retires readback handler while worker is still outstanding",
+            handlerFieldOrNullForR4(host, "readbackHandler"))
+        assertNull("FW4 expiry retires capture handler before late callback",
+            handlerFieldOrNullForR4(host, "captureHandler"))
+        assertFalse("FW4 request-owned bitmap survives until actual late completion",
+            bitmap.isRecycled)
+
+        copyGate.release()
+        assertFalse("FW4 expiry gate released deliberately", copyGate.timedOut)
+        waitUntil("FW4 expiry late bitmap retired through product callback", {
+            bitmap.isRecycled
+        }, 2_000)
+        waitUntil("FW4 expiry capture resources quiescent after worker release", {
+            !runOnMainSync(hosting::captureResourcesPresent)
+        }, 2_000)
+        assertEquals("FW4 expired lease admits no late completion", 0, consumer.count())
+        assertTrue("FW4 no retry flood after expired authority",
+            factory.copyInvocationCount() == 1)
+    }
+
+    /**
+     * FW4-T4: hold callback DELIVERY of a real SUCCESS, then replace the browser document while
+     * that old request still owns its bitmap. Releasing the late callback must retire only the old
+     * bitmap/context. After old lease/resource retirement, a fresh lease on the replacement
+     * document must capture/publish its own Window without old-context reheadering.
+     */
+    @Test
+    fun fw4DocumentReplacementRejectsHeldOldSuccessAndFreshDocumentRecovers() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val oldDocument = runOnMainSync(session::documentIdentity)
+        val oldConsumer = CollectingConsumer()
+        oldConsumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val held = factory.holdNextCopyCompletion()
+        val deadline = SystemClock.elapsedRealtime() + 2_000
+        val oldLease = runOnMainSync {
+            hosting.acquireProfileLease(normal, deadline, oldConsumer)
+        }
+        assertNotNull("FW4 document-replacement old lease", oldLease)
+        assertTrue("FW4 old Window SUCCESS captured before product delivery",
+            held.awaitCaptured(1_500))
+        assertEquals(android.view.PixelCopy.SUCCESS, held.result)
+        val oldBitmap = checkNotNull(held.destinationBitmap())
+        assertFalse("FW4 held old SUCCESS bitmap remains request-owned", oldBitmap.isRecycled)
+        assertEquals("FW4 held old SUCCESS not yet published", 0, oldConsumer.count())
+
+        runOnMain {
+            session.openAddress(FIXTURE_BASE + "/hosting-two.html")
+        }
+        waitUntil("FW4 replacement document committed", {
+            runOnMainSync(session::documentIdentity) != oldDocument &&
+                "Second hosting page" == domText("page-title")
+        }, 5_000)
+        val newDocument = runOnMainSync(session::documentIdentity)
+        assertNotEquals("FW4 source document genuinely replaced", oldDocument, newDocument)
+
+        held.release()
+        waitUntil("FW4 old held bitmap retired after document replacement", {
+            oldBitmap.isRecycled
+        }, 1_000)
+        assertEquals("FW4 late old SUCCESS cannot publish after source replacement",
+            0, oldConsumer.count())
+        waitUntilMain("FW4 replacement document retains private local focus", {
+            hosting.localEditorFocusReady()
+        })
+
+        runOnMain(oldLease!!::release)
+        waitUntilMain("FW4 old binding resources retire before successor lease", {
+            !hosting.captureResourcesPresent()
+        })
+
+        val freshConsumer = CollectingConsumer()
+        freshConsumer.expectQualification(normal.width, normal.height, SECOND_PAGE_COLOR)
+        val freshLease = runOnMainSync { hosting.acquireLease(freshConsumer) }
+        assertNotNull("FW4 fresh replacement-document lease", freshLease)
+        waitUntil("FW4 replacement document publishes fresh qualified pixels", {
+            freshConsumer.qualifyingCountFrom(0) > 0
+        }, 2_000)
+        assertEquals("FW4 replacement document identity remains current",
+            newDocument, runOnMainSync(session::documentIdentity))
+        assertTrue("FW4 fresh replacement pixels are second-page content",
+            freshConsumer.latestFrameNearColor(SECOND_PAGE_COLOR))
+        assertEquals("FW4 old consumer remains permanently fenced", 0, oldConsumer.count())
+        runOnMain(freshLease!!::release)
+    }
+
+    /**
+     * T-C / R-03: delay delivery of the REAL frame-commit callback while allowing another actual
+     * draw in the same epoch. The later draw may become PixelCopy's newest same-context pixels,
+     * but it must not advance the recorded commit association or HostingFrame freshness anchor.
+     */
+    @Test
+    fun delayedSameEpochCommitKeepsFirstQualifyingDrawAnchor() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val host = currentPrivateHostForR4()
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val delayedCommit = AtomicReference<Runnable>()
+        val commitCaptured = CountDownLatch(1)
+        runOnMain {
+            session.captureCommitDispatcherForTest = { callback ->
+                if (delayedCommit.compareAndSet(null, callback)) {
+                    commitCaptured.countDown()
+                } else {
+                    callback.run()
+                }
+            }
+        }
+        val started = SystemClock.elapsedRealtime()
+        val deadline = started + 2_000
+        val lease = runOnMainSync { hosting.acquireProfileLease(normal, deadline, consumer) }
+        assertNotNull("delayed-commit profile lease", lease)
+        var leaseRetired = false
+        try {
+            assertTrue("real frame-commit callback captured",
+                commitCaptured.await(700, TimeUnit.MILLISECONDS))
+            val associated = runOnMainSync { host.drawObservationForTest() }
+            assertTrue("qualifying draw observed", associated.serial > 0 && associated.elapsedMs > 0)
+
+            // Hold only commit DELIVERY, not Main or the lease. Force one real same-document
+            // traversal and observe it non-blockingly while substantial original-deadline budget
+            // remains. This replaces the earlier over-deadline T-C execution retained in evidence.
+            val interveningDraw = factory.observeNextDraw()
+            evaluateJs(
+                "(function(){document.body.style.paddingTop='17px';" +
+                    "return document.body.getBoundingClientRect().height;})()"
+            )
+            runOnMain {
+                session.view()!!.requestLayout()
+                session.view()!!.invalidate()
+                session.view()!!.postInvalidateOnAnimation()
+            }
+            assertTrue("intervening same-epoch hardware draw inside readiness transaction",
+                interveningDraw.await(600, TimeUnit.MILLISECONDS))
+            val later = runOnMainSync { host.drawObservationForTest() }
+            assertTrue("test actually advanced the Presentation draw", later.serial > associated.serial)
+            assertTrue("later draw has a later time", later.elapsedMs >= associated.elapsedMs)
+            val remainingBeforeCommit = deadline - SystemClock.elapsedRealtime()
+            assertTrue("held commit must be released with original readiness budget remaining: " +
+                remainingBeforeCommit + "ms", remainingBeforeCommit > 200)
+
+            runOnMain(checkNotNull(delayedCommit.get()))
+            val remainingForPublication = (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(1)
+            waitUntil("delayed commit publishes within ORIGINAL 2s readiness transaction", {
+                consumer.qualifyingCountFrom(0) > 0
+            }, remainingForPublication)
+            assertTrue("publication stayed inside original deadline",
+                consumer.latestDeliveryElapsed() <= deadline)
+            assertEquals("freshness lower-bound remains the qualifying draw",
+                associated.elapsedMs, consumer.latestCaptureElapsed())
+            val diagnostics = runOnMainSync(hosting::captureDiagnostics)
+            assertTrue("commit association remains first qualifying serial: $diagnostics",
+                diagnostics.contains("committedDraw=" + associated.serial))
+            assertTrue("latest observed draw advanced independently: $diagnostics",
+                diagnostics.contains("draw=" + later.serial + "@"))
+
+            // Retirement remains authoritative. Replaying the exact already-delivered callback
+            // after lease/capture retirement cannot publish again or revive capture authority.
+            val deliveredBeforeRetire = consumer.count()
+            runOnMain(lease!!::release)
+            leaseRetired = true
+            waitUntilMain("T-C lease capture resources retire", {
+                !hosting.captureResourcesPresent() && !hosting.status().captureActive
+            })
+            runOnMain(checkNotNull(delayedCommit.get()))
+            runOnMain { } // Flush any callback work that could have been posted to Main.
+            assertEquals("post-retirement commit replay is inert",
+                deliveredBeforeRetire, consumer.count())
+            assertFalse("post-retirement replay cannot revive capture",
+                runOnMainSync(hosting::status).captureActive)
+        } finally {
+            runOnMain { session.captureCommitDispatcherForTest = null }
+            if (!leaseRetired) runOnMain(lease!!::release)
+        }
+    }
+
+    private data class Fw3CopyGeometry(
+        val sourceRect: android.graphics.Rect,
+        val bitmapIdentity: Int,
+        val committedDrawSerial: Long,
+    )
+
+    private fun newFw3RendererAdapter(): RendererEditorAdapter {
+        val app = InstrumentationRegistry.getInstrumentation().targetContext
+        val program = app.assets.open("eyebrowse-editor.js").bufferedReader().use { it.readText() }
+        return RendererEditorAdapter(session::view, session::documentIdentity, program)
+    }
+
+    private fun callFw3Renderer(
+        adapter: RendererEditorAdapter,
+        label: String,
+        call: ((RendererEditorAdapter.Result) -> Unit) -> Unit,
+    ): RendererEditorAdapter.Result {
+        val result = AtomicReference<RendererEditorAdapter.Result>()
+        val done = CountDownLatch(1)
+        runOnMain {
+            call {
+                result.set(it)
+                done.countDown()
+            }
+        }
+        assertTrue("FW3 renderer callback $label",
+            done.await(1_000, TimeUnit.MILLISECONDS))
+        return checkNotNull(result.get()) { "FW3 renderer result missing: $label" }
+    }
+
+    private fun awaitFw3RendererViewport(
+        adapter: RendererEditorAdapter,
+        profile: HostingPresentationProfile,
+        deadlineElapsedMs: Long,
+        label: String,
+    ): RendererViewport {
+        var last: RendererViewport? = null
+        while (SystemClock.elapsedRealtime() < deadlineElapsedMs) {
+            val answer = callFw3Renderer(adapter, "$label-viewport", adapter::viewport)
+            assertEquals("$label renderer viewport status",
+                RendererEditorAdapter.Status.VIEWPORT, answer.status)
+            val viewport = answer.viewport
+            if (viewport != null) {
+                last = viewport
+                val scale = runOnMainSync { session.view()!!.scale }
+                if (viewport.matches(profile.width, profile.height, scale)) return viewport
+            }
+            SystemClock.sleep(16)
+        }
+        fail("$label renderer viewport never matched exact profile; last=$last")
+        return checkNotNull(last)
+    }
+
+    private fun installFw3ViewportProbe() {
+        assertEquals(
+            "true",
+            evaluateJs(
+                """(()=> {
+                    document.querySelectorAll('[data-fw3-probe]').forEach(e=>e.remove());
+                    const add=(id,style,color)=>{
+                      const e=document.createElement('div');e.id=id;e.dataset.fw3Probe='1';
+                      e.style.cssText='position:fixed;pointer-events:none;z-index:2147483000;'+style+
+                        ';background:'+color+';margin:0;padding:0;border:0';
+                      document.body.appendChild(e);return e;
+                    };
+                    add('fw3-top','left:19px;top:0;width:31px;height:4px','#f20d4f');
+                    add('fw3-bottom','left:71px;bottom:0;width:37px;height:5px','#1647f5');
+                    add('fw3-left','left:0;top:17px;width:4px;height:29px','#11c95b');
+                    add('fw3-right','right:0;top:39px;width:5px;height:31px','#b918ed');
+                    add('fw3-fixed','left:53px;top:23px;width:9px;height:11px','#ff9700');
+                    add('fw3-center','left:119px;top:calc(50vh - 5px);width:13px;height:10px','#00bfc7');
+                    return true;
+                })()"""
+            ),
+        )
+    }
+
+    private fun fw3PageObservation(): JSONObject {
+        val raw = decode(
+            evaluateJs(
+                """(()=> {
+                    const ids=['fw3-top','fw3-bottom','fw3-left','fw3-right','fw3-fixed','fw3-center'];
+                    const bounds={};
+                    for(const id of ids){
+                      const r=document.getElementById(id).getBoundingClientRect();
+                      bounds[id]={left:r.left,top:r.top,width:r.width,height:r.height};
+                    }
+                    return JSON.stringify({
+                      visualWidth:visualViewport.width,
+                      visualHeight:visualViewport.height,
+                      visualScale:visualViewport.scale,
+                      dpr:devicePixelRatio,
+                      innerWidth:innerWidth,
+                      innerHeight:innerHeight,
+                      probe:bounds['fw3-center'],
+                      fiducials:bounds
+                    });
+                })()"""
+            )
+        )
+        return JSONObject(checkNotNull(raw) { "FW3 page observation missing" })
+    }
+
+    private fun currentViewRectInWindowForFw3(): android.graphics.Rect = runOnMainSync {
+        val view = checkNotNull(session.view())
+        val location = IntArray(2)
+        view.getLocationInWindow(location)
+        android.graphics.Rect(
+            location[0],
+            location[1],
+            location[0] + view.width,
+            location[1] + view.height,
+        )
+    }
+
+    private fun inFlightWindowCopyGeometryForFw3(host: PrivateDisplayHost): Fw3CopyGeometry {
+        val type = PrivateDisplayHost::class.java
+        val lockField = type.getDeclaredField("nativeLock").apply { isAccessible = true }
+        val requestField = type.getDeclaredField("inFlightWindowCopy").apply { isAccessible = true }
+        val lock = checkNotNull(lockField.get(host))
+        return synchronized(lock) {
+            val request = checkNotNull(requestField.get(host)) { "FW3 copy request not in flight" }
+            val requestType = request.javaClass
+            val source = requestType.getDeclaredField("sourceRect").apply {
+                isAccessible = true
+            }.get(request) as android.graphics.Rect
+            val bitmap = requestType.getDeclaredField("bitmap").apply {
+                isAccessible = true
+            }.get(request) as android.graphics.Bitmap
+            val drawSerial = requestType.getDeclaredField("drawSerial").apply {
+                isAccessible = true
+            }.getLong(request)
+            Fw3CopyGeometry(
+                android.graphics.Rect(source),
+                System.identityHashCode(bitmap),
+                drawSerial,
+            )
+        }
+    }
+
+    private data class Fw3Fiducial(
+        val id: String,
+        val color: Int,
+        val rect: android.graphics.Rect,
+    )
+
+    private data class Fw3SpatialSpec(
+        val width: Int,
+        val height: Int,
+        val fiducials: List<Fw3Fiducial>,
+    )
+
+    private data class Fw3SpatialOracleResult(
+        val accepted: Boolean,
+        val reason: String,
+    )
+
+    private fun fw3DeliveryWithinOriginalRequest(
+        requestStartElapsedMs: Long,
+        originalDeadlineElapsedMs: Long,
+        deliveryElapsedMs: Long,
+    ): Boolean =
+        requestStartElapsedMs >= 0 &&
+            originalDeadlineElapsedMs >= requestStartElapsedMs &&
+            deliveryElapsedMs >= requestStartElapsedMs &&
+            deliveryElapsedMs <= originalDeadlineElapsedMs
+
+    private fun fw3SpatialOracle(
+        bitmap: android.graphics.Bitmap,
+        page: JSONObject,
+        webViewScale: Double,
+    ): Fw3SpatialOracleResult {
+        val visualWidth = page.optDouble("visualWidth", Double.NaN)
+        val visualHeight = page.optDouble("visualHeight", Double.NaN)
+        if (!visualWidth.isFinite() || !visualHeight.isFinite() ||
+            visualWidth <= 0.0 || visualHeight <= 0.0) {
+            return Fw3SpatialOracleResult(false, "invalid visual viewport")
+        }
+        val bounds = page.optJSONObject("fiducials")
+            ?: return Fw3SpatialOracleResult(false, "missing fiducial geometry")
+        if (!webViewScale.isFinite() || webViewScale <= 0.0) {
+            return Fw3SpatialOracleResult(false, "invalid WebView scale")
+        }
+        /*
+         * Calibrate placement with CSS * WebView.scale, exactly like RendererViewport.
+         * Recorded shrink arithmetic: scale=2.8125, so
+         * ceil(ceil(240/2.8125)*2.8125)=242 logical native px although the Window raster is 240.
+         * Renormalizing visualViewport.height to 240 erased that Blink quantization.
+         * Bottom-band x: round(71*2.8125)=200; round(108*2.8125)=304, matching the device receipt.
+         */
+        fun mapped(id: String): android.graphics.Rect {
+            val css = checkNotNull(bounds.optJSONObject(id)) { "missing CSS bounds for " + id }
+            val rawLeft = kotlin.math.round(css.getDouble("left") * webViewScale).toInt()
+            val rawTop = kotlin.math.round(css.getDouble("top") * webViewScale).toInt()
+            val rawRight = kotlin.math.round(
+                (css.getDouble("left") + css.getDouble("width")) * webViewScale
+            ).toInt()
+            val rawBottom = kotlin.math.round(
+                (css.getDouble("top") + css.getDouble("height")) * webViewScale
+            ).toInt()
+            require(rawRight > rawLeft && rawBottom > rawTop)
+
+            val leftEdge = id == "fw3-left"
+            val rightEdge = id == "fw3-right"
+            val topEdge = id == "fw3-top"
+            val bottomEdge = id == "fw3-bottom"
+            if (!leftEdge && !rightEdge && !topEdge && !bottomEdge) {
+                require(rawLeft >= 0 && rawTop >= 0 &&
+                    rawRight <= bitmap.width && rawBottom <= bitmap.height) {
+                    "interior fiducial out of bounds id=" + id
+                }
+                return android.graphics.Rect(rawLeft, rawTop, rawRight, rawBottom)
+            }
+
+            if (leftEdge) require(rawLeft <= 0 && rawRight > 0)
+            if (rightEdge) require(rawLeft < bitmap.width && rawRight >= bitmap.width)
+            if (topEdge) require(rawTop <= 0 && rawBottom > 0)
+            if (bottomEdge) require(rawTop < bitmap.height && rawBottom >= bitmap.height)
+
+            val left = if (leftEdge) 0 else rawLeft
+            val top = if (topEdge) 0 else rawTop
+            val right = if (rightEdge) bitmap.width else rawRight
+            val bottom = if (bottomEdge) bitmap.height else rawBottom
+            require(left >= 0 && top >= 0 && right <= bitmap.width && bottom <= bitmap.height &&
+                right > left && bottom > top) {
+                "physical edge intersection out of bounds id=" + id
+            }
+            return android.graphics.Rect(left, top, right, bottom)
+        }
+        return try {
+            fw3SpatialOracle(
+                bitmap,
+                Fw3SpatialSpec(
+                    bitmap.width,
+                    bitmap.height,
+                    listOf(
+                        Fw3Fiducial("fw3-top", Color.parseColor("#f20d4f"), mapped("fw3-top")),
+                        Fw3Fiducial("fw3-bottom", Color.parseColor("#1647f5"), mapped("fw3-bottom")),
+                        Fw3Fiducial("fw3-left", Color.parseColor("#11c95b"), mapped("fw3-left")),
+                        Fw3Fiducial("fw3-right", Color.parseColor("#b918ed"), mapped("fw3-right")),
+                        Fw3Fiducial("fw3-fixed", Color.parseColor("#ff9700"), mapped("fw3-fixed")),
+                        Fw3Fiducial("fw3-center", Color.parseColor("#00bfc7"), mapped("fw3-center")),
+                    ),
+                ),
+            )
+        } catch (failure: Throwable) {
+            Fw3SpatialOracleResult(false, failure.message ?: failure.javaClass.simpleName)
+        }
+    }
+
+    private fun fw3SpatialOracle(
+        bitmap: android.graphics.Bitmap,
+        spec: Fw3SpatialSpec,
+    ): Fw3SpatialOracleResult {
+        if (bitmap.isRecycled) return Fw3SpatialOracleResult(false, "bitmap recycled")
+        if (bitmap.width != spec.width || bitmap.height != spec.height) {
+            return Fw3SpatialOracleResult(
+                false,
+                "bitmap size " + bitmap.width + "x" + bitmap.height +
+                    " != " + spec.width + "x" + spec.height,
+            )
+        }
+
+        fun boundsForColor(color: Int): android.graphics.Rect? {
+            var minX = bitmap.width
+            var minY = bitmap.height
+            var maxX = -1
+            var maxY = -1
+            for (y in 0 until bitmap.height) {
+                for (x in 0 until bitmap.width) {
+                    if (nearColor(bitmap.getPixel(x, y), color)) {
+                        minX = minOf(minX, x)
+                        minY = minOf(minY, y)
+                        maxX = maxOf(maxX, x)
+                        maxY = maxOf(maxY, y)
+                    }
+                }
+            }
+            return if (maxX < 0) null
+            else android.graphics.Rect(minX, minY, maxX + 1, maxY + 1)
+        }
+
+        fun closeAxis(a: Int, b: Int): Boolean = a == b
+
+        for (fiducial in spec.fiducials) {
+            val expected = fiducial.rect
+            if (expected.left < 0 || expected.top < 0 ||
+                expected.right > bitmap.width || expected.bottom > bitmap.height ||
+                expected.width() <= 0 || expected.height() <= 0) {
+                return Fw3SpatialOracleResult(false, fiducial.id + " expected rect out of bounds")
+            }
+            val centerX = (expected.left + expected.right - 1) / 2
+            val centerY = (expected.top + expected.bottom - 1) / 2
+            if (centerX !in 0 until bitmap.width || centerY !in 0 until bitmap.height) {
+                return Fw3SpatialOracleResult(false, fiducial.id + " mapped center out of bounds")
+            }
+            if (!nearColor(bitmap.getPixel(centerX, centerY), fiducial.color)) {
+                return Fw3SpatialOracleResult(false, fiducial.id + " center color mismatch")
+            }
+            val observed = boundsForColor(fiducial.color)
+                ?: return Fw3SpatialOracleResult(false, fiducial.id + " color absent")
+            if (!closeAxis(observed.left, expected.left) ||
+                !closeAxis(observed.top, expected.top) ||
+                !closeAxis(observed.right, expected.right) ||
+                !closeAxis(observed.bottom, expected.bottom)) {
+                return Fw3SpatialOracleResult(
+                    false,
+                    fiducial.id + " bounds expected=" + expected + " observed=" + observed,
+                )
+            }
+
+            if (observed.left > 0 &&
+                nearColor(bitmap.getPixel(observed.left - 1, centerY), fiducial.color)) {
+                return Fw3SpatialOracleResult(false, fiducial.id + " left transition missing")
+            }
+            if (observed.right < bitmap.width &&
+                nearColor(bitmap.getPixel(observed.right, centerY), fiducial.color)) {
+                return Fw3SpatialOracleResult(false, fiducial.id + " right transition missing")
+            }
+            if (observed.top > 0 &&
+                nearColor(bitmap.getPixel(centerX, observed.top - 1), fiducial.color)) {
+                return Fw3SpatialOracleResult(false, fiducial.id + " top transition missing")
+            }
+            if (observed.bottom < bitmap.height &&
+                nearColor(bitmap.getPixel(centerX, observed.bottom), fiducial.color)) {
+                return Fw3SpatialOracleResult(false, fiducial.id + " bottom transition missing")
+            }
+
+            when (fiducial.id) {
+                "fw3-top" -> if (observed.top != 0)
+                    return Fw3SpatialOracleResult(false, "top edge does not reach y=0")
+                "fw3-bottom" -> if (observed.bottom != bitmap.height)
+                    return Fw3SpatialOracleResult(false, "bottom edge does not reach bitmap end")
+                "fw3-left" -> if (observed.left != 0)
+                    return Fw3SpatialOracleResult(false, "left edge does not reach x=0")
+                "fw3-right" -> if (observed.right != bitmap.width)
+                    return Fw3SpatialOracleResult(false, "right edge does not reach bitmap end")
+            }
+        }
+        return Fw3SpatialOracleResult(true, "all fiducial bounds/transitions match")
+    }
+
+    private fun fw3SyntheticSpatialSpec(width: Int, height: Int): Fw3SpatialSpec {
+        require(width == 480 && height == 344)
+        return Fw3SpatialSpec(
+            width,
+            height,
+            listOf(
+                Fw3Fiducial("fw3-top", Color.parseColor("#f20d4f"),
+                    android.graphics.Rect(54, 0, 141, 11)),
+                Fw3Fiducial("fw3-bottom", Color.parseColor("#1647f5"),
+                    android.graphics.Rect(199, 329, 303, 344)),
+                Fw3Fiducial("fw3-left", Color.parseColor("#11c95b"),
+                    android.graphics.Rect(0, 55, 12, 142)),
+                Fw3Fiducial("fw3-right", Color.parseColor("#b918ed"),
+                    android.graphics.Rect(465, 119, 480, 212)),
+                Fw3Fiducial("fw3-fixed", Color.parseColor("#ff9700"),
+                    android.graphics.Rect(149, 70, 175, 103)),
+                Fw3Fiducial("fw3-center", Color.parseColor("#00bfc7"),
+                    android.graphics.Rect(334, 157, 371, 187)),
+            ),
+        )
+    }
+
+    private fun fw3SyntheticBitmap(spec: Fw3SpatialSpec): android.graphics.Bitmap {
+        val bitmap = android.graphics.Bitmap.createBitmap(
+            spec.width, spec.height, android.graphics.Bitmap.Config.ARGB_8888,
+        )
+        val canvas = android.graphics.Canvas(bitmap)
+        canvas.drawColor(Color.parseColor("#202020"))
+        val paint = android.graphics.Paint().apply {
+            isAntiAlias = false
+            style = android.graphics.Paint.Style.FILL
+        }
+        for (fiducial in spec.fiducials) {
+            paint.color = fiducial.color
+            canvas.drawRect(
+                fiducial.rect.left.toFloat(),
+                fiducial.rect.top.toFloat(),
+                fiducial.rect.right.toFloat(),
+                fiducial.rect.bottom.toFloat(),
+                paint,
+            )
+        }
+        return bitmap
+    }
+
+    private fun installFw4GpuStress(factory: R4ControlledFactory): android.view.View =
+        runOnMainSync {
+            val container = factory.controlledPresentation().container()
+            val overlay = object : android.view.View(container.context) {
+                private val paint = android.graphics.Paint().apply {
+                    style = android.graphics.Paint.Style.FILL
+                }
+                override fun onDraw(canvas: android.graphics.Canvas) {
+                    super.onDraw(canvas)
+                    val cell = 8
+                    var y = 0
+                    while (y < height) {
+                        var x = 0
+                        while (x < width) {
+                            paint.color = if (((x / cell) + (y / cell)) % 2 == 0)
+                                Color.WHITE else Color.BLACK
+                            canvas.drawRect(
+                                x.toFloat(), y.toFloat(),
+                                minOf(width, x + cell).toFloat(),
+                                minOf(height, y + cell).toFloat(),
+                                paint,
+                            )
+                            x += cell
+                        }
+                        y += cell
+                    }
+                }
+            }
+            // 256 full-window blur passes: command recording stays bounded on Main, while the
+            // RenderThread/GPU source fence is intentionally much slower than an ordinary frame.
+            var effect = android.graphics.RenderEffect.createBlurEffect(
+                25f, 25f, android.graphics.Shader.TileMode.CLAMP,
+            )
+            repeat(255) {
+                effect = android.graphics.RenderEffect.createChainEffect(
+                    android.graphics.RenderEffect.createBlurEffect(
+                        25f, 25f, android.graphics.Shader.TileMode.CLAMP,
+                    ),
+                    effect,
+                )
+            }
+            overlay.setRenderEffect(effect)
+            overlay.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
+            container.addView(
+                overlay,
+                android.view.ViewGroup.LayoutParams(
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                ),
+            )
+            overlay
+        }
+
+    private fun removeFw4GpuStress(view: android.view.View?) {
+        if (view == null) return
+        runOnMain {
+            view.setRenderEffect(null)
+            (view.parent as? android.view.ViewGroup)?.removeView(view)
+        }
+    }
+
+    /** Static recorded regression stimulus; production profiles remain RG-measured. */
+    private fun prepareR4RecordedProfile(factory: R4ControlledFactory): HostingPresentationProfile {
+        runOnMain { hosting.setResourceFactoryForTest(factory) }
+        openFixture("/hosting.html", "Hosting capture page")
+        evaluateJs("window.__eyebrowseFreeze(true)")
+        tapHostingToggleOnce(HostingController.State.HOSTING, START_BOUND_MS)
+        val normal = HostingPresentationProfile(480, 344, 204)
+        assertTrue("recorded R4 profile accepted",
+            runOnMainSync { hosting.presentOnRg(normal) })
+        waitUntilMain("R4 private local focus ready", { hosting.localEditorFocusReady() })
+        awaitPrivateProfile()
+        return normal
+    }
+
+    private data class R4CaptureAuthority(
+        val bindingIdentity: Int,
+        val authoritySerial: Long,
+        val bindingDeadline: Long,
+        val transactionId: Long,
+        val transactionDeadline: Long,
+        val recoveryUsed: Boolean,
+        val readinessPending: Boolean,
+        val trailingDemand: Boolean,
+        val successorDemandAuthority: Long,
+        val terminal: Boolean,
+        val copyInFlight: Boolean,
+    )
+
+    /** Read-only androidTest reflection over EyeBrowse-owned transaction state. */
+    private fun captureAuthorityForR4(host: PrivateDisplayHost): R4CaptureAuthority {
+        val type = PrivateDisplayHost::class.java
+        val lockField = type.getDeclaredField("nativeLock").apply { isAccessible = true }
+        val bindingField = type.getDeclaredField("captureBinding").apply { isAccessible = true }
+        val transactionField = type.getDeclaredField("activeCaptureTransaction").apply { isAccessible = true }
+        val readinessField = type.getDeclaredField("captureReadinessPending").apply { isAccessible = true }
+        val trailingField = type.getDeclaredField("trailingCaptureDemand").apply { isAccessible = true }
+        val successorField = type.getDeclaredField("successorCaptureDemand").apply { isAccessible = true }
+        val terminalField = type.getDeclaredField("captureTerminalFailure").apply { isAccessible = true }
+        val copyField = type.getDeclaredField("inFlightWindowCopy").apply { isAccessible = true }
+        val lock = checkNotNull(lockField.get(host))
+        return synchronized(lock) {
+            val binding = checkNotNull(bindingField.get(host)) { "capture binding unavailable" }
+            val bindingType = binding.javaClass
+            val authoritySerial = bindingType.getDeclaredField("authoritySerial").apply {
+                isAccessible = true
+            }.getLong(binding)
+            val bindingDeadline = bindingType.getDeclaredField("readinessDeadlineElapsedMs").apply {
+                isAccessible = true
+            }.getLong(binding)
+            val transaction = transactionField.get(host)
+            val transactionId: Long
+            val transactionDeadline: Long
+            val recoveryUsed: Boolean
+            if (transaction == null) {
+                transactionId = 0L
+                transactionDeadline = 0L
+                recoveryUsed = false
+            } else {
+                val transactionType = transaction.javaClass
+                transactionId = transactionType.getDeclaredField("id").apply {
+                    isAccessible = true
+                }.getLong(transaction)
+                transactionDeadline = transactionType.getDeclaredField("deadlineElapsedMs").apply {
+                    isAccessible = true
+                }.getLong(transaction)
+                recoveryUsed = transactionType.getDeclaredField("recoveryUsed").apply {
+                    isAccessible = true
+                }.getBoolean(transaction)
+            }
+            val successorBinding = successorField.get(host)
+            val successorAuthority = if (successorBinding == null) {
+                0L
+            } else {
+                successorBinding.javaClass.getDeclaredField("authoritySerial").apply {
+                    isAccessible = true
+                }.getLong(successorBinding)
+            }
+            R4CaptureAuthority(
+                System.identityHashCode(binding),
+                authoritySerial,
+                bindingDeadline,
+                transactionId,
+                transactionDeadline,
+                recoveryUsed,
+                readinessField.getBoolean(host),
+                trailingField.getBoolean(host),
+                successorAuthority,
+                terminalField.getBoolean(host),
+                copyField.get(host) != null,
+            )
+        }
+    }
+
+    /** Fault-injection/scheduler evidence: invoke the actual production coalescing entry point. */
+    private fun invokeProductionCaptureDemandForR4(host: PrivateDisplayHost) {
+        val method = PrivateDisplayHost::class.java.getDeclaredMethod(
+            "requestCaptureDemand",
+            java.lang.Long.TYPE,
+        )
+        method.isAccessible = true
+        method.invoke(host, SystemClock.elapsedRealtime())
+    }
+
+    private fun diagnosticLong(diagnostics: String, key: String): Long {
+        val marker = "$key="
+        val start = diagnostics.indexOf(marker)
+        require(start >= 0) { "missing diagnostic $key in {$diagnostics}" }
+        val valueStart = start + marker.length
+        var end = valueStart
+        while (end < diagnostics.length &&
+            (diagnostics[end] == '-' || diagnostics[end].isDigit())) {
+            end++
+        }
+        return diagnostics.substring(valueStart, end).toLong()
+    }
+
+    private fun currentPrivateHostForR4(): PrivateDisplayHost = runOnMainSync {
+        val field = HostingController::class.java.getDeclaredField("displayHost")
+        field.isAccessible = true
+        checkNotNull(field.get(hosting) as? PrivateDisplayHost)
+    }
+
+    private fun handlerFieldForR4(host: PrivateDisplayHost, name: String): Handler {
+        val field = PrivateDisplayHost::class.java.getDeclaredField(name)
+        field.isAccessible = true
+        return checkNotNull(field.get(host) as? Handler) { "$name unavailable" }
+    }
+
+    private fun threadFieldForR4(host: PrivateDisplayHost, name: String): Thread? {
+        val field = PrivateDisplayHost::class.java.getDeclaredField(name)
+        field.isAccessible = true
+        return field.get(host) as? Thread
+    }
+
+    private fun handlerFieldOrNullForR4(host: PrivateDisplayHost, name: String): Handler? {
+        val field = PrivateDisplayHost::class.java.getDeclaredField(name)
+        field.isAccessible = true
+        return field.get(host) as? Handler
+    }
+
+    private fun presentationWindowForR4(host: PrivateDisplayHost): android.view.Window {
+        val field = PrivateDisplayHost::class.java.getDeclaredField("presentation")
+        field.isAccessible = true
+        val shown = checkNotNull(
+            field.get(host) as? PrivateDisplayHost.PresentationHost,
+        ) { "private Presentation unavailable" }
+        return checkNotNull(shown.captureWindow()) { "private Window unavailable" }
+    }
+
+    private fun inFlightWindowCopyForR4(host: PrivateDisplayHost): Boolean {
+        val lockField = PrivateDisplayHost::class.java.getDeclaredField("nativeLock")
+        lockField.isAccessible = true
+        val copyField = PrivateDisplayHost::class.java.getDeclaredField("inFlightWindowCopy")
+        copyField.isAccessible = true
+        val lock = checkNotNull(lockField.get(host))
+        return synchronized(lock) { copyField.get(host) != null }
+    }
+
     private fun expectedPrivateSize(): IntArray = runOnMainSync {
         val profile = hosting.presentationProfile()
         intArrayOf(profile.width, profile.height)
@@ -2103,6 +5240,8 @@ class HostingInstrumentedTest {
                 if (condition.getAsBoolean()) {
                     return
                 }
+            } catch (blocked: Fw4BoundedMainCall.DeadlineExceeded) {
+                throw blocked // Do not repeatedly dispatch behind an unresolved Main operation.
             } catch (ignored: RuntimeException) {} catch (ignored: AssertionError) {}
 
             SystemClock.sleep(100)
@@ -2142,14 +5281,11 @@ class HostingInstrumentedTest {
     }
 
     private fun runOnMain(runnable: Runnable) {
-        InstrumentationRegistry.getInstrumentation().runOnMainSync(runnable)
+        fw4RunOnMainChecked { runnable.run() }
     }
 
-    private fun <T> runOnMainSync(supplier: java.util.function.Supplier<T>): T {
-        val result: AtomicReference<T> = AtomicReference()
-        InstrumentationRegistry.getInstrumentation().runOnMainSync({ result.set(supplier.get()) })
-        return result.get()
-    }
+    private fun <T> runOnMainSync(supplier: java.util.function.Supplier<T>): T =
+        fw4RunOnMainChecked { supplier.get() }
 
     private fun webViewIdentityHash(): Int {
         val identity: Int? =
@@ -2355,6 +5491,22 @@ class HostingInstrumentedTest {
         @Synchronized
         fun deliveryElapsedAt(index: Int): Long {
             return frames.get(index)[7]
+        }
+
+        @Synchronized
+        fun captureElapsedAt(index: Int): Long {
+            return frames.get(index)[2]
+        }
+
+        @Synchronized
+        fun minCaptureGapFrom(fromIndex: Int): Long {
+            var min = Long.MAX_VALUE
+            var i = Math.max(1, fromIndex + 1)
+            while (i < frames.size) {
+                min = Math.min(min, frames.get(i)[2] - frames.get(i - 1)[2])
+                i++
+            }
+            return min
         }
 
         @Synchronized
@@ -2614,6 +5766,344 @@ class HostingInstrumentedTest {
                     pixels.size,
                 )
             }
+        }
+    }
+
+    /**
+     * Holds only product callback DELIVERY. The platform/scripted request completes and Main
+     * returns normally; release() later posts the original listener back to its original handler.
+     */
+    private class R4CompletionHold {
+        private val captured = CountDownLatch(1)
+        private val pending = AtomicReference<Runnable?>()
+        private val released = AtomicBoolean(false)
+        private val forwarded = AtomicBoolean(false)
+        @Volatile private var productDeliveryObserver: ((Runnable) -> Unit)? = null
+        @Volatile private var destination: android.graphics.Bitmap? = null
+        @Volatile private var capturedElapsed: Long = Long.MIN_VALUE
+        @Volatile var result: Int = Int.MIN_VALUE
+            private set
+
+        fun bindDestination(bitmap: android.graphics.Bitmap) {
+            destination = bitmap
+        }
+
+        fun wrap(
+            delegate: android.view.PixelCopy.OnPixelCopyFinishedListener,
+            handler: Handler,
+        ): android.view.PixelCopy.OnPixelCopyFinishedListener =
+            android.view.PixelCopy.OnPixelCopyFinishedListener { value ->
+                capturedElapsed = SystemClock.elapsedRealtime()
+                result = value
+                val delivery = Runnable {
+                    forwarded.set(true)
+                    val observer = productDeliveryObserver
+                    if (observer == null) {
+                        handler.post { delegate.onPixelCopyFinished(value) }
+                    } else {
+                        // R-08 observes the actual original listener on its original Handler.
+                        // It never synthesizes a result, changes the queue, or retries delivery.
+                        handler.post { observer(Runnable { delegate.onPixelCopyFinished(value) }) }
+                    }
+                }
+                pending.set(delivery)
+                captured.countDown()
+                if (released.get()) pending.getAndSet(null)?.run()
+            }
+
+        fun awaitCaptured(timeoutMs: Long): Boolean =
+            captured.await(timeoutMs, TimeUnit.MILLISECONDS)
+
+        fun destinationBitmap(): android.graphics.Bitmap? = destination
+
+        fun capturedElapsedMs(): Long = capturedElapsed
+
+        fun hasForwarded(): Boolean = forwarded.get()
+
+        fun observeProductDelivery(observer: (Runnable) -> Unit) {
+            check(!released.get() && !forwarded.get()) { "Observe before releasing completion" }
+            productDeliveryObserver = observer
+        }
+
+        fun release() {
+            released.set(true)
+            pending.getAndSet(null)?.run()
+        }
+    }
+
+    /** Test-only deterministic barriers for I9-T01 FW2; never used by production admission. */
+    private class R4Gate(private val holdTimeoutMs: Long = 1_500) {
+        val entered = CountDownLatch(1)
+        private val releaseLatch = CountDownLatch(1)
+        private val claimed = AtomicBoolean(false)
+        @Volatile var timedOut: Boolean = false
+            private set
+
+        fun asRunnable(): Runnable = Runnable { blockOnce() }
+
+        fun blockOnce() {
+            if (!claimed.compareAndSet(false, true)) return
+            entered.countDown()
+            try {
+                if (!releaseLatch.await(holdTimeoutMs, TimeUnit.MILLISECONDS)) timedOut = true
+            } catch (interrupted: InterruptedException) {
+                timedOut = true
+                Thread.currentThread().interrupt()
+            }
+        }
+
+        fun awaitEntered(timeoutMs: Long): Boolean =
+            entered.await(timeoutMs, TimeUnit.MILLISECONDS)
+
+        fun release() {
+            releaseLatch.countDown()
+        }
+    }
+
+    private data class R4PlatformResult(
+        val invocation: Int,
+        val result: Int,
+        val callbackThread: String,
+        val callbackElapsedMs: Long,
+        val bitmapIdentity: Int,
+    )
+
+    private class R4PlatformCall(
+        val invocation: Int,
+        val requestThread: String,
+        val startedElapsedMs: Long,
+        val bitmapIdentity: Int,
+    ) {
+        val returned = CountDownLatch(1)
+        @Volatile var returnedElapsedMs: Long = Long.MIN_VALUE
+        @Volatile var failureClass: String? = null
+        @Volatile var missingBackingSurface: Boolean = false
+    }
+
+    /**
+     * Real platform factory with test-only observation/control: retain reader object identities
+     * and delay one actual Presentation draw after the product listener has observed it.
+     */
+    private class R4ControlledFactory(
+        private val registerExecutionRelease: ((() -> Unit) -> Unit)? = null,
+        private val registerCompletion: ((R4CompletionHold) -> Unit)? = null,
+    ) : PrivateDisplayHost.Factory {
+        private val platform = PrivateDisplayHost.PlatformFactory()
+        private val readers = CopyOnWriteArrayList<ImageReader>()
+        private val scriptedCopyResults = ConcurrentLinkedQueue<Int>()
+        private val copyEvents = LinkedBlockingQueue<Int>()
+        private val platformCalls = LinkedBlockingQueue<R4PlatformCall>()
+        private val platformResults = CopyOnWriteArrayList<R4PlatformResult>()
+        private val requestedDestinations = CopyOnWriteArrayList<android.graphics.Bitmap>()
+        private val copyEntryThreads = CopyOnWriteArrayList<String>()
+        private val copyCount = AtomicInteger(0)
+        private val activeCopyCalls = AtomicInteger(0)
+        private val maxConcurrentCopyCalls = AtomicInteger(0)
+        @Volatile private var nextDrawGate: R4Gate? = null
+        @Volatile private var nextDrawObserved: CountDownLatch? = null
+        @Volatile private var nextCopyGate: R4Gate? = null
+        @Volatile private var nextCompletionHold: R4CompletionHold? = null
+        @Volatile private var latestPresentation: ControlledPresentation? = null
+
+        fun armNextDraw(): R4Gate = R4Gate().also { gate ->
+            nextDrawGate = gate
+            registerExecutionRelease?.invoke(gate::release)
+        }
+
+        /** Observe one real Presentation draw without blocking Main. */
+        fun observeNextDraw(): CountDownLatch =
+            CountDownLatch(1).also { nextDrawObserved = it }
+
+        fun armNextCopy(holdTimeoutMs: Long = 1_500): R4Gate =
+            R4Gate(holdTimeoutMs).also { gate ->
+                nextCopyGate = gate
+                registerExecutionRelease?.invoke(gate::release)
+            }
+
+        fun holdNextCopyCompletion(): R4CompletionHold =
+            R4CompletionHold().also { hold ->
+                nextCompletionHold = hold
+                registerCompletion?.invoke(hold)
+            }
+
+        fun scriptCopyResults(vararg results: Int) {
+            results.forEach(scriptedCopyResults::add)
+        }
+
+        fun awaitCopyInvocation(timeoutMs: Long): Int? =
+            copyEvents.poll(timeoutMs, TimeUnit.MILLISECONDS)
+
+        fun copyInvocationCount(): Int = copyCount.get()
+
+        fun maxConcurrentCopyCalls(): Int = maxConcurrentCopyCalls.get()
+
+        fun awaitPlatformCall(timeoutMs: Long): R4PlatformCall? =
+            platformCalls.poll(timeoutMs, TimeUnit.MILLISECONDS)
+
+        fun platformResults(): List<R4PlatformResult> = platformResults.toList()
+
+        fun requestedBitmaps(): List<android.graphics.Bitmap> = requestedDestinations.toList()
+
+        fun copyEntryThreads(): List<String> = copyEntryThreads.toList()
+
+        fun controlledPresentation(): ControlledPresentation =
+            checkNotNull(latestPresentation) { "controlled Presentation unavailable" }
+
+        fun latestReader(): ImageReader = checkNotNull(readers.lastOrNull())
+
+        override fun createVirtualDisplay(
+            manager: DisplayManager,
+            name: String,
+            width: Int,
+            height: Int,
+            densityDpi: Int,
+            surface: Any?,
+        ): VirtualDisplay? =
+            platform.createVirtualDisplay(manager, name, width, height, densityDpi, surface)
+
+        override fun createImageReader(width: Int, height: Int): ImageReader? =
+            platform.createImageReader(width, height)?.also(readers::add)
+
+        override fun requestWindowCopy(
+            window: android.view.Window,
+            sourceRect: android.graphics.Rect,
+            destination: android.graphics.Bitmap,
+            listener: android.view.PixelCopy.OnPixelCopyFinishedListener,
+            handler: Handler,
+        ) {
+            val active = activeCopyCalls.incrementAndGet()
+            maxConcurrentCopyCalls.updateAndGet { previous -> maxOf(previous, active) }
+            try {
+                val invocation = copyCount.incrementAndGet()
+                copyEvents.offer(invocation)
+                requestedDestinations.add(destination)
+                copyEntryThreads.add(Thread.currentThread().name)
+                val gate = nextCopyGate
+                if (gate != null && nextCopyGate === gate) {
+                    nextCopyGate = null
+                    gate.blockOnce()
+                }
+                val hold = nextCompletionHold
+                val completionListener =
+                    if (hold != null && nextCompletionHold === hold) {
+                        nextCompletionHold = null
+                        hold.bindDestination(destination)
+                        hold.wrap(listener, handler)
+                    } else listener
+                val scripted = scriptedCopyResults.poll()
+                if (scripted == null || scripted == REAL_COPY) {
+                    val call = R4PlatformCall(
+                        invocation,
+                        Thread.currentThread().name,
+                        SystemClock.elapsedRealtime(),
+                        System.identityHashCode(destination),
+                    )
+                    platformCalls.offer(call)
+                    Log.i("EyeBrowseFW4", "PLATFORM_CALL invocation=$invocation " +
+                        "bitmap=${call.bitmapIdentity} start=${call.startedElapsedMs} " +
+                        "thread=${call.requestThread}")
+                    val observed = android.view.PixelCopy.OnPixelCopyFinishedListener { result ->
+                        Log.i("EyeBrowseFW4", "PLATFORM_CALLBACK invocation=$invocation " +
+                            "bitmap=${call.bitmapIdentity} result=$result " +
+                            "at=${SystemClock.elapsedRealtime()} thread=${Thread.currentThread().name}")
+                        platformResults.add(
+                            R4PlatformResult(
+                                invocation,
+                                result,
+                                Thread.currentThread().name,
+                                SystemClock.elapsedRealtime(),
+                                System.identityHashCode(destination),
+                            ),
+                        )
+                        completionListener.onPixelCopyFinished(result)
+                    }
+                    try {
+                        platform.requestWindowCopy(
+                            window, sourceRect, destination, observed, handler,
+                        )
+                    } catch (failure: RuntimeException) {
+                        call.failureClass = failure.javaClass.name
+                        call.missingBackingSurface = failure is IllegalArgumentException &&
+                            failure.message?.contains("backing surface", ignoreCase = true) == true
+                        throw failure // Preserve the real exception for the unchanged product catch.
+                    } finally {
+                        call.returnedElapsedMs = SystemClock.elapsedRealtime()
+                        Log.i("EyeBrowseFW4", "PLATFORM_RETURN invocation=$invocation " +
+                            "bitmap=${call.bitmapIdentity} start=${call.startedElapsedMs} " +
+                            "end=${call.returnedElapsedMs} failure=${call.failureClass} " +
+                            "missingBackingSurface=${call.missingBackingSurface}")
+                        call.returned.countDown()
+                    }
+                } else {
+                    handler.post { completionListener.onPixelCopyFinished(scripted) }
+                }
+            } finally {
+                activeCopyCalls.decrementAndGet()
+            }
+        }
+
+        inner class ControlledPresentation(
+            private val delegate: PrivateDisplayHost.PresentationHost,
+        ) : PrivateDisplayHost.PresentationHost by delegate {
+            @Volatile private var suppressUnavailable = false
+
+            fun suppressUnavailableForTest() {
+                suppressUnavailable = true
+            }
+
+            fun dismissWithoutUnavailableForTest() {
+                suppressUnavailable = true
+                delegate.dismiss()
+            }
+
+            fun showWithoutUnavailableForTest() {
+                suppressUnavailable = true
+                delegate.show()
+            }
+
+            override fun setUnavailableListener(listener: Runnable?) {
+                if (listener == null) {
+                    delegate.setUnavailableListener(null)
+                } else {
+                    delegate.setUnavailableListener(Runnable {
+                        if (!suppressUnavailable) listener.run()
+                    })
+                }
+            }
+
+            override fun setDrawListener(listener: PrivateDisplayHost.DrawListener?) {
+                if (listener == null) {
+                    delegate.setDrawListener(null)
+                    return
+                }
+                delegate.setDrawListener(PrivateDisplayHost.DrawListener { serial, elapsedMs ->
+                    listener.onDraw(serial, elapsedMs)
+                    val observed = nextDrawObserved
+                    if (observed != null && nextDrawObserved === observed) {
+                        nextDrawObserved = null
+                        observed.countDown()
+                    }
+                    val gate = nextDrawGate
+                    if (gate != null && nextDrawGate === gate) {
+                        nextDrawGate = null
+                        gate.blockOnce()
+                    }
+                })
+            }
+        }
+
+        override fun createPresentation(
+            context: Context,
+            display: android.view.Display,
+        ): PrivateDisplayHost.PresentationHost {
+            val wrapped = ControlledPresentation(platform.createPresentation(context, display))
+            latestPresentation = wrapped
+            return wrapped
+        }
+
+        companion object {
+            /** Sentinel means delegate to the real public Window PixelCopy path. */
+            const val REAL_COPY: Int = Int.MIN_VALUE
         }
     }
 

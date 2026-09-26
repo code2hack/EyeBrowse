@@ -3,6 +3,16 @@ plugins {
     id("org.jetbrains.kotlin.android") version "2.2.21"
 }
 
+val rendererAssets = layout.buildDirectory.dir("generated/rendererAssets")
+val bundleRendererEditor by tasks.registering(Sync::class) {
+    dependsOn(":renderer-editor:compileProductionExecutableKotlinJs")
+    from(project(":renderer-editor").layout.buildDirectory.dir("compileSync/js/main/productionExecutable/kotlin")) {
+        include("EyeBrowse-renderer-editor.js")
+        rename { "eyebrowse-editor.js" }
+    }
+    into(rendererAssets)
+}
+
 android {
     namespace = "com.code2hack.eyebrowse.phone"
     compileSdk = 35
@@ -36,7 +46,10 @@ android {
     sourceSets.getByName("test").kotlin.srcDir("src/testShared/java")
     sourceSets.getByName("androidTest").java.srcDir("src/testShared/java")
     sourceSets.getByName("androidTest").kotlin.srcDir("src/testShared/java")
+    sourceSets.getByName("main").assets.srcDir(rendererAssets)
 }
+
+tasks.named("preBuild").configure { dependsOn(bundleRendererEditor) }
 
 dependencies {
     implementation(project(":core:browser"))

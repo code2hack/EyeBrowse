@@ -22,9 +22,9 @@ class PhoneControlCoordinator(
 
     fun onLinkStarting() = reconcileDocument()
 
-    fun onAuthenticatedSession(compatible: Boolean) = synchronized(authority) {
+    fun onAuthenticatedSession(compatible: Boolean, keyboardCompatible: Boolean = false) = synchronized(authority) {
         reconcileDocument()
-        authority.setAuthenticated(true, compatible)
+        authority.setAuthenticated(true, compatible, keyboardCompatible)
     }
 
     fun onLinkStopped() = synchronized(authority) {

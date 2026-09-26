@@ -190,6 +190,7 @@ class HostingController private constructor(private val appContext: Context) {
     // Phone geometry is freshly framework-measured; no pixel-tolerance workaround.
     private var lastViewport = WebViewMetric(0, 0, 0)
     private val presentationEpochs = PresentationEpochs()
+    private var profileTransfer: Any? = null
 
     private val startTimeout = Runnable { onStartTimeout() }
     private val idleRelease = Runnable { runIdleRelease() }
@@ -379,9 +380,10 @@ class HostingController private constructor(private val appContext: Context) {
             // its own snapshots — and replace it only when its thread has actually exited.
             retiringHosts.add(previousHost)
         }
-        val host = PrivateDisplayHost(resourceFactory, Runnable { onRetirementSignal(epoch) })
+        lateinit var host: PrivateDisplayHost
+        host = PrivateDisplayHost(resourceFactory, Runnable { onRetirementSignal(host) })
         displayHost = host
-        host.setUnavailableListener(Runnable { onPresentationUnavailable(epoch, host) })
+        host.setUnavailableListener(Runnable { onPresentationUnavailable(host) })
         pruneQuiescedRetiringHostsLocked()
         try {
             host.create(service!!, metric.width, metric.height, metric.densityDpi)
@@ -468,6 +470,7 @@ class HostingController private constructor(private val appContext: Context) {
     }
 
     // ---------------------------------------------------------------- stop
+    private var editorStopPending = false
 
     /** Explicit Stop; idempotent, bounded, and safe during startup or when not hosting. */
     @Synchronized
@@ -492,6 +495,26 @@ class HostingController private constructor(private val appContext: Context) {
 
     /** Publishes the settled final state BEFORE notifying listeners (F7). */
     private fun completeStop() {
+        if (state == State.NOT_HOSTING) return
+        profileTransfer = null
+        // Do not release Phone input/declare Stop complete while an old edit can still execute.
+        if (!session.editorQuiescent()) {
+            if (!editorStopPending) {
+                editorStopPending = true
+                mainHandler.post {
+                    session.retireEditor { verified ->
+                        synchronized(this) {
+                            editorStopPending = false
+                            if (verified) completeStop() else {
+                                failureReason = "Editor retirement unconfirmed"
+                                notifyHostingChanged()
+                            }
+                        }
+                    }
+                }
+            }
+            return
+        }
         presentationEpochs.retire()
         mainHandler.removeCallbacks(watchdog)
         mainHandler.removeCallbacks(idleRelease)
@@ -588,11 +611,54 @@ class HostingController private constructor(private val appContext: Context) {
     @Synchronized
     fun isRgPresentationOwned(): Boolean = rgPresentationOwned
 
+    /** Geometry-only transfer: old lease is revoked, but its backing surface is never detached. */
+    fun reconfigureRgProfile(profile: HostingPresentationProfile, deadlineElapsedMs: Long,
+                             completed: (Boolean) -> Unit) {
+        check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
+        val host = displayHost
+        val previous = presentationEpochs.current
+        if (state != State.HOSTING || !rgPresentationOwned || profileTransfer != null ||
+            !session.editorQuiescent() || host == null || previous == null ||
+            profile.densityDpi != previous.profile.densityDpi || !host.localFocusReady(session)) {
+            completed(false); return
+        }
+        val transfer = Any()
+        val epoch: PresentationEpochs.Token
+        synchronized(this) {
+            profileTransfer = transfer
+            lease?.markRevoked(); lease = null
+            frameGate.close(); frameConsumer = null
+            epoch = presentationEpochs.begin(generation, profile)
+        }
+        // Keep the existing bounded wake/idle anchors. No normal release(), surface-null or join.
+        host.resizeProfile(profile, session, deadlineElapsedMs) { settled ->
+            val current = profileTransfer === transfer && displayHost === host &&
+                presentationEpochs.owns(epoch) && state == State.HOSTING && rgPresentationOwned
+            if (profileTransfer === transfer) profileTransfer = null
+            if (!settled || !current) {
+                if (current) {
+                    failureReason = "Profile resize did not preserve a settled focused window"
+                    stop() // Explicit failure; never rebuild and readopt the retained target.
+                }
+                completed(false)
+            } else completed(true)
+        }
+    }
+
+    @Synchronized
+    fun profileGeometry(): PrivateDisplayHost.ProfileGeometry? = displayHost?.profileGeometry(session)
+
+    internal fun profileSettlementForTest(): Runnable? = displayHost?.profileSettlementForTest()
+    internal fun replayProfileImageCallbackForTest(reader: android.media.ImageReader) =
+        displayHost?.replayImageCallbackForTest(reader)
+    internal fun staleProfileImageCallbacksForTest(): Long = displayHost?.staleReaderCallbacksForTest() ?: 0
+
     @Synchronized
     fun presentOnRg(profile: HostingPresentationProfile): Boolean {
         check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
         if (state != State.HOSTING) return false
         if (rgPresentationOwned && presentationEpochs.current?.profile == profile) return true
+        if (!session.editorQuiescent()) return false
         if (lease != null || displayHost?.isOwnerActive() == true || displayHost?.isRetiring() == true) return false
         val old = displayHost ?: return false
         // Retire callbacks by epoch BEFORE releasing the prior presentation. No new WebView/load.
@@ -600,9 +666,17 @@ class HostingController private constructor(private val appContext: Context) {
         rgPresentationOwned = true
         old.release(session)
         if (!old.isQuiescent()) retiringHosts.add(old)
-        val host = PrivateDisplayHost(resourceFactory, Runnable { onRetirementSignal(epoch) })
+        lateinit var host: PrivateDisplayHost
+        host = PrivateDisplayHost(resourceFactory, Runnable { onRetirementSignal(host) },
+            localFocusForRg = true)
         displayHost = host
-        host.setUnavailableListener(Runnable { onPresentationUnavailable(epoch, host) })
+        host.setUnavailableListener(Runnable { onPresentationUnavailable(host) })
+        host.setLocalFocusListener(Runnable {
+            // Main-thread native events are tied to this host/epoch, never to the old Activity.
+            if (displayHost === host && rgPresentationOwned) {
+                session.remoteEditor?.onLocalFocusChanged()
+            }
+        })
         return try {
             host.create(checkNotNull(hostingContext), profile.width, profile.height, profile.densityDpi)
             host.attachSessionView(session)
@@ -627,6 +701,7 @@ class HostingController private constructor(private val appContext: Context) {
         check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
         if (measurePhoneControlProfile() == null) return false
         if (!rgPresentationOwned) return true
+        if (!session.editorQuiescent()) return false
         revokeLease()
         presentationEpochs.retire()
         val retired = displayHost
@@ -723,8 +798,13 @@ class HostingController private constructor(private val appContext: Context) {
             try {
                 host.ensureCaptureSurface(hostingContext!!, profile.width, profile.height,
                     profile.densityDpi, session)
-                if (!host.rearmCapture(generation, BoundSink(demand, generation, consumer),
-                        freshFrameRequest(epoch, host))) {
+                if (!host.rearmCapture(
+                        generation,
+                        BoundSink(demand, generation, consumer),
+                        session,
+                        freshFrameRequest(epoch, host),
+                        Long.MAX_VALUE,
+                    )) {
                     throw HostingException("capture rearm failed on private handoff")
                 }
             } catch (error: HostingException) {
@@ -791,7 +871,27 @@ class HostingController private constructor(private val appContext: Context) {
     /** Acquires the single frame lease; {@code null} when hosting is inactive or already leased. */
     @Synchronized
     fun acquireLease(consumer: FrameConsumer): Lease? {
-        if (state != State.HOSTING || lease != null || displayHost == null) {
+        return acquireLeaseInternal(consumer, allowRecovery = true)
+    }
+
+    /** Rearm only the verified resized host: generic rebuild recovery is forbidden here. */
+    @Synchronized
+    fun acquireProfileLease(
+        profile: HostingPresentationProfile,
+        deadlineElapsedMs: Long,
+        consumer: FrameConsumer,
+    ): Lease? {
+        if (profileTransfer != null || presentationEpochs.current?.profile != profile ||
+            !localEditorFocusReady()) return null
+        return acquireLeaseInternal(consumer, allowRecovery = false, deadlineElapsedMs = deadlineElapsedMs)
+    }
+
+    private fun acquireLeaseInternal(
+        consumer: FrameConsumer,
+        allowRecovery: Boolean,
+        deadlineElapsedMs: Long = Long.MAX_VALUE,
+    ): Lease? {
+        if (state != State.HOSTING || lease != null || displayHost == null || profileTransfer != null) {
             return null
         }
         val host = displayHost ?: return null
@@ -810,8 +910,15 @@ class HostingController private constructor(private val appContext: Context) {
         val epoch = presentationEpochs.current ?: return null
         val metric = epoch.profile
         try {
-            host.ensureCaptureSurface(hostingContext!!, metric.width, metric.height,
+            if (allowRecovery) host.ensureCaptureSurface(hostingContext!!, metric.width, metric.height,
                     metric.densityDpi, session)
+            else {
+                val actual = host.profileGeometry(session)
+                if (actual.display.readerWidth != metric.width || actual.display.readerHeight != metric.height ||
+                    actual.viewWidth != metric.width || actual.viewHeight != metric.height ||
+                    actual.display.actualWidth != metric.width || actual.display.actualHeight != metric.height ||
+                    actual.density != metric.densityDpi || actual.readerOverlap != 1) return null
+            }
         } catch (error: HostingException) {
             failureReason = error.message
             notifyHostingChanged()
@@ -823,18 +930,23 @@ class HostingController private constructor(private val appContext: Context) {
         // Same-owner rearm vs new-owner start: revocation retains the capture owner (thread and
         // reader stay for reacquisition), so a new lease after expiry/release rearms the SAME
         // active owner with the new bound sink; only a quiescent host starts a fresh owner (R2).
+        val sink = BoundSink(newLease, generation, consumer)
         val freshFrameRequest = freshFrameRequest(epoch, host)
         val started = if (host.isOwnerActive()) {
             host.rearmCapture(
                 generation,
-                BoundSink(newLease, generation, consumer),
+                sink,
+                session,
                 freshFrameRequest,
+                deadlineElapsedMs,
             )
         } else {
             host.startCapture(
                 generation,
-                BoundSink(newLease, generation, consumer),
+                sink,
+                session,
                 freshFrameRequest,
+                deadlineElapsedMs,
             )
         }
         if (!started) {
@@ -958,9 +1070,9 @@ class HostingController private constructor(private val appContext: Context) {
      * main and evaluate actual completion. Replacement is never auto-started here — callers
      * retry explicitly once quiescence is observed.
      */
-    private fun onRetirementSignal(epoch: PresentationEpochs.Token) {
+    private fun onRetirementSignal(owner: PrivateDisplayHost) {
         mainHandler.post {
-            if (presentationEpochs.owns(epoch)) {
+            if (displayHost === owner) {
                 evaluateRetirements()
             } else {
                 // Old callbacks may complete ONLY retired resources, not the current host.
@@ -970,7 +1082,7 @@ class HostingController private constructor(private val appContext: Context) {
                     pruneQuiescedRetiringHostsLocked()
                     if (before != retiringHosts.size) notifyHostingChanged()
                     if (retiringHosts.any { it.isRetiring() }) {
-                        mainHandler.postDelayed({ onRetirementSignal(epoch) }, RETIREMENT_RECHECK_MS)
+                        mainHandler.postDelayed({ onRetirementSignal(owner) }, RETIREMENT_RECHECK_MS)
                     }
                 }
             }
@@ -1050,11 +1162,19 @@ class HostingController private constructor(private val appContext: Context) {
         wakeLockKeeper?.release()
     }
 
-    private fun freshFrameRequest(epoch: PresentationEpochs.Token, host: PrivateDisplayHost): Runnable =
-        Runnable {
+    private fun freshFrameRequest(
+        epoch: PresentationEpochs.Token,
+        host: PrivateDisplayHost,
+    ): PrivateDisplayHost.FreshFrameRequest =
+        PrivateDisplayHost.FreshFrameRequest { onVisualReady, onCommitted ->
             mainHandler.post {
-                if (presentationEpochs.owns(epoch) && displayHost === host && state == State.HOSTING) {
-                    session.requestFreshCaptureFrame {
+                if (presentationEpochs.owns(epoch) && displayHost === host &&
+                    state == State.HOSTING && attachment == Attachment.PRIVATE_DISPLAY) {
+                    session.requestFreshCaptureFrame(
+                        drawSerial = { host.drawSerial() },
+                        visualReady = onVisualReady,
+                        frameCommitted = onCommitted,
+                    ) {
                         presentationEpochs.owns(epoch) && displayHost === host &&
                             state == State.HOSTING && attachment == Attachment.PRIVATE_DISPLAY
                     }
@@ -1062,10 +1182,10 @@ class HostingController private constructor(private val appContext: Context) {
             }
         }
 
-    private fun onPresentationUnavailable(epoch: PresentationEpochs.Token, host: PrivateDisplayHost) {
+    private fun onPresentationUnavailable(host: PrivateDisplayHost) {
         mainHandler.post {
             synchronized(this) {
-                if (!presentationEpochs.owns(epoch) || displayHost !== host) return@post
+                if (displayHost !== host) return@post
                 if (state == State.STARTING) {
                     failStart("private presentation became unavailable")
                 } else if (state == State.HOSTING) {
@@ -1085,10 +1205,16 @@ class HostingController private constructor(private val appContext: Context) {
     @Synchronized
     fun privateDisplaySnapshot(): PrivateDisplayHost.DisplaySnapshot? = displayHost?.displaySnapshot()
 
+    /** Local private-window readiness, deliberately independent of Phone foreground/keyguard. */
+    @Synchronized
+    fun localEditorFocusReady(): Boolean = state == State.HOSTING && rgPresentationOwned &&
+        presentationEpochs.current != null && displayHost?.localFocusReady(session) == true
+
     // ---------------------------------------------------- lifecycle events
 
     private fun onSessionChanged(changed: PhoneBrowserSession) {
         synchronized(this) {
+            if (state == State.STOPPING && changed.editorQuiescent()) completeStop()
             if (state == State.HOSTING && !changed.isLive()) {
                 // The renderer is gone: hosting is interrupted and needs an explicit restart.
                 Log.i(TAG, "browser lost while hosting gen=$generation")

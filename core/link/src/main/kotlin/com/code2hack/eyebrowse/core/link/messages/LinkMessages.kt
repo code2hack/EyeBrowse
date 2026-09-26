@@ -16,6 +16,9 @@ data class HelloMessage(val pmj: Int, val pmm: Int, val caps: List<String>) {
 
     fun hasPresentationCapabilities(): Boolean =
         com.code2hack.eyebrowse.core.link.LinkProtocol.PRESENTATION_CAPABILITIES.all { caps.contains(it) }
+
+    fun hasKeyboardCapabilities(): Boolean = hasPresentationCapabilities() &&
+        com.code2hack.eyebrowse.core.link.LinkProtocol.KEYBOARD_CAPABILITIES.all { caps.contains(it) }
 }
 
 /** RG → Phone, initial pairing proof (plan §4.2 steps 2–4). Byte fields are base64url. */

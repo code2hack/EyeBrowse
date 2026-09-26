@@ -5,8 +5,9 @@ import android.graphics.Bitmap
 /**
  * One captured offscreen frame delivered to the single live in-process consumer.
  *
- * <p>The bitmap is a shared, reused buffer owned by the capture pipeline: the consumer must read or
- * copy it during the callback and must not retain or recycle it. {@code generation} fences frames
+ * <p>The bitmap is request-owned by the capture pipeline and borrowed only for the synchronous
+ * consumer callback: the consumer must read or copy it during the callback and must not retain or
+ * recycle it. The pipeline retires it after callback return. {@code generation} fences frames
  * from a superseded hosting session; {@code captureElapsedMs} is the {@link
  * android.os.SystemClock#elapsedRealtime()} capture stamp used for freshness checks.
  *

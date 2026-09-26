@@ -324,7 +324,8 @@ class LinkClientEngine(
                     listener.onAuthenticated(phoneSpki, locator)
                     val peer = checkNotNull(operation.peerHello)
                     val session = AuthenticatedControlSession(tls, input,
-                        peer.hasPresentationCapabilities() && attempt.clientHello.hasPresentationCapabilities(), true)
+                        peer.hasPresentationCapabilities() && attempt.clientHello.hasPresentationCapabilities(), true,
+                        keyboardCompatible = peer.hasKeyboardCapabilities() && attempt.clientHello.hasKeyboardCapabilities())
                     operation.session = session
                     listener.onAuthenticatedSession(session, peer)
                     listener.onStateChange(PairingState.CONNECTED)

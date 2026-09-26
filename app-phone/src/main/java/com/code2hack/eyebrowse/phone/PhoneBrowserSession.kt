@@ -64,7 +64,16 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
     private var currentAttachment: Attachment? = null
     private var rendererGone = false
     @Volatile private var documentId = java.util.UUID.randomUUID().toString()
+    private var captureVisualRequestSerial = 0L // UI-thread only; local draw/copy identity, never wire ordinal.
     fun documentIdentity(): String = documentId
+    internal var remoteEditor: PhoneEditorController? = null
+    /** AndroidTest may delay delivery of a REAL frame-commit callback; null in production. */
+    internal var captureCommitDispatcherForTest: ((Runnable) -> Unit)? = null
+    internal fun editorQuiescent() = remoteEditor?.isQuiescent() != false
+    internal fun retireEditor(completed: (Boolean) -> Unit) {
+        remoteEditor?.close(callback = completed) ?: completed(true)
+    }
+    internal fun editorRetired() = notifyListeners()
 
     private var displayUrl: String? = null
     private var lastCommittedUrl: String? =
@@ -168,6 +177,8 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
             com.code2hack.eyebrowse.core.link.control.BrowserAction.Back -> goBack()
             com.code2hack.eyebrowse.core.link.control.BrowserAction.Forward -> goForward()
             com.code2hack.eyebrowse.core.link.control.BrowserAction.Reload -> reload()
+            is com.code2hack.eyebrowse.core.link.control.BrowserAction.OpenAddress -> openAddress(action.address)
+            is com.code2hack.eyebrowse.core.link.control.BrowserAction.Edit -> error("editor admission required")
             is com.code2hack.eyebrowse.core.link.control.BrowserAction.ScrollBy ->
                 view.scrollBy(kotlin.math.round(action.dx).toInt(), kotlin.math.round(action.dy).toInt())
             is com.code2hack.eyebrowse.core.link.control.BrowserAction.ActivateAt -> {
@@ -272,19 +283,66 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
     }
 
     /**
-     * Requests a fresh draw after the capture path armed a new/recreated reader and drained
-     * pre-arm buffers. May be invoked from the capture thread; View.post performs the actual
-     * invalidation on the WebView/UI thread and fences renderer replacement.
+     * Requests a fresh draw for the current capture authority. With a commit callback this first
+     * establishes a unique WebView visual-state boundary, then registers a frame-commit callback
+     * before requesting the next hardware traversal. View work stays on Main and renderer
+     * replacement/current-owner checks fail closed.
      */
-    fun requestFreshCaptureFrame(isCurrentOwner: () -> Boolean = { true }) {
+    fun requestFreshCaptureFrame(
+        drawSerial: (() -> Long)? = null,
+        visualReady: ((Long, Long) -> Unit)? = null,
+        frameCommitted: ((Long) -> Unit)? = null,
+        isCurrentOwner: () -> Boolean = { true },
+    ) {
         val target = webView ?: return
         target.post {
             if (webView !== target || rendererGone || !isCurrentOwner()) {
                 return@post
             }
-            target.requestLayout()
-            target.invalidate()
-            target.postInvalidateOnAnimation()
+            fun draw() {
+                target.requestLayout()
+                target.invalidate()
+                target.postInvalidateOnAnimation()
+            }
+            if (frameCommitted == null) {
+                draw()
+                return@post
+            }
+            val serial = drawSerial ?: return@post
+            val onVisualReady = visualReady ?: return@post
+            if (!target.isHardwareAccelerated || !target.isAttachedToWindow) {
+                return@post // No software/synthetic fallback for a Window-qualified frame.
+            }
+            val visualRequestId = ++captureVisualRequestSerial
+            target.postVisualStateCallback(visualRequestId, object : WebView.VisualStateCallback() {
+                override fun onComplete(requestId: Long) {
+                    if (requestId != visualRequestId || webView !== target || rendererGone ||
+                        !target.isAttachedToWindow || !isCurrentOwner()) return
+                    // Main is not concurrently traversing while this callback runs. Any draw serial
+                    // observed after this point therefore belongs to a traversal after the visual
+                    // boundary, not an already in-flight earlier draw.
+                    val beforeDrawSerial = serial()
+                    android.util.Log.i("EyeBrowseCaptureFence",
+                        "visual-ready request=" + requestId + " beforeDraw=" + beforeDrawSerial)
+                    // Arm the immutable draw association BEFORE invalidating. The later commit
+                    // callback carries only request identity; it never re-samples a newer draw.
+                    onVisualReady(requestId, beforeDrawSerial)
+                    target.viewTreeObserver.registerFrameCommitCallback commit@{
+                        if (webView !== target || rendererGone || !target.isAttachedToWindow ||
+                            !isCurrentOwner()) return@commit
+                        android.util.Log.i("EyeBrowseCaptureFence",
+                            "frame-commit request=" + requestId)
+                        val delivery = Runnable {
+                            if (webView === target && !rendererGone && target.isAttachedToWindow &&
+                                isCurrentOwner()) {
+                                frameCommitted(requestId)
+                            }
+                        }
+                        captureCommitDispatcherForTest?.invoke(delivery) ?: delivery.run()
+                    }
+                    draw()
+                }
+            })
         }
     }
 
@@ -339,6 +397,7 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
      * independent. UI thread only; not reachable from the product UI.
      */
     fun resetForTest() {
+        captureCommitDispatcherForTest = null
         disposeWebView()
         rendererGone = false
         displayUrl = null
