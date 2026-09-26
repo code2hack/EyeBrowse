@@ -366,6 +366,16 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "model": "gpt-6-astra/thinking-max",
     "name": "Reviewer-codex-astra",
     "status": "active"
+  },
+  {
+    "role": "Worker",
+    "scope": "v0.0.1 (I9 successor: ticket #11 browser recovery)",
+    "host": "spark",
+    "runtime": "codex",
+    "id": "57353970-999f-41dd-95c9-5a5731499000",
+    "model": "gpt-6-astra/thinking-medium",
+    "name": "Worker-codex-astra-2",
+    "status": "active"
   }
 ]
 ```
