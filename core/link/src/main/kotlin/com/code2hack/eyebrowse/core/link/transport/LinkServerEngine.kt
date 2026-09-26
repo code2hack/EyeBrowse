@@ -13,7 +13,6 @@ import com.code2hack.eyebrowse.core.link.invitation.InvitationLifecycle
 import com.code2hack.eyebrowse.core.link.invitation.toLinkErrorOrNull
 import com.code2hack.eyebrowse.core.link.invitation.B64URL
 import com.code2hack.eyebrowse.core.link.messages.AuthErrMessage
-import com.code2hack.eyebrowse.core.link.messages.AuthOkMessage
 import com.code2hack.eyebrowse.core.link.messages.ChallengeMessage
 import com.code2hack.eyebrowse.core.link.messages.ForgetNoticeMessage
 import com.code2hack.eyebrowse.core.link.messages.HelloMessage
@@ -144,6 +143,9 @@ class LinkServerEngine(
     @Volatile internal var beforeStopTlsCloseForTest: (() -> Unit)? = null
 
     @Volatile internal var beforePairingCommitForTest: (() -> Unit)? = null
+
+    /** JVM scheduling seam after AuthOk is flushed; production leaves it null. */
+    @Volatile internal var afterAuthOkForTest: (() -> Unit)? = null
 
     /** State retirement is synchronous; TLS close_notify must never execute on a UI caller. */
     @Synchronized
@@ -316,22 +318,25 @@ class LinkServerEngine(
             }
             if (error != null) return reject(socket, output, error)
 
-            // 4. Authenticated: AuthOk, then the FIRST protected status frame.
-            sendFrame(output, LinkMessageCodec.encode(AuthOkMessage))
+            // 4. Publish before AuthOk can make the peer observable as CONNECTED. The session
+            // writer sends AuthOk first, then the queued initial status and subsequent controls.
             val current = AuthenticatedControlSession(socket, input,
                 clientHello.hasPresentationCapabilities() && serverHello.hasPresentationCapabilities(), false,
-                keyboardCompatible = clientHello.hasKeyboardCapabilities() && serverHello.hasKeyboardCapabilities())
+                keyboardCompatible = clientHello.hasKeyboardCapabilities() && serverHello.hasKeyboardCapabilities(),
+                sendAuthOk = true)
+            current.afterAuthOkForTest = afterAuthOkForTest
             session = current
             synchronized(activeOwnershipLock) {
                 if (stopped || activeSocket.get() !== socket) return
                 authenticated = true
                 activeSessionAuthenticated = true
+                current.sendControl(StatusMessage.of(trust.currentHostStatus()))
                 controlSession = current
                 phase.set(Phase.LINK_UP)
-                current.sendControl(StatusMessage.of(trust.currentHostStatus()))
                 listener.onAuthenticatedSession(current, clientHello)
                 listener.onLinkUp()
             }
+            current.start()
             readLoop(socket, current)
         } catch (e: EOFException) {
             // peer closed during handshake/auth
