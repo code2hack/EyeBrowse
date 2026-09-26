@@ -4665,6 +4665,24 @@ class HostingInstrumentedTest {
         }
     }
 
+    private data class R4PlatformResult(
+        val invocation: Int,
+        val result: Int,
+        val callbackThread: String,
+        val callbackElapsedMs: Long,
+        val bitmapIdentity: Int,
+    )
+
+    private class R4PlatformCall(
+        val invocation: Int,
+        val requestThread: String,
+        val startedElapsedMs: Long,
+        val bitmapIdentity: Int,
+    ) {
+        val returned = CountDownLatch(1)
+        @Volatile var returnedElapsedMs: Long = Long.MIN_VALUE
+    }
+
     /**
      * Real platform factory with test-only observation/control: retain reader object identities
      * and delay one actual Presentation draw after the product listener has observed it.
@@ -4677,6 +4695,9 @@ class HostingInstrumentedTest {
         private val readers = CopyOnWriteArrayList<ImageReader>()
         private val scriptedCopyResults = ConcurrentLinkedQueue<Int>()
         private val copyEvents = LinkedBlockingQueue<Int>()
+        private val platformCalls = LinkedBlockingQueue<R4PlatformCall>()
+        private val platformResults = CopyOnWriteArrayList<R4PlatformResult>()
+        private val requestedDestinations = CopyOnWriteArrayList<android.graphics.Bitmap>()
         private val copyCount = AtomicInteger(0)
         private val activeCopyCalls = AtomicInteger(0)
         private val maxConcurrentCopyCalls = AtomicInteger(0)
@@ -4684,6 +4705,7 @@ class HostingInstrumentedTest {
         @Volatile private var nextDrawObserved: CountDownLatch? = null
         @Volatile private var nextCopyGate: R4Gate? = null
         @Volatile private var nextCompletionHold: R4CompletionHold? = null
+        @Volatile private var latestPresentation: ControlledPresentation? = null
 
         fun armNextDraw(): R4Gate = R4Gate().also { gate ->
             nextDrawGate = gate
@@ -4717,6 +4739,16 @@ class HostingInstrumentedTest {
 
         fun maxConcurrentCopyCalls(): Int = maxConcurrentCopyCalls.get()
 
+        fun awaitPlatformCall(timeoutMs: Long): R4PlatformCall? =
+            platformCalls.poll(timeoutMs, TimeUnit.MILLISECONDS)
+
+        fun platformResults(): List<R4PlatformResult> = platformResults.toList()
+
+        fun requestedBitmaps(): List<android.graphics.Bitmap> = requestedDestinations.toList()
+
+        fun controlledPresentation(): ControlledPresentation =
+            checkNotNull(latestPresentation) { "controlled Presentation unavailable" }
+
         fun latestReader(): ImageReader = checkNotNull(readers.lastOrNull())
 
         override fun createVirtualDisplay(
@@ -4744,6 +4776,7 @@ class HostingInstrumentedTest {
             try {
                 val invocation = copyCount.incrementAndGet()
                 copyEvents.offer(invocation)
+                requestedDestinations.add(destination)
                 val gate = nextCopyGate
                 if (gate != null && nextCopyGate === gate) {
                     nextCopyGate = null
@@ -4758,9 +4791,33 @@ class HostingInstrumentedTest {
                     } else listener
                 val scripted = scriptedCopyResults.poll()
                 if (scripted == null || scripted == REAL_COPY) {
-                    platform.requestWindowCopy(
-                        window, sourceRect, destination, completionListener, handler,
+                    val call = R4PlatformCall(
+                        invocation,
+                        Thread.currentThread().name,
+                        SystemClock.elapsedRealtime(),
+                        System.identityHashCode(destination),
                     )
+                    platformCalls.offer(call)
+                    val observed = android.view.PixelCopy.OnPixelCopyFinishedListener { result ->
+                        platformResults.add(
+                            R4PlatformResult(
+                                invocation,
+                                result,
+                                Thread.currentThread().name,
+                                SystemClock.elapsedRealtime(),
+                                System.identityHashCode(destination),
+                            ),
+                        )
+                        completionListener.onPixelCopyFinished(result)
+                    }
+                    try {
+                        platform.requestWindowCopy(
+                            window, sourceRect, destination, observed, handler,
+                        )
+                    } finally {
+                        call.returnedElapsedMs = SystemClock.elapsedRealtime()
+                        call.returned.countDown()
+                    }
                 } else {
                     handler.post { completionListener.onPixelCopyFinished(scripted) }
                 }
@@ -4769,32 +4826,63 @@ class HostingInstrumentedTest {
             }
         }
 
+        inner class ControlledPresentation(
+            private val delegate: PrivateDisplayHost.PresentationHost,
+        ) : PrivateDisplayHost.PresentationHost by delegate {
+            @Volatile private var suppressUnavailable = false
+
+            fun suppressUnavailableForTest() {
+                suppressUnavailable = true
+            }
+
+            fun dismissWithoutUnavailableForTest() {
+                suppressUnavailable = true
+                delegate.dismiss()
+            }
+
+            fun showWithoutUnavailableForTest() {
+                suppressUnavailable = true
+                delegate.show()
+            }
+
+            override fun setUnavailableListener(listener: Runnable?) {
+                if (listener == null) {
+                    delegate.setUnavailableListener(null)
+                } else {
+                    delegate.setUnavailableListener(Runnable {
+                        if (!suppressUnavailable) listener.run()
+                    })
+                }
+            }
+
+            override fun setDrawListener(listener: PrivateDisplayHost.DrawListener?) {
+                if (listener == null) {
+                    delegate.setDrawListener(null)
+                    return
+                }
+                delegate.setDrawListener(PrivateDisplayHost.DrawListener { serial, elapsedMs ->
+                    listener.onDraw(serial, elapsedMs)
+                    val observed = nextDrawObserved
+                    if (observed != null && nextDrawObserved === observed) {
+                        nextDrawObserved = null
+                        observed.countDown()
+                    }
+                    val gate = nextDrawGate
+                    if (gate != null && nextDrawGate === gate) {
+                        nextDrawGate = null
+                        gate.blockOnce()
+                    }
+                })
+            }
+        }
+
         override fun createPresentation(
             context: Context,
             display: android.view.Display,
         ): PrivateDisplayHost.PresentationHost {
-            val delegate = platform.createPresentation(context, display)
-            return object : PrivateDisplayHost.PresentationHost by delegate {
-                override fun setDrawListener(listener: PrivateDisplayHost.DrawListener?) {
-                    if (listener == null) {
-                        delegate.setDrawListener(null)
-                        return
-                    }
-                    delegate.setDrawListener(PrivateDisplayHost.DrawListener { serial, elapsedMs ->
-                        listener.onDraw(serial, elapsedMs)
-                        val observed = nextDrawObserved
-                        if (observed != null && nextDrawObserved === observed) {
-                            nextDrawObserved = null
-                            observed.countDown()
-                        }
-                        val gate = nextDrawGate
-                        if (gate != null && nextDrawGate === gate) {
-                            nextDrawGate = null
-                            gate.blockOnce()
-                        }
-                    })
-                }
-            }
+            val wrapped = ControlledPresentation(platform.createPresentation(context, display))
+            latestPresentation = wrapped
+            return wrapped
         }
 
         companion object {
