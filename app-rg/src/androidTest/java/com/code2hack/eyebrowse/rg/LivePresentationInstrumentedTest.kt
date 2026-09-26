@@ -184,6 +184,30 @@ class LivePresentationInstrumentedTest {
             }
             Log.i("EyeBrowseFW5", "RG_PHASE_FIRST_ENCODE_ACK mission=" + mission)
 
+            // The Phone-side phase-title ACK is itself a legitimate renderer mutation and may
+            // replace the one-slot pending frame with a newer frame of the SAME old context.
+            // Bind retirement evidence to whatever real authenticated old-context frame is
+            // actually pending immediately before the ownership barrier.
+            val retireTarget = checkNotNull(pendingFrameForTest(controller)) {
+                "FW5 old-context frame disappeared before authority retirement"
+            }
+            assertEquals(oldState.context, retireTarget.header.context)
+            assertEquals(profile.width, retireTarget.header.width)
+            assertEquals(profile.height, retireTarget.header.height)
+            assertTrue(
+                "FW5 retirement target does not regress frame sequence",
+                retireTarget.header.frameSeq >= staleCandidate.header.frameSeq,
+            )
+            Log.i(
+                "EyeBrowseFW5",
+                "RG_OLD_FRAME_RETIRE_TARGET mission=" + mission +
+                    " seq=" + retireTarget.header.frameSeq +
+                    " capture=" + retireTarget.header.captureTsMs +
+                    " profile=" + retireTarget.header.width + "x" + retireTarget.header.height +
+                    " controlEpoch=" + retireTarget.header.context.controlEpoch +
+                    " viewportEpoch=" + retireTarget.header.context.viewportEpoch,
+            )
+
             scenario.onActivity { assertTrue(controller.requestPhone()) }
             await("FW5 Phone handoff retires old presentation grant", 2_000) {
                 controller.browserState()?.owner ==
