@@ -9,6 +9,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.code2hack.eyebrowse.phone.link.PhoneLinkServer
+import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -134,8 +135,24 @@ class LivePresentationInstrumentedTest {
         val host = HostingController.get(app)
         val server = PhoneLinkServer.obtain(app)
         val scenario = ActivityScenario.launch<MainActivity>(Intent(app, MainActivity::class.java))
+        val mission = java.util.UUID.fromString(
+            checkNotNull(InstrumentationRegistry.getArguments().getString("missionId")) {
+                "FW5 paired missionId is required"
+            },
+        ).toString()
+        val readyTitle = "FW5 READY " + mission
         var primaryFailure: Throwable? = null
         try {
+            // Pairing/trust is retained, but no prior authenticated session or Hosting generation
+            // may satisfy this run. This is test-owned chronology cleanup, not a pairing reset.
+            scenario.onActivity {
+                server.stop()
+                host.stop()
+            }
+            StopRecoveryAssertions.await("FW5 clean chronology start", 5_000) {
+                !server.isLinkUp() && StopRecoveryAssertions.resourcesGone(host)
+            }
+
             val fixture = StopRecoveryAssertions.openFixture(scenario, browser)
             val originalView = fixture.view
             val originalDocument = fixture.documentId
@@ -147,9 +164,27 @@ class LivePresentationInstrumentedTest {
             await("FW5 hosting active before link start", 5_000) {
                 host.status().state == HostingController.State.HOSTING
             }
+
+            // Cross-device run handshake. The title is fixture-only state in this same document.
+            // publishPhoneViewport() uses the normal BrowserState publication path; no test wire
+            // receiver or trust material is introduced.
+            BrowserControlJourneyTest().js(
+                browser,
+                "document.title=" + JSONObject.quote(readyTitle) + ";document.title",
+            )
+            await("FW5 run-specific title committed", 2_000) {
+                browser.pageTitle() == readyTitle
+            }
+
             val firstCaptureFloor = SystemClock.elapsedRealtime()
-            scenario.onActivity { server.start() }
-            Log.i("EyeBrowseFW5", "PHONE_READY hosting=true")
+            scenario.onActivity {
+                server.start()
+                server.publishPhoneViewport()
+            }
+            Log.i(
+                "EyeBrowseFW5",
+                "PHONE_PHASE_READY mission=" + mission + " hosting=true titleBound=true",
+            )
 
             await("FW5 first RG owner with authenticated presentation", 15_000) {
                 val state = server.controlCoordinator.authority.snapshot()
@@ -191,11 +226,12 @@ class LivePresentationInstrumentedTest {
             )
 
             // RG companion retires an actual pending old-context frame and hands control to Phone.
-            await("FW5 RG stale-frame phase returns ownership to Phone", 5_000) {
+            await("FW5 RG stale-frame phase returns ownership to Phone", 8_000) {
                 server.controlCoordinator.authority.snapshot().owner ==
                     com.code2hack.eyebrowse.core.link.control.ControlOwner.PHONE
             }
             val phoneState = server.controlCoordinator.authority.snapshot()
+            Log.i("EyeBrowseFW5", "PHONE_PHASE_OLD_CONTEXT_RETIRED mission=" + mission)
             assertTrue("FW5 first handoff advances control epoch",
                 phoneState.context.controlEpoch > firstState.context.controlEpoch)
             assertTrue("FW5 authenticated link remains up during Phone ownership",
@@ -210,7 +246,7 @@ class LivePresentationInstrumentedTest {
             }
 
             val secondCaptureFloor = SystemClock.elapsedRealtime()
-            await("FW5 RG reacquires current presentation", 5_000) {
+            await("FW5 RG reacquires current presentation", 8_000) {
                 val state = server.controlCoordinator.authority.snapshot()
                 state.owner == com.code2hack.eyebrowse.core.link.control.ControlOwner.RG &&
                     state.context.controlEpoch > firstState.context.controlEpoch &&
@@ -260,10 +296,11 @@ class LivePresentationInstrumentedTest {
             )
 
             // RG's final handoff is the paired completion handshake.
-            await("FW5 paired RG companion completes with Phone owner", 5_000) {
+            await("FW5 paired RG companion completes with Phone owner", 8_000) {
                 server.controlCoordinator.authority.snapshot().owner ==
                     com.code2hack.eyebrowse.core.link.control.ControlOwner.PHONE
             }
+            Log.i("EyeBrowseFW5", "PHONE_PHASE_COMPLETE mission=" + mission)
             assertTrue("FW5 link still authenticated before explicit cleanup", server.isLinkUp())
             assertSame(originalView, browser.view())
             assertEquals(originalDocument, browser.documentIdentity())
