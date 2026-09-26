@@ -3513,6 +3513,7 @@ class HostingInstrumentedTest {
         val consumer = CollectingConsumer()
         consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
         val stress = installFw4GpuStress(factory)
+        registerExecutionHold { removeFw4GpuStress(stress) }
         val held = factory.holdNextCopyCompletion()
         val requestStart = SystemClock.elapsedRealtime()
         val deadline = requestStart + 2_000
