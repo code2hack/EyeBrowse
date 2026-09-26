@@ -183,6 +183,12 @@ class LivePresentationInstrumentedTest {
             }
             val readyState = server.controlCoordinator.authority.snapshot()
             assertEquals(
+                "FW5 ready phase starts from Phone ownership",
+                com.code2hack.eyebrowse.core.link.control.ControlOwner.PHONE,
+                readyState.owner,
+            )
+            assertTrue("FW5 ready phase has active Hosting", readyState.hostingActive)
+            assertEquals(
                 "FW5 ready BrowserState binds the current Hosting generation",
                 host.currentGeneration().toLong(),
                 readyState.context.hostingGeneration,
