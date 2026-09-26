@@ -3315,12 +3315,12 @@ class HostingInstrumentedTest {
     }
 
     /**
-     * FW4-E1: obtain SOURCE_NO_DATA from the REAL public Window PixelCopy call. The same
-     * Presentation/Window object is silently dismissed/re-shown while the readback worker is held;
-     * an OnPreDraw blocker lets WindowManager create/attach the replacement source but prevents its
-     * first buffer from being queued. The actual platform NO_DATA result is withheld only long
-     * enough to remove that blocker, then production gets exactly one recovery under the ORIGINAL
-     * profile deadline and must publish current pixels.
+     * FW4-E1: the real API31 Window PixelCopy returns SOURCE_NO_DATA for a re-shown source whose
+     * replacement Window has not queued a buffer. Production allows exactly one recovery in the
+     * SAME immutable transaction. Before forwarding that first error, this row drives one genuine
+     * PhoneBrowserSession fresh-frame invalidation and proves a real Presentation draw + sink
+     * acquisition occurred. That draw is a known trailing demand; immediately after the recovery
+     * publication the lease is revoked before the 200ms trailing throttle can start another copy.
      */
     @Test
     fun fw4RealNoDataFromReplacedWindowSurfaceRecoversOnceWithinOriginalDeadline() {
@@ -3349,22 +3349,19 @@ class HostingInstrumentedTest {
                 preDrawReached.countDown()
                 false
             }
-            // show() reattaches the decor synchronously; install the blocker in the same Main
-            // turn before the next traversal, so the new ViewTreeObserver is live but no buffer
-            // can be submitted before PixelCopy probes it.
-            presentation.container().viewTreeObserver.addOnPreDrawListener(checkNotNull(blocker))
+            presentation.container().viewTreeObserver
+                .addOnPreDrawListener(checkNotNull(blocker))
             presentation.focusAttachedView(session.view())
             presentation.container().requestLayout()
             presentation.container().invalidate()
         }
-        // Register all-exit test ownership now that the replacement observer exists. R5 cleanup
-        // releases execution-owned state before any Stop/diagnostic, so an assertion failure in
-        // this row cannot leave a traversal permanently suppressed.
         registerExecutionHold {
             runOnMain {
                 val currentBlocker = blocker
-                if (currentBlocker != null && presentation.container().viewTreeObserver.isAlive) {
-                    presentation.container().viewTreeObserver.removeOnPreDrawListener(currentBlocker)
+                if (currentBlocker != null &&
+                    presentation.container().viewTreeObserver.isAlive) {
+                    presentation.container().viewTreeObserver
+                        .removeOnPreDrawListener(currentBlocker)
                     blocker = null
                 }
                 presentation.showWithoutUnavailableForTest()
@@ -3390,135 +3387,167 @@ class HostingInstrumentedTest {
         assertEquals("FW4 actual public PixelCopy result",
             android.view.PixelCopy.ERROR_SOURCE_NO_DATA, held.result)
         val noDataReceipt = factory.platformResults().single()
-        assertEquals("FW4 platform receipt agrees with held result",
-            android.view.PixelCopy.ERROR_SOURCE_NO_DATA, noDataReceipt.result)
-        assertTrue("FW4 platform callback is delivered on Main: " +
-            noDataReceipt.callbackThread,
-            noDataReceipt.callbackThread == "main")
+        assertEquals(android.view.PixelCopy.ERROR_SOURCE_NO_DATA, noDataReceipt.result)
+        assertEquals("FW4 NO_DATA platform callback is Main", "main",
+            noDataReceipt.callbackThread)
         assertEquals("FW4 NO_DATA publishes nothing before recovery", 0, consumer.count())
 
-        // Remove the source-empty condition BEFORE production sees NO_DATA. Recovery then follows
-        // its normal visual-state -> hardware draw -> commit -> Window-copy path.
+        // Recovery itself requests a fresh draw, but C21 proved the re-shown Window still had no
+        // queued source buffer. Establish source data FIRST through the same production
+        // PhoneBrowserSession invalidation primitive used by FreshFrameRequest.
+        val beforeBuffer = runOnMainSync(hosting::captureDiagnostics)
+        val callbacksBefore = diagnosticLong(beforeBuffer, "callbacks")
+        val acquiredBefore = diagnosticLong(beforeBuffer, "acquired")
+        val sourceDraw = factory.observeNextDraw()
         runOnMain {
             val currentBlocker = blocker
-            if (currentBlocker != null && presentation.container().viewTreeObserver.isAlive) {
-                presentation.container().viewTreeObserver.removeOnPreDrawListener(currentBlocker)
+            if (currentBlocker != null &&
+                presentation.container().viewTreeObserver.isAlive) {
+                presentation.container().viewTreeObserver
+                    .removeOnPreDrawListener(currentBlocker)
                 blocker = null
             }
             presentation.focusAttachedView(session.view())
-            presentation.container().requestLayout()
-            presentation.container().invalidate()
+            session.requestFreshCaptureFrame()
         }
-        waitUntilMain("FW4 NO_DATA replacement private focus restored", {
-            hosting.localEditorFocusReady()
-        })
-        held.release()
+        assertTrue("FW4 NO_DATA source-preparation causes a real Presentation draw",
+            sourceDraw.await(500, TimeUnit.MILLISECONDS))
+        waitUntil("FW4 NO_DATA replacement source queues a real sink buffer", {
+            val d = runOnMainSync(hosting::captureDiagnostics)
+            diagnosticLong(d, "callbacks") > callbacksBefore &&
+                diagnosticLong(d, "acquired") > acquiredBefore
+        }, 500)
+        assertTrue("FW4 NO_DATA source-preparation remains inside original deadline",
+            SystemClock.elapsedRealtime() < deadline)
 
-        waitUntil("FW4 NO_DATA one recovery publishes within original profile deadline", {
+        held.release()
+        waitUntil("FW4 NO_DATA recovery publishes current pixels", {
             consumer.qualifyingCountFrom(0) > 0
         }, 1_500)
         val first = consumer.earliestQualifyingIndexFrom(0)
         assertTrue("FW4 NO_DATA qualifying delivery exists", first >= 0)
-        assertTrue(
-            "FW4 NO_DATA recovery delivery must satisfy original t0+2s deadline",
-            consumer.deliveryElapsedAt(first) <= deadline,
-        )
-        waitUntil("FW4 NO_DATA real recovery result recorded", {
+        assertTrue("FW4 NO_DATA recovery delivery satisfies ORIGINAL t0+2s deadline",
+            consumer.deliveryElapsedAt(first) <= deadline)
+        waitUntil("FW4 NO_DATA recovery platform result recorded", {
             factory.platformResults().size >= 2
         }, 500)
-        assertEquals("FW4 NO_DATA exactly initial + one recovery",
-            2, factory.copyInvocationCount())
         assertEquals(
             listOf(android.view.PixelCopy.ERROR_SOURCE_NO_DATA, android.view.PixelCopy.SUCCESS),
             factory.platformResults().take(2).map { it.result },
         )
+        val recoveredDiagnostics = runOnMainSync(hosting::captureDiagnostics)
+        assertEquals("FW4 NO_DATA spends exactly one recovery allowance",
+            1L, diagnosticLong(recoveredDiagnostics, "recoveries"))
         assertEquals("FW4 NO_DATA backend requests serialized",
             1, factory.maxConcurrentCopyCalls())
         assertTrue("FW4 NO_DATA old destination retired after recovery",
             checkNotNull(held.destinationBitmap()).isRecycled)
+
+        // The source-preparation draw is intentionally a coalesced trailing demand. Cancel it
+        // before the 200ms delivery throttle expires; this distinguishes one recovery from retry
+        // flood while preserving the real demand semantics.
         runOnMain(lease!!::release)
+        SystemClock.sleep(HostingPolicy.MIN_FRAME_INTERVAL_MS + 75)
+        assertEquals("FW4 NO_DATA exactly initial + one recovery; no retry flood",
+            2, factory.copyInvocationCount())
     }
 
     /**
-     * FW4-E2: FLAG_SECURE makes the SAME real private Window hardware-protected. Android's
-     * PixelCopy contract reports SOURCE_INVALID for a protected/destroyed source. This result is
-     * non-transient in production: no recovery, no publication, terminal readiness, then bounded
-     * request-owned bitmap retirement.
+     * FW4-E2: real invalid-source state through the API31 public Window PixelCopy path. API31's
+     * legacy Window overload validates the backing Surface synchronously and throws when the
+     * dismissed Window no longer has a valid source. EyeBrowse catches that RuntimeException and
+     * routes it through its production ERROR_UNKNOWN terminal path. FLAG_SECURE is deliberately
+     * NOT used: C21 proved Samsung can return SUCCESS/redacted content rather than SOURCE_INVALID.
+     *
+     * Historical method identity is retained for the C21 dispatch list.
      */
     @Test
     fun fw4RealSecureWindowSourceInvalidIsTerminalWithoutRetry() {
         val factory = newR4ControlledFactory()
         val normal = prepareR4RecordedProfile(factory)
         val host = currentPrivateHostForR4()
-        val window = presentationWindowForR4(host)
+        val presentation = factory.controlledPresentation()
         val consumer = CollectingConsumer()
         consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
-        val held = factory.holdNextCopyCompletion()
+        val copyGate = factory.armNextCopy(1_500)
         val requestStart = SystemClock.elapsedRealtime()
         val deadline = requestStart + 2_000
-        try {
-            runOnMain {
-                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
-                session.view()?.invalidate()
-            }
-            val lease = runOnMainSync {
-                hosting.acquireProfileLease(normal, deadline, consumer)
-            }
-            assertNotNull("FW4 secure-source profile lease", lease)
-            assertTrue("FW4 secure-source actual platform result captured",
-                held.awaitCaptured(1_500))
-            assertEquals(
-                "FW4 secure private Window must report SOURCE_INVALID",
-                android.view.PixelCopy.ERROR_SOURCE_INVALID,
-                held.result,
-            )
-            val receipt = factory.platformResults().single()
-            assertEquals(android.view.PixelCopy.ERROR_SOURCE_INVALID, receipt.result)
-            assertEquals("FW4 secure-source platform callback thread", "main",
-                receipt.callbackThread)
-            assertTrue("FW4 secure-source callback before original deadline",
-                receipt.callbackElapsedMs <= deadline)
-            assertTrue("FW4 secure-source invocation was off Main: " + receipt.callbackThread,
-                factory.awaitPlatformCall(100)?.requestThread?.contains("EyeBrowseWindowReadback") == true)
-            assertEquals("FW4 secure-source publishes nothing", 0, consumer.count())
+        val lease = runOnMainSync {
+            hosting.acquireProfileLease(normal, deadline, consumer)
+        }
+        assertNotNull("FW4 invalid-source profile lease", lease)
+        assertTrue("FW4 invalid-source request reaches factory before platform validation",
+            copyGate.awaitEntered(800))
+        val bitmap = checkNotNull(factory.requestedBitmaps().lastOrNull())
+        assertFalse("FW4 invalid-source destination is request-owned", bitmap.isRecycled)
 
+        registerExecutionHold {
             runOnMain {
-                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
-            }
-            held.release()
-            waitUntil("FW4 secure-source terminal state visible", {
-                val a = captureAuthorityForR4(host)
-                a.terminal && a.transactionId == 0L && !a.copyInFlight
-            }, 700)
-            assertEquals("FW4 invalid source is never retried", 1, factory.copyInvocationCount())
-            assertEquals("FW4 invalid source still publishes nothing", 0, consumer.count())
-            assertTrue("FW4 invalid-source destination retired",
-                checkNotNull(held.destinationBitmap()).isRecycled)
-            runOnMain(lease!!::release)
-        } finally {
-            runOnMain {
-                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                presentation.showWithoutUnavailableForTest()
+                presentation.focusAttachedView(session.view())
+                presentation.container().requestLayout()
+                presentation.container().invalidate()
             }
         }
+        runOnMain {
+            presentation.dismissWithoutUnavailableForTest()
+        }
+        assertFalse("FW4 invalid-source Window is genuinely unavailable before delegate",
+            presentation.isAvailable())
+
+        copyGate.release()
+        assertFalse("FW4 invalid-source gate released deliberately", copyGate.timedOut)
+        val call = checkNotNull(factory.awaitPlatformCall(500)) {
+            "FW4 invalid-source platform delegate was not attempted"
+        }
+        assertTrue("FW4 invalid-source delegate is on dedicated readback worker",
+            call.requestThread.contains("EyeBrowseWindowReadback"))
+        assertTrue("FW4 invalid Window validation returns/throws promptly",
+            call.returned.await(700, TimeUnit.MILLISECONDS))
+
+        waitUntil("FW4 invalid-source terminal production state", {
+            val a = captureAuthorityForR4(host)
+            a.terminal && a.transactionId == 0L && !a.copyInFlight
+        }, 700)
+        val diagnostics = runOnMainSync(hosting::captureDiagnostics)
+        assertEquals("FW4 API31 invalid Window is mapped by production catch to ERROR_UNKNOWN",
+            android.view.PixelCopy.ERROR_UNKNOWN.toLong(),
+            diagnosticLong(diagnostics, "copyResult"))
+        assertTrue("FW4 invalid-source terminal result is inside original deadline",
+            SystemClock.elapsedRealtime() <= deadline)
+        assertTrue("FW4 synchronous source validation has no platform callback receipt",
+            factory.platformResults().isEmpty())
+        assertEquals("FW4 invalid source never publishes", 0, consumer.count())
+        assertEquals("FW4 invalid source is terminal and never retried",
+            1, factory.copyInvocationCount())
+        waitUntil("FW4 invalid-source destination retires through product error path", {
+            bitmap.isRecycled
+        }, 700)
+
+        runOnMain {
+            presentation.showWithoutUnavailableForTest()
+            presentation.focusAttachedView(session.view())
+        }
+        runOnMain(lease!!::release)
     }
 
     /**
-     * FW4-E3 / slow GPU-readback: create an expensive hardware RenderEffect chain on the real
-     * private Window so Android12 Readback's source-fence wait returns the REAL ERROR_TIMEOUT.
-     * The API31 readback implementation waits up to 500ms for that fence; the test does NOT sleep
-     * the product callback or synthesize the status. While that synchronous readback is outstanding,
-     * Main/controller work must complete. The stress layer is removed before forwarding TIMEOUT,
-     * so the one allowed production recovery can succeed under the original t0+2s deadline.
+     * FW4-E3 / slow GPU-readback: first let production create its WindowCopyRequest and enter the
+     * test factory on the dedicated readback worker. ONLY THEN install the 256-pass RenderEffect
+     * source and observe a real Presentation draw; releasing the factory gate makes the real API31
+     * PixelCopy consume that GPU-fenced source. This avoids C21's setup bug where the expensive
+     * effect delayed the initial frame commit so requestWindowCopy was never reached.
+     *
+     * The product deadline remains requestStart+2000ms. Observation waits do not extend it:
+     * the actual callback and qualifying delivery timestamps are both compared to that deadline.
      */
     @Test
     fun fw4RealPixelCopyTimeoutRunsOffMainAndRecoversOnceWithinOriginalDeadline() {
         val factory = newR4ControlledFactory()
         val normal = prepareR4RecordedProfile(factory)
-        val host = currentPrivateHostForR4()
         val consumer = CollectingConsumer()
         consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
-        val stress = installFw4GpuStress(factory)
-        registerExecutionHold { removeFw4GpuStress(stress) }
+        val copyGate = factory.armNextCopy(1_800)
         val held = factory.holdNextCopyCompletion()
         val requestStart = SystemClock.elapsedRealtime()
         val deadline = requestStart + 2_000
@@ -3526,78 +3555,85 @@ class HostingInstrumentedTest {
             hosting.acquireProfileLease(normal, deadline, consumer)
         }
         assertNotNull("FW4 TIMEOUT profile lease", lease)
-        try {
-            val call = checkNotNull(factory.awaitPlatformCall(1_000)) {
-                "FW4 TIMEOUT platform call never started"
-            }
-            assertTrue("FW4 TIMEOUT readback thread identity: " + call.requestThread,
-                call.requestThread.contains("EyeBrowseWindowReadback"))
+        assertTrue("FW4 TIMEOUT request reaches pre-platform gate",
+            copyGate.awaitEntered(700))
 
-            val mainPing = CountDownLatch(1)
-            Handler(Looper.getMainLooper()).post {
-                hosting.status()
-                mainPing.countDown()
-            }
-            assertTrue(
-                "FW4 Main/controller remains runnable during synchronous PixelCopy readback",
-                mainPing.await(200, TimeUnit.MILLISECONDS),
-            )
-            assertFalse(
-                "FW4 readback must still be outstanding when Main ping completes",
-                call.returned.await(0, TimeUnit.MILLISECONDS),
-            )
-            assertTrue("FW4 slow platform readback eventually returns",
-                call.returned.await(1_000, TimeUnit.MILLISECONDS))
-            assertTrue("FW4 TIMEOUT actual callback captured",
-                held.awaitCaptured(500))
-            assertEquals(
-                "FW4 GPU-fence readback produces real ERROR_TIMEOUT",
-                android.view.PixelCopy.ERROR_TIMEOUT,
-                held.result,
-            )
-            val firstResult = factory.platformResults().single()
-            assertEquals(android.view.PixelCopy.ERROR_TIMEOUT, firstResult.result)
-            assertEquals("FW4 TIMEOUT platform callback thread", "main",
-                firstResult.callbackThread)
-            assertTrue(
-                "FW4 ERROR_TIMEOUT call was genuinely delayed, not callback-only",
-                call.returnedElapsedMs - call.startedElapsedMs >= 250,
-            )
-            assertTrue("FW4 timeout result still inside original profile deadline",
-                firstResult.callbackElapsedMs <= deadline)
-            assertEquals("FW4 TIMEOUT publishes nothing before recovery", 0, consumer.count())
+        val stressDraw = factory.observeNextDraw()
+        val stress = installFw4GpuStress(factory)
+        registerExecutionHold { removeFw4GpuStress(stress) }
+        assertTrue("FW4 TIMEOUT GPU stress participates in real Presentation draw",
+            stressDraw.await(500, TimeUnit.MILLISECONDS))
+        Log.i("EyeBrowseFW4",
+            "GPU_STRESS_ENGAGED row=timeout draw=true at=" + SystemClock.elapsedRealtime())
 
-            removeFw4GpuStress(stress)
-            held.release()
-            waitUntil("FW4 TIMEOUT one recovery publishes current Window", {
-                consumer.qualifyingCountFrom(0) > 0
-            }, 1_200)
-            val first = consumer.earliestQualifyingIndexFrom(0)
-            assertTrue("FW4 TIMEOUT recovery delivery before original deadline",
-                first >= 0 && consumer.deliveryElapsedAt(first) <= deadline)
-            waitUntil("FW4 TIMEOUT recovery platform result", {
-                factory.platformResults().size >= 2
-            }, 500)
-            assertEquals("FW4 TIMEOUT exactly initial + one recovery",
-                2, factory.copyInvocationCount())
-            assertEquals(
-                listOf(android.view.PixelCopy.ERROR_TIMEOUT, android.view.PixelCopy.SUCCESS),
-                factory.platformResults().take(2).map { it.result },
-            )
-            assertEquals("FW4 TIMEOUT requests serialized",
-                1, factory.maxConcurrentCopyCalls())
-            runOnMain(lease!!::release)
-        } finally {
-            removeFw4GpuStress(stress)
+        copyGate.release()
+        assertFalse("FW4 TIMEOUT pre-platform gate released deliberately", copyGate.timedOut)
+        val call = checkNotNull(factory.awaitPlatformCall(400)) {
+            "FW4 TIMEOUT real platform call never started after staged draw"
         }
+        assertTrue("FW4 TIMEOUT readback thread identity: " + call.requestThread,
+            call.requestThread.contains("EyeBrowseWindowReadback"))
+
+        val mainPing = CountDownLatch(1)
+        Handler(Looper.getMainLooper()).post {
+            hosting.status()
+            mainPing.countDown()
+        }
+        assertTrue("FW4 Main/controller remains runnable during synchronous PixelCopy readback",
+            mainPing.await(200, TimeUnit.MILLISECONDS))
+        assertFalse("FW4 staged readback is actually outstanding during Main ping",
+            call.returned.await(0, TimeUnit.MILLISECONDS))
+        assertTrue("FW4 slow platform readback eventually returns",
+            call.returned.await(1_000, TimeUnit.MILLISECONDS))
+        assertTrue("FW4 TIMEOUT actual callback captured",
+            held.awaitCaptured(500))
+        assertEquals("FW4 GPU-fence readback produces real ERROR_TIMEOUT",
+            android.view.PixelCopy.ERROR_TIMEOUT, held.result)
+        val firstResult = factory.platformResults().single()
+        assertEquals(android.view.PixelCopy.ERROR_TIMEOUT, firstResult.result)
+        assertEquals("FW4 TIMEOUT platform callback thread", "main",
+            firstResult.callbackThread)
+        val realDuration = call.returnedElapsedMs - call.startedElapsedMs
+        assertTrue("FW4 ERROR_TIMEOUT real platform duration >=250ms: " + realDuration,
+            realDuration >= 250)
+        assertTrue("FW4 TIMEOUT callback still inside original t0+2s deadline",
+            firstResult.callbackElapsedMs <= deadline)
+        assertEquals("FW4 TIMEOUT publishes nothing before recovery", 0, consumer.count())
+
+        removeFw4GpuStress(stress)
+        held.release()
+        waitUntil("FW4 TIMEOUT one recovery publishes current Window", {
+            consumer.qualifyingCountFrom(0) > 0
+        }, 1_200)
+        val first = consumer.earliestQualifyingIndexFrom(0)
+        assertTrue("FW4 TIMEOUT recovery delivery before original deadline",
+            first >= 0 && consumer.deliveryElapsedAt(first) <= deadline)
+        waitUntil("FW4 TIMEOUT recovery platform result", {
+            factory.platformResults().size >= 2
+        }, 500)
+        assertEquals(
+            listOf(android.view.PixelCopy.ERROR_TIMEOUT, android.view.PixelCopy.SUCCESS),
+            factory.platformResults().take(2).map { it.result },
+        )
+        val recoveredDiagnostics = runOnMainSync(hosting::captureDiagnostics)
+        assertEquals("FW4 TIMEOUT spends exactly one recovery allowance",
+            1L, diagnosticLong(recoveredDiagnostics, "recoveries"))
+        assertEquals("FW4 TIMEOUT requests serialized",
+            1, factory.maxConcurrentCopyCalls())
+
+        // Installing stress caused one known trailing draw. Cancel that normal trailing demand
+        // before its 200ms due time so invocation count remains an exact retry-flood oracle.
+        runOnMain(lease!!::release)
+        SystemClock.sleep(HostingPolicy.MIN_FRAME_INTERVAL_MS + 75)
+        assertEquals("FW4 TIMEOUT exactly initial + one recovery; no retry flood",
+            2, factory.copyInvocationCount())
     }
 
     /**
-     * FW4-E4: cancellation while the REAL public PixelCopy call is synchronously waiting on the
-     * slow GPU source fence. Unlike T2/T3's deterministic pre-delegate ownership holds, this row
-     * first proves requestWindowCopy has entered PlatformFactory and has NOT returned, then calls
-     * Stop. Stop must revoke authority/wake state promptly without joining that native readback;
-     * the eventual SUCCESS/TIMEOUT result may retire only its own bitmap and can never publish.
+     * FW4-E4: cancellation while the REAL public PixelCopy call is synchronously waiting on a
+     * staged GPU source fence. Production first reaches the factory gate under normal rendering;
+     * the GPU stress is then drawn, the gate releases into the real platform call, and the row
+     * requires that call to remain outstanding for >=250ms BEFORE Stop is issued.
      */
     @Test
     fun fw4StopDuringActualSlowPixelCopyRevokesWithoutWaitingForNativeReadback() {
@@ -3605,19 +3641,39 @@ class HostingInstrumentedTest {
         val normal = prepareR4RecordedProfile(factory)
         val consumer = CollectingConsumer()
         consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
-        val stress = installFw4GpuStress(factory)
-        registerExecutionHold { removeFw4GpuStress(stress) }
+        val copyGate = factory.armNextCopy(2_000)
         val lease = runOnMainSync { hosting.acquireLease(consumer) }
         assertNotNull("FW4 actual-copy Stop lease", lease)
-        val call = checkNotNull(factory.awaitPlatformCall(1_000)) {
+        assertTrue("FW4 slow-copy request reaches pre-platform gate",
+            copyGate.awaitEntered(700))
+
+        val stressDraw = factory.observeNextDraw()
+        val stress = installFw4GpuStress(factory)
+        registerExecutionHold { removeFw4GpuStress(stress) }
+        assertTrue("FW4 cancellation stress participates in real Presentation draw",
+            stressDraw.await(500, TimeUnit.MILLISECONDS))
+        Log.i("EyeBrowseFW4",
+            "GPU_STRESS_ENGAGED row=stop draw=true at=" + SystemClock.elapsedRealtime())
+
+        copyGate.release()
+        assertFalse("FW4 slow-copy pre-platform gate released deliberately", copyGate.timedOut)
+        val call = checkNotNull(factory.awaitPlatformCall(400)) {
             "FW4 actual slow PixelCopy never entered PlatformFactory"
         }
         assertTrue("FW4 actual-copy invocation uses dedicated readback worker",
             call.requestThread.contains("EyeBrowseWindowReadback"))
-        assertFalse(
-            "FW4 cancellation setup requires the actual platform call still outstanding",
-            call.returned.await(0, TimeUnit.MILLISECONDS),
-        )
+
+        // Establish real duration, not a callback-delay simulation. If the platform returns before
+        // 250ms this setup is NOT a slow-readback row and must fail before Stop.
+        val slowEvidenceDeadline = call.startedElapsedMs + 250
+        while (SystemClock.elapsedRealtime() < slowEvidenceDeadline &&
+            !call.returned.await(10, TimeUnit.MILLISECONDS)) {
+            // bounded observation only
+        }
+        assertFalse("FW4 slow-copy must remain outstanding for >=250ms before Stop",
+            call.returned.await(0, TimeUnit.MILLISECONDS))
+        assertTrue(SystemClock.elapsedRealtime() >= slowEvidenceDeadline)
+
         val bitmap = checkNotNull(factory.requestedBitmaps().lastOrNull())
         assertFalse("FW4 actual-copy destination is live before Stop", bitmap.isRecycled)
 
@@ -3629,16 +3685,17 @@ class HostingInstrumentedTest {
             runOnMainSync(hosting::status).captureActive)
         assertFalse("FW4 actual-copy Stop releases wake lock",
             runOnMainSync(hosting::isWakeLockHeld))
-        assertTrue(
-            "FW4 Stop cannot synchronously wait on native readback",
-            stopReturned - stopAt < 750,
-        )
+        assertTrue("FW4 Stop cannot synchronously wait on native readback",
+            stopReturned - stopAt < 750)
         assertEquals("FW4 outstanding native copy cannot publish during Stop",
             0, consumer.count())
 
         removeFw4GpuStress(stress)
         assertTrue("FW4 outstanding native call eventually returns",
             call.returned.await(1_500, TimeUnit.MILLISECONDS))
+        val realDuration = call.returnedElapsedMs - call.startedElapsedMs
+        assertTrue("FW4 cancelled platform readback duration >=250ms: " + realDuration,
+            realDuration >= 250)
         waitUntil("FW4 actual-copy late destination retires", {
             bitmap.isRecycled
         }, 1_500)
@@ -3648,10 +3705,8 @@ class HostingInstrumentedTest {
         assertEquals("FW4 actual slow copy remains fenced after retirement", 0, consumer.count())
         assertEquals("FW4 Stop cannot trigger a retry after authority revocation",
             1, factory.copyInvocationCount())
-        assertTrue(
-            "FW4 actual-copy complete cleanup stays inside global Stop bound",
-            SystemClock.elapsedRealtime() - stopAt <= STOP_BOUND_MS,
-        )
+        assertTrue("FW4 actual-copy complete cleanup stays inside global Stop bound",
+            SystemClock.elapsedRealtime() - stopAt <= STOP_BOUND_MS)
     }
 
     /**
