@@ -92,8 +92,11 @@ RG uses actual native address keys for repetitive draft correction, and raw-pose
 real ROKID pad KeyEvents for field selection, key activation, navigation consent and Done.
 Declare those input sources separately. The Phone independently checks actual form values,
 harmless submit count, unchanged WebView identity and live page identity. The journey covers
-invalid/corrected addresses, double-tap suppression, stale case, all four field types,
-Shift/symbols/Space/Backspace/Enter/Done, readonly invalidation and explicit return to Phone.
+invalid/corrected addresses, rapid close/open with an unchanged final layout, old-session
+key rejection, double-tap suppression, stale case, all four field types,
+Shift/symbols/Space/Backspace/Enter/Done, Done during pending key confirmation, readonly
+invalidation and explicit return to Phone. The multiline/plain phases also run while the
+Phone Activity is backgrounded, then foreground it without an ownership transfer.
 No positive field effect is produced by DOM assignment. Test-only readonly mutation supplies
 the negative, through the real renderer observation path.
 
@@ -104,8 +107,8 @@ terminal JUnit identities/results and same-invocation receipts; neither an ADB e
 a screenshot alone is a pass. Inspect RG normal/field/password screenshots and retain their
 app-build bindings. Never publish unrelated device content.
 
-Required follow-on evidence remains explicit: background/display-off conditions, guarded
-available lock state, pending focus/geometry and link interruption negatives, measured key
+Required follow-on evidence remains explicit: display-off conditions, guarded
+available lock state, further pending focus/geometry and link interruption negatives, measured key
 bounds and resource/stop observations. These must be executed against the candidate before
 claiming full I10-KBD verification. Reading/tilt tests belong to I10-IMPL/I10-VERIFY.
 

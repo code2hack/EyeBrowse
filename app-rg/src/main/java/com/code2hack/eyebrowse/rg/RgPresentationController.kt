@@ -105,7 +105,9 @@ class RgPresentationController(context: Context, private val surface: Surface) :
     }
     internal fun openAddressKeyboard(): Boolean = synchronized(lock) {
         if (!canOpenAddress()) return@synchronized false
-        closeEditor(); pendingActivation = null
+        if (keyboard.destination == RgKeyboard.Destination.ADDRESS) return@synchronized true
+        if (!closeEditor()) return@synchronized false
+        pendingActivation = null
         val address = state?.url.orEmpty()
         // The existing status URL is a 2048-character preview, not an assured full address at its limit.
         keyboard.openAddress(address.takeIf { it.length < 2048 }.orEmpty()); beginLayout()
@@ -115,7 +117,9 @@ class RgPresentationController(context: Context, private val surface: Surface) :
     internal fun dismissKeyboard() = synchronized(lock) {
         pendingActivation = null; pendingAddress = null
         if (keyboard.visible) {
-            closeEditor(); keyboard.close(); beginLayout(); status("Text entry ended")
+            val cancellationStarted = closeEditor()
+            keyboard.close()
+            if (cancellationStarted) { beginLayout(); status("Text entry ended") }
         }
     }
     internal fun key(intent: RgKeyboard.Intent): Boolean = synchronized(lock) {
@@ -141,22 +145,25 @@ class RgPresentationController(context: Context, private val surface: Surface) :
             }
         }
     }
-    private fun closeEditor() {
+    private fun closeEditor(): Boolean {
         val editor = editorState
         editorState = null; inputRevision++
         // An in-progress resize owns the old grant. The coalesced hide profile explicitly
         // declines retention, so a late rebind cannot restore editing after Done.
-        if (viewportChange != null) return
-        val target = editor?.target ?: return
-        if (editorClose != null || !compatible) return
+        if (viewportChange != null) return true
+        val target = editor?.target ?: return true
+        if (editorClose != null) return true
+        if (!compatible) return false
         val request = EditorCloseMessage(java.util.UUID.randomUUID().toString(), editor.context, target)
         editorClose = request
-        if (!client.sendControl(request)) { failViewport("Text cancellation unavailable — Retry"); return }
+        if (!client.sendControl(request)) { failViewport("Text cancellation unavailable — Retry"); return false }
         val timeout = Runnable { synchronized(lock) {
             if (editorClose == request) failViewport("Text cancellation unconfirmed — Retry")
         } }
         editorCloseTimeout = timeout; main.postDelayed(timeout, 1_000)
+        return true
     }
+    internal fun needsLayoutMeasurement(): Boolean = synchronized(lock) { layoutExpected && !layoutMeasured }
     private fun beginLayout() {
         layoutExpected = true; layoutMeasured = false; layoutStartedAt = SystemClock.uptimeMillis(); inputRevision++
         main.removeCallbacks(viewportTimeout)

@@ -45,7 +45,7 @@ class MainActivity : Activity() {
         val keyboard = RgKeyboardView(this)
         findViewById<LinearLayout>(R.id.rg_keyboard_container).addView(keyboard)
         var keyboardVisible = false
-        var keyboardDestination: RgKeyboard.Destination? = null
+        var layoutObservationPending = false
         presentation = RgPresentationController(this, object : RgPresentationController.Surface {
             override fun status(text: String) { status.text = text }
             override fun browserState(state: BrowserStateMessage) {
@@ -65,15 +65,20 @@ class MainActivity : Activity() {
                 keyboard.render(presentation)
                 location.isEnabled = presentation.canOpenAddress()
                 val visible = presentation.keyboard.visible
-                if (visible != keyboardVisible || presentation.keyboard.destination != keyboardDestination) {
-                    keyboardDestination = presentation.keyboard.destination
+                if (visible != keyboardVisible) {
                     keyboardVisible = visible
                     for (id in listOf(R.id.rg_utilities, R.id.rg_pointer_controls, R.id.rg_handoff, R.id.rg_navigation))
                         findViewById<View>(id).visibility = if (visible) View.GONE else View.VISIBLE
-                    // Run after the real traversal, including unchanged-size layouts.
+                }
+                if (presentation.needsLayoutMeasurement() && !layoutObservationPending) {
+                    layoutObservationPending = true
+                    root.requestLayout()
+                    // One measurement of the latest intent after the real traversal, even when
+                    // rapid close/open coalesces to the same visible keyboard and rectangle.
                     root.viewTreeObserver.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
                         override fun onPreDraw(): Boolean {
                             root.viewTreeObserver.removeOnPreDrawListener(this)
+                            layoutObservationPending = false
                             presentation.measure(image.width,image.height,resources.displayMetrics.densityDpi)
                             presentation.layoutMeasured()
                             return true

@@ -3,6 +3,7 @@ package com.code2hack.eyebrowse.phone
 import android.os.SystemClock
 import android.util.Log
 import android.widget.Button
+import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -56,14 +57,32 @@ class KeyboardJourneyTest {
             await("hosting") { host.status().state==HostingController.State.HOSTING }
             Log.i("EyeBrowseKeyboardTest","PHONE_KBD_READY mission=$mission")
             phase("invalid_address") { assertEquals(originalIdentity,js("fixtureIdentity"));equalsValue("text","") }
+            phase("coalesced_layout") { assertEquals(originalIdentity,js("fixtureIdentity"));equalsValue("text","") }
             var identity = ""
             phase("address_opened") { identity=js("fixtureIdentity");assertNotEquals(originalIdentity,identity);assertSame(originalView,browser.view()) }
             phase("double_tap") { equalsValue("text","");assertEquals("0",js("fixtureInputs"));assertEquals("0",js("fixtureSubmits")) }
             phase("stale_case") { equalsValue("text","");assertEquals("0",js("fixtureInputs")) }
             phase("text_submit") { equalsValue("text","aB1");assertEquals("1",js("fixtureSubmits")) }
-            phase("password") { equalsValue("password","p7");assertEquals("true",js("document.getElementById('password').type==='password'"));assertEquals(identity,js("fixtureIdentity")) }
-            phase("multiline") { equalsValue("multiline","m\nn");assertEquals("1",js("fixtureSubmits")) }
-            phase("plain") { equalsValue("plain","e");assertEquals(identity,js("fixtureIdentity"));assertSame(originalView,browser.view()) }
+            phase("dismiss_pending") {
+                equalsValue("text","aB1");assertEquals("1",js("fixtureSubmits"))
+                assertTrue(link.editorController!!.isQuiescent())
+            }
+            phase("password") {
+                equalsValue("password","p7");assertEquals("true",js("document.getElementById('password').type==='password'"))
+                assertEquals(identity,js("fixtureIdentity"));assertTrue(link.editorController!!.isQuiescent())
+                scenario.moveToState(Lifecycle.State.CREATED)
+                assertEquals(ControlOwner.RG,link.controlCoordinator.authority.snapshot().owner)
+            }
+            phase("multiline") {
+                equalsValue("multiline","m\nn");assertEquals("1",js("fixtureSubmits"))
+                assertTrue(link.editorController!!.isQuiescent())
+            }
+            phase("plain") {
+                equalsValue("plain","e");assertEquals(identity,js("fixtureIdentity"));assertSame(originalView,browser.view())
+                assertTrue(link.editorController!!.isQuiescent())
+                scenario.moveToState(Lifecycle.State.RESUMED)
+                assertEquals(ControlOwner.RG,link.controlCoordinator.authority.snapshot().owner)
+            }
             phase("invalidate") { assertEquals("true",js("document.getElementById('text').readOnly=true;true")) }
             phase("invalidated") { equalsValue("text","aB1");assertEquals("1",js("fixtureSubmits")) }
             phase("return") {

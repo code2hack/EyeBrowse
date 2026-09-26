@@ -46,7 +46,7 @@ class KeyboardJourneyTest {
                 lateinit var point: InputPoint
                 j.main { point = j.nativeCenter(keyView(key)) }
                 j.aim(point);j.dispatched(j.pad(),"keyboard")
-            } else j.main { assertTrue(keyView(key).performClick()) }
+            } else j.main { val view=keyView(key);assertTrue(view.isEnabled);assertTrue(view.performClick()) }
             if (remote) j.await("Phone edit outcome",2_000) { j.peer.lastActionResult !== before }
             if (remote) assertTrue("Phone admitted key",j.peer.lastActionResult?.accepted==true)
             SystemClock.sleep(40) // Local view publication only, not a product success oracle.
@@ -95,6 +95,17 @@ class KeyboardJourneyTest {
             assertEquals("ADDRESS_REJECTED",j.peer.lastActionResult?.reason)
             assertEquals(draft,j.peer.keyboard.draft);assertTrue(j.peer.keyboard.visible)
             checkPhone("invalid_address")
+            j.native(R.id.rg_detail,"existing address draft")
+            assertEquals("reopening address does not erase correction",draft,j.peer.keyboard.draft)
+            lateinit var stale: RgKeyboard.Intent
+            j.main {
+                stale=j.peer.keyboard.capture(RgKeyboard.Key.Character("x"))
+                assertTrue(keyView(RgKeyboard.Key.Command.DONE).performClick())
+                assertTrue(it.findViewById<Button>(R.id.rg_detail).performClick())
+                assertFalse("closed-session key cannot enter a successor",j.peer.key(stale))
+            }
+            j.await("coalesced close-open layout settles",2_000) { j.peer.canSubmitAddress() }
+            checkPhone("coalesced_layout")
             clearAddress();fixture.forEach { character(it,false) }
             press(RgKeyboard.Key.Command.ENTER)
             j.await("real address navigation",5_000) { !j.peer.keyboard.visible && j.peer.canAct() && j.peer.browserState()?.title?.startsWith("KBD|")==true }
@@ -113,7 +124,17 @@ class KeyboardJourneyTest {
             assertEquals(count,j.actions);checkPhone("stale_case")
             character('a');character('B');character('1')
             press(RgKeyboard.Key.Command.SPACE);press(RgKeyboard.Key.Command.BACKSPACE)
-            press(RgKeyboard.Key.Command.ENTER);checkPhone("text_submit");done()
+            press(RgKeyboard.Key.Command.ENTER);checkPhone("text_submit")
+            if (j.peer.keyboard.symbols) press(RgKeyboard.Key.Command.SYMBOLS)
+            lateinit var pendingPoint: InputPoint
+            j.main { pendingPoint=j.nativeCenter(keyView(j.peer.keyboard.rows().first().first())) }
+            j.aim(pendingPoint);val beforeDismiss=j.actions
+            j.pad()
+            j.main { val done=keyView(RgKeyboard.Key.Command.DONE);assertTrue(done.isEnabled);assertTrue(done.performClick()) }
+            j.confirmWindow()
+            assertEquals("Done invalidates a key awaiting confirmation",beforeDismiss,j.actions)
+            j.await("Done restores fresh geometry",2_000) { !j.peer.keyboard.visible && j.peer.canAct() }
+            checkPhone("dismiss_pending")
             field("password");character('p');character('7');screenshot("password");done();checkPhone("password")
             field("multiline");character('m');press(RgKeyboard.Key.Command.ENTER);character('n');done();checkPhone("multiline")
             field("plain");character('e');done();checkPhone("plain")
