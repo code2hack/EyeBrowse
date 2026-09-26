@@ -3741,29 +3741,193 @@ class HostingInstrumentedTest {
                 firstResult.callbackElapsedMs <= deadline)
             assertEquals("FW4 TIMEOUT publishes nothing before recovery", 0, consumer.count())
 
-            removeFw4GpuStress(stress)
-            held.release()
-            waitUntil("FW4 TIMEOUT one recovery publishes current Window", {
-                consumer.qualifyingCountFrom(0) > 0
-            }, 1_200)
-            val first = consumer.earliestQualifyingIndexFrom(0)
-            assertTrue("FW4 TIMEOUT recovery delivery before original deadline",
-                first >= 0 && consumer.deliveryElapsedAt(first) <= deadline)
-            waitUntil("FW4 TIMEOUT recovery platform result", {
-                factory.platformResults().size >= 2
-            }, 500)
-            assertEquals(
-                listOf(android.view.PixelCopy.ERROR_TIMEOUT, android.view.PixelCopy.SUCCESS),
-                factory.platformResults().take(2).map { it.result },
-            )
-            val recoveredDiagnostics = runOnMainSync(hosting::captureDiagnostics)
-            assertEquals("FW4 TIMEOUT spends exactly one recovery allowance",
-                1L, diagnosticLong(recoveredDiagnostics, "recoveries"))
-            assertEquals("FW4 TIMEOUT requests serialized",
-                1, factory.maxConcurrentCopyCalls())
-            expectedRequests = 2
-            Log.i("EyeBrowseFW4", "FW4_ERROR_OUTCOME realTimeout=true invocation=${call.invocation} " +
-                "recovery=SUCCESS callback=${firstResult.callbackElapsedMs} deadline=$deadline")
+            // R-08 (#5847426578): callback capture is NOT product receipt. Workload removal
+            // may consume the remainder, and release() posts rather than invokes the listener.
+            // Observe the original listener and real fresh-commit callbacks without holding them.
+            val host = currentPrivateHostForR4()
+            val originalDocument = runOnMainSync(session::documentIdentity)
+            val original = captureAuthorityForR4(host)
+            assertEquals("R08 original binding deadline", deadline, original.bindingDeadline)
+            assertEquals("R08 original transaction deadline", deadline, original.transactionDeadline)
+            assertTrue("R08 original unresolved copy/transaction", original.copyInFlight && original.transactionId > 0)
+            assertFalse("R08 original recovery unused", original.recoveryUsed)
+            assertFalse("R08 original authority nonterminal", original.terminal)
+            val nativeLock = checkNotNull(PrivateDisplayHost::class.java.getDeclaredField("nativeLock").apply {
+                isAccessible = true
+            }.get(host))
+            val transactionField = PrivateDisplayHost::class.java.getDeclaredField("activeCaptureTransaction").apply {
+                isAccessible = true
+            }
+            val transaction = synchronized(nativeLock) { checkNotNull(transactionField.get(host)) }
+            val usedField = transaction.javaClass.getDeclaredField("recoveryUsed").apply { isAccessible = true }
+            // Retain this exact transaction's read-only allowance even after product retirement.
+            fun recoveryWasAllowed(): Boolean = synchronized(nativeLock) { usedField.getBoolean(transaction) }
+            data class Decision(val entered: Long, val exited: Long,
+                val before: R4CaptureAuthority?, val after: R4CaptureAuthority?,
+                val documentBefore: String?, val documentAfter: String?)
+            fun observedAuthority(): R4CaptureAuthority? =
+                runCatching { captureAuthorityForR4(host) }.getOrNull()
+            fun observeDecision(label: String, action: Runnable): Decision {
+                // Diagnostic failure must never suppress the actual original callback.
+                val before = observedAuthority()
+                val documentBefore = session.documentIdentity()
+                val entered = SystemClock.elapsedRealtime()
+                var exited = Long.MIN_VALUE
+                try { action.run() } finally { exited = SystemClock.elapsedRealtime() }
+                val after = observedAuthority()
+                Log.i("EyeBrowseFW4", "R08_DECISION label=$label deadline=$deadline " +
+                    "enter=$entered exit=$exited before=$before after=$after " +
+                    "diagnostics={${host.captureDiagnostics()}}")
+                return Decision(entered, exited, before, after, documentBefore, session.documentIdentity())
+            }
+            val listenerDecision = AtomicReference<Decision>()
+            val listenerDone = CountDownLatch(1)
+            val fenceDecisions = CopyOnWriteArrayList<Decision>()
+            val observing = AtomicBoolean(true)
+            held.observeProductDelivery { action ->
+                try {
+                    if (observing.get()) listenerDecision.set(observeDecision("product-listener", action))
+                    else action.run()
+                } finally { listenerDone.countDown() }
+            }
+            val fenceObserver: (Runnable) -> Unit = { action ->
+                if (observing.get()) fenceDecisions.add(observeDecision("fresh-commit", action))
+                else action.run()
+            }
+            runOnMain {
+                assertNull("R08 does not replace another commit observer", session.captureCommitDispatcherForTest)
+                session.captureCommitDispatcherForTest = fenceObserver
+            }
+            try {
+                val removalStarted = SystemClock.elapsedRealtime()
+                removeFw4GpuStress(stress)
+                val removalFinished = SystemClock.elapsedRealtime()
+                val forwardRequested = SystemClock.elapsedRealtime()
+                held.release()
+                // This is a bounded diagnostic dispatch wait, NOT additional readiness time.
+                // All success/expiry decisions below still use the immutable original deadline.
+                assertTrue("R08 original product listener eventually processed",
+                    listenerDone.await(STOP_BOUND_MS, TimeUnit.MILLISECONDS))
+                val delivery = checkNotNull(listenerDecision.get())
+                var earlyTerminalObserved = Long.MIN_VALUE
+                while (SystemClock.elapsedRealtime() < deadline && consumer.count() == 0) {
+                    val a = captureAuthorityForR4(host)
+                    if (a.terminal && a.transactionId == 0L && !a.copyInFlight) {
+                        earlyTerminalObserved = SystemClock.elapsedRealtime()
+                        break
+                    }
+                    SystemClock.sleep(10)
+                }
+                val observation = runOnMainSync {
+                    val a = captureAuthorityForR4(host)
+                    Triple(a, SystemClock.elapsedRealtime(), host.captureDiagnostics())
+                }
+                val state = observation.first
+                val observedAt = observation.second
+                val diagnostics = observation.third
+                val recoveries = diagnosticLong(diagnostics, "recoveries")
+                val allowed = recoveryWasAllowed()
+                val requests = factory.copyInvocationCount()
+                Log.i("EyeBrowseFW4", "R08_TIMELINE invocation=${call.invocation} bitmap=${call.bitmapIdentity} " +
+                    "deadline=$deadline capture=${held.capturedElapsedMs()} removeStart=$removalStarted " +
+                    "removeEnd=$removalFinished forwardRequested=$forwardRequested listenerEnter=${delivery.entered} " +
+                    "listenerExit=${delivery.exited} observed=$observedAt recoveryAllowed=$allowed " +
+                    "recoveries=$recoveries requests=$requests state=$state diagnostics={$diagnostics}")
+                val atEntry = checkNotNull(delivery.before) { "R08 listener-entry authority unavailable" }
+                assertTrue("R08 original timeout still owns unresolved slot at listener entry",
+                    atEntry.copyInFlight && atEntry.transactionId == original.transactionId &&
+                        atEntry.readinessPending && !atEntry.recoveryUsed && !atEntry.terminal)
+                assertEquals("R08 document current at listener entry", originalDocument, delivery.documentBefore)
+                assertEquals("R08 document current at listener exit", originalDocument, delivery.documentAfter)
+                assertEquals("R08 document current at outcome", originalDocument, runOnMainSync(session::documentIdentity))
+                for (a in listOf(atEntry,
+                    checkNotNull(delivery.after) { "R08 listener-exit authority unavailable" }, state)) {
+                    assertEquals("R08 same binding", original.bindingIdentity, a.bindingIdentity)
+                    assertEquals("R08 same authority", original.authoritySerial, a.authoritySerial)
+                    assertEquals("R08 unchanged original deadline", deadline, a.bindingDeadline)
+                    if (a.transactionId != 0L) {
+                        assertEquals("R08 no replacement transaction", original.transactionId, a.transactionId)
+                        assertEquals("R08 no deadline rebasing", deadline, a.transactionDeadline)
+                    }
+                }
+                assertTrue("R08 callback/remove/forward chronology",
+                    held.capturedElapsedMs() <= removalStarted && removalStarted <= removalFinished &&
+                        removalFinished <= forwardRequested && forwardRequested <= delivery.entered &&
+                        delivery.entered <= delivery.exited && delivery.exited <= observedAt)
+                assertTrue("R08 bounded recovery attempts", recoveries in 0L..1L && requests in 1..2)
+                assertTrue("R08 first destination retired by original listener", checkNotNull(held.destinationBitmap()).isRecycled)
+
+                if (consumer.count() > 0) {
+                    val first = consumer.earliestQualifyingIndexFrom(0)
+                    assertTrue("R08 successful recovery is qualified and inside original deadline",
+                        first >= 0 && consumer.deliveryElapsedAt(first) <= deadline &&
+                            consumer.latestDeliveryElapsed() <= deadline)
+                    assertEquals("R08 exactly one recovery for SUCCESS", 1L, recoveries)
+                    assertEquals("R08 exact TIMEOUT/SUCCESS results",
+                        listOf(android.view.PixelCopy.ERROR_TIMEOUT, android.view.PixelCopy.SUCCESS),
+                        factory.platformResults().map { it.result })
+                    expectedRequests = 2
+                    Log.i("EyeBrowseFW4", "R08_OUTCOME IN_BUDGET_SUCCESS deadline=$deadline " +
+                        "delivery=${consumer.latestDeliveryElapsed()} realTimeout=true")
+                } else {
+                    assertTrue("R08 exhausted opportunity requires original deadline reached", observedAt >= deadline)
+                    assertTrue("R08 an early terminal failure is not deadline exhaustion",
+                        earlyTerminalObserved == Long.MIN_VALUE || earlyTerminalObserved >= deadline)
+                    assertTrue("R08 unsuccessful readiness remains pending", state.readinessPending)
+                    val pendingOriginal = state.transactionId == original.transactionId && state.recoveryUsed
+                    val lastResult = factory.platformResults().drop(1).singleOrNull()
+                    // Match source decisions, not just 'no frame'. Before-deadline unexpected
+                    // terminal/error paths are NOT promoted to an expired-opportunity PASS.
+                    val route = when {
+                        !allowed && delivery.exited >= deadline && recoveries == 0L && requests == 1 &&
+                            state.transactionId == 0L && !state.copyInFlight -> "EXPIRED_AT_LISTENER"
+                        allowed && recoveries == 0L && requests == 1 &&
+                            (pendingOriginal || (state.terminal && state.transactionId == 0L)) -> "EXPIRED_BEFORE_RECOVERY_START"
+                        allowed && recoveries == 1L && pendingOriginal -> "EXPIRED_WITH_RECOVERY_PENDING"
+                        allowed && recoveries == 1L && state.terminal && state.transactionId == 0L &&
+                            fenceDecisions.any { it.entered >= deadline &&
+                                it.before?.transactionId == original.transactionId && it.after?.transactionId == 0L } -> "EXPIRED_AT_FRESH_COMMIT"
+                        allowed && recoveries == 1L && state.transactionId == 0L && lastResult != null &&
+                            lastResult.callbackElapsedMs >= deadline && lastResult.result in listOf(
+                                android.view.PixelCopy.SUCCESS, android.view.PixelCopy.ERROR_TIMEOUT,
+                                android.view.PixelCopy.ERROR_SOURCE_NO_DATA) -> "EXPIRED_AT_RECOVERY_RESULT"
+                        else -> throw AssertionError("R08 missing source-correlated expiry route: $state / $diagnostics")
+                    }
+                    Log.i("EyeBrowseFW4", "R08_OUTCOME SAFE_RETIREMENT_REQUIRED route=$route " +
+                        "deadline=$deadline observed=$observedAt realTimeout=true")
+                    val retireAt = SystemClock.elapsedRealtime()
+                    runOnMain {
+                        observing.set(false)
+                        if (session.captureCommitDispatcherForTest === fenceObserver) session.captureCommitDispatcherForTest = null
+                        lease!!.release()
+                        assertFalse("R08 expired authority revoked", hosting.status().captureActive)
+                        assertFalse("R08 expired wake lock released", hosting.isWakeLockHeld())
+                    }
+                    val remainingCleanup = retireAt + STOP_BOUND_MS - SystemClock.elapsedRealtime()
+                    assertTrue("R08 original cleanup budget remains", remainingCleanup > 0)
+                    waitUntil("R08 expired opportunity actually retires native ownership", {
+                        factory.requestedBitmaps().all { it.isRecycled } &&
+                            !runOnMainSync(hosting::captureResourcesPresent)
+                    }, remainingCleanup)
+                    assertTrue("R08 cleanup reaches safe state inside original cleanup bound",
+                        SystemClock.elapsedRealtime() - retireAt <= STOP_BOUND_MS)
+                    SystemClock.sleep(HostingPolicy.MIN_FRAME_INTERVAL_MS + 75)
+                    assertEquals("R08 no late publication before or after expiry retirement", 0, consumer.count())
+                    assertTrue("R08 no retry flood after retirement",
+                        factory.copyInvocationCount() in 1..(if (allowed) 2 else 1))
+                    assertEquals("R08 native calls serialized", 1, factory.maxConcurrentCopyCalls())
+                    assertTrue("R08 all destinations retired", factory.requestedBitmaps().all { it.isRecycled })
+                    Log.i("EyeBrowseFW4", "R08_RETIRED route=$route deadline=$deadline start=$retireAt " +
+                        "end=${SystemClock.elapsedRealtime()} requests=${factory.copyInvocationCount()} " +
+                        "results=${factory.platformResults()} diagnostics={${runOnMainSync(hosting::captureDiagnostics)}}")
+                    return
+                }
+            } finally {
+                observing.set(false)
+                runOnMain {
+                    if (session.captureCommitDispatcherForTest === fenceObserver) session.captureCommitDispatcherForTest = null
+                }
+            }
         }
 
         // Installing/removing stress may create coalesced demand. Revoke before the next cycle;
@@ -5614,6 +5778,7 @@ class HostingInstrumentedTest {
         private val pending = AtomicReference<Runnable?>()
         private val released = AtomicBoolean(false)
         private val forwarded = AtomicBoolean(false)
+        @Volatile private var productDeliveryObserver: ((Runnable) -> Unit)? = null
         @Volatile private var destination: android.graphics.Bitmap? = null
         @Volatile private var capturedElapsed: Long = Long.MIN_VALUE
         @Volatile var result: Int = Int.MIN_VALUE
@@ -5632,7 +5797,14 @@ class HostingInstrumentedTest {
                 result = value
                 val delivery = Runnable {
                     forwarded.set(true)
-                    handler.post { delegate.onPixelCopyFinished(value) }
+                    val observer = productDeliveryObserver
+                    if (observer == null) {
+                        handler.post { delegate.onPixelCopyFinished(value) }
+                    } else {
+                        // R-08 observes the actual original listener on its original Handler.
+                        // It never synthesizes a result, changes the queue, or retries delivery.
+                        handler.post { observer(Runnable { delegate.onPixelCopyFinished(value) }) }
+                    }
                 }
                 pending.set(delivery)
                 captured.countDown()
@@ -5647,6 +5819,11 @@ class HostingInstrumentedTest {
         fun capturedElapsedMs(): Long = capturedElapsed
 
         fun hasForwarded(): Boolean = forwarded.get()
+
+        fun observeProductDelivery(observer: (Runnable) -> Unit) {
+            check(!released.get() && !forwarded.get()) { "Observe before releasing completion" }
+            productDeliveryObserver = observer
+        }
 
         fun release() {
             released.set(true)
