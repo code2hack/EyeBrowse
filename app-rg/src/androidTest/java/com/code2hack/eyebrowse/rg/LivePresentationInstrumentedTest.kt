@@ -108,9 +108,15 @@ class LivePresentationInstrumentedTest {
                     state.title == readyTitle
             }
             val profile = checkNotNull(controller.profile())
+            val boundState = checkNotNull(controller.browserState())
+            assertNotNull(
+                "FW5 mission-bound Phone state carries active Hosting generation",
+                boundState.context.hostingGeneration,
+            )
             Log.i(
                 "EyeBrowseFW5",
-                "RG_PHASE_BOUND mission=" + mission + " titleBound=true",
+                "RG_PHASE_BOUND mission=" + mission +
+                    " titleBound=true hostingGen=" + boundState.context.hostingGeneration,
             )
             val firstRequestAt = SystemClock.elapsedRealtime()
             scenario.onActivity { assertTrue(controller.requestPresentation()) }
