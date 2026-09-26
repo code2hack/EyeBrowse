@@ -3597,10 +3597,11 @@ class HostingInstrumentedTest {
         val host = currentPrivateHostForR4()
         val consumer = CollectingConsumer()
         consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
-        // Observation budget before manual release is <=1100ms:
-        // Main ping 200 + real draw 450 + sink drain 450. The immutable readiness budget is
-        // 2000ms, so even the worst test-side observation sequence leaves ~900ms for the real
-        // PixelCopy completion + first publication. Gate 1750ms is only a deadlock guard.
+        // Observation budget before manual release is <=1300ms:
+        // Main ping 200 + dispatch-monitor ping 200 + probe join 100 + real draw 400 +
+        // sink drain 400. The immutable readiness budget is 2000ms, so even the worst
+        // test-side sequence leaves ~700ms for the real PixelCopy completion + first
+        // publication. Gate 1750ms is only a deadlock guard.
         val copyGate = factory.armNextCopy(1_750)
         val requestStart = SystemClock.elapsedRealtime()
         val deadline = requestStart + 2_000
@@ -3647,7 +3648,7 @@ class HostingInstrumentedTest {
             "FW4 dispatch-authority monitor remains runnable during synchronous readback",
             dispatchPing.await(200, TimeUnit.MILLISECONDS),
         )
-        dispatchProbe.join(500)
+        dispatchProbe.join(100)
         assertFalse("FW4 dispatch-lock probe terminates", dispatchProbe.isAlive)
 
         val observedDraw = factory.observeNextDraw()
@@ -3657,12 +3658,12 @@ class HostingInstrumentedTest {
             }
         }
         assertTrue("FW4 real Presentation draw occurs during readback stall",
-            observedDraw.await(450, TimeUnit.MILLISECONDS))
+            observedDraw.await(400, TimeUnit.MILLISECONDS))
         waitUntil("FW4 sink drainer advances while readback worker remains blocked", {
             val d = runOnMainSync(hosting::captureDiagnostics)
             diagnosticLong(d, "callbacks") > callbacksBefore &&
                 diagnosticLong(d, "acquired") > acquiredBefore
-        }, 450)
+        }, 400)
         assertTrue("FW4 hardware draw serial advanced",
             runOnMainSync { host.drawObservationForTest().serial } > drawBefore)
         val stalledAuthority = captureAuthorityForR4(host)
@@ -3883,6 +3884,9 @@ class HostingInstrumentedTest {
         }, 1_000)
         assertEquals("FW4 late old SUCCESS cannot publish after source replacement",
             0, oldConsumer.count())
+        waitUntilMain("FW4 replacement document retains private local focus", {
+            hosting.localEditorFocusReady()
+        })
 
         runOnMain(oldLease!!::release)
         waitUntilMain("FW4 old binding resources retire before successor lease", {
