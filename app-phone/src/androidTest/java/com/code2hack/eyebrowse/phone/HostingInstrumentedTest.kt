@@ -3629,8 +3629,26 @@ class HostingInstrumentedTest {
         }
         assertTrue(
             "FW4 Main/controller lock remains runnable while readback worker is blocked",
-            mainPing.await(250, TimeUnit.MILLISECONDS),
+            mainPing.await(200, TimeUnit.MILLISECONDS),
         )
+
+        // P7/control-dispatch monitor evidence: resolve the singleton before this probe so the
+        // measurement is only authority-lock access. A separate thread snapshots the same monitor
+        // used by authenticated control admission while synchronous readback remains blocked.
+        val link = com.code2hack.eyebrowse.phone.link.PhoneLinkServer.obtain(
+            InstrumentationRegistry.getInstrumentation().targetContext,
+        )
+        val dispatchPing = CountDownLatch(1)
+        val dispatchProbe = Thread({
+            link.controlCoordinator.authority.snapshot()
+            dispatchPing.countDown()
+        }, "fw4-dispatch-lock-probe").apply { start() }
+        assertTrue(
+            "FW4 dispatch-authority monitor remains runnable during synchronous readback",
+            dispatchPing.await(200, TimeUnit.MILLISECONDS),
+        )
+        dispatchProbe.join(500)
+        assertFalse("FW4 dispatch-lock probe terminates", dispatchProbe.isAlive)
 
         val observedDraw = factory.observeNextDraw()
         runOnMain {
@@ -3644,7 +3662,7 @@ class HostingInstrumentedTest {
             val d = runOnMainSync(hosting::captureDiagnostics)
             diagnosticLong(d, "callbacks") > callbacksBefore &&
                 diagnosticLong(d, "acquired") > acquiredBefore
-        }, 700)
+        }, 450)
         assertTrue("FW4 hardware draw serial advanced",
             runOnMainSync { host.drawObservationForTest().serial } > drawBefore)
         val stalledAuthority = captureAuthorityForR4(host)
