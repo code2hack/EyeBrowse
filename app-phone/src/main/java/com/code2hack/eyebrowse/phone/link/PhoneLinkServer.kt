@@ -135,9 +135,20 @@ class PhoneLinkServer(
         }
     }
 
+    private var observedHostingState = hostingController?.status()?.state
     private val hostingListener = HostingController.Listener {
+        val previousHostingState = observedHostingState
+        observedHostingState = hostingController?.status()?.state
         val before = controlCoordinator.authority.snapshot().context
         reconcileHostingAuthority()
+        if (previousHostingState != HostingController.State.NOT_HOSTING &&
+            observedHostingState == HostingController.State.NOT_HOSTING) {
+            // The settled Stop/failure notification has returned local authority. End the app
+            // link too; pairing and the live Phone WebView are owned independently.
+            stop()
+            notifyLinkObservers()
+            return@Listener
+        }
         if (before != controlCoordinator.authority.snapshot().context) {
             authenticatedSession?.setPresentation(null,null)
             notifyLinkObservers()
@@ -448,6 +459,7 @@ class PhoneLinkServer(
         // Validate/repair only at use time. Construction must survive an inadequate VALID/CORRUPT
         // alias so PairingActivity can still expose the explicit Forget recovery control.
         identityRecovery.ensureUsableIdentity()
+        observedHostingState = hostingController?.status()?.state
         hostingController?.addListener(hostingListener)
         browserSession?.addListener(browserListener)
         val newEngine = LinkServerEngine(identity, trustController, LinkTimings.PRODUCT, engineListener)
