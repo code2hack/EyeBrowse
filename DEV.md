@@ -288,7 +288,7 @@ Paired device-test runs on the S20+ and RG use a strict before/after discipline 
 Canonical values for issue-#9-era work (accepted 2026-09-23 after the documented 21de469a→1eb22322 trust-advancement reconciliation; see run-002 record `i9-trust-baseline-accepted-intent.json`):
 
 - S20+ (package `com.code2hack.eyebrowse.phone`): `1eb22322de6d90c825ef329528e52a18edadc0018703f730ec119f39c691542e`
-- RG (package `com.code2hack.eyebrowse.rg`): `4480b02f546780798f7514f7d236f77414148cb38cab76ffc433e954b7ebfac8`
+- RG (package `com.code2hack.eyebrowse.rg`): `a3b337f1fca7a527e2ed431587346d92a37227553a62e0fc8b28a508b3e41ea1` (Owner-authorized re-pair 2026-09-26, subnet move 192.168.0.x->192.168.1.x; prior canonical `4480b02f54...fac8` retained in issue #9 C17 record)
 
 ```bash
 # S20+ (exec-out; no PTY byte rewriting):
