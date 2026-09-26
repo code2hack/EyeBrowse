@@ -3575,7 +3575,10 @@ class HostingInstrumentedTest {
      * does not prove an unsignaled fence. Distinguish a real TIMEOUT callback and bounded recovery
      * from synchronous source validation mapped to terminal ERROR_UNKNOWN. Never relabel either.
      *
-     * Keep the original requestStart+2000ms readiness deadline and 5000ms Stop/resource cleanup
+     * Planner scope ruling #5847119388: for this artificial stress only, requestStart+2000ms is
+     * an observation endpoint, not a native-return verdict. A still-pending request must prove
+     * zero publication/results and bounded retirement; it is NOT a real ERROR_TIMEOUT result.
+     * The existing completed-call branches retain their deadlines. Keep the 5000ms cleanup
      * contract. The probe's 200ms first observation is diagnostic only; its unserved/late samples
      * remain receipts, not PASS. C23's ~1101ms Main stall is retained in #5846860753 and routed
      * to I9-T02, not erased. Production invokes the factory on its dedicated readback worker,
@@ -3619,13 +3622,13 @@ class HostingInstrumentedTest {
             hosting.status()
         }
         var mainServedAt200Ms = false
+        var returnedAtWindowObservation = false
         try {
             mainServedAt200Ms = probe.first.await(200, TimeUnit.MILLISECONDS)
-            // A delayed/unserved marker is a recorded product observation, not an FW4 failure.
-            // Remaining readback observation = original t0+2000 - now, never a new deadline.
-            assertTrue("FW4 real Window invocation returns within original observation window",
-                call.returned.await((deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0),
-                    TimeUnit.MILLISECONDS))
+            // Scope ruling #5847119388: non-return is recorded, not an early assertion exit.
+            // Remaining observation = original t0+2000 - now; finally keeps the same bound.
+            returnedAtWindowObservation = call.returned.await(
+                (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0), TimeUnit.MILLISECONDS)
         } finally {
             try {
                 call.returned.await((deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0),
@@ -3635,7 +3638,57 @@ class HostingInstrumentedTest {
             }
             Log.i("EyeBrowseFW4", "MAIN_WINDOW copyStart=${call.startedElapsedMs} " +
                 "copyReturn=${call.returnedElapsedMs} deadline=$deadline " +
-                "firstServedAt200Ms=$mainServedAt200Ms responsivenessPassClaim=false")
+                "firstServedAt200Ms=$mainServedAt200Ms " +
+                "returnedAtWindowObservation=$returnedAtWindowObservation " +
+                "outstandingAtObservation=${call.returned.count} responsivenessPassClaim=false")
+        }
+        if (call.returned.count != 0L) {
+            // The probe has closed and emitted its samples above. This is pending at the bounded
+            // observation, not an invented timeout callback or permission to abandon native work.
+            Log.i("EyeBrowseFW4", "FW4_PENDING_OBSERVATION realTimeout=false " +
+                "invocation=${call.invocation} bitmap=${call.bitmapIdentity} " +
+                "observed=${SystemClock.elapsedRealtime()} deadline=$deadline " +
+                "copyStart=${call.startedElapsedMs} copyReturn=${call.returnedElapsedMs}")
+            assertFalse("FW4 pending invocation has no fabricated callback", held.awaitCaptured(0))
+            assertTrue("FW4 pending invocation has no fabricated platform result",
+                factory.platformResults().isEmpty())
+            assertEquals("FW4 pending invocation cannot publish", 0, consumer.count())
+            assertEquals("FW4 pending invocation remains the only request", 1, factory.copyInvocationCount())
+            assertEquals("FW4 pending requests remain serialized", 1, factory.maxConcurrentCopyCalls())
+            val pendingBitmap = checkNotNull(held.destinationBitmap())
+            assertFalse("FW4 pending destination remains request-owned", pendingBitmap.isRecycled)
+
+            // Close admission BEFORE forwarding a withheld late completion. Release is the same
+            // production lease path as the completed branches, never a worker join/copy cancel.
+            // All retirement steps share remaining = releaseAt+5000-now; no fresh cleanup budget.
+            val pendingReleaseAt = SystemClock.elapsedRealtime()
+            runOnMain {
+                lease!!.release()
+                assertFalse("FW4 pending cleanup revokes capture", hosting.status().captureActive)
+                assertFalse("FW4 pending cleanup releases wake lock", hosting.isWakeLockHeld())
+            }
+            removeFw4GpuStress(stress)
+            held.release()
+            val cleanupRemaining = pendingReleaseAt + STOP_BOUND_MS - SystemClock.elapsedRealtime()
+            assertTrue("FW4 pending cleanup retains original cleanup budget", cleanupRemaining > 0)
+            waitUntil("FW4 pending call and owned resources actually retire", {
+                call.returned.count == 0L && pendingBitmap.isRecycled &&
+                    factory.requestedBitmaps().all { it.isRecycled } &&
+                    !runOnMainSync(hosting::status).captureActive &&
+                    !runOnMainSync(hosting::isWakeLockHeld) &&
+                    !runOnMainSync(hosting::captureResourcesPresent)
+            }, cleanupRemaining)
+            assertTrue("FW4 pending cleanup retains global Stop bound",
+                SystemClock.elapsedRealtime() - pendingReleaseAt <= STOP_BOUND_MS)
+            SystemClock.sleep(HostingPolicy.MIN_FRAME_INTERVAL_MS + 75)
+            assertEquals("FW4 late completion cannot publish after pending retirement", 0, consumer.count())
+            assertEquals("FW4 pending retirement cannot retry", 1, factory.copyInvocationCount())
+            assertEquals("FW4 pending retirement stays serialized", 1, factory.maxConcurrentCopyCalls())
+            Log.i("EyeBrowseFW4", "FW4_PENDING_RETIRED invocation=${call.invocation} " +
+                "copyReturn=${call.returnedElapsedMs} failure=${call.failureClass} " +
+                "results=${factory.platformResults().map { it.result }} " +
+                "bitmapRecycled=${pendingBitmap.isRecycled} realTimeout=false")
+            return
         }
         val expectedRequests: Int
         if (call.failureClass != null) {
