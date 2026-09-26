@@ -8,7 +8,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import com.code2hack.eyebrowse.core.link.*
-import com.code2hack.eyebrowse.core.link.control.ControlOwner
+import com.code2hack.eyebrowse.core.link.control.*
 import com.code2hack.eyebrowse.core.link.control.BrowserAction
 import com.code2hack.eyebrowse.core.link.framing.PresentationFrame
 import com.code2hack.eyebrowse.core.link.messages.*
@@ -22,6 +22,7 @@ class RgPresentationController(context: Context, private val surface: Surface) :
         fun status(text: String)
         fun browserState(state: BrowserStateMessage)
         /** Bitmap remains owned here; the surface must not recycle or retain replaced frames. */
+        fun keyboardChanged() {}
         fun frame(bitmap: Bitmap)
     }
     private val main = Handler(Looper.getMainLooper())
@@ -57,9 +58,148 @@ class RgPresentationController(context: Context, private val surface: Surface) :
     }
     private fun prepareControls() {
         val current=state
-        if(compatible && !closed && current?.owner==ControlOwner.RG && !current.stale && current.profile==measuredProfile)
+        if(compatible && !closed && current?.owner==ControlOwner.RG && (!current.stale || keyboardCompatible) && current.profile==measuredProfile)
             commands.demand(reservationOwner,CommandSequence.Namespace.of(current.context))
         else commands.cancel(reservationOwner)
+    }
+    internal val keyboard = RgKeyboard()
+    private var keyboardCompatible = false
+    private var hostActive = false
+    private var editorState: EditorStateMessage? = null
+    private var pendingActivation: Pair<String, ControlContext>? = null
+    private var pendingAddress: Pair<String, Long>? = null
+    private var editorClose: EditorCloseMessage? = null
+    private var editorCloseTimeout: Runnable? = null
+    private var layoutMeasured = false
+    private var layoutExpected = false
+    private var layoutStartedAt = 0L
+    private var transitionSequence = 0L
+    private data class ViewportChange(val request: ViewportUpdateMessage, val deadline: Long,
+                                      var acceptedContext: ControlContext? = null)
+    private var viewportChange: ViewportChange? = null
+    private val viewportTimeout = Runnable {
+        synchronized(lock) { failViewport("Viewport change timed out — Retry") }
+    }
+
+    internal fun canOpenAddress(): Boolean = synchronized(lock) {
+        keyboardCompatible && compatible && hostActive && !closed && state?.owner == ControlOwner.RG && !handoff.busy
+    }
+    private fun addressEligible(): Boolean = canOpenAddress() && pendingCommand == null &&
+        viewportChange == null && !layoutExpected && editorClose == null &&
+        state?.profile == measuredProfile
+    internal fun canSubmitAddress(): Boolean = synchronized(lock) {
+        val current = state ?: return@synchronized false
+        val slot = commands.snapshot(reservationOwner)
+        addressEligible() && slot.phase == CommandSequence.Phase.READY &&
+            slot.namespace == CommandSequence.Namespace.of(current.context)
+    }
+    internal fun canKey(key: RgKeyboard.Key): Boolean = synchronized(lock) {
+        if (!keyboard.visible) return@synchronized false
+        when (key) {
+            RgKeyboard.Key.Command.DONE, RgKeyboard.Key.Command.SHIFT, RgKeyboard.Key.Command.SYMBOLS -> true
+            RgKeyboard.Key.Command.LEFT, RgKeyboard.Key.Command.RIGHT -> keyboard.destination == RgKeyboard.Destination.ADDRESS
+            else -> if (keyboard.destination == RgKeyboard.Destination.ADDRESS)
+                key != RgKeyboard.Key.Command.ENTER || canSubmitAddress()
+            else keyboardCompatible && canAct() && editorState?.let { it.ready && it.context == state?.context && it.target == keyboard.target } == true
+        }
+    }
+    internal fun openAddressKeyboard(): Boolean = synchronized(lock) {
+        if (!canOpenAddress()) return@synchronized false
+        closeEditor(); pendingActivation = null
+        val address = state?.url.orEmpty()
+        // The existing status URL is a 2048-character preview, not an assured full address at its limit.
+        keyboard.openAddress(address.takeIf { it.length < 2048 }.orEmpty()); beginLayout()
+        status(if (address.length >= 2048) "Address too long to prefill — enter an address" else "Edit address")
+        true
+    }
+    internal fun dismissKeyboard() = synchronized(lock) {
+        pendingActivation = null; pendingAddress = null
+        if (keyboard.visible) {
+            closeEditor(); keyboard.close(); beginLayout(); status("Text entry ended")
+        }
+    }
+    internal fun key(intent: RgKeyboard.Intent): Boolean = synchronized(lock) {
+        if (!keyboard.current(intent) || !canKey(intent.key)) return@synchronized false
+        when (val key = intent.key) {
+            RgKeyboard.Key.Command.DONE -> { dismissKeyboard(); true }
+            RgKeyboard.Key.Command.SHIFT, RgKeyboard.Key.Command.SYMBOLS -> keyboard.local(intent).also { status(statusText) }
+            else -> if (keyboard.destination == RgKeyboard.Destination.ADDRESS) {
+                if (key == RgKeyboard.Key.Command.ENTER) {
+                    val id = action(BrowserAction.OpenAddress(keyboard.draft)) ?: return@synchronized false
+                    pendingAddress = id to keyboard.generation; true
+                } else keyboard.local(intent).also { ok -> status(if (ok) "Edit address" else "Address is too long") }
+            } else {
+                val target = keyboard.target ?: return@synchronized false
+                val operation = when (key) {
+                    is RgKeyboard.Key.Character -> EditorOperation.Insert(key.text)
+                    RgKeyboard.Key.Command.SPACE -> EditorOperation.Insert(" ")
+                    RgKeyboard.Key.Command.BACKSPACE -> EditorOperation.Backspace
+                    RgKeyboard.Key.Command.ENTER -> EditorOperation.Enter
+                    else -> return@synchronized false
+                }
+                action(BrowserAction.Edit(target, operation)) != null
+            }
+        }
+    }
+    private fun closeEditor() {
+        val editor = editorState
+        editorState = null; inputRevision++
+        // An in-progress resize owns the old grant. The coalesced hide profile explicitly
+        // declines retention, so a late rebind cannot restore editing after Done.
+        if (viewportChange != null) return
+        val target = editor?.target ?: return
+        if (editorClose != null || !compatible) return
+        val request = EditorCloseMessage(java.util.UUID.randomUUID().toString(), editor.context, target)
+        editorClose = request
+        if (!client.sendControl(request)) { failViewport("Text cancellation unavailable — Retry"); return }
+        val timeout = Runnable { synchronized(lock) {
+            if (editorClose == request) failViewport("Text cancellation unconfirmed — Retry")
+        } }
+        editorCloseTimeout = timeout; main.postDelayed(timeout, 1_000)
+    }
+    private fun beginLayout() {
+        layoutExpected = true; layoutMeasured = false; layoutStartedAt = SystemClock.uptimeMillis(); inputRevision++
+        main.removeCallbacks(viewportTimeout)
+        main.postAtTime(viewportTimeout, viewportChange?.deadline ?: (layoutStartedAt + 2_000))
+    }
+    private fun sendViewportIfNeeded() {
+        if (!layoutExpected || !layoutMeasured || viewportChange != null || editorClose != null) return
+        val current = state ?: return
+        val profile = measuredProfile ?: return
+        if (!keyboardCompatible || !compatible || current.owner != ControlOwner.RG) return
+        if (profile == current.profile) {
+            layoutExpected = false; main.removeCallbacks(viewportTimeout); prepareControls(); return
+        }
+        if (SystemClock.uptimeMillis() >= layoutStartedAt + 2_000 || transitionSequence == Long.MAX_VALUE) {
+            failViewport("Viewport unavailable — Retry"); return
+        }
+        val request = ViewportUpdateMessage(++transitionSequence, current.context, profile,
+            retainEditor = keyboard.destination == RgKeyboard.Destination.FIELD)
+        viewportChange = ViewportChange(request, layoutStartedAt + 2_000)
+        if (!client.sendControl(request)) { failViewport("Viewport request not sent — Retry"); return }
+        inbox.grant(null, null); inputRevision++
+        status("Updating page layout")
+    }
+    private fun settleViewport() {
+        val change = viewportChange ?: return
+        val context = change.acceptedContext ?: return
+        val current = state ?: return
+        if (current.context != context || current.stale || current.profile != change.request.profile ||
+            lastFrameHeader?.context != context) return
+        if (SystemClock.uptimeMillis() >= change.deadline) { failViewport("Viewport change timed out — Retry"); return }
+        viewportChange = null; main.removeCallbacks(viewportTimeout)
+        if (measuredProfile == current.profile) layoutExpected = false
+        else {
+            main.postAtTime(viewportTimeout, layoutStartedAt + 2_000)
+            sendViewportIfNeeded()
+        }
+        prepareControls(); inputRevision++
+    }
+    private fun failViewport(reason: String) = invalidate(reason)
+    private fun retireKeyboard() {
+        keyboard.close(); editorState = null; pendingActivation = null; pendingAddress = null
+        viewportChange = null; layoutExpected = false; editorClose = null
+        main.removeCallbacks(viewportTimeout); editorCloseTimeout?.let(main::removeCallbacks); editorCloseTimeout = null
     }
     private var pendingCommand: String? = null
     private var actionTimeout: Runnable? = null
@@ -76,6 +216,7 @@ class RgPresentationController(context: Context, private val surface: Surface) :
     private fun baseActionEligibleLocked(): Boolean {
         val current=state
         return compatible && !closed && pendingCommand==null && !handoff.busy &&
+            viewportChange==null && !layoutExpected && editorClose==null &&
             current?.owner==ControlOwner.RG && !current.stale && !current.loading &&
             current.profile==measuredProfile && lastFrameHeader?.context==current.context
     }
@@ -91,7 +232,8 @@ class RgPresentationController(context: Context, private val surface: Surface) :
 
     internal fun inputSnapshot(): RgInputSnapshot = synchronized(lock) {
         RgInputSnapshot(state?.context,state?.owner,measuredProfile,inputRevision,canAct(),canHandoff(),
-            state?.canGoBack==true,state?.canGoForward==true,commands.snapshot(reservationOwner).revision)
+            state?.canGoBack==true,state?.canGoForward==true,commands.snapshot(reservationOwner).revision,
+            canOpenAddress(),canSubmitAddress())
     }
     /** Remote actions/handoffs validate and send atomically. Retry is local recovery, not a page action. */
     internal fun dispatchIfCurrent(expected: RgInputSnapshot, nativeAction: LocalInputAction? = null,
@@ -113,11 +255,21 @@ class RgPresentationController(context: Context, private val surface: Surface) :
     fun back(): String? = action(BrowserAction.Back)
     fun forward(): String? = action(BrowserAction.Forward)
     fun reload(): String? = action(BrowserAction.Reload)
-    fun activateAt(x: Float, y: Float): String? = action(BrowserAction.ActivateAt(x,y))
+    fun activateAt(x: Float, y: Float): String? = synchronized(lock) {
+        val id = action(BrowserAction.ActivateAt(x,y)) ?: return@synchronized null
+        pendingActivation = id to checkNotNull(state).context
+        main.postDelayed({ synchronized(lock) {
+            if (pendingActivation?.first == id) {
+                pendingActivation = null
+                if (keyboard.destination == RgKeyboard.Destination.FIELD && keyboard.target == null) dismissKeyboard()
+            }
+        } }, 1_000)
+        id
+    }
     fun scrollBy(dx: Float, dy: Float): String? = action(BrowserAction.ScrollBy(dx,dy))
 
     private fun action(action: BrowserAction): String? = synchronized(lock) {
-        if (!canAct()) return@synchronized null
+        if (if (action is BrowserAction.OpenAddress) !canSubmitAddress() else !canAct()) return@synchronized null
         val current = checkNotNull(state)
         val reservation=commands.snapshot(reservationOwner)
         val ordinal=commands.consume(reservationOwner,CommandSequence.Namespace.of(current.context),
@@ -141,6 +293,8 @@ class RgPresentationController(context: Context, private val surface: Surface) :
         val timeout = Runnable { synchronized(lock) {
             if (pendingCommand == request.commandId) {
                 pendingCommand = null
+                pendingActivation = null; pendingAddress = null
+                if (action is BrowserAction.Edit) dismissKeyboard()
                 status("Could not confirm action — not retried")
             }
         } }
@@ -149,7 +303,10 @@ class RgPresentationController(context: Context, private val surface: Surface) :
         request.commandId
     }
 
-    fun requestPhone(): Boolean = requestHandoff(HandoffTargetWire.PHONE)
+    fun requestPhone(): Boolean {
+        synchronized(lock) { pendingActivation = null; retireKeyboard(); status(statusText) }
+        return requestHandoff(HandoffTargetWire.PHONE)
+    }
 
     private fun requestHandoff(target: HandoffTargetWire): Boolean = synchronized(lock) {
         val current=state ?: return@synchronized false
@@ -194,6 +351,7 @@ class RgPresentationController(context: Context, private val surface: Surface) :
         synchronized(lock) {
             if (!closed) {
                 state?.let(surface::browserState)
+                surface.keyboardChanged()
                 val reservation=commands.snapshot(reservationOwner)
                 val hasAuthority=compatible && state?.owner==ControlOwner.RG && state?.stale==false
                 surface.status(if(hasAuthority && reservation.phase==CommandSequence.Phase.FAILED)
@@ -220,14 +378,21 @@ class RgPresentationController(context: Context, private val surface: Surface) :
     }
 
     fun measure(width: Int, height: Int, densityDpi: Int): Unit = synchronized(lock) {
-        val next=PresentationProfile.fromMeasured(width,height,densityDpi)
-        if(next!=measuredProfile) inputRevision++
+        val next = PresentationProfile.fromMeasured(width,height,densityDpi)
+        if (next != measuredProfile) inputRevision++
         measuredProfile = next
         val current = state
-        if (current?.owner == ControlOwner.RG && current.profile != measuredProfile) {
-            invalidate("Viewport changed — presentation stale")
-            client.disconnect() // No implicit ownership/profile renegotiation on a layout callback.
+        if (current?.owner == ControlOwner.RG) {
+            if (layoutExpected) sendViewportIfNeeded()
+            else if (current.profile != measuredProfile) {
+                invalidate("Viewport changed — presentation stale")
+                client.disconnect()
+            }
         }
+    }
+    /** Also called after a requested layout whose content rectangle did not change. */
+    internal fun layoutMeasured() = synchronized(lock) {
+        layoutMeasured = true; sendViewportIfNeeded()
     }
     fun profile(): PresentationProfile? = measuredProfile
     fun browserState(): BrowserStateMessage? = state
@@ -251,31 +416,118 @@ class RgPresentationController(context: Context, private val surface: Surface) :
         if(Looper.myLooper()==Looper.getMainLooper()) block() else main.post { if(!closed) block() }
     }
     override fun onStateChange(state: PairingState) = onMain { status(state.name) }
-    override fun onStatus(status: HostStatusValue) = onMain { if (state?.owner != ControlOwner.RG) status("Host: $status") }
+    override fun onStatus(status: HostStatusValue) = onMain { synchronized(lock) {
+        val active = status == HostStatusValue.HOSTING
+        if (hostActive != active) inputRevision++
+        hostActive = active
+        if (!hostActive && state?.owner == ControlOwner.RG) invalidate("Host: $status")
+        else if (state?.owner != ControlOwner.RG) status("Host: $status")
+        else status(statusText)
+    } }
     override fun onPresentationCompatibility(result: CapabilityNegotiation) = onMain { synchronized(lock) {
         val next=result == CapabilityNegotiation.Accepted
         if(next!=compatible) inputRevision++
         compatible = next
         if (!compatible) invalidate("Update apps to use presentation") else prepareControls()
     } }
+    override fun onKeyboardCompatibility(compatible: Boolean) = onMain { synchronized(lock) {
+        keyboardCompatible = compatible; inputRevision++
+        if (!compatible) retireKeyboard()
+        status(statusText)
+    } }
     override fun onLinkLost() = onMain { synchronized(lock) { compatible = false; invalidate("Disconnected — page stale; Retry") } }
     override fun onConnectFailed(error: LinkError) = onMain { invalidate("Connection failed: ${error.javaClass.simpleName}") }
-    override fun onControl(message: BrowserControlMessage): Unit = synchronized(lock) {
+    override fun onControl(message: BrowserControlMessage): Unit = receiveControl(message)
+    private fun receiveControl(message: BrowserControlMessage): Unit = synchronized(lock) {
         if(closed) return@synchronized
         when (message) {
             is BrowserStateMessage -> {
                 val old=state
                 if(old==null || old.context!=message.context || old.owner!=message.owner || old.profile!=message.profile ||
                     old.stale!=message.stale || old.loading!=message.loading) inputRevision++
+                if (old != null && (old.context.lifetimeId != message.context.lifetimeId ||
+                    old.context.controlEpoch != message.context.controlEpoch || old.owner != message.owner ||
+                    old.context.hostingGeneration != message.context.hostingGeneration)) retireKeyboard()
+                else if (old != null && old.context.documentId != message.context.documentId) {
+                    pendingActivation = null; editorState = null
+                    viewportChange = null; editorClose = null
+                    editorCloseTimeout?.let(main::removeCallbacks); editorCloseTimeout = null
+                    main.removeCallbacks(viewportTimeout)
+                    if (keyboard.destination == RgKeyboard.Destination.FIELD) {
+                        keyboard.close(); beginLayout()
+                    }
+                }
                 state = message
+                val bufferedEditor = editorState
+                if (bufferedEditor?.context == message.context) receiveControl(bufferedEditor)
                 prepareControls()
                 handoff.observed(message.owner,message.context)
                 if(!handoff.busy) { handoffTimeout?.let(main::removeCallbacks);handoffTimeout=null }
                 val live = message.owner == ControlOwner.RG && !message.stale && message.profile == measuredProfile
-                inbox.grant(message.context.takeIf { live }, message.profile.takeIf { live })
+                val receiving = live || viewportChange?.let { it.request.profile == message.profile &&
+                    message.owner == ControlOwner.RG && !message.stale && it.acceptedContext == message.context } == true
+                inbox.grant(message.context.takeIf { receiving }, message.profile.takeIf { receiving })
+                settleViewport()
                 status(if (!live) {
                     if (message.owner == ControlOwner.PHONE) "Browsing on Phone" else "Presentation stale"
                 } else if (lastFrameHeader?.context == message.context) statusText else "Waiting for current frame")
+            }
+            is EditorStateMessage -> {
+                val current = state ?: return@synchronized
+                if (current.owner != ControlOwner.RG || !keyboardCompatible) return@synchronized
+                if (message.context != current.context) {
+                    val old = viewportChange?.request?.context
+                    if (old != null && message.context.copy(viewportEpoch = old.viewportEpoch) == old &&
+                        message.context.viewportEpoch > old.viewportEpoch) editorState = message
+                    return@synchronized
+                }
+                if (editorState != message) inputRevision++
+                editorState = message
+                val activation = pendingActivation
+                if (message.ready && message.target != null && activation != null &&
+                    activation.first == message.activationCommandId && activation.second == message.context &&
+                    keyboard.destination != RgKeyboard.Destination.ADDRESS) {
+                    val openingLayout = !keyboard.visible
+                    pendingActivation = null; keyboard.openField(checkNotNull(message.target),message.activationCommandId)
+                    if (openingLayout) beginLayout()
+                } else if (keyboard.destination == RgKeyboard.Destination.FIELD) {
+                    if (message.target != null && message.activationCommandId == keyboard.activationCommandId &&
+                        (message.target == keyboard.target || viewportChange != null))
+                        keyboard.rebind(message.target)
+                    else if (message.target == null && !layoutExpected && viewportChange == null) {
+                        if (pendingActivation != null) keyboard.rebind(null)
+                        else { keyboard.close(); beginLayout() }
+                    }
+                } else if (message.target != null && pendingActivation == null && viewportChange == null) {
+                    closeEditor() // Orphaned/delayed grant after dismissal is never a reopen instruction.
+                }
+                status(statusText)
+            }
+            is EditorCloseResultMessage -> {
+                val request = editorClose ?: return@synchronized
+                if (message.requestId != request.requestId) return@synchronized
+                if (!message.closed || message.context != request.context) {
+                    failViewport("Text cancellation unconfirmed — Retry"); return@synchronized
+                }
+                editorClose = null; editorCloseTimeout?.let(main::removeCallbacks); editorCloseTimeout = null
+                sendViewportIfNeeded(); status(statusText)
+            }
+            is ViewportUpdateResultMessage -> {
+                val change = viewportChange ?: return@synchronized
+                if (message.transitionId != change.request.transitionId) return@synchronized
+                if (!message.accepted || message.profile != change.request.profile ||
+                    message.context.lifetimeId != change.request.context.lifetimeId ||
+                    message.context.controlEpoch != change.request.context.controlEpoch ||
+                    message.context.documentId != change.request.context.documentId ||
+                    message.context.hostingGeneration != change.request.context.hostingGeneration ||
+                    message.context.viewportEpoch <= change.request.context.viewportEpoch) {
+                    failViewport("Viewport rejected — Retry"); return@synchronized
+                }
+                change.acceptedContext = message.context
+                val current = state
+                if (current?.context == message.context && !current.stale)
+                    inbox.grant(current.context, current.profile)
+                settleViewport(); status(statusText)
             }
             is HandoffResultMessage -> {
                 handoff.result(message)
@@ -288,8 +540,19 @@ class RgPresentationController(context: Context, private val surface: Surface) :
                 if (pendingCommand == message.commandId) {
                     pendingCommand = null
                     actionTimeout?.let(main::removeCallbacks); actionTimeout = null
+                    val address = pendingAddress
+                    if (address?.first == message.commandId) {
+                        pendingAddress = null
+                        if (keyboard.generation == address.second && message.accepted && message.reason == "ADDRESS_OPENED") dismissKeyboard()
+                    }
+                    if (!message.accepted || message.reason == "EDITOR_UNCERTAIN") {
+                        pendingActivation = null
+                        if (keyboard.destination == RgKeyboard.Destination.FIELD) dismissKeyboard()
+                    }
                     status(if (!message.accepted) "Action unavailable — page or control changed"
-                        else if (message.reason != null) "Could not confirm action — not retried" else "Connected to Phone")
+                        else if (message.reason == "ADDRESS_REJECTED") "Invalid address — edit and try again"
+                        else if (message.reason in setOf(null,"EDITOR_APPLIED","ADDRESS_OPENED","SUBMISSION_REQUESTED")) "Connected to Phone"
+                        else "Could not confirm action — not retried")
                 }
             }
             is PresentationStaleMessage -> invalidate("Presentation stale: ${message.reason}")
@@ -351,12 +614,14 @@ class RgPresentationController(context: Context, private val surface: Surface) :
             lastReceiveToDisplayMs = SystemClock.elapsedRealtime() - next.third
             displayedFrames++
             lastFrameHeader = next.first.header
+            settleViewport()
             status("Live page · authenticated")
             Log.i("EyeBrowsePresentation", "display seq=${next.first.header.frameSeq} capture=${next.first.header.captureTsMs} local=${SystemClock.elapsedRealtime()} profile=${next.second.width}x${next.second.height} coalesced=${inbox.dropped}")
         }
     }
     private fun invalidate(reason: String) {
         synchronized(lock) {
+            retireKeyboard()
             inputRevision++;commands.cancel(reservationOwner);handoff.clear();handoffTimeout?.let(main::removeCallbacks);handoffTimeout=null
             state = state?.copy(stale=true); inbox.grant(null,null); pendingCommand = null; actionTimeout?.let(main::removeCallbacks); actionTimeout = null
         }
@@ -382,7 +647,7 @@ class RgPresentationController(context: Context, private val surface: Surface) :
     }
 
     fun close() {
-        synchronized(lock) { closed = true;inputRevision++;handoff.clear(); inbox.grant(null,null); pendingDisplay?.second?.recycle(); pendingDisplay = null }
+        synchronized(lock) { retireKeyboard();closed = true;inputRevision++;handoff.clear(); inbox.grant(null,null); pendingDisplay?.second?.recycle(); pendingDisplay = null }
         commands.release(reservationOwner)
         main.removeCallbacks(preparationGuard);main.removeCallbacks(reservationUpdate)
         handoffTimeout?.let(main::removeCallbacks);handoffTimeout=null

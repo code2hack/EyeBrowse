@@ -177,7 +177,8 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
             com.code2hack.eyebrowse.core.link.control.BrowserAction.Back -> goBack()
             com.code2hack.eyebrowse.core.link.control.BrowserAction.Forward -> goForward()
             com.code2hack.eyebrowse.core.link.control.BrowserAction.Reload -> reload()
-            is com.code2hack.eyebrowse.core.link.control.BrowserAction.OpenAddress -> openAddress(action.address)
+            is com.code2hack.eyebrowse.core.link.control.BrowserAction.OpenAddress ->
+                if (!openAddress(action.address).accepted()) throw RemoteAddressRejected()
             is com.code2hack.eyebrowse.core.link.control.BrowserAction.Edit -> error("editor admission required")
             is com.code2hack.eyebrowse.core.link.control.BrowserAction.ScrollBy ->
                 view.scrollBy(kotlin.math.round(action.dx).toInt(), kotlin.math.round(action.dy).toInt())

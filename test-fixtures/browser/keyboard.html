@@ -1,0 +1,30 @@
+<!doctype html>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KBD</title>
+<style>
+body { margin:8px; background:#f6f3ea; color:#111; font:16px sans-serif; }
+label { display:flex; align-items:center; height:38px; gap:8px; }
+label span { width:85px; }
+input,textarea,[contenteditable] { box-sizing:border-box; flex:1; min-width:0; height:32px; border:1px solid #555; background:white; color:black; font:16px sans-serif; }
+#plain { overflow:auto; white-space:pre-wrap; }
+</style>
+<form id="form"><label><span>Text</span><input id="text" autocomplete="off"></label></form>
+<label><span>Password</span><input id="password" type="password" autocomplete="off"></label>
+<label><span>Multiline</span><textarea id="multiline"></textarea></label>
+<label><span>Plain</span><div id="plain" contenteditable="true"></div></label>
+<p>Live keyboard continuity fixture</p><div style="height:1600px">Scroll area</div>
+<script>
+window.fixtureIdentity = crypto.randomUUID ? crypto.randomUUID() : String(Math.random());
+window.fixtureInputs = 0; window.fixtureSubmits = 0;
+function publish() {
+  const g = {inputs:fixtureInputs, submits:fixtureSubmits};
+  for (const id of ['text','password','multiline','plain']) {
+    const r = document.getElementById(id).getBoundingClientRect();
+    g[id] = [(r.x+r.width/2)/innerWidth,(r.y+r.height/2)/innerHeight];
+  }
+  document.title = 'KBD|' + JSON.stringify(g);
+}
+document.addEventListener('input',()=>{fixtureInputs++;publish()});
+document.getElementById('form').addEventListener('submit',e=>{e.preventDefault();fixtureSubmits++;publish()});
+addEventListener('resize',publish);addEventListener('scroll',publish);publish();
+</script>

@@ -21,6 +21,8 @@ internal class RgInputRouter(
 ) {
     internal sealed interface Target {
         data class Native(val view: Button, val action: LocalInputAction, val label: String): Target
+        data class Keyboard(val view: Button, val intent: RgKeyboard.Intent): Target
+        data class Address(val view: Button): Target
         data class Page(val geometry: PointerImageGeometry, val point: InputPoint): Target
     }
     private data class Tap(val point: InputPoint, val target: Target, val geometryVersion: Long,
@@ -113,6 +115,8 @@ internal class RgInputRouter(
                 when(val target=tap.target) {
                     is Target.Native -> tap.input.allows(target.action) && target.view.isEnabled && target.view.isShown &&
                         target.view.performClick().also { if(it) nativeInvocations++ }
+                    is Target.Keyboard -> presentation.keyboard.current(target.intent) && presentation.key(target.intent)
+                    is Target.Address -> tap.input.addressAvailable && presentation.openAddressKeyboard()
                     is Target.Page -> tap.input.pageReady && presentation.activateAt(target.point.x,target.point.y)!=null
                 }
             }
@@ -183,6 +187,9 @@ internal class RgInputRouter(
     internal fun targetAt(point: InputPoint, input: RgInputSnapshot): Target? {
         val view=hit(root,point) ?: return null
         if(view is Button) {
+            val key = view.tag as? RgKeyboard.Intent
+            if (key != null) return if (view.isEnabled && presentation.keyboard.current(key) && presentation.canKey(key.key)) Target.Keyboard(view, key) else null
+            if (view.id == R.id.rg_detail) return if (view.isEnabled && input.addressAvailable) Target.Address(view) else null
             val action=when(view.id) {
                 R.id.rg_recenter -> LocalInputAction.RECENTER
                 R.id.rg_retry -> LocalInputAction.RETRY

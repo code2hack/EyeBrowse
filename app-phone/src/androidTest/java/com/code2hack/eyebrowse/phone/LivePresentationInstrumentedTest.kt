@@ -85,9 +85,9 @@ class LivePresentationInstrumentedTest {
                 it.findViewById<Button>(R.id.button_hosting_toggle).performClick()
                 // Synchronous Stop must clear exclusion before its final listeners reattach/render.
                 StopRecoveryAssertions.afterStop(it, browser, host, checkNotNull(originalView), checkNotNull(originalDocument))
-                assertTrue("TLS peer still present before explicit link Stop", server.isLinkUp())
+                assertFalse("Hosting Stop must terminate the live app link", server.isLinkUp())
                 val before = SystemClock.elapsedRealtime()
-                server.stop() // Actual Activity-lifecycle call shape, under normal StrictMode.
+                server.stop() // Repeated link Stop remains bounded and idempotent.
                 assertFalse(server.isLinkUp())
                 assertTrue("main-thread stop returns within bound",SystemClock.elapsedRealtime()-before < 1_000)
                 Log.i("EyeBrowseT02", "LINK_STOP_MAIN_MS=${SystemClock.elapsedRealtime()-before}")

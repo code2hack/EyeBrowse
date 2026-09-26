@@ -12,6 +12,8 @@ internal data class RgInputSnapshot(
     val revision: Long, val pageReady: Boolean, val handoffReady: Boolean,
     val canGoBack: Boolean, val canGoForward: Boolean,
     val reservationRevision: Long = 0,
+    val addressAvailable: Boolean = false,
+    val addressReady: Boolean = false,
 ) {
     fun allows(action: LocalInputAction): Boolean = when(action) {
         LocalInputAction.RECENTER,LocalInputAction.RETRY,LocalInputAction.PAIR -> true

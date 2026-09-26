@@ -46,14 +46,9 @@ class PhoneControlCoordinator(
             is BrowserActionMessage -> {
                 val result = authority.admitAction(ControlOwner.RG,
                     BrowserActionRequest(message.commandId,message.context,message.action,message.commandSequence))
-                val dispatchError = if (result is ActionDecision.Accepted) {
-                    try { executeAction?.invoke(message.action); null }
-                    catch (_: RuntimeException) { "DISPATCH_UNCERTAIN" }
-                } else null
-                // Native dispatch is not a website transaction acknowledgment. Never retry an
-                // uncertain effect; its ordinal was already consumed by the authoritative arbiter.
-                BrowserActionResultMessage(message.commandId,result is ActionDecision.Accepted,
-                    effectSucceeded = null, reason = dispatchError ?: (result as? ActionDecision.Rejected)?.reason?.name)
+                if (result is ActionDecision.Accepted) dispatchBrowserAction(message) { executeAction?.invoke(it) }
+                else BrowserActionResultMessage(message.commandId, false,
+                    reason = (result as ActionDecision.Rejected).reason.name)
             }
             else -> null // A peer cannot publish authoritative owner/state or stop a Phone generation.
         }
@@ -64,4 +59,19 @@ class PhoneControlCoordinator(
             HostingPresentationProfile(it.width,it.height,it.densityDpi)
         }
     }
+}
+
+/** No user input in exception text or diagnostics. */
+internal class RemoteAddressRejected : IllegalArgumentException()
+
+/** Both quiescent and editor-retirement dispatch paths report the same policy outcome. */
+internal fun dispatchBrowserAction(message: BrowserActionMessage, execute: (BrowserAction) -> Unit): BrowserActionResultMessage {
+    val reason = try {
+        execute(message.action)
+        if (message.action is BrowserAction.OpenAddress) "ADDRESS_OPENED" else null
+    } catch (_: RemoteAddressRejected) { "ADDRESS_REJECTED" }
+      catch (_: RuntimeException) { "DISPATCH_UNCERTAIN" }
+    // OPENED means a navigation was dispatched, not that a website transaction succeeded.
+    return BrowserActionResultMessage(message.commandId, true,
+        effectSucceeded = false.takeIf { reason == "ADDRESS_REJECTED" }, reason = reason)
 }

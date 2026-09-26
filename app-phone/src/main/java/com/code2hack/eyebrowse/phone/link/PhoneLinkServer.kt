@@ -7,6 +7,7 @@ import com.code2hack.eyebrowse.core.link.messages.*
 import com.code2hack.eyebrowse.phone.PhoneControlCoordinator
 import com.code2hack.eyebrowse.phone.PhoneBrowserSession
 import com.code2hack.eyebrowse.phone.PhoneEditorController
+import com.code2hack.eyebrowse.phone.dispatchBrowserAction
 import com.code2hack.eyebrowse.core.link.messages.BrowserControlMessage
 import com.code2hack.eyebrowse.core.link.transport.AuthenticatedControlSession
 import com.code2hack.eyebrowse.core.link.HostStatusValue
@@ -135,9 +136,20 @@ class PhoneLinkServer(
         }
     }
 
+    private var observedHostingState = hostingController?.status()?.state
     private val hostingListener = HostingController.Listener {
+        val previousHostingState = observedHostingState
+        observedHostingState = hostingController?.status()?.state
         val before = controlCoordinator.authority.snapshot().context
         reconcileHostingAuthority()
+        if (previousHostingState != HostingController.State.NOT_HOSTING &&
+            observedHostingState == HostingController.State.NOT_HOSTING) {
+            // The settled Stop/failure notification has returned local authority. End the app
+            // link too; pairing and the live Phone WebView are owned independently.
+            stop()
+            notifyLinkObservers()
+            return@Listener
+        }
         if (before != controlCoordinator.authority.snapshot().context) {
             authenticatedSession?.setPresentation(null,null)
             notifyLinkObservers()
@@ -238,11 +250,22 @@ class PhoneLinkServer(
                 }
                 viewportHighWater = message.transitionId
                 if (message.profile == current.profile) {
-                    val result = ViewportUpdateResultMessage(message.transitionId, true, current.context, current.profile)
-                    lastViewportResult = message to result; answer(result); return
+                    fun finish(verified: Boolean) {
+                        val latest = controlCoordinator.authority.snapshot()
+                        val result = if (verified && authenticatedSession === session && latest.context == current.context)
+                            ViewportUpdateResultMessage(message.transitionId, true, latest.context, latest.profile)
+                        else rejected()
+                        lastViewportResult = message to result; answer(result)
+                    }
+                    if (message.retainEditor) finish(true)
+                    else {
+                        transitionPending = true
+                        retireEditor { verified -> transitionPending = false; finish(verified) }
+                    }
+                    return
                 }
                 transitionPending = true
-                val previousTarget = editor?.authority?.grant?.target
+                val previousTarget = editor?.authority?.grant?.target?.takeIf { message.retainEditor }
                 retireEditor(retainForProfile = previousTarget != null) { verified ->
                     transitionPending = false
                     val updated = if (verified && authenticatedSession === session)
@@ -291,12 +314,12 @@ class PhoneLinkServer(
                                 (message.action !is BrowserAction.OpenAddress && current.presentationStatus != PresentationStatus.READY)) {
                                 answer(BrowserActionResultMessage(message.commandId, true, false, "EDITOR_TRANSITION"))
                             } else {
-                                var dispatchFailure: String? = null
-                                try { browserSession?.executeRemoteAction(message.action) ?: error("browser unavailable") }
-                                catch (_: RuntimeException) { dispatchFailure = "DISPATCH_UNCERTAIN" }
-                                answer(BrowserActionResultMessage(message.commandId, true, null, dispatchFailure))
+                                val result = dispatchBrowserAction(message) {
+                                    browserSession?.executeRemoteAction(it) ?: error("browser unavailable")
+                                }
+                                answer(result)
                                 schedulePresentation()
-                                if (dispatchFailure == null) requestEditorForActivation(session, message)
+                                if (result.reason == null) requestEditorForActivation(session, message)
                             }
                         }
                     }
@@ -318,7 +341,7 @@ class PhoneLinkServer(
             controlCoordinator.reconcileDocument()
             // A successful old-page tap cannot open an autofocus editor on its successor page.
             if (controlCoordinator.authority.snapshot().context == message.context)
-                editorController?.openAfterActivation(activation)
+                editorController?.openAfterActivation(activation, message.commandId)
         }
     }
 
@@ -448,6 +471,7 @@ class PhoneLinkServer(
         // Validate/repair only at use time. Construction must survive an inadequate VALID/CORRUPT
         // alias so PairingActivity can still expose the explicit Forget recovery control.
         identityRecovery.ensureUsableIdentity()
+        observedHostingState = hostingController?.status()?.state
         hostingController?.addListener(hostingListener)
         browserSession?.addListener(browserListener)
         val newEngine = LinkServerEngine(identity, trustController, LinkTimings.PRODUCT, engineListener)

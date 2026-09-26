@@ -266,6 +266,9 @@ class MainActivity : ComponentActivity() {
         } else {
             requestNotificationPermissionIfNeeded()
             hosting.start()
+            if (hosting.status().state != HostingController.State.NOT_HOSTING && link.isPaired()) {
+                runCatching { link.start() }
+            }
         }
         render()
     }

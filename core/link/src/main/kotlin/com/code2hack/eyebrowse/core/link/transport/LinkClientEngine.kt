@@ -327,6 +327,7 @@ class LinkClientEngine(
                         peer.hasPresentationCapabilities() && attempt.clientHello.hasPresentationCapabilities(), true,
                         keyboardCompatible = peer.hasKeyboardCapabilities() && attempt.clientHello.hasKeyboardCapabilities())
                     operation.session = session
+                    session.start()
                     listener.onAuthenticatedSession(session, peer)
                     listener.onStateChange(PairingState.CONNECTED)
                     true

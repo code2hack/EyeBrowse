@@ -6,13 +6,14 @@
     android:orientation="vertical" android:background="@android:color/black">
     <TextView android:id="@+id/rg_status" android:layout_width="match_parent" android:layout_height="wrap_content"
         android:maxLines="1" android:ellipsize="end" android:text="@string/rg_status" android:textColor="@color/rg_text_primary" android:textSize="16sp" />
-    <TextView android:id="@+id/rg_detail" android:layout_width="match_parent" android:layout_height="wrap_content"
+    <Button android:id="@+id/rg_detail" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:minHeight="0dp" android:padding="0dp" android:textAllCaps="false"
         android:maxLines="1" android:ellipsize="end" android:text="@string/rg_location_empty" android:textColor="@color/rg_text_secondary" />
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+    <LinearLayout android:id="@+id/rg_utilities" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
         <Button android:id="@+id/rg_retry" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/rg_retry" />
         <Button android:id="@+id/button_scan_pair" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/rg_action_scan_pair" />
     </LinearLayout>
-    <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:orientation="horizontal">
+    <LinearLayout android:id="@+id/rg_pointer_controls" android:layout_width="match_parent" android:layout_height="48dp" android:orientation="horizontal">
         <Button android:id="@+id/rg_recenter" android:layout_width="wrap_content" android:layout_height="match_parent"
             android:text="@string/pointer_recenter" />
         <TextView android:id="@+id/rg_pointer_status" android:layout_width="0dp" android:layout_weight="1"
@@ -28,6 +29,8 @@
     </LinearLayout>
     <ImageView android:id="@+id/rg_page" android:layout_width="match_parent" android:layout_height="0dp"
         android:layout_weight="1" android:scaleType="center" android:contentDescription="@string/rg_page_description" />
+<LinearLayout android:id="@+id/rg_keyboard_container" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:orientation="vertical" />
 </LinearLayout>
 <com.code2hack.eyebrowse.rg.PointerOverlay android:id="@+id/rg_pointer"
     android:layout_width="match_parent" android:layout_height="match_parent" />

@@ -41,7 +41,11 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.rg_recenter).setOnClickListener { pointer.recenter() }
         val image = findViewById<ImageView>(R.id.rg_page)
         val status = findViewById<TextView>(R.id.rg_status)
-        val location = findViewById<TextView>(R.id.rg_detail)
+        val location = findViewById<Button>(R.id.rg_detail)
+        val keyboard = RgKeyboardView(this)
+        findViewById<LinearLayout>(R.id.rg_keyboard_container).addView(keyboard)
+        var keyboardVisible = false
+        var keyboardDestination: RgKeyboard.Destination? = null
         presentation = RgPresentationController(this, object : RgPresentationController.Surface {
             override fun status(text: String) { status.text = text }
             override fun browserState(state: BrowserStateMessage) {
@@ -51,14 +55,36 @@ class MainActivity : Activity() {
                     setText(if (rg) R.string.use_on_phone else R.string.use_on_glasses)
                     isEnabled = presentation.canHandoff()
                 }
-                findViewById<View>(R.id.rg_navigation).visibility = if (rg) View.VISIBLE else View.INVISIBLE
+                findViewById<View>(R.id.rg_navigation).visibility = if (presentation.keyboard.visible) View.GONE else if (rg) View.VISIBLE else View.INVISIBLE
                 findViewById<Button>(R.id.rg_back).isEnabled = presentation.canAct() && state.canGoBack
                 findViewById<Button>(R.id.rg_forward).isEnabled = presentation.canAct() && state.canGoForward
                 findViewById<Button>(R.id.rg_reload).isEnabled = presentation.canAct()
                 if(::inputRouter.isInitialized) inputRouter.surfaceChanged()
             }
+            override fun keyboardChanged() {
+                keyboard.render(presentation)
+                location.isEnabled = presentation.canOpenAddress()
+                val visible = presentation.keyboard.visible
+                if (visible != keyboardVisible || presentation.keyboard.destination != keyboardDestination) {
+                    keyboardDestination = presentation.keyboard.destination
+                    keyboardVisible = visible
+                    for (id in listOf(R.id.rg_utilities, R.id.rg_pointer_controls, R.id.rg_handoff, R.id.rg_navigation))
+                        findViewById<View>(id).visibility = if (visible) View.GONE else View.VISIBLE
+                    // Run after the real traversal, including unchanged-size layouts.
+                    root.viewTreeObserver.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
+                        override fun onPreDraw(): Boolean {
+                            root.viewTreeObserver.removeOnPreDrawListener(this)
+                            presentation.measure(image.width,image.height,resources.displayMetrics.densityDpi)
+                            presentation.layoutMeasured()
+                            return true
+                        }
+                    })
+                }
+                if (::inputRouter.isInitialized) inputRouter.surfaceChanged()
+            }
             override fun frame(bitmap: android.graphics.Bitmap) { image.setImageBitmap(bitmap) }
         })
+        location.setOnClickListener { presentation.openAddressKeyboard() }
         image.addOnLayoutChangeListener { _,l,t,r,b,_,_,_,_ ->
             presentation.measure(r-l,b-t,resources.displayMetrics.densityDpi)
         }
@@ -83,14 +109,20 @@ class MainActivity : Activity() {
             })
         }
     }
+    @Deprecated("Legacy Activity Back callback")
+    override fun onBackPressed() {
+        if (::presentation.isInitialized && presentation.keyboard.visible) presentation.dismissKeyboard()
+        else super.onBackPressed()
+    }
     override fun dispatchKeyEvent(event: KeyEvent): Boolean =
         if(::inputRouter.isInitialized && inputRouter.key(event)) true else super.dispatchKeyEvent(event)
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if(::inputRouter.isInitialized) inputRouter.focus(hasFocus)
+        if (!hasFocus && ::presentation.isInitialized) presentation.dismissKeyboard()
     }
     override fun onResume() { super.onResume();pointer.start();inputRouter.resume() }
-    override fun onPause() { inputRouter.pause();pointer.stop();super.onPause() }
+    override fun onPause() { inputRouter.pause();presentation.dismissKeyboard();pointer.stop();super.onPause() }
     override fun onStop() { presentation.pause(); super.onStop() }
     override fun onDestroy() { inputRouter.pause();pointer.stop();presentation.close(); super.onDestroy() }
 }

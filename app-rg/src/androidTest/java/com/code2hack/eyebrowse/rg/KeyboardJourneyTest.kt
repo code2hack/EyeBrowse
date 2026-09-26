@@ -1,0 +1,135 @@
+package com.code2hack.eyebrowse.rg
+
+import android.os.SystemClock
+import android.util.Log
+import android.view.View
+import android.view.ViewGroup
+import android.widget.Button
+import androidx.test.core.app.ActivityScenario
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.code2hack.eyebrowse.core.link.control.ControlOwner
+import org.json.JSONObject
+import org.junit.Assert.*
+import org.junit.Test
+import org.junit.runner.RunWith
+import java.io.File
+
+/** Paired with the Phone oracle. Test files coordinate assertions, never browser input. */
+@RunWith(AndroidJUnit4::class)
+class KeyboardJourneyTest {
+    @Test fun actualKeysEditThePairedPhoneAndRetireStaleIntents() {
+        val scenario = ActivityScenario.launch(MainActivity::class.java)
+        val j = PointerBrowserJourneyTest.Journey(scenario)
+        val phase = File(j.app.cacheDir,"kbd-${j.mission}.phase")
+        val ack = File(j.app.cacheDir,"kbd-${j.mission}.ack")
+        val fixture = InstrumentationRegistry.getArguments().getString("fixtureBaseUrl","http://127.0.0.1:26341") + "/keyboard.html?case=" + j.mission
+        fun buttons(view: View): List<Button> = when (view) {
+            is Button -> listOf(view)
+            is ViewGroup -> (0 until view.childCount).flatMap { buttons(view.getChildAt(it)) }
+            else -> emptyList()
+        }
+        fun keyView(key: RgKeyboard.Key): Button = buttons(j.activity.findViewById(R.id.rg_keyboard_container))
+            .first { (it.tag as? RgKeyboard.Intent)?.key == key }
+        fun checkPhone(name: String) {
+            phase.writeText(name)
+            val end = SystemClock.elapsedRealtime()+15_000
+            while (SystemClock.elapsedRealtime()<end && (!ack.exists() || ack.readText().trim()!=name)) SystemClock.sleep(30)
+            assertEquals("Phone independently verified $name",name,ack.takeIf { it.exists() }?.readText()?.trim())
+        }
+        fun press(key: RgKeyboard.Key, pointer: Boolean = true) {
+            j.await("key is eligible",3_000) { j.peer.canKey(key) }
+            val before = j.peer.lastActionResult
+            var remote = false
+            j.main { remote = j.peer.keyboard.destination == RgKeyboard.Destination.FIELD && key !in listOf(RgKeyboard.Key.Command.SHIFT,RgKeyboard.Key.Command.SYMBOLS,RgKeyboard.Key.Command.DONE) }
+            if (pointer) {
+                lateinit var point: InputPoint
+                j.main { point = j.nativeCenter(keyView(key)) }
+                j.aim(point);j.dispatched(j.pad(),"keyboard")
+            } else j.main { assertTrue(keyView(key).performClick()) }
+            if (remote) j.await("Phone edit outcome",2_000) { j.peer.lastActionResult !== before }
+            if (remote) assertTrue("Phone admitted key",j.peer.lastActionResult?.accepted==true)
+            SystemClock.sleep(40) // Local view publication only, not a product success oracle.
+        }
+        fun character(char: Char, pointer: Boolean = true) {
+            if (char == ' ') { press(RgKeyboard.Key.Command.SPACE,pointer);return }
+            val letter = char.isLetter()
+            if (letter && j.peer.keyboard.symbols) press(RgKeyboard.Key.Command.SYMBOLS,pointer)
+            if (letter && char.isUpperCase()!=j.peer.keyboard.uppercase) press(RgKeyboard.Key.Command.SHIFT,pointer)
+            if (j.peer.keyboard.rows().flatten().none { it == RgKeyboard.Key.Character(char.toString()) }) press(RgKeyboard.Key.Command.SYMBOLS,pointer)
+            press(RgKeyboard.Key.Character(char.toString()),pointer)
+        }
+        fun clearAddress() { while(j.peer.keyboard.draft.isNotEmpty()) press(RgKeyboard.Key.Command.BACKSPACE,false) }
+        fun readyKeyboard() = j.await("fresh resized field grant",2_000) { j.peer.keyboard.visible && j.peer.canKey(RgKeyboard.Key.Character("a")) && j.peer.canAct() }
+        fun field(id: String) {
+            j.await("fresh page coordinates") { j.peer.canAct() && j.peer.browserState()?.title?.startsWith("KBD|")==true }
+            val g = JSONObject(j.peer.browserState()!!.title!!.substringAfter("KBD|"))
+            val point = g.getJSONArray(id)
+            val profile = checkNotNull(j.peer.profile())
+            j.aim(j.pageRoot((point.getDouble(0)*profile.width).toFloat(),(point.getDouble(1)*profile.height).toFloat()))
+            j.dispatched(j.pad(),"field")
+            readyKeyboard()
+        }
+        fun done() {
+            press(RgKeyboard.Key.Command.DONE)
+            j.await("Done restores current page",2_000) { !j.peer.keyboard.visible && j.peer.canAct() }
+        }
+        fun screenshot(name: String) {
+            val bitmap = checkNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+            File(j.app.cacheDir,"kbd-${j.mission}-$name.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it) }
+            bitmap.recycle()
+        }
+        var completed = false
+        try {
+            j.setup(); j.native(R.id.rg_retry,"Retry")
+            j.await("paired Phone state",10_000) { j.peer.browserState()?.owner==ControlOwner.PHONE && j.peer.canHandoff() }
+            j.handoff(ControlOwner.RG,"A")
+            j.native(R.id.rg_detail,"address")
+            j.await("address keyboard",2_000) { j.peer.keyboard.visible && j.peer.canSubmitAddress() }
+            clearAddress()
+            "not an address".forEach { character(it,false) }
+            val draft = j.peer.keyboard.draft
+            val before = j.peer.lastActionResult
+            press(RgKeyboard.Key.Command.ENTER)
+            j.await("address rejection") { j.peer.lastActionResult !== before }
+            assertEquals("ADDRESS_REJECTED",j.peer.lastActionResult?.reason)
+            assertEquals(draft,j.peer.keyboard.draft);assertTrue(j.peer.keyboard.visible)
+            checkPhone("invalid_address")
+            clearAddress();fixture.forEach { character(it,false) }
+            press(RgKeyboard.Key.Command.ENTER)
+            j.await("real address navigation",5_000) { !j.peer.keyboard.visible && j.peer.canAct() && j.peer.browserState()?.title?.startsWith("KBD|")==true }
+            checkPhone("address_opened")
+
+            field("text")
+            screenshot("field")
+            // Real double tap on a key must not produce either constituent character.
+            lateinit var keyPoint: InputPoint
+            j.main { keyPoint=j.nativeCenter(keyView(RgKeyboard.Key.Character("a"))) }
+            j.aim(keyPoint);val count=j.actions
+            j.pad();SystemClock.sleep(40);j.pad();j.confirmWindow()
+            assertEquals(count,j.actions);checkPhone("double_tap")
+            // A pending lowercase key cannot become an uppercase key after the layer changes.
+            j.pad();j.main { keyView(RgKeyboard.Key.Command.SHIFT).performClick() };j.confirmWindow()
+            assertEquals(count,j.actions);checkPhone("stale_case")
+            character('a');character('B');character('1')
+            press(RgKeyboard.Key.Command.SPACE);press(RgKeyboard.Key.Command.BACKSPACE)
+            press(RgKeyboard.Key.Command.ENTER);checkPhone("text_submit");done()
+            field("password");character('p');character('7');screenshot("password");done();checkPhone("password")
+            field("multiline");character('m');press(RgKeyboard.Key.Command.ENTER);character('n');done();checkPhone("multiline")
+            field("plain");character('e');done();checkPhone("plain")
+            field("text");checkPhone("invalidate")
+            j.await("readonly field closes",2_000) { !j.peer.keyboard.visible && j.peer.canAct() }
+            checkPhone("invalidated")
+            screenshot("normal")
+            j.handoff(ControlOwner.PHONE,"A");checkPhone("return")
+            completed = true
+            phase.writeText("complete")
+            Log.i("EyeBrowseKeyboardTest","RG_KBD_PASS mission=${j.mission} pointerKeys=true addressNativeKeys=true")
+        } finally {
+            if (!completed) phase.writeText("abort")
+            j.main { j.probe?.close() };scenario.close()
+            // The host relay removes these exact mission files after both terminal results.
+            ack.delete()
+        }
+    }
+}
