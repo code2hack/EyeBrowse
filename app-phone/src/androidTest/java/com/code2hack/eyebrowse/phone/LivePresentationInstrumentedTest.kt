@@ -345,10 +345,39 @@ class LivePresentationInstrumentedTest {
                 server.controlCoordinator.authority.snapshot().owner ==
                     com.code2hack.eyebrowse.core.link.control.ControlOwner.PHONE
             }
-            Log.i("EyeBrowseFW5", "PHONE_PHASE_COMPLETE mission=" + mission)
+            val finalState = server.controlCoordinator.authority.snapshot()
+            assertTrue("FW5 final handoff advances beyond the fresh RG epoch",
+                finalState.context.controlEpoch > secondState.context.controlEpoch)
+            Log.i("EyeBrowseFW5", "PHONE_FINAL_OWNER_LOCAL mission=" + mission +
+                " controlEpoch=" + finalState.context.controlEpoch +
+                " localElapsedMs=" + SystemClock.elapsedRealtime())
             assertTrue("FW5 link still authenticated before explicit cleanup", server.isLinkUp())
             assertSame(originalView, browser.view())
             assertEquals(originalDocument, browser.documentIdentity())
+
+            // Local retirement is NOT remote observation: BrowserState publication/writes are
+            // asynchronous, and server.stop() may discard the still-queued final owner update.
+            // Keep the real link/Hosting alive until C consumes this mission+epoch-bound ACK.
+            val finalOwnerTitle = "FW5 FINAL OWNER " + mission + " " + finalState.context.controlEpoch
+            BrowserControlJourneyTest().js(
+                browser,
+                "document.title=" + JSONObject.quote(finalOwnerTitle) + ";document.title",
+            )
+            await("FW5 final-owner phase title committed", 2_000) {
+                browser.pageTitle() == finalOwnerTitle
+            }
+            scenario.onActivity { server.publishPhoneViewport() }
+            Log.i("EyeBrowseFW5", "PHONE_PHASE_FINAL_OWNER_ACK mission=" + mission +
+                " controlEpoch=" + finalState.context.controlEpoch)
+
+            // Cleanup rendezvous only: 8s = C's 3s ACK-observation budget + 5s teardown grace.
+            // C must FIRST prove request-to-Phone-owner <=2s on its own monotonic clock; this
+            // wait does not extend that product bound or subtract unaligned device timestamps.
+            // A disconnect releases resources, not a PASS certificate: BOTH row results and
+            // matching mission/epoch receipts are required (C also disconnects on failure).
+            await("FW5 RG releases peer after final observation", 8_000) { !server.isLinkUp() }
+            Log.i("EyeBrowseFW5", "PHONE_PHASE_COMPLETE mission=" + mission +
+                " peerReleased=true controlEpoch=" + finalState.context.controlEpoch)
         } catch (failure: Throwable) {
             primaryFailure = failure
             Log.e("EyeBrowseFW5", "PHONE_PRIMARY_FAILURE", failure)

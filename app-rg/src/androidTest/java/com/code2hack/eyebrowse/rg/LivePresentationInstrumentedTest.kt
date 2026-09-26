@@ -282,12 +282,41 @@ class LivePresentationInstrumentedTest {
             }
             Log.i("EyeBrowseFW5", "RG_PHASE_FRESH_ENCODE_ACK mission=" + mission)
 
+            val finalRequestAt = SystemClock.elapsedRealtime()
+            Log.i("EyeBrowseFW5", "RG_FINAL_RETURN_REQUEST mission=" + mission +
+                " fromControlEpoch=" + freshState.context.controlEpoch +
+                " localElapsedMs=" + finalRequestAt)
             scenario.onActivity { assertTrue(controller.requestPhone()) }
             await("FW5 final Phone owner", 2_000) {
-                controller.browserState()?.owner ==
-                    com.code2hack.eyebrowse.core.link.control.ControlOwner.PHONE
+                val state = controller.browserState()
+                state?.owner == com.code2hack.eyebrowse.core.link.control.ControlOwner.PHONE &&
+                    state.context.controlEpoch > freshState.context.controlEpoch
             }
-            Log.i("EyeBrowseFW5", "RG_PHASE_COMPLETE mission=" + mission)
+            val finalElapsed = SystemClock.elapsedRealtime() - finalRequestAt
+            assertTrue("FW5 final request-to-observed Phone owner inside 2s", finalElapsed <= 2_000)
+            val finalState = checkNotNull(controller.browserState())
+            assertEquals(freshState.context.lifetimeId, finalState.context.lifetimeId)
+            assertEquals(freshState.context.documentId, finalState.context.documentId)
+            assertEquals(freshState.context.hostingGeneration, finalState.context.hostingGeneration)
+            Log.i("EyeBrowseFW5", "RG_FINAL_OWNER_OBSERVED mission=" + mission +
+                " controlEpoch=" + finalState.context.controlEpoch +
+                " requestToObservedMs=" + finalElapsed)
+
+            // Separate test-completion ACK, AFTER the unchanged 2s product-latency proof.
+            // B retains the real session until this scenario closes, rather than racing its
+            // own local-owner observation into finally/server.stop(). No test wire endpoint.
+            val finalOwnerTitle = "FW5 FINAL OWNER " + mission + " " + finalState.context.controlEpoch
+            await("FW5 Phone final-owner receipt acknowledged", 3_000) {
+                val state = controller.browserState()
+                state?.owner == com.code2hack.eyebrowse.core.link.control.ControlOwner.PHONE &&
+                    state.context.controlEpoch == finalState.context.controlEpoch &&
+                    state.context.lifetimeId == finalState.context.lifetimeId &&
+                    state.context.documentId == finalState.context.documentId &&
+                    state.context.hostingGeneration == finalState.context.hostingGeneration &&
+                    state.title == finalOwnerTitle
+            }
+            Log.i("EyeBrowseFW5", "RG_PHASE_COMPLETE mission=" + mission +
+                " finalOwnerAck=true controlEpoch=" + finalState.context.controlEpoch)
         } finally {
             gate?.release?.countDown()
             scenario.close()
