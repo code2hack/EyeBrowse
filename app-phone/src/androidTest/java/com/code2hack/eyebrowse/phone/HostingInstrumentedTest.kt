@@ -3920,6 +3920,21 @@ class HostingInstrumentedTest {
         return checkNotNull(field.get(host) as? Handler) { "$name unavailable" }
     }
 
+    private fun threadFieldForR4(host: PrivateDisplayHost, name: String): Thread? {
+        val field = PrivateDisplayHost::class.java.getDeclaredField(name)
+        field.isAccessible = true
+        return field.get(host) as? Thread
+    }
+
+    private fun presentationWindowForR4(host: PrivateDisplayHost): android.view.Window {
+        val field = PrivateDisplayHost::class.java.getDeclaredField("presentation")
+        field.isAccessible = true
+        val shown = checkNotNull(
+            field.get(host) as? PrivateDisplayHost.PresentationHost,
+        ) { "private Presentation unavailable" }
+        return checkNotNull(shown.captureWindow()) { "private Window unavailable" }
+    }
+
     private fun inFlightWindowCopyForR4(host: PrivateDisplayHost): Boolean {
         val lockField = PrivateDisplayHost::class.java.getDeclaredField("nativeLock")
         lockField.isAccessible = true
@@ -4325,6 +4340,22 @@ class HostingInstrumentedTest {
         @Synchronized
         fun deliveryElapsedAt(index: Int): Long {
             return frames.get(index)[7]
+        }
+
+        @Synchronized
+        fun captureElapsedAt(index: Int): Long {
+            return frames.get(index)[2]
+        }
+
+        @Synchronized
+        fun minCaptureGapFrom(fromIndex: Int): Long {
+            var min = Long.MAX_VALUE
+            var i = Math.max(1, fromIndex + 1)
+            while (i < frames.size) {
+                min = Math.min(min, frames.get(i)[2] - frames.get(i - 1)[2])
+                i++
+            }
+            return min
         }
 
         @Synchronized
