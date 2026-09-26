@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Color
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.util.Log
 import android.media.ImageReader
 import android.os.Handler
 import android.os.Looper
