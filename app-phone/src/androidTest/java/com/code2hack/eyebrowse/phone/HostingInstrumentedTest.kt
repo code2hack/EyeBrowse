@@ -3494,6 +3494,9 @@ class HostingInstrumentedTest {
         }
         assertFalse("FW4 invalid-source Window is genuinely unavailable before delegate",
             presentation.isAvailable())
+        waitUntilMain("FW4 invalid-source decor is actually detached before delegate", {
+            !presentation.container().isAttachedToWindow
+        })
 
         copyGate.release()
         assertFalse("FW4 invalid-source gate released deliberately", copyGate.timedOut)
