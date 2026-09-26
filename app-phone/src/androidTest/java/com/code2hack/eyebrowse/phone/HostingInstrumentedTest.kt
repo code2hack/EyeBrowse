@@ -3389,9 +3389,12 @@ class HostingInstrumentedTest {
             held.awaitCaptured(700))
         assertEquals("FW4 actual public PixelCopy result",
             android.view.PixelCopy.ERROR_SOURCE_NO_DATA, held.result)
+        val noDataReceipt = factory.platformResults().single()
         assertEquals("FW4 platform receipt agrees with held result",
-            android.view.PixelCopy.ERROR_SOURCE_NO_DATA,
-            factory.platformResults().single().result)
+            android.view.PixelCopy.ERROR_SOURCE_NO_DATA, noDataReceipt.result)
+        assertTrue("FW4 platform callback is delivered on Main: " +
+            noDataReceipt.callbackThread,
+            noDataReceipt.callbackThread == "main")
         assertEquals("FW4 NO_DATA publishes nothing before recovery", 0, consumer.count())
 
         // Remove the source-empty condition BEFORE production sees NO_DATA. Recovery then follows
@@ -3471,6 +3474,8 @@ class HostingInstrumentedTest {
             )
             val receipt = factory.platformResults().single()
             assertEquals(android.view.PixelCopy.ERROR_SOURCE_INVALID, receipt.result)
+            assertEquals("FW4 secure-source platform callback thread", "main",
+                receipt.callbackThread)
             assertTrue("FW4 secure-source callback before original deadline",
                 receipt.callbackElapsedMs <= deadline)
             assertTrue("FW4 secure-source invocation was off Main: " + receipt.callbackThread,
@@ -3552,6 +3557,8 @@ class HostingInstrumentedTest {
             )
             val firstResult = factory.platformResults().single()
             assertEquals(android.view.PixelCopy.ERROR_TIMEOUT, firstResult.result)
+            assertEquals("FW4 TIMEOUT platform callback thread", "main",
+                firstResult.callbackThread)
             assertTrue(
                 "FW4 ERROR_TIMEOUT call was genuinely delayed, not callback-only",
                 call.returnedElapsedMs - call.startedElapsedMs >= 250,
@@ -3680,6 +3687,16 @@ class HostingInstrumentedTest {
             factory.copyEntryThreads().last().contains("EyeBrowseWindowReadback"),
         )
 
+        val captureHandler = handlerFieldForR4(host, "captureHandler")
+        assertTrue(
+            "FW4 sink drainer owns a separate capture thread: " +
+                captureHandler.looper.thread.name,
+            captureHandler.looper.thread.name.contains("EyeBrowseHostingCapture"),
+        )
+        assertTrue(
+            "FW4 capture/drainer thread differs from readback worker",
+            captureHandler.looper.thread.name != factory.copyEntryThreads().last(),
+        )
         val before = runOnMainSync(hosting::captureDiagnostics)
         val callbacksBefore = diagnosticLong(before, "callbacks")
         val acquiredBefore = diagnosticLong(before, "acquired")
@@ -3706,7 +3723,10 @@ class HostingInstrumentedTest {
         val dispatchProbe = Thread({
             link.controlCoordinator.authority.snapshot()
             dispatchPing.countDown()
-        }, "fw4-dispatch-lock-probe").apply { start() }
+        }, "fw4-dispatch-lock-probe").apply {
+            isDaemon = true
+            start()
+        }
         assertTrue(
             "FW4 dispatch-authority monitor remains runnable during synchronous readback",
             dispatchPing.await(200, TimeUnit.MILLISECONDS),
