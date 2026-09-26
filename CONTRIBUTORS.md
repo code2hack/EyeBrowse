@@ -290,7 +290,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "paseo": null,
     "model": "gpt-6-pro (ChatGPT '6 Pro')",
     "name": "Expert-v0.01",
-    "status": "active"
+    "status": "retired"
   },
   {
     "role": "Reviewer",
