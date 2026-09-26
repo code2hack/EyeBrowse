@@ -346,6 +346,26 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "model": "GLM-5.3-Flash-EXL3 / max",
     "name": "EyeBrowse-Manager-GLM-r3",
     "status": "active"
+  },
+  {
+    "role": "Worker",
+    "scope": "v0.0.1 (I9 successor implementation; unassigned)",
+    "host": "spark",
+    "runtime": "codex",
+    "id": "32657205-32b8-4056-acca-aeec6702adac",
+    "model": "gpt-6-astra/thinking-medium",
+    "name": "Worker-codex-astra",
+    "status": "active"
+  },
+  {
+    "role": "Reviewer",
+    "scope": "v0.0.1 (I9 successor review; unassigned)",
+    "host": "spark",
+    "runtime": "codex",
+    "id": "48cd210c-27ea-408e-90d2-b116226318d0",
+    "model": "gpt-6-astra/thinking-max",
+    "name": "Reviewer-codex-astra",
+    "status": "active"
   }
 ]
 ```
