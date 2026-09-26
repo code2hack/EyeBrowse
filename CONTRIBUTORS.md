@@ -352,7 +352,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "scope": "v0.0.1 (I9 successor implementation; unassigned)",
     "host": "spark",
     "runtime": "codex",
-    "id": "7d71f993-4210-4515-ad0c-50d56631e274",
+    "id": "01a0dea1-b623-7090-af06-7af242d42bac",
     "model": "gpt-6-astra/thinking-medium",
     "name": "Worker-codex-astra",
     "status": "active"
