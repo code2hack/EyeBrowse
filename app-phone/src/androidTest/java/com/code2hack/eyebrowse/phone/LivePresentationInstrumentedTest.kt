@@ -181,9 +181,17 @@ class LivePresentationInstrumentedTest {
                 server.start()
                 server.publishPhoneViewport()
             }
+            val readyState = server.controlCoordinator.authority.snapshot()
+            assertEquals(
+                "FW5 ready BrowserState binds the current Hosting generation",
+                host.currentGeneration().toLong(),
+                readyState.context.hostingGeneration,
+            )
             Log.i(
                 "EyeBrowseFW5",
-                "PHONE_PHASE_READY mission=" + mission + " hosting=true titleBound=true",
+                "PHONE_PHASE_READY mission=" + mission +
+                    " hosting=true titleBound=true hostingGen=" +
+                    readyState.context.hostingGeneration,
             )
 
             await("FW5 first RG owner with authenticated presentation", 15_000) {
