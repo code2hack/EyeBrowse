@@ -141,6 +141,8 @@ class LivePresentationInstrumentedTest {
             },
         ).toString()
         val readyTitle = "FW5 READY " + mission
+        val firstEncodedTitle = "FW5 FIRST ENCODED " + mission
+        val freshEncodedTitle = "FW5 FRESH ENCODED " + mission
         var primaryFailure: Throwable? = null
         try {
             // Pairing/trust is retained, but no prior authenticated session or Hosting generation
@@ -240,7 +242,22 @@ class LivePresentationInstrumentedTest {
                     " hostingGen=" + firstState.context.hostingGeneration,
             )
 
-            // RG companion retires an actual pending old-context frame and hands control to Phone.
+            // Cross-row phase ACK: B has now independently observed the bounded production
+            // encoder receipt for the old context. Publish a normal BrowserState title update;
+            // updatePhoneViewport is a no-op while RG owns, but schedulePresentation publishes
+            // the current state/title through the authenticated control session.
+            BrowserControlJourneyTest().js(
+                browser,
+                "document.title=" + JSONObject.quote(firstEncodedTitle) + ";document.title",
+            )
+            await("FW5 first-encode phase title committed", 2_000) {
+                browser.pageTitle() == firstEncodedTitle
+            }
+            scenario.onActivity { server.publishPhoneViewport() }
+            Log.i("EyeBrowseFW5", "PHONE_PHASE_FIRST_ENCODE_ACK mission=" + mission)
+
+            // RG companion retires the already-pending authenticated old-context frame and hands
+            // control to Phone only after observing this ACK.
             await("FW5 RG stale-frame phase returns ownership to Phone", 8_000) {
                 server.controlCoordinator.authority.snapshot().owner ==
                     com.code2hack.eyebrowse.core.link.control.ControlOwner.PHONE
@@ -310,6 +327,18 @@ class LivePresentationInstrumentedTest {
                     " viewportEpoch=" + secondState.context.viewportEpoch +
                     " hostingGen=" + secondState.context.hostingGeneration,
             )
+
+            // Second cross-row ACK: do not let C return to Phone until B has actually observed
+            // the fresh-context encoder receipt that corresponds to C's displayed frame.
+            BrowserControlJourneyTest().js(
+                browser,
+                "document.title=" + JSONObject.quote(freshEncodedTitle) + ";document.title",
+            )
+            await("FW5 fresh-encode phase title committed", 2_000) {
+                browser.pageTitle() == freshEncodedTitle
+            }
+            scenario.onActivity { server.publishPhoneViewport() }
+            Log.i("EyeBrowseFW5", "PHONE_PHASE_FRESH_ENCODE_ACK mission=" + mission)
 
             // RG's final handoff is the paired completion handshake.
             await("FW5 paired RG companion completes with Phone owner", 8_000) {
