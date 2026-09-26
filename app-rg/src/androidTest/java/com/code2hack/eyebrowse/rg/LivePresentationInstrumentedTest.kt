@@ -86,18 +86,32 @@ class LivePresentationInstrumentedTest {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         val scenario = ActivityScenario.launch<MainActivity>(Intent(app, MainActivity::class.java))
         lateinit var controller: RgPresentationController
+        val mission = java.util.UUID.fromString(
+            checkNotNull(InstrumentationRegistry.getArguments().getString("missionId")) {
+                "FW5 paired missionId is required"
+            },
+        ).toString()
+        val readyTitle = "FW5 READY " + mission
         var gate: DecoderGate? = null
         try {
             scenario.onActivity {
                 controller = it.presentation
                 controller.reconnect()
             }
-            await("FW5 authenticated Phone state", 10_000) {
-                controller.browserState()?.owner ==
+            // Bind this RG run to the exact Phone companion generation. A pre-existing/stale
+            // authenticated session cannot satisfy the mission-specific BrowserState title.
+            await("FW5 authenticated current Phone run", 10_000) {
+                val state = controller.browserState()
+                state?.owner ==
                     com.code2hack.eyebrowse.core.link.control.ControlOwner.PHONE &&
-                    controller.profile() != null
+                    controller.profile() != null &&
+                    state.title == readyTitle
             }
             val profile = checkNotNull(controller.profile())
+            Log.i(
+                "EyeBrowseFW5",
+                "RG_PHASE_BOUND mission=" + mission + " titleBound=true",
+            )
             val firstRequestAt = SystemClock.elapsedRealtime()
             scenario.onActivity { assertTrue(controller.requestPresentation()) }
             await("FW5 first current authenticated frame", 2_000) {
@@ -118,7 +132,7 @@ class LivePresentationInstrumentedTest {
             val firstBitmapHash = displayedBitmapHash(scenario)
             Log.i(
                 "EyeBrowseFW5",
-                "RG_FIRST_DISPLAY seq=" + firstHeader.frameSeq +
+                "RG_FIRST_DISPLAY mission=" + mission + " seq=" + firstHeader.frameSeq +
                     " capture=" + firstHeader.captureTsMs +
                     " profile=" + firstHeader.width + "x" + firstHeader.height +
                     " controlEpoch=" + firstHeader.context.controlEpoch +
@@ -147,7 +161,8 @@ class LivePresentationInstrumentedTest {
             val displayedBeforeRetire = controller.displayedFrames
             Log.i(
                 "EyeBrowseFW5",
-                "RG_OLD_FRAME_PENDING seq=" + staleCandidate.header.frameSeq +
+                "RG_OLD_FRAME_PENDING mission=" + mission +
+                    " seq=" + staleCandidate.header.frameSeq +
                     " capture=" + staleCandidate.header.captureTsMs +
                     " profile=" + staleCandidate.header.width + "x" + staleCandidate.header.height +
                     " controlEpoch=" + staleCandidate.header.context.controlEpoch +
@@ -197,7 +212,7 @@ class LivePresentationInstrumentedTest {
             val freshBitmapHash = displayedBitmapHash(scenario)
             Log.i(
                 "EyeBrowseFW5",
-                "RG_FRESH_DISPLAY seq=" + freshHeader.frameSeq +
+                "RG_FRESH_DISPLAY mission=" + mission + " seq=" + freshHeader.frameSeq +
                     " capture=" + freshHeader.captureTsMs +
                     " profile=" + freshHeader.width + "x" + freshHeader.height +
                     " controlEpoch=" + freshHeader.context.controlEpoch +
@@ -224,6 +239,7 @@ class LivePresentationInstrumentedTest {
                 controller.browserState()?.owner ==
                     com.code2hack.eyebrowse.core.link.control.ControlOwner.PHONE
             }
+            Log.i("EyeBrowseFW5", "RG_PHASE_COMPLETE mission=" + mission)
         } finally {
             gate?.release?.countDown()
             scenario.close()
