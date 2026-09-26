@@ -3586,6 +3586,68 @@ class HostingInstrumentedTest {
     }
 
     /**
+     * FW4-E4: cancellation while the REAL public PixelCopy call is synchronously waiting on the
+     * slow GPU source fence. Unlike T2/T3's deterministic pre-delegate ownership holds, this row
+     * first proves requestWindowCopy has entered PlatformFactory and has NOT returned, then calls
+     * Stop. Stop must revoke authority/wake state promptly without joining that native readback;
+     * the eventual SUCCESS/TIMEOUT result may retire only its own bitmap and can never publish.
+     */
+    @Test
+    fun fw4StopDuringActualSlowPixelCopyRevokesWithoutWaitingForNativeReadback() {
+        val factory = newR4ControlledFactory()
+        val normal = prepareR4RecordedProfile(factory)
+        val consumer = CollectingConsumer()
+        consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
+        val stress = installFw4GpuStress(factory)
+        registerExecutionHold { removeFw4GpuStress(stress) }
+        val lease = runOnMainSync { hosting.acquireLease(consumer) }
+        assertNotNull("FW4 actual-copy Stop lease", lease)
+        val call = checkNotNull(factory.awaitPlatformCall(1_000)) {
+            "FW4 actual slow PixelCopy never entered PlatformFactory"
+        }
+        assertTrue("FW4 actual-copy invocation uses dedicated readback worker",
+            call.requestThread.contains("EyeBrowseWindowReadback"))
+        assertFalse(
+            "FW4 cancellation setup requires the actual platform call still outstanding",
+            call.returned.await(0, TimeUnit.MILLISECONDS),
+        )
+        val bitmap = checkNotNull(factory.requestedBitmaps().lastOrNull())
+        assertFalse("FW4 actual-copy destination is live before Stop", bitmap.isRecycled)
+
+        val stopAt = SystemClock.elapsedRealtime()
+        runOnMain(hosting::stop)
+        val stopReturned = SystemClock.elapsedRealtime()
+        assertEquals(HostingController.State.NOT_HOSTING, runOnMainSync(hosting::status).state)
+        assertFalse("FW4 actual-copy Stop revokes capture",
+            runOnMainSync(hosting::status).captureActive)
+        assertFalse("FW4 actual-copy Stop releases wake lock",
+            runOnMainSync(hosting::isWakeLockHeld))
+        assertTrue(
+            "FW4 Stop cannot synchronously wait on native readback",
+            stopReturned - stopAt < 750,
+        )
+        assertEquals("FW4 outstanding native copy cannot publish during Stop",
+            0, consumer.count())
+
+        removeFw4GpuStress(stress)
+        assertTrue("FW4 outstanding native call eventually returns",
+            call.returned.await(1_500, TimeUnit.MILLISECONDS))
+        waitUntil("FW4 actual-copy late destination retires", {
+            bitmap.isRecycled
+        }, 1_500)
+        waitUntil("FW4 actual-copy Stop resources quiesce", {
+            !runOnMainSync(hosting::captureResourcesPresent)
+        }, 1_500)
+        assertEquals("FW4 actual slow copy remains fenced after retirement", 0, consumer.count())
+        assertEquals("FW4 Stop cannot trigger a retry after authority revocation",
+            1, factory.copyInvocationCount())
+        assertTrue(
+            "FW4 actual-copy complete cleanup stays inside global Stop bound",
+            SystemClock.elapsedRealtime() - stopAt <= STOP_BOUND_MS,
+        )
+    }
+
+    /**
      * FW4-T1: the synchronous public PixelCopy invocation may block the readback worker, but it
      * must not block Main/controller work or the independent ImageReader drainer. Multiple real
      * draw demands while the one copy slot is occupied coalesce into one trailing cycle. The two
