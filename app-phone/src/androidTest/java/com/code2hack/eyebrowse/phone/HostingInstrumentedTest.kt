@@ -3344,12 +3344,15 @@ class HostingInstrumentedTest {
         lateinit var blocker: android.view.ViewTreeObserver.OnPreDrawListener
         runOnMain {
             presentation.dismissWithoutUnavailableForTest()
+            presentation.showWithoutUnavailableForTest()
             blocker = android.view.ViewTreeObserver.OnPreDrawListener {
                 preDrawReached.countDown()
                 false
             }
+            // show() reattaches the decor synchronously; install the blocker in the same Main
+            // turn before the next traversal, so the new ViewTreeObserver is live but no buffer
+            // can be submitted before PixelCopy probes it.
             presentation.container().viewTreeObserver.addOnPreDrawListener(blocker)
-            presentation.showWithoutUnavailableForTest()
             presentation.focusAttachedView(session.view())
             presentation.container().requestLayout()
             presentation.container().invalidate()
