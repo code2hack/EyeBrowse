@@ -3234,7 +3234,7 @@ class HostingInstrumentedTest {
         waitUntil("TIMEOUT closes failed readiness transaction before cleanup", {
             val a = captureAuthorityForR4(host)
             a.transactionId == 0L && a.terminal && !a.copyInFlight
-        }, 700)
+        }, 450)
         val exhausted = captureAuthorityForR4(host)
         val diagnostics = runOnMainSync(hosting::captureDiagnostics)
         val copyDone = diagnosticLong(diagnostics, "copyDone")
@@ -3341,7 +3341,7 @@ class HostingInstrumentedTest {
 
         val preDrawReached = CountDownLatch(1)
         val presentation = factory.controlledPresentation()
-        lateinit var blocker: android.view.ViewTreeObserver.OnPreDrawListener
+        var blocker: android.view.ViewTreeObserver.OnPreDrawListener? = null
         runOnMain {
             presentation.dismissWithoutUnavailableForTest()
             presentation.showWithoutUnavailableForTest()
@@ -3352,10 +3352,26 @@ class HostingInstrumentedTest {
             // show() reattaches the decor synchronously; install the blocker in the same Main
             // turn before the next traversal, so the new ViewTreeObserver is live but no buffer
             // can be submitted before PixelCopy probes it.
-            presentation.container().viewTreeObserver.addOnPreDrawListener(blocker)
+            presentation.container().viewTreeObserver.addOnPreDrawListener(checkNotNull(blocker))
             presentation.focusAttachedView(session.view())
             presentation.container().requestLayout()
             presentation.container().invalidate()
+        }
+        // Register all-exit test ownership now that the replacement observer exists. R5 cleanup
+        // releases execution-owned state before any Stop/diagnostic, so an assertion failure in
+        // this row cannot leave a traversal permanently suppressed.
+        registerExecutionHold {
+            runOnMain {
+                val currentBlocker = blocker
+                if (currentBlocker != null && presentation.container().viewTreeObserver.isAlive) {
+                    presentation.container().viewTreeObserver.removeOnPreDrawListener(currentBlocker)
+                    blocker = null
+                }
+                presentation.showWithoutUnavailableForTest()
+                presentation.focusAttachedView(session.view())
+                presentation.container().requestLayout()
+                presentation.container().invalidate()
+            }
         }
         assertTrue("FW4 NO_DATA replacement Window reaches pre-draw with no queued buffer",
             preDrawReached.await(800, TimeUnit.MILLISECONDS))
@@ -3381,8 +3397,10 @@ class HostingInstrumentedTest {
         // Remove the source-empty condition BEFORE production sees NO_DATA. Recovery then follows
         // its normal visual-state -> hardware draw -> commit -> Window-copy path.
         runOnMain {
-            if (presentation.container().viewTreeObserver.isAlive) {
-                presentation.container().viewTreeObserver.removeOnPreDrawListener(blocker)
+            val currentBlocker = blocker
+            if (currentBlocker != null && presentation.container().viewTreeObserver.isAlive) {
+                presentation.container().viewTreeObserver.removeOnPreDrawListener(currentBlocker)
+                blocker = null
             }
             presentation.focusAttachedView(session.view())
             presentation.container().requestLayout()
@@ -3516,7 +3534,7 @@ class HostingInstrumentedTest {
             }
             assertTrue(
                 "FW4 Main/controller remains runnable during synchronous PixelCopy readback",
-                mainPing.await(250, TimeUnit.MILLISECONDS),
+                mainPing.await(200, TimeUnit.MILLISECONDS),
             )
             assertFalse(
                 "FW4 readback must still be outstanding when Main ping completes",
@@ -3579,7 +3597,11 @@ class HostingInstrumentedTest {
         val host = currentPrivateHostForR4()
         val consumer = CollectingConsumer()
         consumer.expectQualification(normal.width, normal.height, CAPTURE_PAGE_COLOR)
-        val copyGate = factory.armNextCopy(1_400)
+        // Observation budget before manual release is <=1100ms:
+        // Main ping 200 + real draw 450 + sink drain 450. The immutable readiness budget is
+        // 2000ms, so even the worst test-side observation sequence leaves ~900ms for the real
+        // PixelCopy completion + first publication. Gate 1750ms is only a deadlock guard.
+        val copyGate = factory.armNextCopy(1_750)
         val requestStart = SystemClock.elapsedRealtime()
         val deadline = requestStart + 2_000
         val lease = runOnMainSync {
@@ -3617,7 +3639,7 @@ class HostingInstrumentedTest {
             }
         }
         assertTrue("FW4 real Presentation draw occurs during readback stall",
-            observedDraw.await(600, TimeUnit.MILLISECONDS))
+            observedDraw.await(450, TimeUnit.MILLISECONDS))
         waitUntil("FW4 sink drainer advances while readback worker remains blocked", {
             val d = runOnMainSync(hosting::captureDiagnostics)
             diagnosticLong(d, "callbacks") > callbacksBefore &&
