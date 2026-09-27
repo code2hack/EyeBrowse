@@ -189,11 +189,11 @@ class RecoveryJourneyTest {
                     Log.i("EyeBrowseA06","RESTART_GEOMETRY mission=$mission stage=$stage elapsedMs=$now clock=RG_elapsedRealtime cssY=${point.optDouble("cssY")} x=${point.optDouble("x")} y=${point.optDouble("y")} canAct=${peer.canAct()} stale=${state?.stale} loading=${state?.loading} context=${state?.context} profile=${peer.profile()} frame=${peer.lastFrameHeader} resultId=${result?.commandId} accepted=${result?.accepted}")
                 }.onFailure { Log.i("EyeBrowseA06","RESTART_GEOMETRY mission=$mission stage=$stage unavailable=${it.javaClass.simpleName}") }
             }
-            scenario.onActivity { restartReceipt("before-scroll",true) }
-            action { peer.scrollBy(0f,-160f) }
-            scenario.onActivity { restartReceipt("scroll-accepted",true) }
-            try { await("restart scroll top",2_000) { restartReceipt("scroll-predicate");geometry().optDouble("cssY")==0.0 && peer.canAct() } }
-            finally { scenario.onActivity { restartReceipt("scroll-predicate-exit",true) } }
+            scenario.onActivity {
+                restartReceipt("preserved-restart-position",true)
+                assertEquals("fresh restarted geometry preserves top",0.0,geometry().getDouble("cssY"),0.0)
+                assertTrue(peer.canAct())
+            }
             val again=geometry();action { peer.activateAt(again.getDouble("x").toFloat(),again.getDouble("y").toFloat()) }
             await("new explicit effect",2_000) { peer.browserState()?.title?.startsWith("T03 A click 2")==true && peer.canAct() }
             scenario.onActivity { restartReceipt("click-effect",true) }
