@@ -1,6 +1,7 @@
 package com.code2hack.eyebrowse.rg
 
 import android.app.AlertDialog
+import android.util.Log
 import android.os.Handler
 import android.os.SystemClock
 import android.view.View
@@ -95,7 +96,17 @@ class ReadingJourneyTest {
             SystemClock.sleep(400);checkPhone("reading_reconnected_held")
             pose(0.0);SystemClock.sleep(400);pose(10.0);checkPhone("reading_reconnected_neutral")
             toggle();j.await("Normal ready for Phone handoff") { !j.peer.reading && j.peer.canAct() }
+            checkPhone("reading_phone_ready")
+            val previousHandoff=j.peer.lastHandoffResult
+            val beforeHandoff=checkNotNull(j.peer.browserState()).context
             j.native(R.id.rg_handoff,"Use on Phone")
+            j.await("correlated Phone handoff response",1_000) { j.peer.lastHandoffResult !== previousHandoff }
+            val result=checkNotNull(j.peer.lastHandoffResult)
+            Log.i("EyeBrowseReadingTest","HANDOFF_RESULT accepted=${result.accepted} owner=${result.owner} reason=${result.reason} observedEpoch=${beforeHandoff.controlEpoch} resultEpoch=${result.context.controlEpoch}")
+            assertTrue(result.accepted);assertEquals(ControlOwner.PHONE,result.owner)
+            assertEquals(beforeHandoff.controlEpoch+1,result.context.controlEpoch)
+            assertEquals(beforeHandoff.lifetimeId,result.context.lifetimeId)
+            assertEquals(beforeHandoff.documentId,result.context.documentId)
             j.await("Phone owns control") { j.peer.browserState()?.owner==ControlOwner.PHONE }
             checkPhone("reading_phone_owner")
             phase.writeText("complete");complete=true
