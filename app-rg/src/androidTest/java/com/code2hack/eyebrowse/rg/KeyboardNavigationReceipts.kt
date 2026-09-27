@@ -5,6 +5,9 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.util.Log
 import android.widget.TextView
+import android.view.View
+import com.code2hack.eyebrowse.core.link.messages.ViewportUpdateResultMessage
+import com.code2hack.eyebrowse.core.link.messages.ViewportUpdateMessage
 import com.code2hack.eyebrowse.core.link.messages.BrowserControlMessage
 import com.code2hack.eyebrowse.core.link.messages.BrowserActionResultMessage
 import com.code2hack.eyebrowse.core.link.messages.BrowserStateMessage
@@ -22,6 +25,10 @@ internal class KeyboardNavigationReceipts(private val activity: MainActivity) : 
     private var lastPredicate: String? = null
     @Volatile private var observing = true
     private val started = SystemClock.uptimeMillis()
+    private val image = activity.findViewById<View>(R.id.rg_page)
+    private val layoutListener = View.OnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+        capture("image-layout old=${oldRight-oldLeft}x${oldBottom-oldTop} new=${right-left}x${bottom-top}")
+    }
     private val watcher = object : TextWatcher {
         override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { capture("ui-text-change") }
@@ -36,6 +43,8 @@ internal class KeyboardNavigationReceipts(private val activity: MainActivity) : 
             val detail = when (message) {
                 is BrowserActionResultMessage -> "action-result accepted=${message.accepted} reason=${message.reason}"
                 is BrowserStateMessage -> "browser-state titleChanged=${message.title!=previousTitle} kbd=${message.title?.startsWith("KBD|")==true} loading=${message.loading}"
+                is ViewportUpdateResultMessage -> "viewport-result id=${message.transitionId} accepted=${message.accepted}" +
+                    " profile=${message.profile} document=${message.context.documentId} viewport=${message.context.viewportEpoch}"
                 else -> message.javaClass.simpleName
             }
             capture("wire:$detail entered=$entered")
@@ -44,6 +53,7 @@ internal class KeyboardNavigationReceipts(private val activity: MainActivity) : 
     init {
         listenerField.set(client, observingListener)
         views.forEach { it.addTextChangedListener(watcher) }
+        image.addOnLayoutChangeListener(layoutListener)
         capture("armed-before-enter")
     }
     private fun field(name: String) = RgPresentationController::class.java.getDeclaredField(name).apply { isAccessible = true }
@@ -53,12 +63,32 @@ internal class KeyboardNavigationReceipts(private val activity: MainActivity) : 
         val snapshot = synchronized(monitor) {
             val state = peer.browserState()
             val address = field("pendingAddress").get(peer) as? Pair<*, *>
+            val change = field("viewportChange").get(peer)
+            val request = change?.javaClass?.getDeclaredField("request")?.apply { isAccessible=true }?.get(change) as? ViewportUpdateMessage
+            val measured = peer.profile()
+            val frame = peer.lastFrameHeader
+            val status = field("statusText").get(peer) as? String
+            val statusClass = when {
+                status?.startsWith("Viewport changed") == true -> "UNPLANNED_LAYOUT"
+                status?.startsWith("Viewport rejected") == true -> "VIEWPORT_REJECTED"
+                status?.startsWith("Viewport change timed out") == true -> "VIEWPORT_TIMEOUT"
+                status?.startsWith("Viewport request not sent") == true -> "VIEWPORT_QUEUE_FAILURE"
+                status?.startsWith("Disconnected") == true -> "LINK_LOST"
+                status?.startsWith("Presentation stale:") == true -> "PHONE_STALE"
+                status == "Updating page layout" -> "UPDATING_LAYOUT"
+                status == "Live page · authenticated" -> "LIVE_FRAME"
+                else -> "OTHER"
+            }
             "hidden=${!peer.keyboard.visible} canAct=${peer.canAct()} kbd=${state?.title?.startsWith("KBD|")==true}" +
                 " loading=${state?.loading} stale=${state?.stale} generation=${peer.keyboard.generation}" +
                 " pendingAddressGeneration=${address?.second} pendingCommand=${field("pendingCommand").get(peer)!=null}" +
                 " layoutExpected=${field("layoutExpected").getBoolean(peer)} viewportPending=${field("viewportChange").get(peer)!=null}" +
                 " profileMatch=${state?.profile==peer.profile()} frameMatch=${peer.lastFrameHeader?.context==state?.context}" +
-                " document=${state?.context?.documentId} viewport=${state?.context?.viewportEpoch}"
+                " document=${state?.context?.documentId} viewport=${state?.context?.viewportEpoch}" +
+                " status=$statusClass measured=${measured?.width}x${measured?.height}" +
+                " stateProfile=${state?.profile?.width}x${state?.profile?.height} frame=${frame?.width}x${frame?.height}" +
+                " requestId=${request?.transitionId} requestProfile=${request?.profile?.width}x${request?.profile?.height}" +
+                " requestDocument=${request?.context?.documentId} requestViewport=${request?.context?.viewportEpoch}"
         }
         val at = SystemClock.uptimeMillis()
         synchronized(records) {
@@ -73,6 +103,7 @@ internal class KeyboardNavigationReceipts(private val activity: MainActivity) : 
         // Called on Main after the await; do not retain Activity or install a successor observer.
         if (listenerField.get(client) === observingListener) listenerField.set(client, original)
         views.forEach { it.removeTextChangedListener(watcher) }
+        image.removeOnLayoutChangeListener(layoutListener)
         synchronized(records) {
             records.forEach { Log.i("EyeBrowseKeyboardTest", "KBD_NAV $it") }
             Log.i("EyeBrowseKeyboardTest", "KBD_NAV_END records=${records.size} lost=$lost")
