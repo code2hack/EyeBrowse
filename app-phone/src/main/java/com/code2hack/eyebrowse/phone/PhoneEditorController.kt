@@ -37,6 +37,8 @@ class PhoneEditorController(
         }, "eyebrowse-editor-asset").start()
     }
 
+    private var drawReceiptCount = 0
+
     fun isQuiescent(): Boolean = authority.phase == PhoneEditorAuthority.Phase.EMPTY
     fun isAvailable(): Boolean = adapter != null
 
@@ -188,7 +190,19 @@ class PhoneEditorController(
             when (if (correlated) result.status else RendererEditorAdapter.Status.UNCERTAIN) {
                 RendererEditorAdapter.Status.APPLIED -> {
                     // Renderer-only text changes need a native traversal to request fresh capture.
-                    if (stateMessage().ready) browser.view()?.invalidate()
+                    val ready = stateMessage().ready
+                    val view = if (ready) browser.view() else null
+                    val receipt = ++drawReceiptCount
+                    if (receipt <= 32) android.util.Log.i("EyeBrowseEditorDraw",
+                        "EDIT_GUARD seq=$receipt at=${android.os.SystemClock.elapsedRealtime()} ready=$ready viewPresent=${view!=null}")
+                    else if (receipt == 33) android.util.Log.i("EyeBrowseEditorDraw","EDIT_RECEIPTS_TRUNCATED")
+                    if (view != null) {
+                        if (receipt <= 32) android.util.Log.i("EyeBrowseEditorDraw",
+                            "INVALIDATE_BEGIN seq=$receipt at=${android.os.SystemClock.elapsedRealtime()}")
+                        view.invalidate()
+                        if (receipt <= 32) android.util.Log.i("EyeBrowseEditorDraw",
+                            "INVALIDATE_RETURN seq=$receipt at=${android.os.SystemClock.elapsedRealtime()}")
+                    }
                     report(true, "EDITOR_APPLIED")
                 }
                 RendererEditorAdapter.Status.SUBMISSION_REQUESTED -> report(null, "SUBMISSION_REQUESTED")

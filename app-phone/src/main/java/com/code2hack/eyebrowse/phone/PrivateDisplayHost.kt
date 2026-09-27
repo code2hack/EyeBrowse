@@ -1134,13 +1134,19 @@ class PrivateDisplayHost(
         }
     }
 
+    private var drawReceiptCount = 0
+
     /** A normal app-owned container draw is the demand source; the sink queue is never freshness authority. */
     private fun onWindowDraw(serial: Long, elapsedMs: Long) {
         lastObservedDrawSerial = serial
         lastObservedDrawElapsedMs = elapsedMs
+        val receipt = ++drawReceiptCount
         var explicitCycle: Long? = null
         var associated = false
         synchronized(nativeLock) {
+            if (receipt <= 64) Log.i("EyeBrowseEditorDraw",
+                "PARENT_DRAW seq=$receipt serial=$serial at=$elapsedMs active=$captureActive released=$captureReleased bound=${captureBinding!=null} terminal=$captureTerminalFailure cycle=${activeCaptureCycle!=null} transaction=${activeCaptureTransaction!=null} copy=${inFlightWindowCopy!=null}")
+            else if (receipt == 65) Log.i("EyeBrowseEditorDraw","PARENT_RECEIPTS_TRUNCATED")
             if (!captureActive || captureReleased || captureBinding == null || captureTerminalFailure) return
             val cycle = activeCaptureCycle
             if (cycle != null) {
@@ -1164,6 +1170,7 @@ class PrivateDisplayHost(
                 " elapsed=" + elapsedMs + " associated=" + associated)
             return
         }
+        if (receipt <= 64) Log.i("EyeBrowseEditorDraw","PARENT_DEMAND seq=$receipt serial=$serial at=$elapsedMs")
         requestCaptureDemand(elapsedMs)
     }
 
