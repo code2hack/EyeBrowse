@@ -79,8 +79,25 @@ class RecoveryJourneyTest {
             await("Phone consent") { peer.canHandoff() && peer.browserState()?.owner==ControlOwner.PHONE }
             native(R.id.rg_handoff);fresh("initial frame");publish("owned")
             waitPhone("background")
-            val g=geometry();action { peer.activateAt(g.getDouble("nx").toFloat(),g.getDouble("ny").toFloat()) }
-            await("background navigation B",5_000) { peer.browserState()?.title?.startsWith("T03 B")==true && peer.canAct() }
+            var navSamples=0;var navLastSample=0L
+            fun navReceipt(stage:String,force:Boolean=false) {
+                val now=SystemClock.elapsedRealtime()
+                if(navSamples>=24 || (!force && now-navLastSample<250))return
+                navSamples++;navLastSample=now
+                runCatching {
+                    fun operand(name:String)=peer.javaClass.getDeclaredField(name).apply { isAccessible=true }.get(peer)
+                    val state=peer.browserState();val frame=peer.lastFrameHeader;val profile=peer.profile()
+                    val result=peer.lastActionResult
+                    Log.i("EyeBrowseA06","NAV_DIAG mission=$mission stage=$stage elapsedMs=$now clock=RG_elapsedRealtime titleB=${state?.title?.startsWith("T03 B")==true} canAct=${peer.canAct()} baseEligible=${peer.baseActionEligible()} owner=${state?.owner} stale=${state?.stale} loading=${state?.loading} context=${state?.context} frame=$frame profile=$profile profileMatches=${state?.profile==profile} compatible=${operand("compatible")} closed=${operand("closed")} pending=${operand("pendingCommand")} viewportPending=${operand("viewportChange")!=null} layoutExpected=${operand("layoutExpected")} editorClose=${operand("editorClose")!=null} resultId=${result?.commandId} accepted=${result?.accepted} effect=${result?.effectSucceeded} input=${peer.inputSnapshot()}")
+                }.onFailure { Log.i("EyeBrowseA06","NAV_DIAG mission=$mission stage=$stage elapsedMs=$now unavailable=${it.javaClass.simpleName}") }
+            }
+            val g=geometry()
+            scenario.onActivity { navReceipt("before-dispatch",true);Log.i("EyeBrowseA06","NAV_POINT mission=$mission elapsedMs=${SystemClock.elapsedRealtime()} nx=${g.getDouble("nx")} ny=${g.getDouble("ny")}") }
+            action { peer.activateAt(g.getDouble("nx").toFloat(),g.getDouble("ny").toFloat()) }
+            scenario.onActivity { navReceipt("accepted",true) }
+            try {
+                await("background navigation B",5_000) { navReceipt("predicate");peer.browserState()?.title?.startsWith("T03 B")==true && peer.canAct() }
+            } finally { scenario.onActivity { navReceipt("predicate-exit",true) } }
             val previous=peer.lastActionResult;native(R.id.rg_back)
             await("background native Back",5_000) { peer.lastActionResult!==previous && peer.browserState()?.title?.startsWith("T03 A")==true && peer.canAct() }
             fresh("background returned frame");publish("background-done")

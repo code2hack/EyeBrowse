@@ -58,7 +58,15 @@ class RecoveryJourneyTest {
             publish("ready");waitRg("owned")
             scenario.onActivity { assertEquals(ControlOwner.RG,link.controlCoordinator.authority.snapshot().owner);it.moveTaskToBack(true) }
             await("Phone background",3_000) { !activity.hasWindowFocus() };publish("background")
-            waitRg("background-done")
+            try { waitRg("background-done") } finally {
+                runCatching {
+                    val started=SystemClock.elapsedRealtime()
+                    val effects=js("JSON.stringify({loadA:JSON.parse(sessionStorage.getItem('t03-$mission')||'[]').filter(x=>x==='load:A').length,loadB:JSON.parse(sessionStorage.getItem('t03-$mission')||'[]').filter(x=>x==='load:B').length})")
+                    fw4RunOnMainChecked {
+                        Log.i("EyeBrowseA06","PHONE_NAV_DIAG mission=$mission startedMs=$started observedMs=${SystemClock.elapsedRealtime()} clock=Phone_elapsedRealtime titleB=${browser.pageTitle()?.startsWith("T03 B")==true} loading=${browser.isLoading()} document=${browser.documentIdentity()} sameView=${browser.view()===original} fixtureCounts=$effects capture=${host.captureDiagnostics().take(2200)}")
+                    }
+                }.onFailure { Log.i("EyeBrowseA06","PHONE_NAV_DIAG mission=$mission unavailable=${it.javaClass.simpleName}") }
+            }
             await("returned A document") { browser.lastCommittedUrl()==url && !browser.isLoading() }
             fw4RunOnMainChecked { assertSame(original,browser.view()) }
             js("document.getElementById('state').value='A06-preserved';window.__a06Armed=true;true")
