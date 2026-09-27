@@ -88,7 +88,9 @@ unpaired Retry is NOT used as this negative: it starts the scanner by design.
 
 After RG Forget terminal PASS, capture the intermediate raw trust state (RG absent,
 Phone unchanged), then write `forgotten` to Phone. Phone verifies its unchanged
-trust bytes and live-page continuity, opens the real PairingActivity, presses
+trust bytes and live-page continuity, uses the native Pair RG button with an
+ActivityMonitor to observe the real PairingActivity (no second task-clearing
+ActivityScenario), presses
 Generate QR and writes ONLY a private PNG to its app cache. Phase is `qr-ready`.
 Transfer that file privately to the RG cache with the same basename. The QR bytes,
 invitation payload and secrets must never enter prompts, stdout, public logs or
@@ -97,7 +99,8 @@ RgLinkClient authentication, verifies the original identities and Phone ownershi
 and removes its private PNG/receipt. No raw trust-store restoration is permitted.
 
 After terminal repair PASS write `repaired` to Phone. It verifies invitation
-consumption, identity preservation, Phone ownership and page continuity, then
+consumption, identity preservation, Phone ownership and page continuity after
+finishing PairingActivity and observing the original browser resume, then
 cancels residual invitations and deletes its PNG. Re-pair failure stops with the
 observed local trust state explicitly reported; do not blind-retry. Preserve the
 Phone trust/site data and avoid an extra Phone force-stop. Test-process teardown

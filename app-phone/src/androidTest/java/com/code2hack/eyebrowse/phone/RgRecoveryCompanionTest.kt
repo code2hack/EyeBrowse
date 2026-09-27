@@ -1,12 +1,14 @@
 package com.code2hack.eyebrowse.phone
 
 import android.graphics.Bitmap
+import android.app.Instrumentation
 import android.graphics.drawable.BitmapDrawable
 import android.os.SystemClock
 import android.util.Log
 import android.widget.Button
 import android.widget.ImageView
 import androidx.test.core.app.ActivityScenario
+import androidx.lifecycle.Lifecycle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.code2hack.eyebrowse.core.link.control.ControlOwner
@@ -43,7 +45,8 @@ class RgRecoveryCompanionTest {
         val host = HostingController.get(app)
         val server = PhoneLinkServer.obtain(app)
         val scenario = ActivityScenario.launch(MainActivity::class.java)
-        var pairing: ActivityScenario<PairingActivity>? = null
+        var pairing: PairingActivity? = null
+        var pairingMonitor: Instrumentation.ActivityMonitor? = null
         val url = checkNotNull(args.getString("fixtureBaseUrl")).trimEnd('/') + "/control.html?case=$mission"
         val helper = BrowserControlJourneyTest()
         val deadline = SystemClock.elapsedRealtime() + 55_000
@@ -110,10 +113,17 @@ class RgRecoveryCompanionTest {
                     await("RG no longer connected",5_000) { !server.isLinkUp() }
                     assertArrayEquals("RG Forget cannot erase Phone trust",trustBefore,trust.readBytes())
                     continuity("rg-forgotten")
-                    pairing=ActivityScenario.launch(PairingActivity::class.java)
-                    pairing!!.onActivity {
-                        it.findViewById<Button>(R.id.button_generate_qr).performClick()
-                        val bitmap=(it.findViewById<ImageView>(R.id.pairing_qr).drawable as BitmapDrawable).bitmap
+                    // A second ActivityScenario.launch clears the original task. Exercise the
+                    // actual navigation button instead, preserving the live browser's back stack.
+                    pairingMonitor=instrumentation.addMonitor(PairingActivity::class.java.name,null,false)
+                    scenario.onActivity { it.findViewById<Button>(R.id.button_pair_rg).performClick() }
+                    val navigationBound=minOf(3_000L,(deadline-SystemClock.elapsedRealtime()).coerceAtLeast(1))
+                    pairing=instrumentation.waitForMonitorWithTimeout(pairingMonitor,navigationBound) as? PairingActivity
+                    assertNotNull("native Pair RG navigation",pairing)
+                    instrumentation.runOnMainSync {
+                        val screen=checkNotNull(pairing)
+                        screen.findViewById<Button>(R.id.button_generate_qr).performClick()
+                        val bitmap=(screen.findViewById<ImageView>(R.id.pairing_qr).drawable as BitmapDrawable).bitmap
                         qr.outputStream().use { stream -> assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG,100,stream)) }
                     }
                     assertNotNull(server.activeInvitation());publish("qr-ready")
@@ -122,7 +132,11 @@ class RgRecoveryCompanionTest {
                     assertTrue(server.isPaired())
                     assertEquals(ownIdentity,PhoneLinkIdentity().spkiSha256Hex())
                     assertEquals(ControlOwner.PHONE,server.controlCoordinator.authority.snapshot().owner)
-                    pairing!!.close();pairing=null
+                    instrumentation.runOnMainSync { pairing!!.finish() }
+                    val returnDeadline=minOf(deadline,SystemClock.elapsedRealtime()+3_000)
+                    while(scenario.state!=Lifecycle.State.RESUMED && SystemClock.elapsedRealtime()<returnDeadline) SystemClock.sleep(20)
+                    assertEquals("Phone browser resumed after native pairing navigation",Lifecycle.State.RESUMED,scenario.state)
+                    pairing=null
                     continuity("rg-repaired")
                 }
             }
@@ -130,7 +144,8 @@ class RgRecoveryCompanionTest {
         } catch(t: Throwable) { failure=t;throw t }
         finally {
             val cleanup=listOf<()->Unit>(
-                { pairing?.close() },
+                { instrumentation.runOnMainSync { pairing?.takeUnless { it.isFinishing || it.isDestroyed }?.finish() } },
+                { pairingMonitor?.let(instrumentation::removeMonitor) },
                 { instrumentation.runOnMainSync { server.cancelInvitation();host.stop();server.stop() } },
                 { if(browser.isLive() && browser.lastCommittedUrl()==url) helper.js(browser,"sessionStorage.removeItem('t03-$mission');true") },
                 { scenario.close() },
