@@ -60,8 +60,15 @@ class RgQrImagePairingInstrumentationTest {
         InstrumentationRegistry.getArguments().getString(name) ?: default
 
     private fun qrFile(): File {
-        val dir = InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null)!!
-        return File(dir, arg("qrName", "qr.png"))
+        val app = InstrumentationRegistry.getInstrumentation().targetContext
+        val cacheName = InstrumentationRegistry.getArguments().getString("qrCacheName")
+        if (cacheName != null) {
+            require(Regex("i12-expiry-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.png").matches(cacheName)) {
+                "invalid mission QR basename"
+            }
+            return File(app.cacheDir, cacheName)
+        }
+        return File(app.getExternalFilesDir(null)!!, arg("qrName", "qr.png"))
     }
 
     private fun newClient(listener: RecordingListener): RgLinkClient =
