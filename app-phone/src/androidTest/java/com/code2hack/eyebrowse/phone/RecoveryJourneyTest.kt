@@ -39,6 +39,15 @@ class RecoveryJourneyTest {
         fun waitRg(value:String)=await("RG $value",15_000) { rg.exists() && rg.readText().trim()==value }
         fun publish(value:String) { phone.writeText(value);Log.i("EyeBrowseA06","PHONE_PHASE mission=$mission phase=$value elapsedMs=${SystemClock.elapsedRealtime()}") }
         fun js(value:String)=helper.js(browser,value)
+        fun offDiagnostic(stage:String) {
+            val started=SystemClock.elapsedRealtime()
+            val tick=runCatching {
+                val raw=js("typeof window.__i12Tick==='number'?String(window.__i12Tick):'unavailable'")
+                org.json.JSONArray("[$raw]").getString(0).takeIf { it.matches(Regex("[0-9]+")) } ?: "unavailable"
+            }.getOrElse { "unavailable:${it.javaClass.simpleName}" }
+            val capture=runCatching { fw4RunOnMainChecked { host.captureDiagnostics() } }.getOrElse { "unavailable:${it.javaClass.simpleName}" }
+            Log.i("EyeBrowseA06","PHONE_OFF_DIAG mission=$mission stage=$stage startedMs=$started observedMs=${SystemClock.elapsedRealtime()} interactive=${app.getSystemService(android.os.PowerManager::class.java).isInteractive} timerTick=$tick capture=${capture.take(2200)}")
+        }
         var failure:Throwable?=null
         try {
             scenario.onActivity { activity=it;host.stop();link.stop();browser.openAddress(url) }
@@ -58,6 +67,7 @@ class RecoveryJourneyTest {
             publish("sleep")
             await("runner confirms physical OFF",10_000) { screen.exists() && screen.readText().trim()=="off" }
             assertFalse(app.getSystemService(android.os.PowerManager::class.java).isInteractive)
+            offDiagnostic("off-entry")
             waitRg("off-done")
             fw4RunOnMainChecked {
                 assertFalse(app.getSystemService(android.os.PowerManager::class.java).isInteractive)
@@ -98,6 +108,9 @@ class RecoveryJourneyTest {
             publish("complete");waitRg("done")
         } catch(t:Throwable) { failure=t;throw t }
         finally {
+            runCatching { offDiagnostic("before-cleanup") }.onFailure {
+                Log.i("EyeBrowseA06","PHONE_OFF_DIAG mission=$mission stage=before-cleanup unavailable=${it.javaClass.simpleName}")
+            }
             val errors=listOf<()->Unit>(
                 { fw4RunOnMainChecked { host.stop();link.stop() } },
                 { if(browser.isLive() && browser.lastCommittedUrl()==url) js("clearInterval(window.__i12Timer);delete window.__i12Timer;document.body.style.backgroundColor='';sessionStorage.removeItem('t03-$mission');true") },

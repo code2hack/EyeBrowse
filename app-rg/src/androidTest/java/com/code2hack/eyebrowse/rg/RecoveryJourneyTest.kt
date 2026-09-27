@@ -53,8 +53,19 @@ class RecoveryJourneyTest {
         val samples=java.util.concurrent.ConcurrentHashMap<Long,Seen>()
         val recording=java.util.concurrent.atomic.AtomicReference<com.code2hack.eyebrowse.core.link.control.ControlContext?>()
         val overflow=java.util.concurrent.atomic.AtomicBoolean()
+        val receivedDuringOff=java.util.concurrent.atomic.AtomicInteger()
+        val contextMismatches=java.util.concurrent.atomic.AtomicInteger()
+        val mismatchHeaders=java.util.concurrent.ConcurrentLinkedQueue<String>()
         field.set(client,object:com.code2hack.eyebrowse.rg.link.RgLinkClient.Listener by original {
             override fun onPresentation(frame:com.code2hack.eyebrowse.core.link.framing.PresentationFrame) {
+                val expected=recording.get()
+                if(expected!=null) {
+                    receivedDuringOff.incrementAndGet()
+                    if(expected!=frame.header.context) {
+                        contextMismatches.incrementAndGet()
+                        if(mismatchHeaders.size<4)mismatchHeaders.add(frame.header.toString())
+                    }
+                }
                 if(recording.get()==frame.header.context) {
                     if(samples.size<128) samples[frame.header.frameSeq]=Seen(frame.header,java.security.MessageDigest.getInstance("SHA-256").digest(frame.pixels()).joinToString("") { "%02x".format(it) })
                     else overflow.set(true)
@@ -80,17 +91,21 @@ class RecoveryJourneyTest {
             await("OFF click effect",2_000) { peer.browserState()?.title?.startsWith("T03 A click 1")==true && peer.canAct() }
             action { peer.scrollBy(0f,160f) }
             await("OFF scroll effect",2_000) { geometry().optDouble("cssY")>0 && peer.canAct() }
-            val observed=mutableSetOf<Long>();val started=SystemClock.elapsedRealtime()
+            val observed=mutableSetOf<Long>();val displayed=linkedSetOf<Long>();val started=SystemClock.elapsedRealtime()
             while(SystemClock.elapsedRealtime()-started<10_000) {
                 check(screen.readText().trim()!="abort") { "screen runner aborted" }
                 scenario.onActivity {
                     assertTrue("live OFF input remains eligible",peer.canAct())
                     val h=checkNotNull(peer.lastFrameHeader);assertEquals(context,h.context)
+                    if(displayed.size<128)displayed.add(h.frameSeq)
                     if(samples.containsKey(h.frameSeq))observed.add(h.frameSeq)
                 }
                 SystemClock.sleep(20)
             }
-            recording.set(null);assertFalse(overflow.get());assertTrue("changing accepted frames",observed.mapNotNull { samples[it]?.hash }.distinct().size>=3)
+            recording.set(null)
+            val snapshot=samples.values.sortedBy { it.header.frameSeq }
+            Log.i("EyeBrowseA06","OFF_FRAME_DIAG mission=$mission intervalMs=${SystemClock.elapsedRealtime()-started} rawReceived=${receivedDuringOff.get()} matched=${snapshot.size} mismatches=${contextMismatches.get()} overflow=${overflow.get()} receivedSeq=${snapshot.take(32).map { it.header.frameSeq }} observedCount=${observed.size} observedSeq=${observed.take(32)} displayedCount=${displayed.size} displayedSeq=${displayed.take(32)} distinctReceived=${snapshot.map { it.hash }.distinct().size} distinctObserved=${observed.mapNotNull { samples[it]?.hash }.distinct().size} firstCapture=${snapshot.firstOrNull()?.header?.captureTsMs} lastCapture=${snapshot.lastOrNull()?.header?.captureTsMs} expectedContext=$context matchedHeaders=${(snapshot.take(2)+snapshot.takeLast(2)).distinct().map { it.header }} mismatchHeaders=$mismatchHeaders")
+            assertFalse(overflow.get());assertTrue("changing accepted frames",observed.mapNotNull { samples[it]?.hash }.distinct().size>=3)
             val ordered=samples.values.sortedBy { it.header.frameSeq }
             assertTrue(ordered.size>=3)
             ordered.zipWithNext().forEach { (a,b) -> assertTrue("Phone producer cadence <=5fps",b.header.captureTsMs-a.header.captureTsMs>=200) }
