@@ -17,6 +17,26 @@ import java.io.File
 /** Raw pose and real pad drive production Reading. Files carry oracle barriers, never input. */
 @RunWith(AndroidJUnit4::class)
 class ReadingJourneyTest {
+    @Test fun setupPredicateOnly() {
+        val mission=InstrumentationRegistry.getArguments().getString("missionId")
+        val monitor=androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+        val callback=androidx.test.runner.lifecycle.ActivityLifecycleCallback { activity, stage ->
+            if(activity is MainActivity) Log.i("EyeBrowseSetup","mission=$mission event=lifecycle stage=$stage uptimeMs=${SystemClock.uptimeMillis()} focus=${activity.hasWindowFocus()}")
+        }
+        monitor.addLifecycleCallback(callback)
+        var scenario:ActivityScenario<MainActivity>?=null
+        var journey:PointerBrowserJourneyTest.Journey?=null
+        try {
+            Log.i("EyeBrowseSetup","mission=$mission event=before-launch uptimeMs=${SystemClock.uptimeMillis()}")
+            scenario=ActivityScenario.launch(MainActivity::class.java)
+            journey=PointerBrowserJourneyTest.Journey(scenario)
+            journey.setup()
+        } finally {
+            try { journey?.let { j -> j.main { j.probe?.close() } };scenario?.close() }
+            finally { monitor.removeLifecycleCallback(callback) }
+        }
+    }
+
     @Test fun neutralScrollInterruptionsAndLostStop() {
         val scenario=ActivityScenario.launch(MainActivity::class.java)
         val j=PointerBrowserJourneyTest.Journey(scenario)
