@@ -169,7 +169,7 @@ class RgPresentationController(context: Context, private val surface: Surface) :
         main.removeCallbacks(viewportTimeout)
         main.postAtTime(viewportTimeout, viewportChange?.deadline ?: (layoutStartedAt + 2_000))
     }
-    private fun sendViewportIfNeeded() {
+    private fun sendViewportIfNeeded(deadline: Long = layoutStartedAt + 2_000) {
         if (!layoutExpected || !layoutMeasured || viewportChange != null || editorClose != null) return
         val current = state ?: return
         val profile = measuredProfile ?: return
@@ -177,12 +177,12 @@ class RgPresentationController(context: Context, private val surface: Surface) :
         if (profile == current.profile) {
             layoutExpected = false; main.removeCallbacks(viewportTimeout); prepareControls(); return
         }
-        if (SystemClock.uptimeMillis() >= layoutStartedAt + 2_000 || transitionSequence == Long.MAX_VALUE) {
+        if (SystemClock.uptimeMillis() >= deadline || transitionSequence == Long.MAX_VALUE) {
             failViewport("Viewport unavailable — Retry"); return
         }
         val request = ViewportUpdateMessage(++transitionSequence, current.context, profile,
             retainEditor = keyboard.destination == RgKeyboard.Destination.FIELD)
-        viewportChange = ViewportChange(request, layoutStartedAt + 2_000)
+        viewportChange = ViewportChange(request, deadline)
         if (!client.sendControl(request)) { failViewport("Viewport request not sent — Retry"); return }
         inbox.grant(null, null); inputRevision++
         status("Updating page layout")
@@ -450,12 +450,15 @@ class RgPresentationController(context: Context, private val surface: Surface) :
         when (message) {
             is BrowserStateMessage -> {
                 val old=state
+                var continueLayoutUntil: Long? = null
                 if(old==null || old.context!=message.context || old.owner!=message.owner || old.profile!=message.profile ||
                     old.stale!=message.stale || old.loading!=message.loading) inputRevision++
                 if (old != null && (old.context.lifetimeId != message.context.lifetimeId ||
                     old.context.controlEpoch != message.context.controlEpoch || old.owner != message.owner ||
                     old.context.hostingGeneration != message.context.hostingGeneration)) retireKeyboard()
                 else if (old != null && old.context.documentId != message.context.documentId) {
+                    if (layoutExpected && keyboard.destination != RgKeyboard.Destination.FIELD)
+                        continueLayoutUntil = viewportChange?.deadline ?: (layoutStartedAt + 2_000)
                     pendingActivation = null; editorState = null
                     viewportChange = null; editorClose = null
                     editorCloseTimeout?.let(main::removeCallbacks); editorCloseTimeout = null
@@ -465,6 +468,13 @@ class RgPresentationController(context: Context, private val surface: Surface) :
                     }
                 }
                 state = message
+                continueLayoutUntil?.let { deadline ->
+                    // The old document retired the request, not the measured local layout intent.
+                    // Continue only that state update, under its original guard and fresh context.
+                    main.postAtTime(viewportTimeout, deadline)
+                    sendViewportIfNeeded(deadline)
+                }
+                if (state !== message) return@synchronized // An expired continuation stays invalid.
                 val bufferedEditor = editorState
                 if (bufferedEditor?.context == message.context) receiveControl(bufferedEditor)
                 prepareControls()

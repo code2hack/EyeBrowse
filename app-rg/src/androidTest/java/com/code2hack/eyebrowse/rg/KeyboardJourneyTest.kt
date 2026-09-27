@@ -107,6 +107,8 @@ class KeyboardJourneyTest {
             j.await("coalesced close-open layout settles",2_000) { j.peer.canSubmitAddress() }
             checkPhone("coalesced_layout")
             clearAddress();fixture.forEach { character(it,false) }
+            val beforeNavigationContext = checkNotNull(j.peer.browserState()).context
+            val beforeNavigationActions = j.actions
             lateinit var receipts: KeyboardNavigationReceipts
             j.main { receipts=KeyboardNavigationReceipts(it) }
             try {
@@ -117,6 +119,15 @@ class KeyboardJourneyTest {
                     !j.peer.keyboard.visible && j.peer.canAct() && j.peer.browserState()?.title?.startsWith("KBD|")==true
                 }
                 receipts.capture("await-passed")
+                val current = checkNotNull(j.peer.browserState())
+                assertNotEquals(beforeNavigationContext.documentId,current.context.documentId)
+                assertEquals("navigation keeps the ordinal namespace",beforeNavigationContext.controlEpoch,current.context.controlEpoch)
+                assertEquals(beforeNavigationContext.lifetimeId,current.context.lifetimeId)
+                assertEquals("one address effect, never replayed",beforeNavigationActions.consumed+1,j.actions.consumed)
+                assertEquals("one address enqueue, never replayed",beforeNavigationActions.queued+1,j.actions.queued)
+                assertEquals(j.peer.profile(),current.profile)
+                assertEquals(current.context,j.peer.lastFrameHeader?.context)
+                assertTrue("fresh-document viewport keeps the original deadline",receipts.preservedDeadlineFor(current.context.documentId))
             } catch (failure: Throwable) {
                 receipts.capture("navigation-scope-failed type=${failure.javaClass.simpleName}")
                 throw failure

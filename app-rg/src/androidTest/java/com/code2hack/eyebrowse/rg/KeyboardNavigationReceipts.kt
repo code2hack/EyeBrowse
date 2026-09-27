@@ -20,6 +20,13 @@ internal class KeyboardNavigationReceipts(private val activity: MainActivity) : 
     private val original = listenerField.get(client) as RgLinkClient.Listener
     private val records = mutableListOf<String>()
     private var lost = 0
+    private var originalLayoutDeadline: Long? = null
+    private val requestDeadlines = linkedMapOf<Long, Pair<String, Long>>()
+    fun preservedDeadlineFor(document: String): Boolean = synchronized(monitor) {
+        val deadline = originalLayoutDeadline
+        deadline != null && requestDeadlines.values.any { it.first == document } &&
+            requestDeadlines.values.all { it.second == deadline }
+    }
     private var lastPredicate: String? = null
     @Volatile private var observing = true
     private val started = SystemClock.uptimeMillis()
@@ -60,6 +67,11 @@ internal class KeyboardNavigationReceipts(private val activity: MainActivity) : 
             val address = field("pendingAddress").get(peer) as? Pair<*, *>
             val change = field("viewportChange").get(peer)
             val request = change?.javaClass?.getDeclaredField("request")?.apply { isAccessible=true }?.get(change) as? ViewportUpdateMessage
+            if (!peer.keyboard.visible && field("layoutExpected").getBoolean(peer) && originalLayoutDeadline == null)
+                originalLayoutDeadline = field("layoutStartedAt").getLong(peer) + 2_000
+            val deadline = change?.javaClass?.getDeclaredField("deadline")?.apply { isAccessible=true }?.getLong(change)
+            if (request != null && deadline != null && requestDeadlines.size < 256)
+                requestDeadlines[request.transitionId] = request.context.documentId to deadline
             val measured = peer.profile()
             val frame = peer.lastFrameHeader
             val status = field("statusText").get(peer) as? String
@@ -83,7 +95,8 @@ internal class KeyboardNavigationReceipts(private val activity: MainActivity) : 
                 " status=$statusClass measured=${measured?.width}x${measured?.height}" +
                 " stateProfile=${state?.profile?.width}x${state?.profile?.height} frame=${frame?.width}x${frame?.height}" +
                 " requestId=${request?.transitionId} requestProfile=${request?.profile?.width}x${request?.profile?.height}" +
-                " requestDocument=${request?.context?.documentId} requestViewport=${request?.context?.viewportEpoch}"
+                " requestDocument=${request?.context?.documentId} requestViewport=${request?.context?.viewportEpoch}" +
+                " originalLayoutDeadline=$originalLayoutDeadline requestDeadline=$deadline"
         }
         val at = SystemClock.uptimeMillis()
         synchronized(records) {
