@@ -611,11 +611,24 @@ class HostingController private constructor(private val appContext: Context) {
     @Synchronized
     fun isRgPresentationOwned(): Boolean = rgPresentationOwned
 
+    internal fun captureProfileOwner(): () -> Boolean {
+        val originalHost = displayHost
+        val originalGeneration = generation
+        val nativeOwner = originalHost?.captureProfileOwner(session)
+        return {
+            state == State.HOSTING && rgPresentationOwned && displayHost === originalHost &&
+                generation == originalGeneration && nativeOwner?.invoke() == true
+        }
+    }
+
     /** Geometry-only transfer: old lease is revoked, but its backing surface is never detached. */
     fun reconfigureRgProfile(profile: HostingPresentationProfile, deadlineElapsedMs: Long,
-                             completed: (Boolean) -> Unit) {
+                             ownsRequest: () -> Boolean = { true }, onRetired: () -> Unit = {}, completed: (Boolean) -> Unit) {
         check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
+        if (!ownsRequest()) { onRetired(); completed(false); return }
         val host = displayHost
+        val originalDocument = session.documentIdentity()
+        val originalView = session.view()
         val previous = presentationEpochs.current
         if (state != State.HOSTING || !rgPresentationOwned || profileTransfer != null ||
             !session.editorQuiescent() || host == null || previous == null ||
@@ -631,9 +644,13 @@ class HostingController private constructor(private val appContext: Context) {
             epoch = presentationEpochs.begin(generation, profile)
         }
         // Keep the existing bounded wake/idle anchors. No normal release(), surface-null or join.
-        host.resizeProfile(profile, session, deadlineElapsedMs) { settled ->
-            val current = profileTransfer === transfer && displayHost === host &&
-                presentationEpochs.owns(epoch) && state == State.HOSTING && rgPresentationOwned
+        var retired = false
+        fun currentOwner() = ownsRequest() && profileTransfer === transfer && displayHost === host &&
+            presentationEpochs.owns(epoch) && state == State.HOSTING && rgPresentationOwned &&
+            session.view() === originalView && session.documentIdentity() == originalDocument
+        host.resizeProfile(profile, session, deadlineElapsedMs, ::currentOwner, { retired = true; onRetired() }) { settled ->
+            val current = !retired && currentOwner()
+            if (!current) onRetired()
             if (profileTransfer === transfer) profileTransfer = null
             if (!settled || !current) {
                 if (current) {

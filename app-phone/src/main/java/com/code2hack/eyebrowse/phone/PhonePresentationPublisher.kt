@@ -18,6 +18,7 @@ class PhonePresentationPublisher(
     private val send: (PresentationFrame) -> Boolean,
     private val requestFreshFrame: () -> Unit,
     private val beforeCapture: ((ControlSnapshot, () -> Unit) -> Unit)? = null,
+    private val captureOwnership: (ControlContext) -> (() -> Boolean) = { { true } },
     private val degraded: (ControlContext, String) -> Unit,
 ) {
     private val main = Handler(Looper.getMainLooper())
@@ -60,11 +61,16 @@ class PhonePresentationPublisher(
             }
         }
         val grant = state.context
+        val ownsControl = captureOwnership(grant)
+        val ownsNative = hosting.captureProfileOwner()
+        val ownsRequest = { ownsControl() && ownsNative() }
         context = grant
         val deadline = requestedAtMs + 2000
         val firstFrame = java.util.concurrent.atomic.AtomicBoolean()
+        var transferRetired = false
         fun failProfile(reason: String) {
             if (context != grant) return
+            if (transferRetired || !ownsRequest()) { stop(); return }
             stop(); hosting.stop(); degraded(grant, reason)
         }
         if (compatible) {
@@ -74,6 +80,8 @@ class PhonePresentationPublisher(
         }
         fun startCapture() {
             if (context != grant) return // A late editor/profile callback cannot revive a retired lease.
+            if (!ownsRequest()) { stop(); return }
+            if (compatible && android.os.SystemClock.elapsedRealtime() >= deadline) { failProfile("Profile frame deadline exceeded");return }
             val consumer = HostingController.FrameConsumer { frame ->
                 if (context != grant || frame.generation.toLong() != grant.hostingGeneration ||
                     frame.width != profile.width || frame.height != profile.height) return@FrameConsumer
@@ -101,11 +109,13 @@ class PhonePresentationPublisher(
                     val pixels = output.toByteArray()
                     val encoded = PresentationFrame(PresentationFrameHeader(grant, frame.sequence,
                         frame.captureElapsedMs, frame.width, frame.height), pixels)
-                    if (compatible && !firstFrame.get() && android.os.SystemClock.elapsedRealtime() > deadline) {
+                    if (compatible && !firstFrame.get() && android.os.SystemClock.elapsedRealtime() >= deadline) {
                         main.post { failProfile("Profile frame deadline exceeded") }
                         return@FrameConsumer
                     }
                     if (context == grant && ready(grant) && send(encoded)) {
+                        if (!firstFrame.get()) Log.i("EyeBrowseProfileSettlement",
+                            "frame-published context=$grant inPlace=$compatible deadline=$deadline capture=${frame.captureElapsedMs} at=${android.os.SystemClock.elapsedRealtime()}")
                         firstFrame.set(true)
                         Log.i("EyeBrowsePresentation", "encoded seq=${frame.sequence} capture=${frame.captureElapsedMs} bytes=${pixels.size} profile=${frame.width}x${frame.height}")
                     }
@@ -129,8 +139,10 @@ class PhonePresentationPublisher(
             beforeCapture?.invoke(state, ::startCapture) ?: startCapture()
         }
         if (compatible) hosting.reconfigureRgProfile(
-            HostingPresentationProfile(profile.width, profile.height, profile.densityDpi), deadline) { settled ->
+            HostingPresentationProfile(profile.width, profile.height, profile.densityDpi), deadline, ownsRequest,
+            { transferRetired = true }) { settled ->
             if (context != grant) return@reconfigureRgProfile
+            if (transferRetired) { stop(); return@reconfigureRgProfile }
             if (settled) prepare() else failProfile("In-place profile resize unavailable")
         } else prepare()
     }

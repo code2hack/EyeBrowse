@@ -98,7 +98,18 @@ class PhoneLinkServer(
     @Volatile private var profileRequest: Pair<ControlContext, Long>? = null
     private val publisher by lazy {
         hostingController?.let { PhonePresentationPublisher(it, ::publishPresentationReady, ::sendPresentation,
-            { browserSession?.requestFreshCaptureFrame() }, beforeCapture = { state, start ->
+            { browserSession?.requestFreshCaptureFrame() }, captureOwnership = { expected ->
+                val ownerSession = authenticatedSession
+                val ownerConnection = connectionGeneration
+                val owned: () -> Boolean = {
+                    synchronized(controlCoordinator.authority) {
+                        val current = controlCoordinator.authority.snapshot()
+                        ownerSession != null && authenticatedSession === ownerSession && connectionGeneration == ownerConnection &&
+                            current.context == expected && current.owner == ControlOwner.RG && current.linkAuthenticated && current.hostingActive
+                    }
+                }
+                owned
+            }, beforeCapture = { state, start ->
                 val retained = profileEditor?.takeIf { it.first == state.context }
                 if (editorController != null) {
                     profileEditor = null
