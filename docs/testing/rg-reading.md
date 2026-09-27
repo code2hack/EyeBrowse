@@ -63,7 +63,7 @@ before execution. Do not re-pair or write trust records manually.
   lease nor disconnect substitutes for this expiry. Protocol malformed/delayed
   credit boundaries are additionally checked by the host suite.
 - Capture the real Reading layout, record screen/lock state and all timing/resource
-  receipts. The scripts retain the 65 s instrumentation / 180 s guarded bounds;
+  receipts. The host paired-command bound remains 65 s per journey / 180 s guarded child;
   no failed row is retried in the same window.
 
 Status: host implementation and compiled instrumentation are preparation, not
@@ -71,3 +71,24 @@ paired acceptance. The prior keyboard live-edit screenshot freshness limitation
 remains open: no newer frame was observed while editing the password; the Normal
 screenshot showed masking and Phone independently checked the value/type. Do not
 claim that this Reading implementation reran or resolved that evidence gap.
+
+## R4 terminal observation
+
+Final Manager routing `MGR3-T02-I10-READING-R4-ROUTE-FINAL-20260927-01`
+retains the **65-second host paired-command bound** and 180-second outer guard.
+The interim proposal to increase the former to 90 seconds was withdrawn before
+execution. No product source, test assertion, input or deadline changes in R4.
+
+Standalone keyboard R2 measured RG 57.835 s / Phone 59.719 s; integrated R3
+measured RG 61.859 s / Phone 63.562 s, with both terminal JUnit results passing.
+The 65 s host command nevertheless timed out during terminal recognition.
+R3 remains NOT_PASSED as executed. Its timestamped Phone completion and retained
+RG terminal stream do not establish an exact RG completion time relative to the
+old deadline.
+
+The host runner records launch and the shared deadline, observes each process
+with its own bounded waiter, and keeps the existing phase-file relay off the
+terminal-observation path. Terminal receipt timestamps must precede the original
+deadline and both streams must contain terminal JUnit PASS. Late or unavailable
+completion evidence still fails. The no-retry rule, phase gate, cleanup and all
+product liveness/latency bounds remain unchanged.
