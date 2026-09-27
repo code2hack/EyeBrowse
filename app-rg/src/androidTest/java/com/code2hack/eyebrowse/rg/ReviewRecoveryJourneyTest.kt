@@ -35,6 +35,17 @@ class ReviewRecoveryJourneyTest {
         var engine:LinkClientEngine?=null
         val release=CountDownLatch(1)
         var completed=false
+        val observingRecovery=java.util.concurrent.atomic.AtomicBoolean(false)
+        val traceCount=java.util.concurrent.atomic.AtomicInteger(0)
+        fun trace(event:String) {
+            if(observingRecovery.get() && traceCount.incrementAndGet()<=160)
+                Log.i("EyeBrowseReviewRecovery","RECOVERY mission=${j.mission} uptimeMs=${SystemClock.uptimeMillis()} elapsedMs=${SystemClock.elapsedRealtime()} $event")
+        }
+        fun recoverySnapshot(event:String) {
+            val state=j.peer.browserState()
+            val editor=nullableField(j.peer,"editorState") as? EditorStateMessage
+            trace("$event busy=${(nullableField(j.client(),"engine") as? LinkClientEngine)?.isBusy} stale=${state?.stale} context=${state?.context} owner=${state?.owner} loading=${state?.loading} remoteProfile=${state?.profile} measured=${j.peer.profile()} frameContext=${j.peer.lastFrameHeader?.context} compatible=${field(j.peer,"compatible")} keyboardCompatible=${field(j.peer,"keyboardCompatible")} hostActive=${field(j.peer,"hostActive")} layoutExpected=${field(j.peer,"layoutExpected")} layoutMeasured=${field(j.peer,"layoutMeasured")} reconnectLayout=${field(j.peer,"reconcileLayoutOnConnect")} viewportPending=${nullableField(j.peer,"viewportChange")!=null} closePending=${nullableField(j.peer,"editorClose")!=null} editorReady=${editor?.ready} editorTarget=${editor?.target} keyboardVisible=${j.peer.keyboard.visible} pending=${nullableField(j.peer,"pendingCommand")}")
+        }
         fun checkPhone(name:String) {
             phase.writeText(name)
             j.await("independent Phone receipt $name",5_000) { ack.exists() && ack.readText().trim()==name }
@@ -114,7 +125,30 @@ class ReviewRecoveryJourneyTest {
             val client=j.client()
             val original=field(client,"listener") as com.code2hack.eyebrowse.rg.link.RgLinkClient.Listener
             faults=AckLossJourneyTest.DeliveryFaults(original)
-            setField(client,"listener",faults!!)
+            val delivery=faults!!
+            setField(client,"listener",object:com.code2hack.eyebrowse.rg.link.RgLinkClient.Listener by delivery {
+                override fun onStateChange(state:com.code2hack.eyebrowse.core.link.PairingState) { trace("STATE value=$state");delivery.onStateChange(state) }
+                override fun onConnectFailed(error:com.code2hack.eyebrowse.core.link.LinkError) { trace("FAILURE type=${error.javaClass.simpleName}");delivery.onConnectFailed(error) }
+                override fun onLinkLost() { trace("LINK_LOST");delivery.onLinkLost() }
+                override fun onStatus(status:com.code2hack.eyebrowse.core.link.HostStatusValue) { trace("HOST_STATUS value=$status");delivery.onStatus(status) }
+                override fun onPresentationCompatibility(result:com.code2hack.eyebrowse.core.link.CapabilityNegotiation) { trace("CAPABILITY presentation=$result");delivery.onPresentationCompatibility(result) }
+                override fun onKeyboardCompatibility(compatible:Boolean) { trace("CAPABILITY keyboard=$compatible");delivery.onKeyboardCompatibility(compatible) }
+                override fun onPresentation(frame:com.code2hack.eyebrowse.core.link.framing.PresentationFrame) {
+                    trace("RX_FRAME context=${frame.header.context} seq=${frame.header.frameSeq} capture=${frame.header.captureTsMs} size=${frame.header.width}x${frame.header.height}")
+                    delivery.onPresentation(frame)
+                }
+                override fun onControl(message:BrowserControlMessage) {
+                    when(message) {
+                        is BrowserStateMessage -> trace("RX_STATE context=${message.context} owner=${message.owner} stale=${message.stale} loading=${message.loading} profile=${message.profile}")
+                        is EditorStateMessage -> trace("RX_EDITOR context=${message.context} ready=${message.ready} target=${message.target}")
+                        is ViewportUpdateResultMessage -> trace("RX_VIEWPORT id=${message.transitionId} accepted=${message.accepted} context=${message.context} profile=${message.profile}")
+                        is EditorCloseResultMessage -> trace("RX_CLOSE id=${message.requestId} closed=${message.closed} context=${message.context}")
+                        is PresentationStaleMessage -> trace("RX_STALE context=${message.context}")
+                        else -> Unit
+                    }
+                    delivery.onControl(message)
+                }
+            })
             j.native(R.id.rg_retry,"Retry")
             j.await("authenticated Phone state",10_000) { j.peer.browserState()?.owner==ControlOwner.PHONE && j.peer.canHandoff() }
             j.handoff(ControlOwner.RG,"A");fresh()
@@ -170,19 +204,29 @@ class ReviewRecoveryJourneyTest {
                 val before=checkNotNull(j.peer.browserState()).context
                 assertTrue(j.peer.keyboard.visible);assertEquals(c.commandId,pending())
                 screenshot("pending");checkPhone("pending_edit")
+                observingRecovery.set(true);j.main { recoverySnapshot("BEFORE_LOSS") }
                 j.main { client.disconnect() };j.quiescent();faults!!.discardActions()
                 assertFalse(j.peer.keyboard.visible);assertNull(pending());assertNull(j.peer.keyboard.target)
                 j.main { assertFalse(j.peer.key(intent)) }
                 checkPhone("editor_link_down")
                 faults!!.holdActions=false
+                j.main { recoverySnapshot("BEFORE_RETRY") }
                 j.native(R.id.rg_retry,"recover editor")
-                j.await("authenticated recovered state",10_000) { j.peer.browserState()?.stale==false && j.peer.browserState()?.context?.viewportEpoch!=before.viewportEpoch }
+                val recoveryAt=SystemClock.uptimeMillis();var observedAt=-1L
+                trace("RETRY_DISPATCH_RETURN at=$recoveryAt originalBoundMs=10000")
+                try {
+                    j.await("authenticated recovered state",10_000) {
+                        val now=SystemClock.uptimeMillis()
+                        if(now-observedAt>=250) { observedAt=now;recoverySnapshot("WAIT elapsedMs=${now-recoveryAt}") }
+                        j.peer.browserState()?.stale==false && j.peer.browserState()?.context?.viewportEpoch!=before.viewportEpoch
+                    }
+                } finally { j.main { recoverySnapshot("WAIT_END elapsedMs=${SystemClock.uptimeMillis()-recoveryAt}") } }
                 fresh()
                 val recovered=checkNotNull(j.peer.browserState()).context
                 assertEquals(before.lifetimeId,recovered.lifetimeId);assertEquals(before.documentId,recovered.documentId)
                 assertEquals(before.controlEpoch,recovered.controlEpoch);assertTrue(recovered.viewportEpoch>before.viewportEpoch)
                 assertFalse(j.peer.keyboard.visible);j.main { assertFalse(j.peer.key(intent)) }
-                replay(c,"STALE_CONTEXT");screenshot("recovered");checkPhone("editor_recovered")
+                replay(c,"STALE_CONTEXT");screenshot("recovered");checkPhone("editor_recovered");observingRecovery.set(false)
                 faults!!.holdActions=false;fieldKeyboard();faults!!.holdActions=true
                 assertNotEquals((c.action as BrowserAction.Edit).target,j.peer.keyboard.target)
                 val (d,_)=key(RgKeyboard.Key.Character("d"),EditorOperation.Insert("d"))

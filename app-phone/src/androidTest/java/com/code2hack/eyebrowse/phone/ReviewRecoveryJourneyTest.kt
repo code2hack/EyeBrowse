@@ -32,7 +32,16 @@ class ReviewRecoveryJourneyTest {
         fun js(script:String)=helper.js(browser,script)
         fun await(label:String,bound:Long=5_000,condition:()->Boolean)=StopRecoveryAssertions.await(label,bound,condition)
         fun step(name:String,verify:()->Unit) {
-            await("RG phase $name",20_000) { val value=phase.takeIf { it.exists() }?.readText()?.trim();check(value!="abort");value==name }
+            var lastReceipt=-1L;var receipts=0
+            await("RG phase $name",20_000) {
+                val now=SystemClock.elapsedRealtime()
+                if(name=="editor_recovered" && now-lastReceipt>=250 && receipts++<80) {
+                    lastReceipt=now
+                    val state=link.controlCoordinator.authority.snapshot()
+                    Log.i("EyeBrowseReviewRecovery","RECOVERY_PHONE mission=$mission elapsedMs=$now linkUp=${link.isLinkUp()} authenticated=${state.linkAuthenticated} compatible=${state.sessionCompatible} owner=${state.owner} context=${state.context} profile=${state.profile} presentation=${state.presentationStatus} host=${host.status().state} editorPhase=${link.editorController?.authority?.phase} editorTarget=${link.editorController?.authority?.grant?.target}")
+                }
+                val value=phase.takeIf { it.exists() }?.readText()?.trim();check(value!="abort");value==name
+            }
             verify();ack.writeText(name)
             Log.i("EyeBrowseReviewRecovery","PHONE_VERIFIED mission=$mission phase=$name at=${SystemClock.elapsedRealtime()}")
         }
