@@ -202,6 +202,12 @@ class PhoneEditorController(
                         view.invalidate()
                         if (receipt <= 32) android.util.Log.i("EyeBrowseEditorDraw",
                             "INVALIDATE_RETURN seq=$receipt at=${android.os.SystemClock.elapsedRealtime()}")
+                        if (receipt <= 32) android.util.Log.i("EyeBrowseEditorDraw",
+                            "PARENT_INVALIDATE_BEGIN seq=$receipt at=${android.os.SystemClock.elapsedRealtime()}")
+                        // localFocusReady fences this parent to the current Presentation's content.
+                        (view.parent as? android.view.View)?.invalidate()
+                        if (receipt <= 32) android.util.Log.i("EyeBrowseEditorDraw",
+                            "PARENT_INVALIDATE_RETURN seq=$receipt at=${android.os.SystemClock.elapsedRealtime()}")
                     }
                     report(true, "EDITOR_APPLIED")
                 }
