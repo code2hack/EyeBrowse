@@ -198,6 +198,18 @@ The Manager coordinates product findings; Worker/Expert owns diagnosis and corre
 
 Verify the Expert's exact pushed candidate, todo-specific evidence, required local-helper result and continuation notes. Resolve required review findings under `AGENTS.md` §13. Reconcile workspace state without discarding uncommitted work, relinquish Expert write ownership, and explicitly return the later todos to the recorded Worker. Confirm receipt before resuming it. Retire only assignments that actually end; a ticket Worker returning from helper duty is not retired. This handback is not ticket closure or an extra whole-ticket review ceremony.
 
+### Manager heartbeat and wake protocol (qualified 2026-09-28, Owner directive)
+
+The Manager wake mechanism is the executable script `~/bin/eyebrowse-manager-heartbeat.sh` with classifier `~/bin/heartbeat-classify.py`, scheduled by the user systemd timer `eyebrowse-manager-heartbeat.timer` at a **10-minute default interval**. The script is the single executable source of truth; this section records the qualified policy, not a duplicate rule.
+
+- The heartbeat wakes the Manager session **when and only when** the Manager is not running (its own Paseo status is the busy signal); a running Manager defers the tick.
+- Every wake payload carries the **full genuine-status table** — all non-archived Paseo agents with turn-status plus all registered ChatGPT conversations' live turn-states via the read-only CDP probe — and the anomalies: manifest entries with `expected=running` whose genuine status is not running, including missing-from-roster and probe-failure/UNKNOWN cases.
+- `~/.local/state/eyebrowse/expected-agents.json` is the Manager-maintained manifest of agents supposed to be running. The Manager updates it on every dispatch, assignment, state change and post-wake adjudication; an entry returns to `expected=idle` only by Manager adjudication.
+- On wake the Manager **adjudicates each anomaly**: (a) finished its job — harvest the delivered report, update the manifest, proceed; or (b) incorrectly stopped — diagnose, restart/reassign per `AGENTS.md` §14/§15.1, and report genuine Owner gates per §7. Finished and incorrectly stopped are never conflated.
+- Every sent wake payload is archived under `~/.local/state/eyebrowse/heartbeat-wakes/`; quiet ticks log one journal line.
+
+Any change to the script, classifier, timer interval, manifest schema, or ChatGPT probe requires re-qualification before reliance (labeled setup cases; no product-state fabrication).
+
 ### Restart, migration and retirement
 
 Keep exactly one live local process/controller per native session and one active project-wide Manager. A stopped process, an imported session, its Paseo transport ID and a completed continuity check are separate facts. Preserve the actual session, candidate, source ownership, pending request/reply IDs and recovery evidence; do not infer uninterrupted execution from an imported transcript. Verify model/effort and tool availability after startup, including RPC-specific UI limitations. Do not revive old TUI routes as an implicit fallback.
