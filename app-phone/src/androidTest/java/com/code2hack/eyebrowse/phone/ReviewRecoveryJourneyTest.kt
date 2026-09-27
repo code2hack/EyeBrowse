@@ -116,7 +116,7 @@ class ReviewRecoveryJourneyTest {
         finally {
             val errors=listOf<()->Unit>(
                 { fw4RunOnMainChecked { host.stop();link.stop() } },
-                { await("resources retired") { fw4RunOnMainChecked { StopRecoveryAssertions.resourcesGone(host) && !link.isLinkUp() } } },
+                { await("resources retired") { StopRecoveryAssertions.resourcesGone(host) && !link.isLinkUp() } },
                 { if(browser.isLive() && browser.lastCommittedUrl()==url) {
                     js("sessionStorage.removeItem('${if(stopReconnect) "t03-" else "i11-loads-"}$mission');true")
                     assertEquals("null",js("sessionStorage.getItem('${if(stopReconnect) "t03-" else "i11-loads-"}$mission')"))

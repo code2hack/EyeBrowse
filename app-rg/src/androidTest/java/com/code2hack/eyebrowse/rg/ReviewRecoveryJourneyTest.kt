@@ -90,7 +90,13 @@ class ReviewRecoveryJourneyTest {
             }
             assertNotNull("real key constructed an outstanding command",id)
             val request=BrowserActionMessage(id!!,context,BrowserAction.Edit(target,operation),id!!.split(':')[2].toLong())
-            val result=capture(id!!);assertTrue(result.accepted);assertNull(result.effectSucceeded)
+            val result=capture(id!!);assertTrue(result.accepted)
+            if(operation is EditorOperation.Insert) {
+                assertEquals("EDITOR_APPLIED",result.reason);assertEquals(true,result.effectSucceeded)
+            } else {
+                assertEquals(EditorOperation.Enter,operation)
+                assertEquals("SUBMISSION_REQUESTED",result.reason);assertNull(result.effectSucceeded)
+            }
             Log.i("EyeBrowseReviewRecovery","KEY mission=${j.mission} id=$id context=$context target=$target accepted=true")
             return request to at
         }
