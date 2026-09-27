@@ -22,6 +22,8 @@ class PointerOverlay(context: Context, attrs: AttributeSet?=null) : View(context
     val position get() = model.position
     val sourceRegistered get() = source.registered
     val sourceDescription get() = source.description
+    internal var onSample: ((RotationSample,Long,Int)->Unit)? = null
+    private var displayRotation=0
     var onAvailabilityChanged: ((Boolean)->Unit)?=null
     internal var acceptedSamples=0L
         private set
@@ -39,6 +41,7 @@ class PointerOverlay(context: Context, attrs: AttributeSet?=null) : View(context
     fun bounds(left: Float, top: Float, right: Float, bottom: Float, rotation: Int) {
         // Keep the entire ring inside the measured usable root, including its actual insets.
         val inset=minOf(radius,(right-left).coerceAtLeast(0f)/2,(bottom-top).coerceAtLeast(0f)/2)
+        displayRotation=rotation
         model.resize(PointerBounds(left+inset,top+inset,right-inset,bottom-inset),rotation)
         publishAvailability();requestFrame()
     }
@@ -52,6 +55,7 @@ class PointerOverlay(context: Context, attrs: AttributeSet?=null) : View(context
             check(Looper.myLooper()==Looper.getMainLooper())
             if (!running || registration!=generation) return@onSample
             val receipt=SystemClock.elapsedRealtimeNanos()
+            onSample?.invoke(sample,receipt,displayRotation)
             val before=position
             if (model.sample(sample,receipt)) {
                 acceptedSamples++;lastSampleReceiptNs=receipt

@@ -32,4 +32,19 @@ class PresentationInboxTest {
         assertFalse(inbox.displayed(frame(2)))
         inbox.grant(context,profile.copy(width=479)); assertFalse(inbox.offer(frame(3)))
     }
+    @Test fun duplicateStatusGrantDoesNotResetCaptureIdentityOrPermitDoubleDisplay() {
+        val inbox=PresentationInbox();inbox.grant(context,profile)
+        val original=frame(7)
+        assertTrue(inbox.offer(original));assertSame(original,inbox.take())
+        assertTrue(inbox.displayed(original))
+        repeat(2) { inbox.grant(context,profile) }
+        assertFalse(inbox.offer(original));assertFalse(inbox.displayed(original))
+        assertNull(inbox.take())
+        val fresh=context.copy(viewportEpoch=context.viewportEpoch+1)
+        inbox.grant(fresh,profile)
+        assertFalse(inbox.offer(frame(8)));assertFalse(inbox.displayed(original))
+        val next=frame(1,fresh)
+        assertTrue(inbox.offer(next));assertTrue(inbox.displayed(inbox.take()!!))
+        assertFalse(inbox.displayed(next))
+    }
 }

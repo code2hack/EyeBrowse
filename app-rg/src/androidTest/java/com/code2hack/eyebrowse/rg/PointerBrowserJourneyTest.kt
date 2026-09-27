@@ -74,14 +74,48 @@ class PointerBrowserJourneyTest {
             fail(label)
         }
         fun setup() {
-            main {
-                activity=it;peer=it.presentation;pointer=it.findViewById(R.id.rg_pointer)
-                pointer.stop();pointer.replaceSourceForTest(source);pointer.start()
-                assertEquals("declared RG mounting rotation",Surface.ROTATION_0,it.display!!.rotation)
-                probe=DispatchProbe(it.inputRouter)
+            var lastReceipt = -1L
+            var lastState: Pair<Boolean,Boolean>? = null
+            fun receipt(event:String, force:Boolean=false) {
+                val now=SystemClock.uptimeMillis()
+                val current=activity.hasWindowFocus() to pointer.position.available
+                if(force || current!=lastState || now-lastReceipt>=100) {
+                    lastReceipt=now;lastState=current
+                    Log.i("EyeBrowseSetup","mission=$mission event=$event uptimeMs=$now elapsedNs=${SystemClock.elapsedRealtimeNanos()} focus=${current.first} available=${current.second} attached=${pointer.isAttachedToWindow} shown=${pointer.isShown} size=${pointer.width}x${pointer.height} registered=${pointer.sourceRegistered} accepted=${pointer.acceptedSamples} sampleNs=${pointer.lastSampleReceiptNs} drawNs=${pointer.lastDrawElapsedNs}")
+                }
             }
-            await("focused surface/fresh raw replay") { activity.hasWindowFocus() && pointer.position.available }
-            main { source.adoptCurrentReference() }
+            var focus:ViewTreeObserver.OnWindowFocusChangeListener?=null
+            var layout:View.OnLayoutChangeListener?=null
+            var availability:((Boolean)->Unit)?=null
+            try {
+                main {
+                    activity=it;peer=it.presentation;pointer=it.findViewById(R.id.rg_pointer)
+                    receipt("before-stop",true)
+                    focus=ViewTreeObserver.OnWindowFocusChangeListener { receipt("window-focus",true) }
+                    pointer.viewTreeObserver.addOnWindowFocusChangeListener(focus)
+                    layout=View.OnLayoutChangeListener { _,_,_,_,_,_,_,_,_ -> receipt("layout",true) }
+                    pointer.addOnLayoutChangeListener(layout)
+                    availability=pointer.onAvailabilityChanged
+                    pointer.onAvailabilityChanged={ value -> availability?.invoke(value);receipt("availability",true) }
+                    pointer.stop();receipt("after-stop",true)
+                    pointer.replaceSourceForTest(source);receipt("source-replaced",true)
+                    pointer.start();receipt("after-start",true)
+                    assertEquals("declared RG mounting rotation",Surface.ROTATION_0,it.display!!.rotation)
+                    probe=DispatchProbe(it.inputRouter)
+                }
+                await("focused surface/fresh raw replay") {
+                    receipt("predicate")
+                    activity.hasWindowFocus() && pointer.position.available
+                }
+                main { receipt("setup-pass",true);source.adoptCurrentReference() }
+            } finally {
+                main {
+                    receipt("setup-end",true)
+                    focus?.let { listener -> if(pointer.viewTreeObserver.isAlive) pointer.viewTreeObserver.removeOnWindowFocusChangeListener(listener) }
+                    layout?.let(pointer::removeOnLayoutChangeListener)
+                    pointer.onAvailabilityChanged=availability
+                }
+            }
         }
         fun title()=peer.browserState()?.title?.substringBefore("|G=")
         fun geometry()=JSONObject(checkNotNull(peer.browserState()?.title).substringAfter("|G="))

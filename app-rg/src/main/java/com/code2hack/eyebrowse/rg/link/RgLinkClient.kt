@@ -39,6 +39,8 @@ class RgLinkClient(
         fun onLinkLost()
         fun onConnectFailed(error: LinkError)
         fun onPresentationCompatibility(result: CapabilityNegotiation) {}
+        fun onKeyboardCompatibility(compatible: Boolean) {}
+        fun onContinuousScrollCompatibility(compatible: Boolean) {}
         fun onControl(message: BrowserControlMessage) {}
         fun onPresentation(frame: PresentationFrame) {}
     }
@@ -70,6 +72,8 @@ class RgLinkClient(
             authenticatedPeer = null
             presentationCompatibility = CapabilityNegotiator.negotiate(peer, true)
             listener.onPresentationCompatibility(presentationCompatibility)
+            listener.onKeyboardCompatibility(peer.hasKeyboardCapabilities())
+            listener.onContinuousScrollCompatibility(session.continuousScrollCompatible)
             // Trust commit happens strictly after the pinned TLS peer proved possession of the
             // invitation or its remembered identity (plan §4.2/§8). Locator refresh is allowed
             // for the SAME pinned identity (plan §8 "Changed locator").
@@ -145,6 +149,9 @@ class RgLinkClient(
     /** Bounded disconnect of any owned connection work. */
     fun disconnect() {
         engine?.disconnect()
+        // Core intentionally suppresses callbacks from cancelled operations. Local consumers
+        // still must retire their presentation/input authority when cancellation is deliberate.
+        listener.onLinkLost()
     }
 
     /** Locally authoritative Forget: close the link and remove peer trust (§8). */

@@ -114,6 +114,10 @@ class LinkClientEngine(
      */
     internal var beforeFinalCommitForTest: (() -> Unit)? = null
 
+    /** JVM-only scheduling seams for reader-timeout versus deadline-close ownership. */
+    internal var beforeDeadlineSocketCaptureForTest: (() -> Unit)? = null
+    internal var beforeReleasedSocketCloseForTest: (() -> Unit)? = null
+
     val isBusy: Boolean get() = running.get()
 
     fun sendControl(message: BrowserControlMessage): Boolean = synchronized(operationLock) {
@@ -325,8 +329,10 @@ class LinkClientEngine(
                     val peer = checkNotNull(operation.peerHello)
                     val session = AuthenticatedControlSession(tls, input,
                         peer.hasPresentationCapabilities() && attempt.clientHello.hasPresentationCapabilities(), true,
-                        keyboardCompatible = peer.hasKeyboardCapabilities() && attempt.clientHello.hasKeyboardCapabilities())
+                        keyboardCompatible = peer.hasKeyboardCapabilities() && attempt.clientHello.hasKeyboardCapabilities(),
+                        continuousScrollCompatible = peer.hasContinuousScroll() && attempt.clientHello.hasContinuousScroll())
                     operation.session = session
+                    session.start()
                     listener.onAuthenticatedSession(session, peer)
                     listener.onStateChange(PairingState.CONNECTED)
                     true
@@ -536,6 +542,7 @@ class LinkClientEngine(
                     return@Thread
                 }
             }
+            beforeDeadlineSocketCaptureForTest?.invoke()
             val socketToClose = synchronized(operationLock) {
                 if (
                     activeOperation !== operation ||
@@ -586,6 +593,7 @@ class LinkClientEngine(
                 operation.socket = null
             }
         }
+        beforeReleasedSocketCloseForTest?.invoke()
         closeQuietly(socket)
     }
 
@@ -700,13 +708,17 @@ class LinkClientEngine(
     private fun elapsedMs(sinceNanos: Long) = (System.nanoTime() - sinceNanos) / 1_000_000
 
     internal fun closeQuietly(socket: Socket) {
-        // Failed/cancelled TLS cleanup is part of the bounded operation. Force an abortive TCP
-        // close so SSLSocket.close() cannot spend another read-timeout window on TLS shutdown
-        // after the operation/auth deadline has already expired (review B3/B4).
+        // Failed/cancelled teardown has no extra read budget. SO_LINGER alone does not stop
+        // JSSE from draining input during TLS close after a reader timeout won socket ownership.
         try {
             if (!socket.isClosed) socket.setSoLinger(true, 0)
         } catch (e: Exception) {
             // best effort; close below remains mandatory
+        }
+        try {
+            socket.shutdownInput()
+        } catch (e: Exception) {
+            // Unconnected/closed sockets and missing TLS close_notify still require final close.
         }
         try {
             socket.close()

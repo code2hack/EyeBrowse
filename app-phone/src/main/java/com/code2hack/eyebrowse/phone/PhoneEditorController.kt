@@ -23,6 +23,7 @@ class PhoneEditorController(
     private var adapter: RendererEditorAdapter? = null
     private val closing = ArrayList<(Boolean) -> Unit>()
     private val observe = Runnable { observeCurrent() }
+    private var activationCommandId: String? = null
     private var awaitingProfile: ControlContext? = null
     private val hosting = HostingController.get(app)
     private var profilePreparation: Runnable? = null
@@ -36,6 +37,8 @@ class PhoneEditorController(
         }, "eyebrowse-editor-asset").start()
     }
 
+    private var drawReceiptCount = 0
+
     fun isQuiescent(): Boolean = authority.phase == PhoneEditorAuthority.Phase.EMPTY
     fun isAvailable(): Boolean = adapter != null
 
@@ -47,7 +50,8 @@ class PhoneEditorController(
         }
         return EditorStateMessage(snapshot.context, current?.target, current?.kind, current?.enter,
             current != null && authority.phase == PhoneEditorAuthority.Phase.READY &&
-                hosting.localEditorFocusReady() && snapshot.presentationStatus == PresentationStatus.READY)
+                hosting.localEditorFocusReady() && snapshot.presentationStatus == PresentationStatus.READY,
+            activationCommandId.takeIf { current != null })
     }
 
     private fun changed() {
@@ -57,8 +61,10 @@ class PhoneEditorController(
     }
 
     /** Only an explicit already-admitted activation may request a new editor grant. */
-    fun openAfterActivation(activation: BrowserAction.ActivateAt, callback: (Boolean) -> Unit = {}) =
-        open(activation, null, callback)
+    fun openAfterActivation(activation: BrowserAction.ActivateAt, commandId: String? = null,
+                            callback: (Boolean) -> Unit = {}) {
+        open(activation, null, callback, commandId)
+    }
 
     fun resumeAfterProfile(previousTarget: EditorTarget, callback: (Boolean) -> Unit = {}) =
         preparePresentation(previousTarget) { geometry, editor -> callback(geometry && editor) }
@@ -83,7 +89,7 @@ class PhoneEditorController(
             android.util.Log.i("EyeBrowseEditor", "profile geometry settle ms=${android.os.SystemClock.elapsedRealtime()-started} ready=$ready")
             if (!ready) callback(false, false)
             else if (previousTarget == null) callback(true, false)
-            else open(null, previousTarget) { callback(true, it) }
+            else open(null, previousTarget, { callback(true, it) })
         }
         val check = object : Runnable {
             override fun run() {
@@ -114,11 +120,12 @@ class PhoneEditorController(
         profilePreparation = check; cancelProfilePreparation = { finish(false) }; check.run()
     }
 
-    private fun open(activation: BrowserAction.ActivateAt?, previousTarget: EditorTarget?, callback: (Boolean) -> Unit) {
+    private fun open(activation: BrowserAction.ActivateAt?, previousTarget: EditorTarget?, callback: (Boolean) -> Unit, commandId: String? = null) {
         checkMain()
         val adapter = adapter ?: return callback(false)
         val opening = authority.beginOpen(state(), connection(), profileTransition = previousTarget != null,
             localFocusReady = hosting.localEditorFocusReady()) ?: return callback(false)
+        if (activation != null) activationCommandId = commandId
         awaitingProfile = if (previousTarget != null) opening.context else null
         var reported = false
         fun report(ok: Boolean) { if (!reported) { reported = true; callback(ok) } }
@@ -180,7 +187,30 @@ class PhoneEditorController(
                 // Resolve the original transport callback without touching the successor.
                 report(null, "EDITOR_UNCERTAIN"); return@edit
             }
-            when (if (correlated) result.status else RendererEditorAdapter.Status.UNCERTAIN) {
+            val status = if (correlated) result.status else RendererEditorAdapter.Status.UNCERTAIN
+            if (status == RendererEditorAdapter.Status.APPLIED || status == RendererEditorAdapter.Status.SUBMISSION_REQUESTED) {
+                // Renderer-only edits and submit handlers need a native traversal to request fresh capture.
+                val ready = stateMessage().ready
+                val view = if (ready) browser.view() else null
+                val receipt = ++drawReceiptCount
+                if (receipt <= 32) android.util.Log.i("EyeBrowseEditorDraw",
+                    "EDIT_GUARD seq=$receipt at=${android.os.SystemClock.elapsedRealtime()} ready=$ready viewPresent=${view!=null}")
+                else if (receipt == 33) android.util.Log.i("EyeBrowseEditorDraw","EDIT_RECEIPTS_TRUNCATED")
+                if (view != null) {
+                    if (receipt <= 32) android.util.Log.i("EyeBrowseEditorDraw",
+                        "INVALIDATE_BEGIN seq=$receipt at=${android.os.SystemClock.elapsedRealtime()}")
+                    view.invalidate()
+                    if (receipt <= 32) android.util.Log.i("EyeBrowseEditorDraw",
+                        "INVALIDATE_RETURN seq=$receipt at=${android.os.SystemClock.elapsedRealtime()}")
+                    if (receipt <= 32) android.util.Log.i("EyeBrowseEditorDraw",
+                        "PARENT_INVALIDATE_BEGIN seq=$receipt at=${android.os.SystemClock.elapsedRealtime()}")
+                    // localFocusReady fences this parent to the current Presentation's content.
+                    (view.parent as? android.view.View)?.invalidate()
+                    if (receipt <= 32) android.util.Log.i("EyeBrowseEditorDraw",
+                        "PARENT_INVALIDATE_RETURN seq=$receipt at=${android.os.SystemClock.elapsedRealtime()}")
+                }
+            }
+            when (status) {
                 RendererEditorAdapter.Status.APPLIED -> report(true, "EDITOR_APPLIED")
                 RendererEditorAdapter.Status.SUBMISSION_REQUESTED -> report(null, "SUBMISSION_REQUESTED")
                 RendererEditorAdapter.Status.UNCERTAIN -> report(null, "EDITOR_UNCERTAIN")

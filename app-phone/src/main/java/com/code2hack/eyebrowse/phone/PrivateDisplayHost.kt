@@ -216,9 +216,25 @@ class PrivateDisplayHost(
                 (if (retiringProfileReader != null) 1 else 0))
     }
 
+    /** Physical ownership only; a same-window resize may replace its reader, not these identities. */
+    internal fun captureProfileOwner(session: PhoneBrowserSession): () -> Boolean {
+        val originalPresentation = presentation
+        val originalDisplay = virtualDisplay
+        val originalView = session.view()
+        val originalDocument = session.documentIdentity()
+        val originalWindow = originalPresentation?.windowIdentity()
+        return {
+            originalPresentation != null && originalDisplay != null && originalView != null &&
+                presentation === originalPresentation && virtualDisplay === originalDisplay &&
+                session.view() === originalView && session.documentIdentity() == originalDocument &&
+                originalPresentation.windowIdentity() == originalWindow
+        }
+    }
+
     /** Dedicated same-window transaction. Ordinary release/expiry keeps its destructive meaning. */
     fun resizeProfile(profile: HostingPresentationProfile, session: PhoneBrowserSession,
-                      deadlineElapsedMs: Long, completed: (Boolean) -> Unit) {
+                      deadlineElapsedMs: Long, ownsRequest: () -> Boolean = { true },
+                      onRetired: () -> Unit = {}, completed: (Boolean) -> Unit) {
         check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
         val shown = presentation
         val display = virtualDisplay
@@ -227,102 +243,152 @@ class PrivateDisplayHost(
         if (profileResize != null || stagedProfileReader != null || retiringProfileReader != null ||
             shown == null || display == null || view == null || oldReader == null || displaySurfaceDetached ||
             !localFocusReady(session) || !shown.isAvailable() || !display.display.isValid ||
-            display.display.state != Display.STATE_ON || profile.densityDpi != densityDpi ||
-            SystemClock.elapsedRealtime() >= deadlineElapsedMs) { completed(false); return }
+            profile.densityDpi != densityDpi || SystemClock.elapsedRealtime() >= deadlineElapsedMs) { completed(false); return }
+        if (!ownsRequest()) { onRetired(); completed(false); return }
+        if (display.display.state != Display.STATE_ON && display.display.state != Display.STATE_OFF) { completed(false); return }
         val request = Any()
         profileResize = request
         val serial = ++profileSerial
         val focusSerial = shown.focusLossSerial()
         val document = session.documentIdentity()
+        val windowIdentity = shown.windowIdentity()
         var finished = false
+        var admission: ProfileOffSettlement? = null
         var timeout: Runnable? = null
         fun finish(ok: Boolean) {
             if (finished) return
             finished = true
+            admission?.cancel()
             timeout?.let(main::removeCallbacks)
             if (profileResize === request) {
                 profileResize = null
                 cancelProfileResize = null
                 lastProfileSettlement = null
             }
-            completed(ok)
+            val result = ok && (admission?.completionInTime() ?: (SystemClock.elapsedRealtime() < deadlineElapsedMs))
+            completed(result)
+            Log.i("EyeBrowseProfileSettlement","host=$resourceSerial profile[$serial] terminal-return result=$result deadline=$deadlineElapsedMs observedAt=${SystemClock.elapsedRealtime()}")
         }
         cancelProfileResize = {
-            if (profileResize === request) { profileResize = null; lastProfileSettlement = null }
-            cancelProfileResize = null
+            if (profileResize === request) {
+                profileResize = null; lastProfileSettlement = null; cancelProfileResize = null
+            }
+            admission?.cancel()
+            onRetired()
             timeout?.let(main::removeCallbacks)
             main.post { finish(false) } // No recursive Stop during resource teardown.
         }
-        timeout = Runnable { if (profileResize === request) finish(false) }
-        main.postDelayed(timeout!!, (deadlineElapsedMs-SystemClock.elapsedRealtime()).coerceAtLeast(0))
-        fun current() = profileResize === request && presentation === shown && virtualDisplay === display &&
-            session.view() === view && session.documentIdentity() == document && view.parent === shown.container() &&
-            shown.focusLossSerial() == focusSerial && localFocusReady(session) && shown.isAvailable()
-        val staged = try { factory.createImageReader(profile.width, profile.height) }
-            catch (_: RuntimeException) { null }
-        if (staged == null) { finish(false); return }
-        stagedProfileReader = staged
-        Log.i(TAG, "profile[$serial] staged reader; overlap=2 oldSurfaceValid=${oldReader.surface.isValid}")
-        stopCapture() // No close/null surface. The queued barrier waits outside every monitor.
-        val capture = captureHandler
-        val settle = object : Runnable {
+        fun ownerCurrent() = profileResize === request && ownsRequest() && presentation === shown &&
+            virtualDisplay === display && session.view() === view && session.documentIdentity() == document &&
+            shown.windowIdentity() == windowIdentity
+        fun reject() { if (!ownerCurrent()) onRetired(); finish(false) }
+        timeout = object : Runnable {
             override fun run() {
-                if (profileResize !== request) return
-                if (!current() || SystemClock.elapsedRealtime() >= deadlineElapsedMs) { finish(false); return }
-                val g = profileGeometry(session)
-                if (g.display.valid && g.display.state == Display.STATE_ON && !g.display.surfaceDetached &&
-                    g.display.actualWidth == profile.width && g.display.actualHeight == profile.height &&
-                    g.density == profile.densityDpi && g.decorWidth == profile.width && g.decorHeight == profile.height &&
-                    g.containerWidth == profile.width && g.containerHeight == profile.height &&
-                    g.measuredWidth == profile.width && g.measuredHeight == profile.height &&
-                    g.viewWidth == profile.width && g.viewHeight == profile.height && retiringProfileReader == null) {
-                    Log.i(TAG, "profile[$serial] native layout settled $g")
-                    finish(true)
-                } else view.postOnAnimation(this)
+                if (finished || profileResize !== request) return
+                val remaining = deadlineElapsedMs-SystemClock.elapsedRealtime()
+                if (remaining <= 0) reject()
+                else if (!main.postDelayed(this,remaining)) reject()
             }
         }
-        lastProfileSettlement = settle
-        val swap = Runnable {
-            if (!current()) { finish(false); return@Runnable }
-            try {
-                Log.i(TAG, "profile[$serial] quiesced; resize ${profile.width}x${profile.height}@${profile.densityDpi}")
-                display.resize(profile.width, profile.height, profile.densityDpi)
-                Log.i(TAG, "profile[$serial] setSurface(non-null) oldSurfaceValid=${oldReader.surface.isValid}")
-                display.setSurface(staged.surface)
-                synchronized(nativeLock) {
-                    imageReader = staged
-                    stagedProfileReader = null
-                    retiringProfileReader = oldReader
-                    width = profile.width; height = profile.height
-                    displaySurfaceDetached = false
+        if (!main.postDelayed(timeout!!, (deadlineElapsedMs-SystemClock.elapsedRealtime()).coerceAtLeast(0))) { reject(); return }
+        fun current() = ownerCurrent() && view.parent === shown.container() &&
+            shown.focusLossSerial() == focusSerial && localFocusReady(session) && shown.isAvailable()
+        fun beginNative() {
+            if (!current() || imageReader !== oldReader || stagedProfileReader != null || retiringProfileReader != null ||
+                displaySurfaceDetached || !display.display.isValid ||
+                densityDpi != profile.densityDpi || SystemClock.elapsedRealtime() >= deadlineElapsedMs) { reject(); return }
+            if (display.display.state == Display.STATE_OFF) { admission?.awaitOffAgain(); return }
+            if (display.display.state != Display.STATE_ON) { reject(); return }
+            admission?.cancel() // Native staging starts once; no retry of partially applied work.
+            val staged = try { factory.createImageReader(profile.width, profile.height) }
+                catch (_: RuntimeException) { null }
+            if (staged == null) { finish(false); return }
+            stagedProfileReader = staged
+            Log.i(TAG, "profile[$serial] staged reader; overlap=2 oldSurfaceValid=${oldReader.surface.isValid}")
+            stopCapture() // No close/null surface. The queued barrier waits outside every monitor.
+            val capture = captureHandler
+            val settle = object : Runnable {
+                override fun run() {
+                    if (profileResize !== request) return
+                    if (!current() || SystemClock.elapsedRealtime() >= deadlineElapsedMs) { reject(); return }
+                    val g = profileGeometry(session)
+                    if (g.display.valid && g.display.state == Display.STATE_ON && !g.display.surfaceDetached &&
+                        g.display.actualWidth == profile.width && g.display.actualHeight == profile.height &&
+                        g.density == profile.densityDpi && g.decorWidth == profile.width && g.decorHeight == profile.height &&
+                        g.containerWidth == profile.width && g.containerHeight == profile.height &&
+                        g.measuredWidth == profile.width && g.measuredHeight == profile.height &&
+                        g.viewWidth == profile.width && g.viewHeight == profile.height && retiringProfileReader == null) {
+                        Log.i(TAG, "profile[$serial] native layout settled $g")
+                        finish(true)
+                    } else view.postOnAnimation(this)
                 }
-                val retire = Runnable {
-                    val closed = runCatching { oldReader.close() }.isSuccess
-                    main.post {
-                        retiringProfileCloseScheduled = false
-                        if (closed && retiringProfileReader === oldReader) retiringProfileReader = null
-                        Log.i(TAG, "profile[$serial] old reader closed=$closed")
-                        if (profileResize === request) {
-                            if (!closed) finish(false) else {
-                                shown.container().requestLayout(); view.requestLayout()
-                                view.postOnAnimation(settle)
+            }
+            lastProfileSettlement = settle
+            val swap = Runnable {
+                if (!current() || imageReader !== oldReader || stagedProfileReader !== staged || retiringProfileReader != null ||
+                    displaySurfaceDetached || !display.display.isValid || display.display.state != Display.STATE_ON ||
+                    densityDpi != profile.densityDpi || SystemClock.elapsedRealtime() >= deadlineElapsedMs) { reject(); return@Runnable }
+                try {
+                    Log.i("EyeBrowseProfileSettlement","host=$resourceSerial profile[$serial] native-admission deadline=$deadlineElapsedMs at=${SystemClock.elapsedRealtime()}")
+                    Log.i(TAG, "profile[$serial] quiesced; resize ${profile.width}x${profile.height}@${profile.densityDpi}")
+                    display.resize(profile.width, profile.height, profile.densityDpi)
+                    if (!current() || imageReader !== oldReader || stagedProfileReader !== staged ||
+                        !display.display.isValid || display.display.state != Display.STATE_ON ||
+                        SystemClock.elapsedRealtime() >= deadlineElapsedMs) { reject(); return@Runnable }
+                    Log.i(TAG, "profile[$serial] setSurface(non-null) oldSurfaceValid=${oldReader.surface.isValid}")
+                    display.setSurface(staged.surface)
+                    synchronized(nativeLock) {
+                        imageReader = staged
+                        stagedProfileReader = null
+                        retiringProfileReader = oldReader
+                        width = profile.width; height = profile.height
+                        displaySurfaceDetached = false
+                    }
+                    val retire = Runnable {
+                        val closed = runCatching { oldReader.close() }.isSuccess
+                        main.post {
+                            if (retiringProfileReader === oldReader) {
+                                retiringProfileCloseScheduled = false
+                                if (closed) retiringProfileReader = null
+                            }
+                            Log.i("EyeBrowseProfileSettlement","host=$resourceSerial profile[$serial] reader-retired closed=$closed deadline=$deadlineElapsedMs at=${SystemClock.elapsedRealtime()}")
+                            Log.i(TAG, "profile[$serial] old reader closed=$closed")
+                            if (profileResize === request) {
+                                if (!closed) finish(false) else {
+                                    shown.container().requestLayout(); view.requestLayout()
+                                    view.postOnAnimation(settle)
+                                }
                             }
                         }
                     }
-                }
-                retiringProfileCloseScheduled = true
-                if (capture == null) retire.run() else if (!capture.post(retire)) {
-                    retiringProfileCloseScheduled = false
+                    retiringProfileCloseScheduled = true
+                    if (capture == null) retire.run() else if (!capture.post(retire)) {
+                        retiringProfileCloseScheduled = false
+                        finish(false)
+                    }
+                } catch (error: RuntimeException) {
+                    Log.e(TAG, "profile[$serial] platform failure ${error.javaClass.simpleName}")
+                    // Keep both producers owned until caller's explicit Stop releases the display.
                     finish(false)
                 }
-            } catch (error: RuntimeException) {
-                Log.e(TAG, "profile[$serial] platform failure ${error.javaClass.simpleName}")
-                // Keep both producers owned until caller's explicit Stop releases the display.
-                finish(false)
             }
+            if (capture == null) { if (!main.post(swap)) reject() }
+            else if (!capture.post { main.post(swap) }) reject()
         }
-        if (capture == null) main.post(swap)
-        else if (!capture.post { main.post(swap) }) finish(false)
+        Log.i("EyeBrowseProfileSettlement","host=$resourceSerial profile[$serial] pre-admission state=${display.display.state} deadline=$deadlineElapsedMs at=${SystemClock.elapsedRealtime()} focusSerial=$focusSerial")
+        admission = ProfileOffSettlement(deadlineElapsedMs,SystemClock::elapsedRealtime,{
+            ProfileOffSettlement.State(ownerCurrent(), (imageReader == null || imageReader === oldReader) && presentation === shown && virtualDisplay === display && session.view() === view,
+                imageReader != null, stagedProfileReader == null && retiringProfileReader == null,
+                !displaySurfaceDetached && view.parent === shown.container(), densityDpi == profile.densityDpi,
+                localFocusReady(session), shown.focusLossSerial() == focusSerial, shown.isAvailable(), display.display.isValid,
+                when(display.display.state) { Display.STATE_OFF -> ProfileOffSettlement.Display.OFF; Display.STATE_ON -> ProfileOffSettlement.Display.ON; else -> ProfileOffSettlement.Display.UNSUPPORTED })
+        }, { task,delay -> main.postDelayed(task,delay) }, main::removeCallbacks,
+            { Log.i("EyeBrowseProfileSettlement","host=$resourceSerial profile[$serial] ON-observed deadline=$deadlineElapsedMs at=${SystemClock.elapsedRealtime()}");beginNative() },
+            { retired ->
+                Log.i("EyeBrowseProfileSettlement","host=$resourceSerial profile[$serial] admission-failed retired=$retired deadline=$deadlineElapsedMs at=${SystemClock.elapsedRealtime()}")
+                if(retired) onRetired();finish(false)
+            })
+        admission!!.start()
     }
 
     private data class CaptureBinding(
@@ -1134,13 +1200,19 @@ class PrivateDisplayHost(
         }
     }
 
+    private var drawReceiptCount = 0
+
     /** A normal app-owned container draw is the demand source; the sink queue is never freshness authority. */
     private fun onWindowDraw(serial: Long, elapsedMs: Long) {
         lastObservedDrawSerial = serial
         lastObservedDrawElapsedMs = elapsedMs
+        val receipt = ++drawReceiptCount
         var explicitCycle: Long? = null
         var associated = false
         synchronized(nativeLock) {
+            if (receipt <= 64) Log.i("EyeBrowseEditorDraw",
+                "PARENT_DRAW seq=$receipt serial=$serial at=$elapsedMs active=$captureActive released=$captureReleased bound=${captureBinding!=null} terminal=$captureTerminalFailure cycle=${activeCaptureCycle!=null} transaction=${activeCaptureTransaction!=null} copy=${inFlightWindowCopy!=null}")
+            else if (receipt == 65) Log.i("EyeBrowseEditorDraw","PARENT_RECEIPTS_TRUNCATED")
             if (!captureActive || captureReleased || captureBinding == null || captureTerminalFailure) return
             val cycle = activeCaptureCycle
             if (cycle != null) {
@@ -1164,6 +1236,7 @@ class PrivateDisplayHost(
                 " elapsed=" + elapsedMs + " associated=" + associated)
             return
         }
+        if (receipt <= 64) Log.i("EyeBrowseEditorDraw","PARENT_DEMAND seq=$receipt serial=$serial at=$elapsedMs")
         requestCaptureDemand(elapsedMs)
     }
 

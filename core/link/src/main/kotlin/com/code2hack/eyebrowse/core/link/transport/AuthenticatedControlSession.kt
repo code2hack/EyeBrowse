@@ -19,6 +19,8 @@ class AuthenticatedControlSession internal constructor(
     private val receivesPresentation: Boolean,
     private val writeTimeoutMs: Long = 30_000,
     val keyboardCompatible: Boolean = false,
+    private val sendAuthOk: Boolean = false,
+    val continuousScrollCompatible: Boolean = false,
 ) {
     private val queue = MultiplexedRecordQueue()
     private val lock = java.lang.Object()
@@ -30,6 +32,8 @@ class AuthenticatedControlSession internal constructor(
     private val legacyControls = ArrayDeque<ByteArray>()
     @Volatile private var writeStartedNanos = 0L
     @Volatile private var readStartedNanos = 0L
+    /** JVM scheduling seam after the server's AuthOk flush; production leaves it null. */
+    @Volatile internal var afterAuthOkForTest: (() -> Unit)? = null
     private val writeGuard = Thread({
         try {
             while (!closed) {
@@ -40,8 +44,14 @@ class AuthenticatedControlSession internal constructor(
                 }) close()
             }
         } catch (_: InterruptedException) { }
-    }, "eyebrowse-write-deadline").apply { isDaemon = true; start() }
-    private val writer = Thread({ writeLoop() }, "eyebrowse-control-writer").apply { isDaemon = true; start() }
+    }, "eyebrowse-write-deadline").apply { isDaemon = true }
+    private val writer = Thread({ writeLoop() }, "eyebrowse-control-writer").apply { isDaemon = true }
+
+    /** Start only after the owning engine has published this authenticated session. */
+    internal fun start() {
+        writeGuard.start()
+        writer.start()
+    }
 
     /** Owner adapter publishes a new grant; old pending frames cannot outlive it. */
     fun setPresentation(context: ControlContext?, profile: PresentationProfile?) = synchronized(lock) {
@@ -111,6 +121,16 @@ class AuthenticatedControlSession internal constructor(
     private fun writeLoop() {
         try {
             val output = socket.outputStream
+            if (sendAuthOk && !closed) {
+                // AuthOk uses the handshake framing even when post-auth records are multiplexed.
+                // The same writer owns both, so queued controls cannot overtake authentication.
+                writeStartedNanos = System.nanoTime()
+                try {
+                    output.write(LinkFrameCodec.encode(LinkMessageCodec.encode(AuthOkMessage)))
+                    output.flush()
+                } finally { writeStartedNanos = 0 }
+                afterAuthOkForTest?.invoke()
+            }
             while (!closed) {
                 val bytes = synchronized(lock) {
                     val next = if (presentationCompatible) queue.poll() else legacyControls.removeFirstOrNull()

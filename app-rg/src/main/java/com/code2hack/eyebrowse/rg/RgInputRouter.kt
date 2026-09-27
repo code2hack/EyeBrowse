@@ -21,6 +21,8 @@ internal class RgInputRouter(
 ) {
     internal sealed interface Target {
         data class Native(val view: Button, val action: LocalInputAction, val label: String): Target
+        data class Keyboard(val view: Button, val intent: RgKeyboard.Intent): Target
+        data class Address(val view: Button): Target
         data class Page(val geometry: PointerImageGeometry, val point: InputPoint): Target
     }
     private data class Tap(val point: InputPoint, val target: Target, val geometryVersion: Long,
@@ -94,10 +96,12 @@ internal class RgInputRouter(
         if(active) gestures.deadline?.let { main.postAtTime(confirmation,it) }
         if(!gestures.hasWork) gestureContext=null
     }
+    internal fun surfaceAvailable() = active && focused && activity.hasWindowFocus() && browserRoot.isShown && !occluded()
     private fun usable() = active && focused && activity.hasWindowFocus() && browserRoot.isShown &&
-        pointer.inputPosition().available && !occluded()
+        (presentation.reading || pointer.inputPosition().available) && !occluded()
 
     private fun captureTap(): Tap? {
+        if(presentation.reading) return null
         if(!usable()) return null
         val point=pointer.inputPosition().let { InputPoint(it.x,it.y) }
         val input=presentation.inputSnapshot()
@@ -106,6 +110,7 @@ internal class RgInputRouter(
         return Tap(point,target,geometryVersion,input,SystemClock.uptimeMillis())
     }
     private fun confirmedTap(tap: Tap?) {
+        if(presentation.reading) return
         val confirmed=SystemClock.uptimeMillis()
         val accepted=tap!=null && usable() && tap.geometryVersion==geometryVersion &&
             targetAt(tap.point,presentation.inputSnapshot())==tap.target &&
@@ -113,6 +118,8 @@ internal class RgInputRouter(
                 when(val target=tap.target) {
                     is Target.Native -> tap.input.allows(target.action) && target.view.isEnabled && target.view.isShown &&
                         target.view.performClick().also { if(it) nativeInvocations++ }
+                    is Target.Keyboard -> presentation.keyboard.current(target.intent) && presentation.key(target.intent)
+                    is Target.Address -> tap.input.addressAvailable && presentation.openAddressKeyboard()
                     is Target.Page -> tap.input.pageReady && presentation.activateAt(target.point.x,target.point.y)!=null
                 }
             }
@@ -122,6 +129,7 @@ internal class RgInputRouter(
     private fun scroll(delta: Int) {
         val confirmed=SystemClock.uptimeMillis()
         val input=gestureContext
+        presentation.suspendReadingScroll()
         // Swipe keeps its original availability/context even if a background refill finishes at UP.
         val accepted=usable() && input?.pageReady==true && presentation.dispatchIfCurrent(input) {
             presentation.scrollBy(0f,delta.toFloat())!=null
@@ -175,7 +183,7 @@ internal class RgInputRouter(
         while(child!==root) {
             val parent=child.parent as? ViewGroup ?: return true
             val ordered=children(parent);val index=ordered.indexOf(child)
-            if(ordered.drop(index+1).any { it!==pointer && it.isShown && it.alpha>0 && it.width>0 && it.height>0 }) return true
+            if(ordered.drop(index+1).any { it!==pointer && it.id!=R.id.rg_reading_notice && it.isShown && it.alpha>0 && it.width>0 && it.height>0 }) return true
             child=parent
         }
         return false
@@ -183,6 +191,9 @@ internal class RgInputRouter(
     internal fun targetAt(point: InputPoint, input: RgInputSnapshot): Target? {
         val view=hit(root,point) ?: return null
         if(view is Button) {
+            val key = view.tag as? RgKeyboard.Intent
+            if (key != null) return if (view.isEnabled && presentation.keyboard.current(key) && presentation.canKey(key.key)) Target.Keyboard(view, key) else null
+            if (view.id == R.id.rg_detail) return if (view.isEnabled && input.addressAvailable) Target.Address(view) else null
             val action=when(view.id) {
                 R.id.rg_recenter -> LocalInputAction.RECENTER
                 R.id.rg_retry -> LocalInputAction.RETRY

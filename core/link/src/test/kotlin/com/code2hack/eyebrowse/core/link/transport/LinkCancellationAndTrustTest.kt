@@ -28,6 +28,7 @@ class LinkCancellationAndTrustTest {
 
     private lateinit var server: Harness.ServerHarness
     private var port: Int = 0
+    private var deadlineCase = false
 
     @Before
     fun setUp() {
@@ -37,7 +38,9 @@ class LinkCancellationAndTrustTest {
 
     @After
     fun tearDown() {
+        val gateBefore = server.helloGate?.count
         server.helloGate?.countDown()
+        if (deadlineCase) println("B4_CLEANUP existingAfter gateBefore=$gateBefore gateAfter=${server.helloGate?.count}")
         server.stop()
     }
 
@@ -154,7 +157,15 @@ class LinkCancellationAndTrustTest {
     }
 
     @Test
-    fun `slow TCP then stalled auth respects actual aggregate operation deadline (B4)`() {
+    fun `slow TCP then stalled auth respects actual aggregate operation deadline (B4)`() =
+        slowTcpDeadline(readerTimeoutWins = false)
+
+    @Test
+    fun `reader timeout releases ownership before deadline capture without a second close timeout`() =
+        slowTcpDeadline(readerTimeoutWins = true)
+
+    private fun slowTcpDeadline(readerTimeoutWins: Boolean) {
+        deadlineCase = true
         server.helloGate = CountDownLatch(1)
         val tight = LinkTimings(
             connectTimeoutMs = 2_000,
@@ -165,6 +176,19 @@ class LinkCancellationAndTrustTest {
         )
         val client = Harness.ClientHarness(timings = tight)
         client.startEngine()
+        val readerReleased = CountDownLatch(1)
+        val guardObserved = CountDownLatch(1)
+        val readerWon = java.util.concurrent.atomic.AtomicBoolean(false)
+        val guardWaitMs = AtomicLong(0)
+        if (readerTimeoutWins) {
+            client.engine.beforeReleasedSocketCloseForTest = { readerReleased.countDown() }
+            client.engine.beforeDeadlineSocketCaptureForTest = {
+                val before = System.nanoTime()
+                readerWon.set(readerReleased.await(400, TimeUnit.MILLISECONDS))
+                guardWaitMs.set(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - before))
+                guardObserved.countDown()
+            }
+        }
         val tcpElapsedMs = AtomicLong(0)
         client.engine.tcpConnectForTest = { socket, address, timeoutMs ->
             val tcpStarted = System.nanoTime()
@@ -175,21 +199,27 @@ class LinkCancellationAndTrustTest {
         val invitation = server.generateInvitation()
 
         val started = System.nanoTime()
-        client.engine.connect(client.attempt(server.identity.spkiSha256Hex(), port, invitation))
-        val failure = client.connectFailed.pollFirst(5, TimeUnit.SECONDS)
-        val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
+        try {
+            client.engine.connect(client.attempt(server.identity.spkiSha256Hex(), port, invitation))
+            val failure = client.connectFailed.pollFirst(5, TimeUnit.SECONDS)
+            val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
 
-        assertEquals(LinkError.AuthenticationFailed, failure)
-        assertTrue("test did not consume a material TCP phase", tcpElapsedMs.get() >= 900)
-        assertTrue(
-            "operation exceeded configured budget plus 500 ms scheduling slack: " +
-                "elapsed=${elapsedMs}ms budget=${tight.operationBudgetMs}ms tcp=${tcpElapsedMs.get()}ms",
-            elapsedMs <= tight.operationBudgetMs + 500,
-        )
-        assertTrue(client.authenticated.isEmpty())
-        assertFalse(client.stateChanges.contains(PairingState.CONNECTED))
-        server.helloGate!!.countDown()
-        client.engine.disconnect()
+            if (readerTimeoutWins) {
+                assertTrue("deadline guard must observe reader ownership release", guardObserved.await(500, TimeUnit.MILLISECONDS))
+                assertTrue("reader must win without a manufactured socket timeout", readerWon.get())
+                println("B4_READER_WINS guardWaitMs=${guardWaitMs.get()} elapsedMs=$elapsedMs")
+            }
+            assertEquals(LinkError.AuthenticationFailed, failure)
+            assertTrue("test did not consume a material TCP phase", tcpElapsedMs.get() >= 900)
+            assertTrue(
+                "operation exceeded configured budget plus 500 ms scheduling slack: " +
+                    "elapsed=${elapsedMs}ms budget=${tight.operationBudgetMs}ms tcp=${tcpElapsedMs.get()}ms",
+                elapsedMs <= tight.operationBudgetMs + 500,
+            )
+            assertTrue(client.authenticated.isEmpty())
+            assertFalse(client.stateChanges.contains(PairingState.CONNECTED))
+            server.helloGate!!.countDown()
+        } finally { client.engine.disconnect() }
     }
 
     @Test
