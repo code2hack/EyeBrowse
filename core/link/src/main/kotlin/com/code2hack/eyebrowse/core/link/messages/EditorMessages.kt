@@ -11,8 +11,12 @@ import kotlinx.serialization.Serializable
     val kind: EditorKind?,
     val enter: EditorEnter?,
     val ready: Boolean,
+    val activationCommandId: String? = null,
 ) : BrowserControlMessage {
-    init { require(!ready || (target != null && kind != null && enter != null)) }
+    init {
+        require(!ready || (target != null && kind != null && enter != null))
+        require(activationCommandId == null || activationCommandId.length in 1..BrowserCommandId.MAX_LENGTH)
+    }
 }
 
 @Serializable data class EditorCloseMessage(val requestId: String, val context: ControlContext, val target: EditorTarget) : BrowserControlMessage {
@@ -25,7 +29,8 @@ import kotlinx.serialization.Serializable
 
 /** Transition ids are monotonically increasing within the authenticated connection. */
 @Serializable data class ViewportUpdateMessage(val transitionId: Long, val context: ControlContext,
-                                             val profile: PresentationProfile) : BrowserControlMessage {
+                                             val profile: PresentationProfile,
+                                             val retainEditor: Boolean = true) : BrowserControlMessage {
     init { require(transitionId > 0) }
 }
 

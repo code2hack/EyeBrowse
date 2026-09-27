@@ -23,6 +23,7 @@ class PhoneEditorController(
     private var adapter: RendererEditorAdapter? = null
     private val closing = ArrayList<(Boolean) -> Unit>()
     private val observe = Runnable { observeCurrent() }
+    private var activationCommandId: String? = null
     private var awaitingProfile: ControlContext? = null
     private val hosting = HostingController.get(app)
     private var profilePreparation: Runnable? = null
@@ -47,7 +48,8 @@ class PhoneEditorController(
         }
         return EditorStateMessage(snapshot.context, current?.target, current?.kind, current?.enter,
             current != null && authority.phase == PhoneEditorAuthority.Phase.READY &&
-                hosting.localEditorFocusReady() && snapshot.presentationStatus == PresentationStatus.READY)
+                hosting.localEditorFocusReady() && snapshot.presentationStatus == PresentationStatus.READY,
+            activationCommandId.takeIf { current != null })
     }
 
     private fun changed() {
@@ -57,8 +59,10 @@ class PhoneEditorController(
     }
 
     /** Only an explicit already-admitted activation may request a new editor grant. */
-    fun openAfterActivation(activation: BrowserAction.ActivateAt, callback: (Boolean) -> Unit = {}) =
-        open(activation, null, callback)
+    fun openAfterActivation(activation: BrowserAction.ActivateAt, commandId: String? = null,
+                            callback: (Boolean) -> Unit = {}) {
+        open(activation, null, callback, commandId)
+    }
 
     fun resumeAfterProfile(previousTarget: EditorTarget, callback: (Boolean) -> Unit = {}) =
         preparePresentation(previousTarget) { geometry, editor -> callback(geometry && editor) }
@@ -83,7 +87,7 @@ class PhoneEditorController(
             android.util.Log.i("EyeBrowseEditor", "profile geometry settle ms=${android.os.SystemClock.elapsedRealtime()-started} ready=$ready")
             if (!ready) callback(false, false)
             else if (previousTarget == null) callback(true, false)
-            else open(null, previousTarget) { callback(true, it) }
+            else open(null, previousTarget, { callback(true, it) })
         }
         val check = object : Runnable {
             override fun run() {
@@ -114,11 +118,12 @@ class PhoneEditorController(
         profilePreparation = check; cancelProfilePreparation = { finish(false) }; check.run()
     }
 
-    private fun open(activation: BrowserAction.ActivateAt?, previousTarget: EditorTarget?, callback: (Boolean) -> Unit) {
+    private fun open(activation: BrowserAction.ActivateAt?, previousTarget: EditorTarget?, callback: (Boolean) -> Unit, commandId: String? = null) {
         checkMain()
         val adapter = adapter ?: return callback(false)
         val opening = authority.beginOpen(state(), connection(), profileTransition = previousTarget != null,
             localFocusReady = hosting.localEditorFocusReady()) ?: return callback(false)
+        if (activation != null) activationCommandId = commandId
         awaitingProfile = if (previousTarget != null) opening.context else null
         var reported = false
         fun report(ok: Boolean) { if (!reported) { reported = true; callback(ok) } }

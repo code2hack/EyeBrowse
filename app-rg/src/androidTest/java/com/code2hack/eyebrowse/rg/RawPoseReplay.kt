@@ -26,6 +26,10 @@ internal class RawPoseReplay : HeadPoseSource {
     }
     override fun start(consumer: (RotationSample)->Unit): Boolean { this.consumer=consumer;registered=true;handler.post(pump);return true }
     override fun stop() { registered=false;handler.removeCallbacks(pump);consumer=null }
+    fun pitchDegrees(degrees: Double) {
+        val half=Math.toRadians(-degrees)/2
+        sample=RotationSample(0,sin(half).toFloat(),0f,0f,cos(half).toFloat())
+    }
     fun aim(activity: MainActivity, point: InputPoint) {
         val root=activity.findViewById<View>(R.id.rg_root)
         val radius=8*activity.resources.displayMetrics.density

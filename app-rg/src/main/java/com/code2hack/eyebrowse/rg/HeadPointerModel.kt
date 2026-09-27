@@ -27,17 +27,11 @@ class HeadPointerModel(val settings: Settings = Settings()) {
             require(maxSpanPerSecond in 0.1..10.0 && staleNs in 50_000_000L..1_000_000_000L)
         }
     }
-    private data class Quaternion(val x: Double, val y: Double, val z: Double, val w: Double) {
-        fun inverse() = Quaternion(-x,-y,-z,w)
-        operator fun times(b: Quaternion) = Quaternion(
-            w*b.x+x*b.w+y*b.z-z*b.y, w*b.y-x*b.z+y*b.w+z*b.x,
-            w*b.z+x*b.y-y*b.x+z*b.w, w*b.w-x*b.x-y*b.y-z*b.z)
-    }
     private var bounds = PointerBounds(0f,0f,0f,0f)
     private var rotation = 0
     private var running = false
-    private var reference: Quaternion? = null
-    private var latest: Quaternion? = null
+    private var reference: HeadOrientation? = null
+    private var latest: HeadOrientation? = null
     private var sourceTimeNs = 0L
     private var frameTimeNs = 0L
     private var x = .5
@@ -65,11 +59,7 @@ class HeadPointerModel(val settings: Settings = Settings()) {
     fun sample(sample: RotationSample, nowNs: Long): Boolean {
         if (!running || nowNs<=0 || sample.timestampNs<=sourceTimeNs || sample.timestampNs>nowNs ||
             nowNs-sample.timestampNs>=settings.staleNs) return false
-        val values=doubleArrayOf(sample.x.toDouble(),sample.y.toDouble(),sample.z.toDouble(),sample.w.toDouble())
-        if (!values.all(Double::isFinite)) return false
-        val norm=sqrt(values.sumOf { it*it })
-        if (norm<1e-6) return false
-        val current=Quaternion(values[0]/norm,values[1]/norm,values[2]/norm,values[3]/norm)
+        val current=HeadOrientation.from(sample) ?: return false
         val rebase=reference==null || !fresh || sample.timestampNs-sourceTimeNs>=settings.staleNs
         latest=current;sourceTimeNs=sample.timestampNs;fresh=true
         if (rebase) {
@@ -78,24 +68,11 @@ class HeadPointerModel(val settings: Settings = Settings()) {
         return true
     }
 
-    private fun aim(q: Quaternion) {
-        // Rotate the neutral forward ray (0,0,-1) into neutral device coordinates.
-        // Natural display axes: +X right, +Y up, +Z toward viewer. No Euler field assumptions.
-        val deviceX=-2*(q.x*q.z+q.w*q.y)
-        val deviceY=2*(q.w*q.x-q.y*q.z)
-        val forwardZ=2*(q.x*q.x+q.y*q.y)-1
-        val (right,up)=when(rotation) {
-            1 -> deviceY to -deviceX
-            2 -> -deviceX to -deviceY
-            3 -> -deviceY to deviceX
-            else -> deviceX to deviceY
-        }
-        fun deadband(radians: Double): Double {
-            val degrees=Math.toDegrees(radians)
-            return sign(degrees)*max(0.0,abs(degrees)-settings.deadbandDegrees)
-        }
-        targetX=(.5+deadband(atan2(right,-forwardZ))/(2*settings.horizontalHalfRangeDegrees)).coerceIn(0.0,1.0)
-        targetY=(.5+deadband(-atan2(up,hypot(right,forwardZ)))/(2*settings.verticalHalfRangeDegrees)).coerceIn(0.0,1.0)
+    private fun aim(q: HeadOrientation) {
+        val (yaw,pitch)=q.angles(rotation)
+        fun deadband(degrees: Double) = sign(degrees)*max(0.0,abs(degrees)-settings.deadbandDegrees)
+        targetX=(.5+deadband(yaw)/(2*settings.horizontalHalfRangeDegrees)).coerceIn(0.0,1.0)
+        targetY=(.5+deadband(pitch)/(2*settings.verticalHalfRangeDegrees)).coerceIn(0.0,1.0)
     }
 
     /** Advance on display frames, independent of the <=5fps remote page stream. */

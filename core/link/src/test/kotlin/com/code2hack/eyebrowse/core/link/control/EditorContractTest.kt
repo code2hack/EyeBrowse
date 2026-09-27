@@ -75,9 +75,10 @@ class EditorContractTest {
     @Test fun effectAndStateMessagesStayInsideTheExistingBoundedEnvelope() {
         val ctx = active().snapshot().context
         val messages = listOf<BrowserControlMessage>(
-            EditorStateMessage(ctx, edit.target, EditorKind.TEXT, EditorEnter.IMPLICIT_SUBMIT, true),
+            EditorStateMessage(ctx, edit.target, EditorKind.TEXT, EditorEnter.IMPLICIT_SUBMIT, true, BrowserCommandId.create(ctx,1)),
             EditorCloseMessage("close", ctx, edit.target), EditorCloseResultMessage("close", ctx, true),
             ViewportUpdateMessage(Long.MAX_VALUE, ctx, PresentationProfile(480, 200, 204)),
+            ViewportUpdateMessage(2, ctx, PresentationProfile(480, 344, 204), retainEditor = false),
             ViewportUpdateResultMessage(Long.MAX_VALUE, true, ctx, PresentationProfile(480, 200, 204)))
         messages.forEach {
             val bytes = LinkMessageCodec.encode(it); assertTrue(bytes.size < LinkProtocol.FRAME_MAX_BYTES)

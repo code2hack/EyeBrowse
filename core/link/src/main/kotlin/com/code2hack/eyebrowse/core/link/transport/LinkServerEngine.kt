@@ -323,7 +323,8 @@ class LinkServerEngine(
             val current = AuthenticatedControlSession(socket, input,
                 clientHello.hasPresentationCapabilities() && serverHello.hasPresentationCapabilities(), false,
                 keyboardCompatible = clientHello.hasKeyboardCapabilities() && serverHello.hasKeyboardCapabilities(),
-                sendAuthOk = true)
+                sendAuthOk = true,
+                continuousScrollCompatible = clientHello.hasContinuousScroll() && serverHello.hasContinuousScroll())
             current.afterAuthOkForTest = afterAuthOkForTest
             session = current
             synchronized(activeOwnershipLock) {

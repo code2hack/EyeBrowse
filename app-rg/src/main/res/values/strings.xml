@@ -21,4 +21,14 @@
     <string name="pointer_ready">Head pointer ready</string>
     <string name="pointer_unavailable">Head tracking unavailable</string>
     <string name="input_unavailable">Action unavailable — try again</string>
+    <string name="keyboard_address">Edit address</string>
+    <string name="keyboard_space">Space</string>
+    <string name="keyboard_enter">Enter</string>
+    <string name="keyboard_go">Go</string>
+    <string name="keyboard_done">Done</string>
+    <string name="keyboard_shift">Toggle uppercase</string>
+    <string name="keyboard_symbols">Letters or symbols</string>
+    <string name="keyboard_backspace">Backspace</string>
+    <string name="keyboard_left">Move caret left</string>
+    <string name="keyboard_right">Move caret right</string>
 </resources>

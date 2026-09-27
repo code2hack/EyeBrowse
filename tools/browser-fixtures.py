@@ -63,6 +63,7 @@ PAGE_ROUTES: dict[str, tuple[str, str]] = {
     "/submitted.html": ("submitted.html", "/submitted.html"),
     "/hosting.html": ("hosting.html", "/hosting.html"),
     "/control.html": ("control.html", "/control.html"),
+    "/keyboard.html": ("keyboard.html", "/keyboard.html"),
     "/control-two.html": ("control-two.html", "/control-two.html"),
     "/hosting-two.html": ("hosting-two.html", "/hosting-two.html"),
     "/hosting-white.html": ("hosting-white.html", "/hosting-white.html"),
