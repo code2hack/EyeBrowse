@@ -40,8 +40,14 @@ class ReadingJourneyTest {
             SystemClock.sleep(200);assertEquals(position,y());assertEquals(steps,link.continuousScrollSteps)
         }
         var position=0
+        var primary: Throwable? = null
         try {
             phase.writeText("");ack.writeText("")
+            val injected = IllegalStateException("controlled test-cleanup exception")
+            val delivered = runCatching { fw4RunOnMainChecked { throw injected } }.exceptionOrNull()
+            assertSame("cleanup exception returns to the JUnit thread",injected,delivered)
+            assertNotEquals(android.os.Looper.getMainLooper().thread,Thread.currentThread())
+            Log.i("EyeBrowseReadingTest","TEARDOWN_DISPATCH_QUALIFIED sameThrowable=true testThread=true")
             scenario.onActivity { browser.openAddress(url);link.start() }
             await("fixture loaded",10_000) { browser.pageTitle()?.startsWith("KBD|")==true && !browser.isLoading() }
             val originalView=browser.view()
@@ -98,6 +104,29 @@ class ReadingJourneyTest {
                 assertSame(originalView,browser.view());assertEquals(identity,BrowserControlJourneyTest().js(browser,"fixtureIdentity"))
             }
             await("RG complete",5_000) { phase.readText().trim()=="complete" }
-        } finally { inst.runOnMainSync { host.stop();link.stop() };scenario.close();phase.delete();ack.delete() }
+        } catch (failure: Throwable) {
+            primary=failure
+            Log.e("EyeBrowseReadingTest","JOURNEY_PRIMARY_FAILURE",failure)
+            throw failure
+        } finally {
+            val failures = listOf<Pair<String,() -> Unit>>(
+                "stop" to { fw4RunOnMainChecked { host.stop();link.stop() } },
+                "resources" to { await("teardown resources retired",5_000) {
+                    fw4RunOnMainChecked { StopRecoveryAssertions.resourcesGone(host) && !link.isLinkUp() }
+                } },
+                "scenario" to { scenario.close() },
+                "signals" to { phase.delete();ack.delete();assertFalse(phase.exists());assertFalse(ack.exists()) },
+            ).mapNotNull { (name, action) ->
+                Log.i("EyeBrowseReadingTest","TEARDOWN_BEGIN step=$name at=${SystemClock.elapsedRealtime()}")
+                runCatching(action).exceptionOrNull().also { failure ->
+                    Log.i("EyeBrowseReadingTest","TEARDOWN_END step=$name at=${SystemClock.elapsedRealtime()} failure=${failure?.javaClass?.name}")
+                    if(failure!=null) Log.e("EyeBrowseReadingTest","TEARDOWN_FAILURE step=$name",failure)
+                }
+            }
+            if(primary!=null) failures.forEach { primary.addSuppressed(it) }
+            else if(failures.isNotEmpty()) {
+                failures.drop(1).forEach { failures.first().addSuppressed(it) };throw failures.first()
+            }
+        }
     }
 }
