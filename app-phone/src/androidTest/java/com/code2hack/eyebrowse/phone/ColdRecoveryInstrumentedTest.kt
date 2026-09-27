@@ -6,6 +6,8 @@ import android.os.Process
 import android.os.SystemClock
 import android.widget.Button
 import android.widget.TextView
+import androidx.lifecycle.Lifecycle
+import java.io.File
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -17,8 +19,8 @@ import org.junit.runner.RunWith
 import java.net.HttpURLConnection
 import java.net.URL
 
-/** Run prepare, externally force-stop ONLY the Phone app, then verify with the same missionId.
- * The receipt belongs to the test APK and contains fixture/identity metadata, never form drafts.
+/** Run graceful establishment, prepare, app-scoped force-stop, verify, then scoped cleanup.
+ * The test-only receipt uses the target process's private storage and contains no form drafts.
  */
 @RunWith(AndroidJUnit4::class)
 class ColdRecoveryInstrumentedTest {
@@ -27,7 +29,7 @@ class ColdRecoveryInstrumentedTest {
     private val args = InstrumentationRegistry.getArguments()
     private val mission = java.util.UUID.fromString(checkNotNull(args.getString("missionId"))).toString()
     private val base = checkNotNull(args.getString("fixtureBaseUrl")).trimEnd('/')
-    private val receipt = instrumentation.context.getSharedPreferences("i11-$mission", Context.MODE_PRIVATE)
+    private val receipt = app.getSharedPreferences("i11-$mission", Context.MODE_PRIVATE)
     private val storageKey = "i11-$mission"
     private val cookieName = "i11_" + mission.replace("-", "")
     private fun js(browser: PhoneBrowserSession, script: String) = BrowserControlJourneyTest().js(browser, script)
@@ -43,19 +45,64 @@ class ColdRecoveryInstrumentedTest {
         } finally { connection.disconnect() }
     }
 
+    private fun navigate(scenario: ActivityScenario<MainActivity>, browser: PhoneBrowserSession,
+                         path: String, title: String, action: (MainActivity) -> Unit) {
+        val url = base + path
+        val barrier = FixtureNavigationBarrier(browser.documentIdentity(), url, title)
+        scenario.onActivity(action)
+        StopRecoveryAssertions.await("fresh $path document", 10_000) {
+            barrier.isReady(FixtureNavigationBarrier.Observation(browser.documentIdentity(),
+                browser.displayUrl(), browser.lastCommittedUrl(), browser.pageTitle(),
+                browser.isLoading(), browser.isLive(), browser.errorMessage()))
+        }
+        assertEquals("true", js(browser, "location.href===${JSONObject.quote(url)}&&document.readyState==='complete'&&window.fixtureInfo.path===${JSONObject.quote(path)}"))
+    }
+
+    private fun assertStored(browser: PhoneBrowserSession) {
+        assertEquals("\"persisted\"", js(browser, "localStorage.getItem('$storageKey')"))
+        assertEquals("true", js(browser, "document.cookie.split(';').some(v=>v.trim()==='$cookieName=present')"))
+    }
+
+    @Test fun gracefulBackgroundPersistsStorageBeforeProcessLoss() {
+        val browser = PhoneBrowserSession.get(app)
+        val scenario = ActivityScenario.launch<MainActivity>(Intent(app, MainActivity::class.java))
+        val barrier = File(app.cacheDir, "i11-$mission.persistence").apply { writeText("starting") }
+        try {
+            navigate(scenario, browser, "/form.html", "Form") { browser.openAddress("$base/form.html") }
+            assertEquals("true", js(browser, "localStorage.setItem('$storageKey','persisted');document.cookie='$cookieName=present; Max-Age=86400; Path=/';true"))
+            assertStored(browser)
+            val started = SystemClock.elapsedRealtime()
+            // Ordinary MainActivity.onStop flushes cookies; localStorage uses WebView's own
+            // background persistence. The host ONLY observes the journal; it never writes it.
+            scenario.moveToState(Lifecycle.State.CREATED)
+            barrier.writeText("backgrounded")
+            val deadline = started + 20_000
+            while (barrier.readText() != "durable" && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(25)
+            assertEquals("host must verify the exact mission value in a complete journal record", "durable", barrier.readText())
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            scenario.recreate()
+            assertStored(browser)
+            assertTrue(receipt.edit().putLong("gracefulProcessStart", Process.getStartElapsedRealtime()).putBoolean("durableEstablished", true).commit())
+            android.util.Log.i("EyeBrowseRecovery", "GRACEFUL_PASS mission=$mission boundary=Activity_onStop recreated=true persistenceMs=${SystemClock.elapsedRealtime()-started}")
+        } finally { barrier.delete(); scenario.close() }
+    }
+
     @Test fun prepareRealProcessLossAfterFixturePost() {
+        assertTrue("graceful durable baseline required", receipt.getBoolean("durableEstablished", false))
+        assertNotEquals("graceful restart requires a new process", receipt.getLong("gracefulProcessStart", -1), Process.getStartElapsedRealtime())
         val browser = PhoneBrowserSession.get(app)
         val scenario = ActivityScenario.launch<MainActivity>(Intent(app, MainActivity::class.java))
         try {
-            scenario.onActivity { browser.openAddress("$base/form.html") }
-            StopRecoveryAssertions.await("fixture ready", 10_000) { browser.isLive() && !browser.isLoading() && browser.lastCommittedUrl() == "$base/form.html" }
+            navigate(scenario, browser, "/form.html", "Form") { browser.openAddress("$base/form.html") }
+            assertStored(browser) // Both values survived the actual restart after orderly backgrounding.
+            android.util.Log.i("EyeBrowseRecovery", "GRACEFUL_RESTART_PASS mission=$mission cookie=true localStorage=true")
             val before = posts()
             // Setup through the real WebView HTTP stack; this is not a keyboard/input-path claim.
-            scenario.onActivity { browser.view()!!.postUrl("$base/submit", "test_id=fixture-post-1&message=harmless".toByteArray()) }
-            StopRecoveryAssertions.await("POST response committed", 10_000) { !browser.isLoading() && browser.lastCommittedUrl() == "$base/submit" }
+            navigate(scenario, browser, "/submit", "Submitted") {
+                browser.view()!!.postUrl("$base/submit", "test_id=fixture-post-1&message=harmless".toByteArray())
+            }
             assertEquals(before + 1, posts())
-            assertEquals("true", js(browser, "localStorage.setItem('$storageKey','persisted');document.cookie='$cookieName=present; Max-Age=86400; Path=/';window.i11Transient='unsaved';true"))
-            scenario.onActivity { browser.flushCookies() }
+            assertEquals("true", js(browser, "window.i11Transient='unsaved';true"))
             val lifetime = PhoneLinkServer.obtain(app).controlCoordinator.authority.snapshot().context.lifetimeId
             assertTrue(receipt.edit().putLong("processStart", Process.getStartElapsedRealtime())
                 .putInt("pid", Process.myPid()).putString("lifetime", lifetime)
@@ -82,17 +129,36 @@ class ColdRecoveryInstrumentedTest {
             assertNotEquals(receipt.getString("lifetime", null), link.controlCoordinator.authority.snapshot().context.lifetimeId)
             assertEquals(receipt.getBoolean("paired", false), link.isPaired())
             assertEquals("no automatic POST replay", expectedPosts, posts())
-            scenario.onActivity { it.findViewById<Button>(R.id.button_open).performClick() }
-            StopRecoveryAssertions.await("explicit GET recovery", 10_000) { browser.isLive() && !browser.isLoading() && browser.lastCommittedUrl() == "$base/submit" }
+            navigate(scenario, browser, "/submit", "Form") { it.findViewById<Button>(R.id.button_open).performClick() }
             assertEquals("explicit Open must not resubmit POST", expectedPosts, posts())
-            assertEquals("\"persisted\"", js(browser, "localStorage.getItem('$storageKey')"))
-            assertEquals("true", js(browser, "document.cookie.split(';').some(v=>v.trim()==='$cookieName=present')"))
+            assertStored(browser)
             assertEquals("\"undefined\"", js(browser, "typeof window.i11Transient"))
             assertEquals("\"\"", js(browser, "document.getElementById('text-field').value"))
-            assertEquals("true", js(browser, "localStorage.removeItem('$storageKey');document.cookie='$cookieName=; Max-Age=0; Path=/';true"))
-            scenario.onActivity { browser.flushCookies() }
-            assertTrue(receipt.edit().clear().commit())
             android.util.Log.i("EyeBrowseRecovery", "COLD_PASS mission=$mission pid=${Process.myPid()} posts=$expectedPosts noAutoLoad=true noPostReplay=true siteStorage=true")
         } finally { scenario.close() }
     }
+
+    /** Independent cleanup row runs even when a preceding verification fails; never a retry. */
+    @Test fun cleanupOwnedMissionState() {
+        val browser = PhoneBrowserSession.get(app)
+        val scenario = ActivityScenario.launch<MainActivity>(Intent(app, MainActivity::class.java))
+        val priorMissions = args.getString("cleanupMissionIds", "").split(',').filter { it.isNotBlank() }
+            .map { java.util.UUID.fromString(it).toString() }
+        try {
+            navigate(scenario, browser, "/form.html", "Form") { browser.openAddress("$base/form.html") }
+            for (ownedMission in (listOf(mission) + priorMissions).distinct()) {
+                val key = "i11-$ownedMission"
+                val cookie = "i11_" + ownedMission.replace("-", "")
+                val before = js(browser, "({local:localStorage.getItem('$key')!==null,cookie:document.cookie.split(';').some(v=>v.trim().startsWith('$cookie='))})")
+                assertEquals("true", js(browser, "if(localStorage.getItem('$key')!==null)localStorage.removeItem('$key');document.cookie='$cookie=; Max-Age=0; Path=/';localStorage.getItem('$key')===null&&!document.cookie.split(';').some(v=>v.trim().startsWith('$cookie='))"))
+                val receiptFile = File(app.applicationInfo.dataDir, "shared_prefs/i11-$ownedMission.xml")
+                val receiptExisted = receiptFile.exists()
+                assertTrue("remove only the owned test receipt", app.deleteSharedPreferences("i11-$ownedMission"))
+                assertFalse(receiptFile.exists())
+                android.util.Log.i("EyeBrowseRecovery", "CLEANUP mission=$mission owned=$ownedMission before=$before localAbsent=true cookieAbsent=true receiptExisted=$receiptExisted receiptAbsent=true")
+            }
+            scenario.onActivity { browser.flushCookies() }
+        } finally { scenario.close() }
+    }
+
 }
