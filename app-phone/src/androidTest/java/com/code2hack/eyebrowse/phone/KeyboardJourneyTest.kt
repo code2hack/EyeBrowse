@@ -47,6 +47,7 @@ class KeyboardJourneyTest {
         fun equalsValue(id: String, value: String) {
             assertEquals("true",js("(()=>{const e=document.getElementById('$id');return (e.isContentEditable?e.textContent:e.value)===${org.json.JSONObject.quote(value)}})()"))
         }
+        var primary: Throwable? = null
         try {
             phase.writeText("");ack.writeText("")
             scenario.onActivity { browser.openAddress(url);link.start() }
@@ -92,9 +93,29 @@ class KeyboardJourneyTest {
             }
             await("RG received final assertion",15_000) { phase.exists() && phase.readText().trim()=="complete" }
             Log.i("EyeBrowseKeyboardTest","PHONE_KBD_PASS mission=$mission samePage=true allFieldTypes=true")
+        } catch (failure: Throwable) {
+            primary=failure
+            Log.e("EyeBrowseReadingTest","JOURNEY_PRIMARY_FAILURE",failure)
+            throw failure
         } finally {
-            instrumentation.runOnMainSync { host.stop();link.stop() }
-            scenario.close();phase.delete();ack.delete()
+            val failures = listOf<Pair<String,() -> Unit>>(
+                "stop" to { fw4RunOnMainChecked { host.stop();link.stop() } },
+                "resources" to { await("teardown resources retired",5_000) {
+                    fw4RunOnMainChecked { StopRecoveryAssertions.resourcesGone(host) && !link.isLinkUp() }
+                } },
+                "scenario" to { scenario.close() },
+                "signals" to { phase.delete();ack.delete();assertFalse(phase.exists());assertFalse(ack.exists()) },
+            ).mapNotNull { (name, action) ->
+                Log.i("EyeBrowseReadingTest","TEARDOWN_BEGIN step=$name at=${SystemClock.elapsedRealtime()}")
+                runCatching(action).exceptionOrNull().also { failure ->
+                    Log.i("EyeBrowseReadingTest","TEARDOWN_END step=$name at=${SystemClock.elapsedRealtime()} failure=${failure?.javaClass?.name}")
+                    if(failure!=null) Log.e("EyeBrowseReadingTest","TEARDOWN_FAILURE step=$name",failure)
+                }
+            }
+            if(primary!=null) failures.forEach { primary.addSuppressed(it) }
+            else if(failures.isNotEmpty()) {
+                failures.drop(1).forEach { failures.first().addSuppressed(it) };throw failures.first()
+            }
         }
     }
 }

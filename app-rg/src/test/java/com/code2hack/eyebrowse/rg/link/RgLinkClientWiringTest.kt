@@ -28,7 +28,8 @@ class RgLinkClientWiringTest {
         val statuses = mutableListOf<com.code2hack.eyebrowse.core.link.HostStatusValue>()
         override fun onStateChange(state: com.code2hack.eyebrowse.core.link.PairingState) { states.add(state) }
         override fun onStatus(status: com.code2hack.eyebrowse.core.link.HostStatusValue) { statuses.add(status) }
-        override fun onLinkLost() {}
+        var retirements = 0
+        override fun onLinkLost() { retirements++ }
         override fun onConnectFailed(error: LinkError) { failures.add(error) }
     }
 
@@ -69,6 +70,18 @@ class RgLinkClientWiringTest {
         protocolMinor = 0,
         peerCapabilities = listOf("PAIRING_V1", "STATUS_V1"),
     )
+
+    @Test fun `local disconnect retires consumer even when core has no callback to emit`() {
+        val listener=RecordingListener()
+        val store=newStore();val record=pairedRecord("ab".repeat(32));store.save(record)
+        val client=clientWith(listener,store)
+        client.disconnect()
+        assertEquals(1,listener.retirements)
+        client.disconnect()
+        assertEquals(2,listener.retirements) // Repeated local retirement remains explicit, never a reconnect.
+        assertTrue(listener.states.isEmpty());assertTrue(listener.failures.isEmpty())
+        assertEquals(record,(store.read() as com.code2hack.eyebrowse.core.link.session.PeerTrustRead.Valid).record)
+    }
 
     @Test
     fun `retry without remembered trust maps to invitation-invalid without dialing`() {

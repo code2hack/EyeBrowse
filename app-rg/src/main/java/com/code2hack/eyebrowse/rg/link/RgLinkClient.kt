@@ -149,6 +149,9 @@ class RgLinkClient(
     /** Bounded disconnect of any owned connection work. */
     fun disconnect() {
         engine?.disconnect()
+        // Core intentionally suppresses callbacks from cancelled operations. Local consumers
+        // still must retire their presentation/input authority when cancellation is deliberate.
+        listener.onLinkLost()
     }
 
     /** Locally authoritative Forget: close the link and remove peer trust (§8). */

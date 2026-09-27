@@ -507,6 +507,7 @@ class RgPresentationController(context: Context, private val surface: Surface) :
     // Engine lifecycle callbacks can hold its operation lock. Do not take our monitor from that
     // lock while main-thread dispatch holds our monitor and calls sendControl in the other direction.
     private fun onMain(block: ()->Unit) {
+        if(closed) return
         if(Looper.myLooper()==Looper.getMainLooper()) block() else main.post { if(!closed) block() }
     }
     override fun onStateChange(state: PairingState) = onMain { status(state.name) }
