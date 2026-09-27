@@ -29,7 +29,12 @@ authenticated reconnect10s, instrumentation65s and guarded child180s. Report
 actual deadlines/effect timestamps separately from observer completion.
 
 Use the single checked USB setup, four installed-APK digests, physical identities,
-raw trust hashes and qualified screen-off adapter. Fixture27341/27342, app39818,
+raw trust hashes and qualified screen-off adapter. Re-verify the RG physical
+serial/model, send `KEYCODE_WAKEUP`, and require `mWakefulness=Awake` before
+launching the journeys. An asleep RG can accept raw replay while never granting
+Activity window focus; the unchanged setup predicate requires both. Retain
+`EyeBrowseSetup` receipts. After instrumentation retires, restore RG with
+`KEYCODE_SLEEP` and verify Asleep, as separately booked with Manager. Fixture27341/27342, app39818,
 owned Phone reverse27341 only. At assignment, Manager accepted RG capability
 metadata baseline `15cc10ea1469f51834d52c1e20fbcf02d6a5a528fdaa8eac375ca19c27bbfe67`;
 Phone remains `4acad66fc5f9b99564758705715581f6da153297b5ddf07c4321da06c3221d07`.
