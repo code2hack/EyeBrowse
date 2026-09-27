@@ -190,7 +190,7 @@ class AckLossJourneyTest {
         }
     }
 
-    private class DeliveryFaults(val original: RgLinkClient.Listener) : RgLinkClient.Listener by original {
+    internal class DeliveryFaults(val original: RgLinkClient.Listener) : RgLinkClient.Listener by original {
         @Volatile var holdActions = false
         @Volatile var holdHandoff = false
         @Volatile var holdState = false

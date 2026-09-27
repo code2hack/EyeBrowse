@@ -17,6 +17,10 @@ input,textarea,[contenteditable] { box-sizing:border-box; flex:1; min-width:0; h
 <script>
 window.fixtureIdentity = crypto.randomUUID ? crypto.randomUUID() : String(Math.random());
 window.fixtureInputs = 0; window.fixtureSubmits = 0;
+// Optional mission-scoped navigation ledger for I11; no field contents are stored.
+const recoveryParams = new URLSearchParams(location.search);
+window.fixtureRecoveryKey = recoveryParams.has('recoveryLedger') ? 'i11-loads-'+recoveryParams.get('case') : null;
+if (fixtureRecoveryKey) sessionStorage.setItem(fixtureRecoveryKey, String(Number(sessionStorage.getItem(fixtureRecoveryKey)||0)+1));
 function publish() {
   const g = {inputs:fixtureInputs, submits:fixtureSubmits};
   for (const id of ['text','password','multiline','plain','submitMarker']) {
