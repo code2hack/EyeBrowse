@@ -186,7 +186,11 @@ class PhoneEditorController(
                 report(null, "EDITOR_UNCERTAIN"); return@edit
             }
             when (if (correlated) result.status else RendererEditorAdapter.Status.UNCERTAIN) {
-                RendererEditorAdapter.Status.APPLIED -> report(true, "EDITOR_APPLIED")
+                RendererEditorAdapter.Status.APPLIED -> {
+                    // Renderer-only text changes need a native traversal to request fresh capture.
+                    if (stateMessage().ready) browser.view()?.invalidate()
+                    report(true, "EDITOR_APPLIED")
+                }
                 RendererEditorAdapter.Status.SUBMISSION_REQUESTED -> report(null, "SUBMISSION_REQUESTED")
                 RendererEditorAdapter.Status.UNCERTAIN -> report(null, "EDITOR_UNCERTAIN")
                 else -> report(false, result.status.name)

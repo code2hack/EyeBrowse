@@ -20,7 +20,7 @@ function publish() {
   const g = {inputs:fixtureInputs, submits:fixtureSubmits};
   for (const id of ['text','password','multiline','plain']) {
     const r = document.getElementById(id).getBoundingClientRect();
-    g[id] = [(r.x+r.width/2)/innerWidth,(r.y+r.height/2)/innerHeight];
+    g[id] = [(r.x+r.width/2)/innerWidth,(r.y+r.height/2)/innerHeight,r.width/innerWidth,r.height/innerHeight];
   }
   document.title = 'KBD|' + JSON.stringify(g);
 }

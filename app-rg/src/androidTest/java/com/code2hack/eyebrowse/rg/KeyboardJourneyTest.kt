@@ -18,7 +18,9 @@ import java.io.File
 /** Paired with the Phone oracle. Test files coordinate assertions, never browser input. */
 @RunWith(AndroidJUnit4::class)
 class KeyboardJourneyTest {
-    @Test fun actualKeysEditThePairedPhoneAndRetireStaleIntents() {
+    @Test fun actualKeysEditThePairedPhoneAndRetireStaleIntents() = journey(false)
+    @Test fun livePixelsAndNonemptyModeContinuity() = journey(true)
+    private fun journey(reviewEvidence: Boolean) {
         val scenario = ActivityScenario.launch(MainActivity::class.java)
         val j = PointerBrowserJourneyTest.Journey(scenario)
         val phase = File(j.app.cacheDir,"kbd-${j.mission}.phase")
@@ -98,11 +100,77 @@ class KeyboardJourneyTest {
             File(j.app.cacheDir,"kbd-${j.mission}-$name.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it) }
             bitmap.recycle()
         }
+        fun maskedDots(): Int {
+            val geometry=JSONObject(checkNotNull(j.peer.browserState()?.title).substringAfter("KBD|")).getJSONArray("password")
+            val bitmap=(j.activity.findViewById<android.widget.ImageView>(R.id.rg_page).drawable as android.graphics.drawable.BitmapDrawable).bitmap
+            val width=geometry.getDouble(2)*bitmap.width;val height=geometry.getDouble(3)*bitmap.height
+            val left=((geometry.getDouble(0)*bitmap.width)-width/2+8).toInt()
+            val top=((geometry.getDouble(1)*bitmap.height)-height/2+8).toInt()
+            val right=(left+width-16).toInt();val bottom=(top+height-16).toInt()
+            check(left>=0 && top>=0 && right<=bitmap.width && bottom<=bitmap.height && right>left && bottom>top) { "password pixel region outside current frame" }
+            val w=right-left;val h=bottom-top;val dark=BooleanArray(w*h)
+            for(y in 0 until h)for(x in 0 until w) {
+                val c=bitmap.getPixel(left+x,top+y)
+                dark[y*w+x]=((c shr 16) and 255)<100 && ((c shr 8) and 255)<100 && (c and 255)<100
+            }
+            var dots=0
+            val queue=java.util.ArrayDeque<Int>()
+            for(start in dark.indices)if(dark[start]) {
+                var minX=w;var maxX=0;var minY=h;var maxY=0;var area=0
+                dark[start]=false;queue.add(start)
+                while(!queue.isEmpty()) {
+                    val at=queue.removeFirst();val x=at%w;val y=at/w;area++
+                    minX=minOf(minX,x);maxX=maxOf(maxX,x);minY=minOf(minY,y);maxY=maxOf(maxY,y)
+                    for(next in intArrayOf(if(x>0)at-1 else -1,if(x+1<w)at+1 else -1,if(y>0)at-w else -1,if(y+1<h)at+w else -1))
+                        if(next>=0 && dark[next]) { dark[next]=false;queue.add(next) }
+                }
+                val cw=maxX-minX+1;val ch=maxY-minY+1
+                // Round dense mask glyphs; reject the thin caret and the field border.
+                if(cw>=3 && ch>=3 && ch<h/2 && cw.toDouble()/ch in .65..1.5 && area>=cw*ch*.6)dots++
+            }
+            return dots
+        }
         var completed = false
         try {
             j.setup(); j.native(R.id.rg_retry,"Retry")
             j.await("paired Phone state",10_000) { j.peer.browserState()?.owner==ControlOwner.PHONE && j.peer.canHandoff() }
             j.handoff(ControlOwner.RG,"A")
+            if (reviewEvidence) {
+                field("plain");character('a');character('B');character('1')
+                checkPhone("filled_before")
+                val document=checkNotNull(j.peer.browserState()).context.documentId
+                val beforeMode=j.actions
+                j.pad(291);j.confirmWindow()
+                j.await("filled Reading fresh geometry",2_000) { j.peer.reading && !j.peer.keyboard.visible && j.peer.canAct() }
+                assertEquals(beforeMode,j.actions);assertEquals(document,j.peer.browserState()?.context?.documentId)
+                checkPhone("filled_reading");screenshot("filled-reading")
+                j.pad(291);j.confirmWindow()
+                j.await("filled Normal without editor reopen",2_000) { !j.peer.reading && !j.peer.keyboard.visible && j.peer.canAct() }
+                assertEquals(beforeMode,j.actions);assertEquals(document,j.peer.browserState()?.context?.documentId)
+                checkPhone("filled_normal")
+                field("password")
+                var emptyDots=-1
+                j.main { emptyDots=maskedDots() }
+                assertTrue("empty focused password has no mask glyphs",emptyDots==0)
+                checkPhone("live_password_before")
+                val beforeFrame=checkNotNull(j.peer.lastFrameHeader).captureTsMs
+                character('p');character('7')
+                val deadline=SystemClock.uptimeMillis()+1_000
+                checkPhone("live_password_applied")
+                var fresh=false;var dots=-1;var open=false
+                while(SystemClock.uptimeMillis()<deadline && !(fresh && dots==2 && open)) {
+                    j.main {
+                        open=j.peer.keyboard.visible
+                        fresh=(j.peer.lastFrameHeader?.captureTsMs ?: -1)>beforeFrame
+                        dots=maskedDots()
+                    }
+                    if(!(fresh && dots==2 && open))SystemClock.sleep(20)
+                }
+                Log.i("EyeBrowseKeyboardTest","LIVE_PASSWORD fresh=$fresh twoMaskGlyphs=${dots==2} keyboardOpen=$open boundMs=1000")
+                assertTrue("password edits must produce fresh masked RG pixels with keyboard open",fresh && dots==2 && open)
+                screenshot("password-live");checkPhone("live_password_pixels")
+                completed=true;phase.writeText("complete");return
+            }
             j.native(R.id.rg_detail,"address")
             j.await("address keyboard",2_000) { j.peer.keyboard.visible && j.peer.canSubmitAddress() }
             clearAddress()

@@ -18,7 +18,9 @@ import java.util.UUID
 /** Read-only page assertions for actual RG keyboard effects; no positive DOM-value assignments. */
 @RunWith(AndroidJUnit4::class)
 class KeyboardJourneyTest {
-    @Test fun phoneObservesActualKeyboardEffectsAndPageContinuity() {
+    @Test fun phoneObservesActualKeyboardEffectsAndPageContinuity() = journey(false)
+    @Test fun phoneObservesLivePixelsAndNonemptyModeContinuity() = journey(true)
+    private fun journey(reviewEvidence: Boolean) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext
         val mission = UUID.fromString(InstrumentationRegistry.getArguments().getString("missionId")).toString()
@@ -57,6 +59,31 @@ class KeyboardJourneyTest {
             scenario.onActivity { it.findViewById<Button>(R.id.button_hosting_toggle).performClick() }
             await("hosting") { host.status().state==HostingController.State.HOSTING }
             Log.i("EyeBrowseKeyboardTest","PHONE_KBD_READY mission=$mission")
+            if(reviewEvidence) {
+                var scrollBefore=0.0
+                fun continuity() {
+                    equalsValue("plain","aB1");assertEquals(originalIdentity,js("fixtureIdentity"));assertSame(originalView,browser.view())
+                    assertEquals("0",js("fixtureSubmits"));assertEquals("3",js("fixtureInputs"))
+                    assertEquals("scroll continuity across mode change",scrollBefore,js("window.scrollY").toDouble(),0.0)
+                }
+                phase("filled_before") {
+                    scrollBefore=js("window.scrollY").toDouble();assertTrue("nonzero scroll exercised",scrollBefore>0)
+                    continuity()
+                }
+                phase("filled_reading") { continuity();assertTrue(link.editorController!!.isQuiescent()) }
+                phase("filled_normal") { continuity();assertTrue(link.editorController!!.isQuiescent()) }
+                phase("live_password_before") {
+                    Log.i("EyeBrowseKeyboardTest","LIVE_PASSWORD_BEFORE "+host.captureDiagnostics())
+                }
+                phase("live_password_applied") {
+                    equalsValue("password","p7") // Boolean JS assertion only: never logs the password value.
+                    assertEquals("true",js("document.getElementById('password').type==='password'"))
+                    Log.i("EyeBrowseKeyboardTest","LIVE_PASSWORD_PHONE applied=true passwordType=true "+host.captureDiagnostics())
+                }
+                phase("live_password_pixels") { equalsValue("password","p7");assertEquals("0",js("fixtureSubmits")) }
+                await("RG received review assertions",5_000) { phase.exists() && phase.readText().trim()=="complete" }
+                return
+            }
             phase("invalid_address") { assertEquals(originalIdentity,js("fixtureIdentity"));equalsValue("text","") }
             phase("coalesced_layout") { assertEquals(originalIdentity,js("fixtureIdentity"));equalsValue("text","") }
             var identity = ""
