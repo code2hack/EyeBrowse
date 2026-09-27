@@ -40,10 +40,14 @@ sys.modules["browser_fixtures"] = fx
 _spec.loader.exec_module(fx)
 
 
-def free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        probe.bind(("127.0.0.1", 0))
-        return probe.getsockname()[1]
+def free_port_pair() -> tuple[int, int]:
+    # Keep both probes bound: sequential close/reallocate can return the same port.
+    # Another process can still claim a port after release; startup errors are not retried.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as http, \
+            socket.socket(socket.AF_INET, socket.SOCK_STREAM) as https:
+        http.bind(("127.0.0.1", 0))
+        https.bind(("127.0.0.1", 0))
+        return http.getsockname()[1], https.getsockname()[1]
 
 
 def close_servers(*servers) -> None:
@@ -64,10 +68,11 @@ class FixtureServerCase(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory(prefix="eyebrowse-fixture-test-")
         self.addCleanup(self._tmp.cleanup)
         self.state_dir = Path(self._tmp.name)
+        http_port, https_port = free_port_pair()
         self.config = fx.FixtureConfig(
             bind="127.0.0.1",
-            http_port=free_port(),
-            https_port=free_port(),
+            http_port=http_port,
+            https_port=https_port,
             state_dir=self.state_dir,
             idle_timeout=self.idle_timeout,
             max_connections=self.max_connections,
@@ -119,6 +124,29 @@ class FixtureServerCase(unittest.TestCase):
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_port_pair_keeps_both_reservations_until_selected(self) -> None:
+        bound = set()
+
+        class Probe:
+            def __enter__(self):
+                return self
+
+            def bind(self, address):
+                self.port = next(p for p in (31001, 31002) if p not in bound)
+                bound.add(self.port)
+
+            def getsockname(self):
+                return "127.0.0.1", self.port
+
+            def __exit__(self, *_):
+                bound.remove(self.port)
+
+        # Deterministically reuses the lowest released port: the old sequential
+        # allocator returns (31001, 31001), independently of OS randomness.
+        with patch.object(socket, "socket", side_effect=lambda *_: Probe()):
+            self.assertEqual((31001, 31002), free_port_pair())
+        self.assertEqual(set(), bound)
+
     def test_validates_loopback_and_rfc1918_binds(self) -> None:
         for value in ("127.0.0.1", "192.168.0.52", "10.1.2.3", "172.16.5.5"):
             self.assertEqual(value, fx.validate_bind(value))
@@ -155,8 +183,9 @@ class ConfigurationTests(unittest.TestCase):
     def test_state_and_key_directories_are_private(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             state = Path(tmp) / "state"
-            config = fx.FixtureConfig(bind="127.0.0.1", http_port=free_port(),
-                                      https_port=free_port(), state_dir=state)
+            http_port, https_port = free_port_pair()
+            config = fx.FixtureConfig(bind="127.0.0.1", http_port=http_port,
+                                      https_port=https_port, state_dir=state)
             http_server, https_server, _ = fx.create_servers(config)
             try:
                 self.assertEqual(0o700, state.stat().st_mode & 0o777)
@@ -167,9 +196,9 @@ class ConfigurationTests(unittest.TestCase):
 
     def test_partial_startup_closes_http_listener(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            port = free_port()
+            port, https_port = free_port_pair()
             config = fx.FixtureConfig(bind="127.0.0.1", http_port=port,
-                                      https_port=free_port(), state_dir=Path(tmp))
+                                      https_port=https_port, state_dir=Path(tmp))
             with patch.object(fx, "ensure_certificate", side_effect=OSError("synthetic TLS setup failure")):
                 with self.assertRaises(OSError):
                     fx.create_servers(config)
@@ -250,8 +279,9 @@ class ConfinementTests(FixtureServerCase):
             outside = Path(tmp) / "outside.html"
             outside.write_text("<html>outside</html>")
             (pages / "basic.html").symlink_to(outside)
-            config = fx.FixtureConfig(bind="127.0.0.1", http_port=free_port(),
-                                      https_port=free_port(), state_dir=Path(tmp) / "state",
+            http_port, https_port = free_port_pair()
+            config = fx.FixtureConfig(bind="127.0.0.1", http_port=http_port,
+                                      https_port=https_port, state_dir=Path(tmp) / "state",
                                       pages_dir=pages, idle_timeout=self.idle_timeout)
             http_server, https_server, _ = fx.create_servers(config)
             threading.Thread(target=http_server.serve_forever, daemon=True).start()
