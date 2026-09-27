@@ -48,6 +48,25 @@ class RecoveryJourneyTest {
             val capture=runCatching { fw4RunOnMainChecked { host.captureDiagnostics() } }.getOrElse { "unavailable:${it.javaClass.simpleName}" }
             Log.i("EyeBrowseA06","PHONE_OFF_DIAG mission=$mission stage=$stage startedMs=$started observedMs=${SystemClock.elapsedRealtime()} interactive=${app.getSystemService(android.os.PowerManager::class.java).isInteractive} proofStep=$tick capture=${capture.take(2200)}")
         }
+        var positionSamples=0;var positionSampleAt=0L
+        fun positionReceipt(stage:String,force:Boolean=false) {
+            val now=SystemClock.elapsedRealtime()
+            if(positionSamples>=24 || (!force && now-positionSampleAt<250))return
+            positionSamples++;positionSampleAt=now
+            runCatching {
+                val view=checkNotNull(browser.view());val nativeY=view.scrollY;val document=browser.documentIdentity()
+                Log.i("EyeBrowseA06","RESTART_POSITION mission=$mission stage=$stage sample=$positionSamples elapsedMs=$now clock=Phone_elapsedRealtime nativeY=$nativeY document=$document width=${view.width} height=${view.height} loading=${browser.isLoading()} host=${host.status().state}")
+                val sample=positionSamples
+                view.evaluateJavascript("JSON.stringify([window.scrollY,document.scrollingElement.scrollTop,window.__t03Geometry().cssY,devicePixelRatio,visualViewport.scale])") { raw ->
+                    runCatching {
+                        val values=org.json.JSONArray(org.json.JSONArray("[$raw]").getString(0))
+                        check(values.length()==5)
+                        val numeric=(0 until 5).map { values.getDouble(it) };check(numeric.all { it.isFinite() })
+                        Log.i("EyeBrowseA06","RESTART_DOM mission=$mission stage=$stage sample=$sample requestedMs=$now observedMs=${SystemClock.elapsedRealtime()} clock=Phone_elapsedRealtime requestNativeY=$nativeY callbackNativeY=${view.scrollY} requestDocument=$document sameDocument=${browser.documentIdentity()==document} values=$numeric")
+                    }.onFailure { Log.i("EyeBrowseA06","RESTART_DOM mission=$mission sample=$sample unavailable=${it.javaClass.simpleName}") }
+                }
+            }.onFailure { Log.i("EyeBrowseA06","RESTART_POSITION mission=$mission stage=$stage unavailable=${it.javaClass.simpleName}") }
+        }
         var failure:Throwable?=null
         try {
             scenario.onActivity { activity=it;host.stop();link.stop();browser.openAddress(url) }
@@ -117,9 +136,13 @@ class RecoveryJourneyTest {
             Log.i("EyeBrowseA06","LIVE_STOP mission=$mission stopMs=${SystemClock.elapsedRealtime()-stopAt} listenerRetired=true resourcesGone=true")
             publish("stopped");waitRg("retry-refused")
             fw4RunOnMainChecked { assertFalse(link.isLinkUp());assertTrue(StopRecoveryAssertions.resourcesGone(host)) }
-            scenario.onActivity { it.findViewById<Button>(R.id.button_hosting_toggle).performClick() }
+            scenario.onActivity { positionReceipt("before-start",true);it.findViewById<Button>(R.id.button_hosting_toggle).performClick() }
             await("explicit restart",5_000) { host.status().state==HostingController.State.HOSTING }
-            publish("restarted");waitRg("restart-effect")
+            fw4RunOnMainChecked { positionReceipt("before-restarted",true) }
+            publish("restarted")
+            try {
+                await("RG restart-effect",15_000) { positionReceipt("waiting-effect");rg.exists() && rg.readText().trim()=="restart-effect" }
+            } finally { fw4RunOnMainChecked { positionReceipt("after-effect-wait",true) } }
             fw4RunOnMainChecked { assertSame(original,browser.view());assertEquals(document,browser.documentIdentity());assertEquals(history,original.copyBackForwardList().size);assertEquals(0,original.scrollY) }
             assertEquals("\"A06-preserved\"",js("document.getElementById('state').value"))
             assertEquals(1,Regex("click:A:2").findAll(js("sessionStorage.getItem(window.fixtureKey)")).count())
