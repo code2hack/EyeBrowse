@@ -74,6 +74,24 @@ class RgQrImagePairingInstrumentationTest {
     private fun newClient(listener: RecordingListener): RgLinkClient =
         RgLinkClient(RgLinkIdentity(), RgPairingStore(InstrumentationRegistry.getInstrumentation().targetContext), listener)
 
+    /** Preparation metadata only: does not connect or assert invitation rejection. */
+    @Test
+    fun qrImageMetadata_reportsOnlyLocatorsFingerprintAndTtl() {
+        val bitmap = checkNotNull(BitmapFactory.decodeFile(qrFile().absolutePath))
+        try {
+            val payload = checkNotNull(QrDecoder.decode(bitmap))
+            val parsed = com.code2hack.eyebrowse.core.link.invitation.InvitationCodec.parse(payload).getOrThrow()
+            val receipt = org.json.JSONObject()
+                .put("locators", org.json.JSONArray(parsed.locators.map { it.toWire() }))
+                .put("fingerprint", parsed.phoneSpkiSha256Hex)
+                .put("ttlSeconds", parsed.ttlSeconds)
+                .put("elapsedRealtimeMs", android.os.SystemClock.elapsedRealtime())
+            InstrumentationRegistry.getInstrumentation().sendStatus(0, android.os.Bundle().apply {
+                putString("stream", "I12_QR_METADATA $receipt\n")
+            })
+        } finally { bitmap.recycle() }
+    }
+
     @Test
     fun qrImageSeam_completesRealAuthenticatedPair_overActualTopology() {
         val listener = RecordingListener()
