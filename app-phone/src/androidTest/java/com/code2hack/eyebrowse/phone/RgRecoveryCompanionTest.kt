@@ -29,6 +29,8 @@ class RgRecoveryCompanionTest {
     @Test fun authenticPeerPrecedesWrongPeerAtTestAlias() = companion("wrong-peer")
     @Test fun nativeRgForgetAndAuthenticatedRepairPreservePhone() = companion("forget")
 
+    @Test fun phonePreservesInactiveHostAcrossNativeNetworkRetry() = companion("network")
+
     private fun companion(mode: String) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext
@@ -76,6 +78,22 @@ class RgRecoveryCompanionTest {
                 Log.i("EyeBrowseRgRecovery","PHONE_CONTINUITY mission=$mission stage=$label sameView=true sameDocument=true sameHistory=true sameDraft=true")
             }
             when (mode) {
+                "network" -> {
+                    scenario.onActivity { server.start() };publish("ready")
+                    await("RG authenticated after explicit Retry",25_000) { phase.readText().trim()=="network-authenticated" }
+                    assertTrue(server.isLinkUp())
+                    scenario.onActivity {
+                        assertEquals(ControlOwner.PHONE,server.controlCoordinator.authority.snapshot().owner)
+                        assertFalse(host.hasDisplayResources())
+                        assertFalse(host.captureResourcesPresent())
+                        assertFalse(host.isWakeLockHeld())
+                    }
+                    assertArrayEquals(trustBefore,trust.readBytes())
+                    assertEquals(ownIdentity,PhoneLinkIdentity().spkiSha256Hex())
+                    continuity("native-network-retry")
+                    publish("network-verified")
+                    await("RG terminal acknowledgement",10_000) { phase.readText().trim()=="verified" }
+                }
                 "restart" -> {
                     scenario.onActivity { it.findViewById<Button>(R.id.button_hosting_toggle).performClick();server.start() }
                     await("hosting",5_000) { host.status().state==HostingController.State.HOSTING }
