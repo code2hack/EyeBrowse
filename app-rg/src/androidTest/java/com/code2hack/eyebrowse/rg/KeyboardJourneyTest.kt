@@ -107,8 +107,20 @@ class KeyboardJourneyTest {
             j.await("coalesced close-open layout settles",2_000) { j.peer.canSubmitAddress() }
             checkPhone("coalesced_layout")
             clearAddress();fixture.forEach { character(it,false) }
-            press(RgKeyboard.Key.Command.ENTER)
-            j.await("real address navigation",5_000) { !j.peer.keyboard.visible && j.peer.canAct() && j.peer.browserState()?.title?.startsWith("KBD|")==true }
+            lateinit var receipts: KeyboardNavigationReceipts
+            j.main { receipts=KeyboardNavigationReceipts(it) }
+            try {
+                press(RgKeyboard.Key.Command.ENTER)
+                receipts.capture("await-start boundMs=5000")
+                j.await("real address navigation",5_000) {
+                    receipts.capture("await-predicate",onlyChange=true)
+                    !j.peer.keyboard.visible && j.peer.canAct() && j.peer.browserState()?.title?.startsWith("KBD|")==true
+                }
+                receipts.capture("await-passed")
+            } catch (failure: Throwable) {
+                receipts.capture("navigation-scope-failed type=${failure.javaClass.simpleName}")
+                throw failure
+            } finally { j.main { receipts.close() } }
             checkPhone("address_opened")
 
             field("text")
