@@ -96,10 +96,12 @@ internal class RgInputRouter(
         if(active) gestures.deadline?.let { main.postAtTime(confirmation,it) }
         if(!gestures.hasWork) gestureContext=null
     }
+    internal fun surfaceAvailable() = active && focused && activity.hasWindowFocus() && browserRoot.isShown && !occluded()
     private fun usable() = active && focused && activity.hasWindowFocus() && browserRoot.isShown &&
-        pointer.inputPosition().available && !occluded()
+        (presentation.reading || pointer.inputPosition().available) && !occluded()
 
     private fun captureTap(): Tap? {
+        if(presentation.reading) return null
         if(!usable()) return null
         val point=pointer.inputPosition().let { InputPoint(it.x,it.y) }
         val input=presentation.inputSnapshot()
@@ -108,6 +110,7 @@ internal class RgInputRouter(
         return Tap(point,target,geometryVersion,input,SystemClock.uptimeMillis())
     }
     private fun confirmedTap(tap: Tap?) {
+        if(presentation.reading) return
         val confirmed=SystemClock.uptimeMillis()
         val accepted=tap!=null && usable() && tap.geometryVersion==geometryVersion &&
             targetAt(tap.point,presentation.inputSnapshot())==tap.target &&
@@ -126,6 +129,7 @@ internal class RgInputRouter(
     private fun scroll(delta: Int) {
         val confirmed=SystemClock.uptimeMillis()
         val input=gestureContext
+        presentation.suspendReadingScroll()
         // Swipe keeps its original availability/context even if a background refill finishes at UP.
         val accepted=usable() && input?.pageReady==true && presentation.dispatchIfCurrent(input) {
             presentation.scrollBy(0f,delta.toFloat())!=null
@@ -179,7 +183,7 @@ internal class RgInputRouter(
         while(child!==root) {
             val parent=child.parent as? ViewGroup ?: return true
             val ordered=children(parent);val index=ordered.indexOf(child)
-            if(ordered.drop(index+1).any { it!==pointer && it.isShown && it.alpha>0 && it.width>0 && it.height>0 }) return true
+            if(ordered.drop(index+1).any { it!==pointer && it.id!=R.id.rg_reading_notice && it.isShown && it.alpha>0 && it.width>0 && it.height>0 }) return true
             child=parent
         }
         return false

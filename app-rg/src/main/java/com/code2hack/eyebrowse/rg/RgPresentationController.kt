@@ -63,6 +63,84 @@ class RgPresentationController(context: Context, private val surface: Surface) :
         else commands.cancel(reservationOwner)
     }
     internal val keyboard = RgKeyboard()
+    internal var reading = false
+        private set
+    private val headScroll = HeadScrollModel()
+    private var scrollCompatible = false
+    private var presentationActive = true
+    internal var inputSurfaceAvailable: () -> Boolean = { false }
+    private var scrollRequest: String? = null
+    private var scrollCredit: ScrollCreditMessage? = null
+    private var usedCredit: String? = null
+    private var creditWaitAt = 0L
+    private var creditPending = false
+    private var sentNeutral = false
+    private var readingUiState: Triple<Boolean,Boolean,Boolean>? = null
+    private var reconcileLayoutOnConnect = false
+    private val readingTick = object : Runnable {
+        override fun run() = synchronized(lock) {
+            if (closed || !reading) return@synchronized
+            val now = SystemClock.elapsedRealtime()
+            val speed = headScroll.speed(SystemClock.elapsedRealtimeNanos())
+            val eligible = presentationActive && inputSurfaceAvailable() && scrollCompatible && baseActionEligibleLocked()
+            if (!eligible) stopHeadScroll()
+            else if (!headScroll.armed) stopHeadScroll(reacquire=false)
+            else if (creditPending && now-creditWaitAt >= ContinuousScrollLimits.CREDIT_MS) {
+                stopHeadScroll();status("Reading paused — return to neutral")
+            } else if (scrollRequest == null) {
+                val request = java.util.UUID.randomUUID().toString()
+                scrollRequest=request;creditPending=true;creditWaitAt=now
+                if (!client.sendControl(ScrollStartMessage(request,checkNotNull(state).context))) stopHeadScroll()
+            } else if (!creditPending) {
+                val credit=scrollCredit
+                if (credit != null && credit.credit != usedCredit) {
+                    val velocity=if(sentNeutral)speed else 0.0
+                    usedCredit=credit.credit;creditPending=true;creditWaitAt=now
+                    if (client.sendControl(ScrollVelocityMessage(credit.context,credit.leaseId,credit.credit,velocity))) sentNeutral=true
+                    else stopHeadScroll()
+                }
+            }
+            val next=Triple(eligible,headScroll.armed,headScroll.available(SystemClock.elapsedRealtimeNanos()))
+            if (readingUiState != next) { readingUiState=next;status(statusText) }
+            main.postDelayed(this,ContinuousScrollLimits.TICK_MS)
+        }
+    }
+    internal fun headSample(sample: RotationSample, now: Long, rotation: Int) = synchronized(lock) {
+        if (reading) headScroll.sample(sample,now,rotation)
+    }
+    internal fun inputPresentationActive(active: Boolean) = synchronized(lock) {
+        presentationActive=active
+        if(!active)stopHeadScroll()
+    }
+    internal fun readingNotice(): String? = synchronized(lock) {
+        when {
+            !reading -> null
+            !presentationActive || !inputSurfaceAvailable() || !scrollCompatible || !baseActionEligibleLocked() -> "Reading paused — double tap to exit"
+            !headScroll.available(SystemClock.elapsedRealtimeNanos()) -> "Motion input unavailable — double tap to exit"
+            !headScroll.armed -> "Hold neutral to scroll · Double tap to exit"
+            else -> null
+        }
+    }
+    internal fun toggleReading(): Boolean = synchronized(lock) {
+        if (reading) {
+            stopHeadScroll();headScroll.stop();reading=false;main.removeCallbacks(readingTick)
+            beginLayout();status("Normal Mode");return@synchronized true
+        }
+        if (!scrollCompatible || !compatible || state?.owner != ControlOwner.RG) {
+            status("Reading unavailable — connect or update Phone");return@synchronized false
+        }
+        dismissKeyboard();pendingActivation=null
+        reading=true;headScroll.start();beginLayout();status("Reading Mode")
+        main.removeCallbacks(readingTick);main.post(readingTick)
+        true
+    }
+    internal fun suspendReadingScroll() = synchronized(lock) { if(reading)stopHeadScroll() }
+    private fun stopHeadScroll(reacquire: Boolean = true) {
+        scrollCredit?.let { client.sendControl(ScrollStopMessage(it.context,it.leaseId)) }
+        scrollRequest=null;scrollCredit=null;usedCredit=null;creditPending=false;sentNeutral=false
+        if (reacquire)headScroll.suspend()
+    }
+
     private var keyboardCompatible = false
     private var hostActive = false
     private var editorState: EditorStateMessage? = null
@@ -82,7 +160,7 @@ class RgPresentationController(context: Context, private val surface: Surface) :
     }
 
     internal fun canOpenAddress(): Boolean = synchronized(lock) {
-        keyboardCompatible && compatible && hostActive && !closed && state?.owner == ControlOwner.RG && !handoff.busy
+        !reading && keyboardCompatible && compatible && hostActive && !closed && state?.owner == ControlOwner.RG && !handoff.busy
     }
     private fun addressEligible(): Boolean = canOpenAddress() && pendingCommand == null &&
         viewportChange == null && !layoutExpected && editorClose == null &&
@@ -165,6 +243,7 @@ class RgPresentationController(context: Context, private val surface: Surface) :
     }
     internal fun needsLayoutMeasurement(): Boolean = synchronized(lock) { layoutExpected && !layoutMeasured }
     private fun beginLayout() {
+        stopHeadScroll()
         layoutExpected = true; layoutMeasured = false; layoutStartedAt = SystemClock.uptimeMillis(); inputRevision++
         main.removeCallbacks(viewportTimeout)
         main.postAtTime(viewportTimeout, viewportChange?.deadline ?: (layoutStartedAt + 2_000))
@@ -204,6 +283,7 @@ class RgPresentationController(context: Context, private val surface: Surface) :
     }
     private fun failViewport(reason: String) = invalidate(reason)
     private fun retireKeyboard() {
+        stopHeadScroll()
         keyboard.close(); editorState = null; pendingActivation = null; pendingAddress = null
         viewportChange = null; layoutExpected = false; editorClose = null
         main.removeCallbacks(viewportTimeout); editorCloseTimeout?.let(main::removeCallbacks); editorCloseTimeout = null
@@ -273,7 +353,10 @@ class RgPresentationController(context: Context, private val surface: Surface) :
         } }, 1_000)
         id
     }
-    fun scrollBy(dx: Float, dy: Float): String? = action(BrowserAction.ScrollBy(dx,dy))
+    fun scrollBy(dx: Float, dy: Float): String? = synchronized(lock) {
+        if (reading) stopHeadScroll()
+        action(BrowserAction.ScrollBy(dx,dy))
+    }
 
     private fun action(action: BrowserAction): String? = synchronized(lock) {
         if (if (action is BrowserAction.OpenAddress) !canSubmitAddress() else !canAct()) return@synchronized null
@@ -406,6 +489,10 @@ class RgPresentationController(context: Context, private val surface: Surface) :
     fun reconnect() {
         val open=synchronized(lock) {
             if(closed) false else {
+                reconcileLayoutOnConnect=true
+                if (compatible && state?.owner==ControlOwner.RG && state?.profile!=measuredProfile) {
+                    beginLayout();layoutMeasured=true;sendViewportIfNeeded();reconcileLayoutOnConnect=false
+                }
                 commands.cancel(reservationOwner)
                 prepareControls() // Storage recovery also works while the authenticated link is already live.
                 true
@@ -439,8 +526,13 @@ class RgPresentationController(context: Context, private val surface: Surface) :
     } }
     override fun onKeyboardCompatibility(compatible: Boolean) = onMain { synchronized(lock) {
         keyboardCompatible = compatible; inputRevision++
+        if (compatible && layoutExpected) sendViewportIfNeeded()
         if (!compatible) retireKeyboard()
         status(statusText)
+    } }
+    override fun onContinuousScrollCompatibility(compatible: Boolean) = onMain { synchronized(lock) {
+        scrollCompatible=compatible
+        if (!compatible) stopHeadScroll()
     } }
     override fun onLinkLost() = onMain { synchronized(lock) { compatible = false; invalidate("Disconnected — page stale; Retry") } }
     override fun onConnectFailed(error: LinkError) = onMain { invalidate("Connection failed: ${error.javaClass.simpleName}") }
@@ -468,6 +560,13 @@ class RgPresentationController(context: Context, private val surface: Surface) :
                     }
                 }
                 state = message
+                if (old?.context != message.context || old?.owner != message.owner || message.stale) stopHeadScroll()
+                if (reconcileLayoutOnConnect) {
+                    reconcileLayoutOnConnect=false
+                    if (message.owner==ControlOwner.RG && message.profile!=measuredProfile) {
+                        beginLayout();layoutMeasured=true;sendViewportIfNeeded()
+                    }
+                }
                 continueLayoutUntil?.let { deadline ->
                     // The old document retired the request, not the measured local layout intent.
                     // Continue only that state update, under its original guard and fresh context.
@@ -488,6 +587,11 @@ class RgPresentationController(context: Context, private val surface: Surface) :
                 status(if (!live) {
                     if (message.owner == ControlOwner.PHONE) "Browsing on Phone" else "Presentation stale"
                 } else if (lastFrameHeader?.context == message.context) statusText else "Waiting for current frame")
+            }
+            is ScrollCreditMessage -> {
+                if (!reading || !presentationActive || message.requestId!=scrollRequest || message.context!=state?.context ||
+                    message.credit==usedCredit || scrollCredit?.let { it.leaseId!=message.leaseId }==true) return@synchronized
+                scrollCredit=message;creditPending=false
             }
             is EditorStateMessage -> {
                 val current = state ?: return@synchronized
@@ -669,6 +773,7 @@ class RgPresentationController(context: Context, private val surface: Surface) :
         main.removeCallbacks(preparationGuard);main.removeCallbacks(reservationUpdate)
         handoffTimeout?.let(main::removeCallbacks);handoffTimeout=null
         actionTimeout?.let(main::removeCallbacks)
+        headScroll.stop();main.removeCallbacks(readingTick)
         client.disconnect(); decoder.shutdownNow(); main.removeCallbacks(display); main.removeCallbacks(updateSurface)
         // ImageView may still render the last bitmap until its Activity detaches. Let GC own it.
         shown = null

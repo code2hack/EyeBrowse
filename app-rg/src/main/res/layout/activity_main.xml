@@ -34,4 +34,8 @@
 </LinearLayout>
 <com.code2hack.eyebrowse.rg.PointerOverlay android:id="@+id/rg_pointer"
     android:layout_width="match_parent" android:layout_height="match_parent" />
+<TextView android:id="@+id/rg_reading_notice" android:layout_width="wrap_content"
+    android:layout_height="wrap_content" android:layout_gravity="top|center_horizontal"
+    android:padding="4dp" android:background="#CC000000" android:textColor="@color/rg_text_primary"
+    android:textSize="12sp" android:visibility="gone" android:importantForAccessibility="yes" />
 </FrameLayout>

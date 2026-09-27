@@ -17,6 +17,8 @@ data class HelloMessage(val pmj: Int, val pmm: Int, val caps: List<String>) {
     fun hasPresentationCapabilities(): Boolean =
         com.code2hack.eyebrowse.core.link.LinkProtocol.PRESENTATION_CAPABILITIES.all { caps.contains(it) }
 
+    fun hasContinuousScroll(): Boolean = hasKeyboardCapabilities() && caps.contains(com.code2hack.eyebrowse.core.link.LinkProtocol.CAP_CONTINUOUS_SCROLL_V1)
+
     fun hasKeyboardCapabilities(): Boolean = hasPresentationCapabilities() &&
         com.code2hack.eyebrowse.core.link.LinkProtocol.KEYBOARD_CAPABILITIES.all { caps.contains(it) }
 }

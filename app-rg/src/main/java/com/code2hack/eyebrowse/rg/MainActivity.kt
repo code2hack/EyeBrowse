@@ -44,10 +44,16 @@ class MainActivity : Activity() {
         val location = findViewById<Button>(R.id.rg_detail)
         val keyboard = RgKeyboardView(this)
         findViewById<LinearLayout>(R.id.rg_keyboard_container).addView(keyboard)
-        var keyboardVisible = false
         var layoutObservationPending = false
         presentation = RgPresentationController(this, object : RgPresentationController.Surface {
-            override fun status(text: String) { status.text = text }
+            override fun status(text: String) {
+                status.text = text
+                val notice = presentation.readingNotice()
+                findViewById<TextView>(R.id.rg_reading_notice).apply {
+                    this.text = notice
+                    visibility = if (notice == null) View.GONE else View.VISIBLE
+                }
+            }
             override fun browserState(state: BrowserStateMessage) {
                 location.text = state.url ?: state.title ?: getString(R.string.rg_location_empty)
                 val rg = state.owner == ControlOwner.RG
@@ -55,7 +61,7 @@ class MainActivity : Activity() {
                     setText(if (rg) R.string.use_on_phone else R.string.use_on_glasses)
                     isEnabled = presentation.canHandoff()
                 }
-                findViewById<View>(R.id.rg_navigation).visibility = if (presentation.keyboard.visible) View.GONE else if (rg) View.VISIBLE else View.INVISIBLE
+                findViewById<View>(R.id.rg_navigation).visibility = if (presentation.keyboard.visible || presentation.reading) View.GONE else if (rg) View.VISIBLE else View.INVISIBLE
                 findViewById<Button>(R.id.rg_back).isEnabled = presentation.canAct() && state.canGoBack
                 findViewById<Button>(R.id.rg_forward).isEnabled = presentation.canAct() && state.canGoForward
                 findViewById<Button>(R.id.rg_reload).isEnabled = presentation.canAct()
@@ -64,12 +70,18 @@ class MainActivity : Activity() {
             override fun keyboardChanged() {
                 keyboard.render(presentation)
                 location.isEnabled = presentation.canOpenAddress()
-                val visible = presentation.keyboard.visible
-                if (visible != keyboardVisible) {
-                    keyboardVisible = visible
-                    for (id in listOf(R.id.rg_utilities, R.id.rg_pointer_controls, R.id.rg_handoff, R.id.rg_navigation))
-                        findViewById<View>(id).visibility = if (visible) View.GONE else View.VISIBLE
+                val reading = presentation.reading
+                val compact = presentation.keyboard.visible || reading
+                for (id in listOf(R.id.rg_utilities, R.id.rg_pointer_controls, R.id.rg_handoff))
+                    findViewById<View>(id).visibility = if (compact) View.GONE else View.VISIBLE
+                findViewById<View>(R.id.rg_navigation).visibility = when {
+                    compact -> View.GONE
+                    presentation.browserState()?.owner == ControlOwner.RG -> View.VISIBLE
+                    else -> View.INVISIBLE
                 }
+                status.visibility = if (reading) View.GONE else View.VISIBLE
+                location.visibility = if (reading) View.GONE else View.VISIBLE
+                pointer.visibility = if (reading) View.INVISIBLE else View.VISIBLE
                 if (presentation.needsLayoutMeasurement() && !layoutObservationPending) {
                     layoutObservationPending = true
                     root.requestLayout()
@@ -89,6 +101,7 @@ class MainActivity : Activity() {
             }
             override fun frame(bitmap: android.graphics.Bitmap) { image.setImageBitmap(bitmap) }
         })
+        pointer.onSample = presentation::headSample
         location.setOnClickListener { presentation.openAddressKeyboard() }
         image.addOnLayoutChangeListener { _,l,t,r,b,_,_,_,_ ->
             presentation.measure(r-l,b-t,resources.displayMetrics.densityDpi)
@@ -113,6 +126,8 @@ class MainActivity : Activity() {
                 else -> R.string.input_unavailable
             })
         }
+        presentation.inputSurfaceAvailable = inputRouter::surfaceAvailable
+        inputRouter.onModeToggleIntent = { presentation.toggleReading() }
     }
     @Deprecated("Legacy Activity Back callback")
     override fun onBackPressed() {
@@ -124,10 +139,13 @@ class MainActivity : Activity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if(::inputRouter.isInitialized) inputRouter.focus(hasFocus)
-        if (!hasFocus && ::presentation.isInitialized) presentation.dismissKeyboard()
+        if (::presentation.isInitialized) {
+            presentation.inputPresentationActive(hasFocus)
+            if (!hasFocus) presentation.dismissKeyboard()
+        }
     }
-    override fun onResume() { super.onResume();pointer.start();inputRouter.resume() }
-    override fun onPause() { inputRouter.pause();presentation.dismissKeyboard();pointer.stop();super.onPause() }
+    override fun onResume() { super.onResume();presentation.inputPresentationActive(hasWindowFocus());pointer.start();inputRouter.resume() }
+    override fun onPause() { inputRouter.pause();presentation.inputPresentationActive(false);presentation.dismissKeyboard();pointer.stop();super.onPause() }
     override fun onStop() { presentation.pause(); super.onStop() }
     override fun onDestroy() { inputRouter.pause();pointer.stop();presentation.close(); super.onDestroy() }
 }

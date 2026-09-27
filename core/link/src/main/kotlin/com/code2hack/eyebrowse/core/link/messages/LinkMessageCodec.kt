@@ -54,6 +54,10 @@ object LinkMessageCodec {
             is EditorCloseResultMessage -> "editor_close_result" to json.encodeToJsonElement(EditorCloseResultMessage.serializer(), message)
             is ViewportUpdateMessage -> "viewport_update" to json.encodeToJsonElement(ViewportUpdateMessage.serializer(), message)
             is ViewportUpdateResultMessage -> "viewport_update_result" to json.encodeToJsonElement(ViewportUpdateResultMessage.serializer(), message)
+            is ScrollStartMessage -> "scroll_start" to json.encodeToJsonElement(ScrollStartMessage.serializer(), message)
+            is ScrollCreditMessage -> "scroll_credit" to json.encodeToJsonElement(ScrollCreditMessage.serializer(), message)
+            is ScrollVelocityMessage -> "scroll_velocity" to json.encodeToJsonElement(ScrollVelocityMessage.serializer(), message)
+            is ScrollStopMessage -> "scroll_stop" to json.encodeToJsonElement(ScrollStopMessage.serializer(), message)
             else -> throw IllegalArgumentException("unsupported message type ${message::class.simpleName}")
         }
         val envelope = buildJsonObject {
@@ -92,6 +96,10 @@ object LinkMessageCodec {
                 "editor_close_result" -> json.decodeFromJsonElement(EditorCloseResultMessage.serializer(), obj)
                 "viewport_update" -> json.decodeFromJsonElement(ViewportUpdateMessage.serializer(), obj)
                 "viewport_update_result" -> json.decodeFromJsonElement(ViewportUpdateResultMessage.serializer(), obj)
+                "scroll_start" -> json.decodeFromJsonElement(ScrollStartMessage.serializer(), obj)
+                "scroll_credit" -> json.decodeFromJsonElement(ScrollCreditMessage.serializer(), obj)
+                "scroll_velocity" -> json.decodeFromJsonElement(ScrollVelocityMessage.serializer(), obj)
+                "scroll_stop" -> json.decodeFromJsonElement(ScrollStopMessage.serializer(), obj)
                 else -> null
             }
             if (message == null) Result.success(Incoming.Unknown(type))

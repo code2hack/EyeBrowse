@@ -329,7 +329,8 @@ class LinkClientEngine(
                     val peer = checkNotNull(operation.peerHello)
                     val session = AuthenticatedControlSession(tls, input,
                         peer.hasPresentationCapabilities() && attempt.clientHello.hasPresentationCapabilities(), true,
-                        keyboardCompatible = peer.hasKeyboardCapabilities() && attempt.clientHello.hasKeyboardCapabilities())
+                        keyboardCompatible = peer.hasKeyboardCapabilities() && attempt.clientHello.hasKeyboardCapabilities(),
+                        continuousScrollCompatible = peer.hasContinuousScroll() && attempt.clientHello.hasContinuousScroll())
                     operation.session = session
                     session.start()
                     listener.onAuthenticatedSession(session, peer)

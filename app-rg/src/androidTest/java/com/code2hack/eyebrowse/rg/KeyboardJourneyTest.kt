@@ -161,9 +161,23 @@ class KeyboardJourneyTest {
             j.aim(keyPoint);val count=j.actions
             j.pad();SystemClock.sleep(40);j.pad();j.confirmWindow()
             assertEquals(count,j.actions);checkPhone("double_tap")
+            j.await("Reading dismisses keyboard and receives fresh geometry",2_000) {
+                j.peer.reading && !j.peer.keyboard.visible && j.peer.canAct()
+            }
+            screenshot("reading")
+            j.pad();j.confirmWindow() // Isolated Reading tap has no page/key effect.
+            assertEquals(count,j.actions)
+            j.pad();SystemClock.sleep(40);j.pad();j.confirmWindow()
+            j.await("Normal returns without keyboard reopen",2_000) {
+                !j.peer.reading && !j.peer.keyboard.visible && j.peer.canAct()
+            }
+            field("text")
+            val afterReactivation=j.actions
+            j.main { keyPoint=j.nativeCenter(keyView(RgKeyboard.Key.Character("a"))) }
+            j.aim(keyPoint)
             // A pending lowercase key cannot become an uppercase key after the layer changes.
             j.pad();j.main { keyView(RgKeyboard.Key.Command.SHIFT).performClick() };j.confirmWindow()
-            assertEquals(count,j.actions);checkPhone("stale_case")
+            assertEquals(afterReactivation,j.actions);checkPhone("stale_case")
             character('a');character('B');character('1')
             press(RgKeyboard.Key.Command.SPACE);press(RgKeyboard.Key.Command.BACKSPACE)
             press(RgKeyboard.Key.Command.ENTER);checkPhone("text_submit")

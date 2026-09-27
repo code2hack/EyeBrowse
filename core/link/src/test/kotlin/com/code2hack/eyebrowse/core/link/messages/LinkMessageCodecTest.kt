@@ -8,6 +8,22 @@ import org.junit.Test
 /** Plan §10-B: versioned message codec, unknown-field/type tolerance. */
 class LinkMessageCodecTest {
 
+    @Test fun continuousStateRoundtripAndValidation() {
+        val context = com.code2hack.eyebrowse.core.link.control.ControlContext("life",1,"doc",1,1)
+        for (message in listOf(ScrollStartMessage("request",context),
+            ScrollCreditMessage("request",context,"lease","credit"),
+            ScrollVelocityMessage(context,"lease","credit",-600.0),ScrollStopMessage(context,"lease"))) {
+            val decoded = LinkMessageCodec.decode(LinkMessageCodec.encode(message)).getOrThrow()
+            assertEquals(message,(decoded as LinkMessageCodec.Incoming.Known).message)
+        }
+        val encoded = String(LinkMessageCodec.encode(ScrollVelocityMessage(context,"lease","credit",600.0)))
+        assertTrue(LinkMessageCodec.decode(encoded.replace("600.0","1200.1").toByteArray()).isFailure)
+        val capabilities = com.code2hack.eyebrowse.core.link.LinkProtocol.ALL_CAPABILITIES
+        assertTrue(HelloMessage(1,3,capabilities).hasContinuousScroll())
+        org.junit.Assert.assertFalse(HelloMessage(1,2,capabilities.filter { it !=
+            com.code2hack.eyebrowse.core.link.LinkProtocol.CAP_CONTINUOUS_SCROLL_V1 }).hasContinuousScroll())
+    }
+
     @Test
     fun `hello roundtrip`() {
         val hello = HelloMessage(1, 0, listOf("PAIRING_V1", "STATUS_V1"))

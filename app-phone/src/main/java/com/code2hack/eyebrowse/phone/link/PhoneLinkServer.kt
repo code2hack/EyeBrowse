@@ -46,6 +46,34 @@ class PhoneLinkServer(
     @Volatile
     private var engine: LinkServerEngine? = null
 
+    /** Phone input lease, independent of hosting/capture resource leases. */
+    val continuousScroll = ContinuousScrollLease()
+    internal var continuousScrollSteps = 0L
+        private set
+    internal var lastContinuousScrollAt = 0L
+        private set
+    private val scrollTick = object : Runnable {
+        override fun run() {
+            reconcileHostingAuthority()
+            controlCoordinator.reconcileDocument()
+            val now = android.os.SystemClock.elapsedRealtime()
+            try {
+                synchronized(controlCoordinator.authority) {
+                    val delta = continuousScroll.delta(controlCoordinator.authority.snapshot(),connectionGeneration,now)
+                    if (delta != 0 && authenticatedSession != null && editorController?.isQuiescent() == true) {
+                        checkNotNull(browserSession).executeRemoteAction(BrowserAction.ScrollBy(0f,delta.toFloat()))
+                        continuousScrollSteps++;lastContinuousScrollAt=now
+                    } else if (editorController?.isQuiescent() == false) continuousScroll.stop()
+                }
+            } catch (_: RuntimeException) {
+                stopContinuousScroll();authenticatedSession?.close()
+            }
+            if (continuousScroll.active) main.postDelayed(this,ContinuousScrollLimits.TICK_MS)
+        }
+    }
+    private fun stopContinuousScroll() {
+        continuousScroll.stop();main.removeCallbacks(scrollTick)
+    }
     private val pendingControls = java.util.concurrent.Semaphore(LinkProtocol.OUTBOUND_QUEUE_MAX)
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
     @Volatile private var authenticatedSession: AuthenticatedControlSession? = null
@@ -169,7 +197,7 @@ class PhoneLinkServer(
                 authenticatedSession = null
                 profileRequest = null; profileEditor = null
             }
-            main.post { editorController?.close { } }
+            main.post { stopContinuousScroll();editorController?.close { } }
             schedulePresentation()
             notifyLinkObservers()
         }
@@ -181,6 +209,7 @@ class PhoneLinkServer(
             }
             main.post {
                 if (authenticatedSession !== session) return@post
+                stopContinuousScroll()
                 viewportHighWater = 0; lastViewportResult = null; lastCloseResult = null
                 profileRequest = null; profileEditor = null
                 editorController?.close { }
@@ -213,6 +242,24 @@ class PhoneLinkServer(
     private fun processEditorAwareControl(session: AuthenticatedControlSession, message: BrowserControlMessage,
                                           answer: (BrowserControlMessage?) -> Unit) {
         controlCoordinator.reconcileDocument()
+        if (message is ScrollStartMessage || message is ScrollVelocityMessage || message is ScrollStopMessage) {
+            if (!session.continuousScrollCompatible || transitionPending || editorController?.isQuiescent() != true) {
+                stopContinuousScroll();answer(null);return
+            }
+            val now=android.os.SystemClock.elapsedRealtime()
+            val state=controlCoordinator.authority.snapshot()
+            val credit=when(message) {
+                is ScrollStartMessage -> continuousScroll.start(message,state,connectionGeneration,now)
+                is ScrollVelocityMessage -> continuousScroll.update(message,state,connectionGeneration,now)
+                is ScrollStopMessage -> { continuousScroll.stop(message,state,connectionGeneration,now);null }
+                else -> null
+            }
+            main.removeCallbacks(scrollTick)
+            if(continuousScroll.active) main.post(scrollTick)
+            answer(credit);return
+        }
+        if (message is BrowserActionMessage || message is HandoffRequestMessage || message is ViewportUpdateMessage)
+            stopContinuousScroll()
         val editor = editorController
         if (message is BrowserActionMessage && (message.action is BrowserAction.Edit || transitionPending)) {
             val admission = controlCoordinator.authority.admitAction(ControlOwner.RG,
@@ -351,6 +398,7 @@ class PhoneLinkServer(
 
     /** Shared main-thread boundary for remote handoff/actions and explicit local recovery. */
     private fun processControl(message: BrowserControlMessage): BrowserControlMessage? {
+        stopContinuousScroll()
         val before = controlCoordinator.authority.snapshot().context
         val response = controlCoordinator.receive(message)
         val state = controlCoordinator.authority.snapshot()
@@ -481,6 +529,7 @@ class PhoneLinkServer(
 
     @Synchronized
     fun stop(sendForgetNotice: Boolean = false) {
+        main.post { stopContinuousScroll() }
         hostingController?.removeListener(hostingListener)
         browserSession?.removeListener(browserListener)
         synchronized(controlCoordinator.authority) {

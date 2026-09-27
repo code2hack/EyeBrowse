@@ -40,6 +40,7 @@ class RgLinkClient(
         fun onConnectFailed(error: LinkError)
         fun onPresentationCompatibility(result: CapabilityNegotiation) {}
         fun onKeyboardCompatibility(compatible: Boolean) {}
+        fun onContinuousScrollCompatibility(compatible: Boolean) {}
         fun onControl(message: BrowserControlMessage) {}
         fun onPresentation(frame: PresentationFrame) {}
     }
@@ -72,6 +73,7 @@ class RgLinkClient(
             presentationCompatibility = CapabilityNegotiator.negotiate(peer, true)
             listener.onPresentationCompatibility(presentationCompatibility)
             listener.onKeyboardCompatibility(peer.hasKeyboardCapabilities())
+            listener.onContinuousScrollCompatibility(session.continuousScrollCompatible)
             // Trust commit happens strictly after the pinned TLS peer proved possession of the
             // invitation or its remembered identity (plan §4.2/§8). Locator refresh is allowed
             // for the SAME pinned identity (plan §8 "Changed locator").
