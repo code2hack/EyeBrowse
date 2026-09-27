@@ -30,6 +30,12 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    // Test-only evidence policy, compiled for both its JVM controls and device observer.
+    sourceSets.getByName("test").java.srcDir("src/testShared/java")
+    sourceSets.getByName("test").kotlin.srcDir("src/testShared/java")
+    sourceSets.getByName("androidTest").java.srcDir("src/testShared/java")
+    sourceSets.getByName("androidTest").kotlin.srcDir("src/testShared/java")
 }
 
 dependencies {

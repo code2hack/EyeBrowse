@@ -117,3 +117,15 @@ remove only mission-specific reverse mappings/cache files, verify trust unchange
 actual final screen state. Keep required screenshots/logs before cleanup. Unavailable wearer,
 optical, physical-fold and unplugged conditions are `NOT EXERCISED — unattended profile`;
 software failures or missing essential device integration are not physical waivers.
+
+## Deadline evidence across navigation (#11 adjudication)
+
+The test-only `KeyboardDeadlineEvidence` is shared with JVM negative controls.
+It requires a non-null original deadline, unchanged deadlines for every observed
+request, and current-document/profile/frame readiness strictly before that same
+RG-uptime deadline with no pending layout/request. It accepts either an accepted
+new-document continuation or an accepted prior-document request whose target
+profile is already inherited by the authoritative new document and matching frame.
+It does not demand a redundant request when geometry already matches. Missing,
+late, reset, mismatched or unresolved evidence remains failure. The observer logs
+`KBD_DEADLINE` with the selected witness; no production path or deadline changes.

@@ -21,11 +21,15 @@ internal class KeyboardNavigationReceipts(private val activity: MainActivity) : 
     private val records = mutableListOf<String>()
     private var lost = 0
     private var originalLayoutDeadline: Long? = null
-    private val requestDeadlines = linkedMapOf<Long, Pair<String, Long>>()
+    private val requestDeadlines = linkedMapOf<Long, KeyboardDeadlineEvidence.Request>()
+    private val acceptedReplies = linkedMapOf<Long, ViewportUpdateResultMessage>()
     fun preservedDeadlineFor(document: String): Boolean = synchronized(monitor) {
-        val deadline = originalLayoutDeadline
-        deadline != null && requestDeadlines.values.any { it.first == document } &&
-            requestDeadlines.values.all { it.second == deadline }
+        val at=SystemClock.uptimeMillis()
+        val completion=KeyboardDeadlineEvidence.Completion(document,at,peer.browserState(),peer.profile(),peer.lastFrameHeader,
+            field("layoutExpected").getBoolean(peer),field("viewportChange").get(peer)!=null,peer.canAct(),!peer.keyboard.visible)
+        val witness=KeyboardDeadlineEvidence.witness(originalLayoutDeadline,requestDeadlines.values,acceptedReplies,completion)
+        Log.i("EyeBrowseKeyboardTest","KBD_DEADLINE witness=$witness document=$document observedAt=$at originalDeadline=$originalLayoutDeadline requests=${requestDeadlines.size}")
+        witness!=null
     }
     private var lastPredicate: String? = null
     @Volatile private var observing = true
@@ -43,6 +47,9 @@ internal class KeyboardNavigationReceipts(private val activity: MainActivity) : 
             val entered = SystemClock.uptimeMillis()
             val previousTitle = peer.browserState()?.title
             original.onControl(message)
+            if(message is ViewportUpdateResultMessage && message.accepted) synchronized(monitor) {
+                if(acceptedReplies.size<256) acceptedReplies.putIfAbsent(message.transitionId,message)
+            }
             val detail = when (message) {
                 is BrowserActionResultMessage -> "action-result accepted=${message.accepted} reason=${message.reason}"
                 is BrowserStateMessage -> "browser-state titleChanged=${message.title!=previousTitle} kbd=${message.title?.startsWith("KBD|")==true} loading=${message.loading}"
@@ -71,7 +78,7 @@ internal class KeyboardNavigationReceipts(private val activity: MainActivity) : 
                 originalLayoutDeadline = field("layoutStartedAt").getLong(peer) + 2_000
             val deadline = change?.javaClass?.getDeclaredField("deadline")?.apply { isAccessible=true }?.getLong(change)
             if (request != null && deadline != null && requestDeadlines.size < 256)
-                requestDeadlines[request.transitionId] = request.context.documentId to deadline
+                requestDeadlines[request.transitionId] = KeyboardDeadlineEvidence.Request(request,deadline)
             val measured = peer.profile()
             val frame = peer.lastFrameHeader
             val status = field("statusText").get(peer) as? String
