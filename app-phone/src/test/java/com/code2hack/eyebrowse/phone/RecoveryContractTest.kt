@@ -82,4 +82,21 @@ class RecoveryContractTest {
         assertTrue((replacement.receive(request(fresh, 1)) as BrowserActionResultMessage).accepted)
         assertEquals(1, effects)
     }
+    @Test fun duplicateHandoffDoesNotAdvanceOwnershipTwiceAndStopRejectsUncertainAction() {
+        var effects=0
+        val phone=ready { effects++ }
+        val rg=phone.authority.snapshot().context
+        val uncertain=request(rg,1)
+        assertTrue((phone.receive(uncertain) as BrowserActionResultMessage).accepted)
+        val handoff=HandoffRequestMessage(HandoffTargetWire.PHONE,rg.controlEpoch)
+        assertTrue((phone.receive(handoff) as HandoffResultMessage).accepted)
+        val returned=phone.authority.snapshot().context
+        assertEquals(rg.controlEpoch+1,returned.controlEpoch)
+        assertFalse((phone.receive(handoff) as HandoffResultMessage).accepted)
+        assertEquals(returned,phone.authority.snapshot().context)
+        phone.authority.setHostingGeneration(2,false)
+        phone.onLinkStopped()
+        assertFalse((phone.receive(uncertain) as BrowserActionResultMessage).accepted)
+        assertEquals(1,effects)
+    }
 }

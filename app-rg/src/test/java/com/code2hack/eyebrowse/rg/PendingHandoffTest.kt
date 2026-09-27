@@ -35,4 +35,17 @@ class PendingHandoffTest {
         assertFalse(gate.busy)
         gate.request(context,request){sends++;true};gate.clear();assertFalse(gate.busy);assertEquals(3,sends)
     }
+    @Test fun duplicateOldAcceptedResultCannotRetireTheOppositePendingRequest() {
+        val gate=PendingHandoff();var sends=0
+        gate.request(context,request){sends++;true}
+        val acquired=context.copy(controlEpoch=4)
+        val lost=HandoffResultMessage(true,ControlOwner.RG,acquired)
+        repeat(2) { gate.observed(ControlOwner.RG,acquired) }
+        assertFalse(gate.busy)
+        gate.request(acquired,HandoffRequestMessage(HandoffTargetWire.PHONE,4)){sends++;true}
+        repeat(2) { gate.result(lost);gate.observed(ControlOwner.RG,acquired) }
+        assertTrue(gate.busy);assertEquals(2,sends)
+        repeat(2) { gate.observed(ControlOwner.PHONE,acquired.copy(controlEpoch=5)) }
+        assertFalse(gate.busy);assertEquals(2,sends)
+    }
 }
