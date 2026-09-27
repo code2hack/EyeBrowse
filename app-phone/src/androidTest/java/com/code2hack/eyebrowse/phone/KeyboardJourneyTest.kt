@@ -21,7 +21,8 @@ class KeyboardJourneyTest {
     @Test fun phoneObservesActualKeyboardEffectsAndPageContinuity() = journey(false)
     @Test fun phoneObservesLivePixelsAndNonemptyModeContinuity() = journey(true)
     @Test fun phoneObservesSubmissionMarker() = journey(false,true)
-    private fun journey(reviewEvidence: Boolean, submitEvidence: Boolean = false) {
+    @Test fun phoneVerifiesKeyboardReadingScrollAndFreshReactivation() = journey(false, crossFeature = true)
+    private fun journey(reviewEvidence: Boolean, submitEvidence: Boolean = false, crossFeature: Boolean = false) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext
         val mission = UUID.fromString(InstrumentationRegistry.getArguments().getString("missionId")).toString()
@@ -60,6 +61,37 @@ class KeyboardJourneyTest {
             scenario.onActivity { it.findViewById<Button>(R.id.button_hosting_toggle).performClick() }
             await("hosting") { host.status().state==HostingController.State.HOSTING }
             Log.i("EyeBrowseKeyboardTest","PHONE_KBD_READY mission=$mission")
+            if(crossFeature) {
+                val document=browser.documentIdentity()
+                val history=fw4RunOnMainChecked { checkNotNull(browser.view()).copyBackForwardList().size }
+                fun y()=fw4RunOnMainChecked { checkNotNull(browser.view()).scrollY }
+                fun continuity(value:String="aB1",inputs:Int=3) {
+                    equalsValue("plain",value);assertEquals(inputs.toString(),js("fixtureInputs"));assertEquals("0",js("fixtureSubmits"))
+                    assertEquals(originalIdentity,js("fixtureIdentity"))
+                    fw4RunOnMainChecked { assertSame(originalView,browser.view());assertEquals(document,browser.documentIdentity());assertEquals(history,checkNotNull(browser.view()).copyBackForwardList().size) }
+                }
+                fun stopped() {
+                    SystemClock.sleep(600) // Existing Reading observation bound, including one in-flight update.
+                    val position=y();val steps=link.continuousScrollSteps
+                    SystemClock.sleep(200);assertEquals(position,y());assertEquals(steps,link.continuousScrollSteps)
+                    Log.i("EyeBrowseKeyboardTest","CROSS_STOP observedMs=${SystemClock.elapsedRealtime()} nativeY=$position steps=$steps clock=Phone_elapsedRealtime")
+                }
+                var position=0
+                phase("cross_filled") { continuity();position=y();assertTrue(position>0) }
+                phase("cross_reading") { continuity();assertEquals(position,y());assertTrue(link.editorController!!.isQuiescent()) }
+                phase("cross_tilt") { await("cross positive native scroll",3_000) { y()>position+30 };continuity() }
+                phase("cross_neutral") { stopped();continuity();position=y() }
+                phase("cross_before_swipe") { await("cross renewed native scroll",3_000) { y()>position+30 };continuity();position=y() }
+                phase("cross_swipe") { stopped();assertTrue("positive discrete swipe effect",y()>=position+160);continuity();position=y() }
+                phase("cross_held") { assertEquals(position,y());continuity() }
+                phase("cross_neutral_again") { stopped();assertEquals(position,y());continuity() }
+                phase("cross_exit") { stopped();continuity();assertEquals(position,y());assertTrue(link.editorController!!.isQuiescent()) }
+                phase("cross_fresh_key") { continuity("aB1c",4) }
+                phase("cross_done") { continuity("aB1c",4);assertTrue(link.editorController!!.isQuiescent()) }
+                await("cross-feature terminal acknowledgement",5_000) { phase.exists() && phase.readText().trim()=="complete" }
+                Log.i("EyeBrowseKeyboardTest","CROSS_FEATURE_PASS samePage=true inputs=4 submits=0 intentionalScroll=true")
+                return
+            }
             if(submitEvidence) {
                 phase("submit_ready") {
                     assertEquals("0",js("fixtureSubmits"))
