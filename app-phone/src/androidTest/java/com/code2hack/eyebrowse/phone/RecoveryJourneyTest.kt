@@ -25,7 +25,7 @@ class RecoveryJourneyTest {
         val phone=File(app.cacheDir,"i12-screen-$mission.phone");val rg=File(app.cacheDir,"i12-screen-$mission.rg");val screen=File(app.cacheDir,"i12-screen-$mission.screen")
         val browser=PhoneBrowserSession.get(app);val host=HostingController.get(app);val link=PhoneLinkServer.obtain(app)
         val scenario=ActivityScenario.launch(MainActivity::class.java);lateinit var activity:MainActivity
-        val helper=BrowserControlJourneyTest();val url=checkNotNull(args.getString("fixtureBaseUrl"))+"/control.html?case=$mission"
+        val helper=BrowserControlJourneyTest();val url=checkNotNull(args.getString("fixtureBaseUrl"))+"/control.html?case=$mission&a06proof=1"
         val trust=File(app.filesDir,"pairing/peer_trust.json").readBytes()
         fun await(label:String,bound:Long=10_000,check:()->Boolean) {
             val end=SystemClock.elapsedRealtime()+bound
@@ -42,11 +42,11 @@ class RecoveryJourneyTest {
         fun offDiagnostic(stage:String) {
             val started=SystemClock.elapsedRealtime()
             val tick=runCatching {
-                val raw=js("typeof window.__i12Tick==='number'?String(window.__i12Tick):'unavailable'")
+                val raw=js("typeof window.__a06Step==='number'?String(window.__a06Step):'unavailable'")
                 org.json.JSONArray("[$raw]").getString(0).takeIf { it.matches(Regex("[0-9]+")) } ?: "unavailable"
             }.getOrElse { "unavailable:${it.javaClass.simpleName}" }
             val capture=runCatching { fw4RunOnMainChecked { host.captureDiagnostics() } }.getOrElse { "unavailable:${it.javaClass.simpleName}" }
-            Log.i("EyeBrowseA06","PHONE_OFF_DIAG mission=$mission stage=$stage startedMs=$started observedMs=${SystemClock.elapsedRealtime()} interactive=${app.getSystemService(android.os.PowerManager::class.java).isInteractive} timerTick=$tick capture=${capture.take(2200)}")
+            Log.i("EyeBrowseA06","PHONE_OFF_DIAG mission=$mission stage=$stage startedMs=$started observedMs=${SystemClock.elapsedRealtime()} interactive=${app.getSystemService(android.os.PowerManager::class.java).isInteractive} proofStep=$tick capture=${capture.take(2200)}")
         }
         var failure:Throwable?=null
         try {
@@ -61,23 +61,36 @@ class RecoveryJourneyTest {
             waitRg("background-done")
             await("returned A document") { browser.lastCommittedUrl()==url && !browser.isLoading() }
             fw4RunOnMainChecked { assertSame(original,browser.view()) }
-            js("document.getElementById('state').value='A06-preserved';window.__i12Tick=0;window.__i12Timer=setInterval(()=>{document.body.style.backgroundColor='rgb('+(100+(++window.__i12Tick%100))+',200,180)'},100);true")
+            js("document.getElementById('state').value='A06-preserved';window.__a06Armed=true;true")
             val document=fw4RunOnMainChecked { browser.documentIdentity() }
             val history=fw4RunOnMainChecked { original.copyBackForwardList().size }
             publish("sleep")
             await("runner confirms physical OFF",10_000) { screen.exists() && screen.readText().trim()=="off" }
             assertFalse(app.getSystemService(android.os.PowerManager::class.java).isInteractive)
             offDiagnostic("off-entry")
+            for((phaseName,position,step) in listOf(Triple("off-click",0,1),Triple("off-scroll",160,2),Triple("off-reverse",0,3))) {
+                waitRg(phaseName)
+                fw4RunOnMainChecked {
+                    assertFalse(app.getSystemService(android.os.PowerManager::class.java).isInteractive)
+                    assertSame(original,browser.view());assertEquals(document,browser.documentIdentity())
+                    assertEquals(position,original.scrollY)
+                }
+                assertEquals("\"$step\"",js("String(window.__a06Step)"))
+                val recorded=js("sessionStorage.getItem(window.fixtureKey)")
+                assertEquals(1,Regex("click:A:1").findAll(recorded).count());assertFalse(recorded.contains("click:A:2"))
+                Log.i("EyeBrowseA06","PHONE_CHANGE mission=$mission phase=$phaseName nativeY=$position proofStep=$step elapsedMs=${SystemClock.elapsedRealtime()} interactive=false")
+                publish("$phaseName-verified")
+            }
             waitRg("off-done")
             fw4RunOnMainChecked {
                 assertFalse(app.getSystemService(android.os.PowerManager::class.java).isInteractive)
-                assertSame(original,browser.view());assertEquals(document,browser.documentIdentity());assertEquals(160,original.scrollY)
+                assertSame(original,browser.view());assertEquals(document,browser.documentIdentity());assertEquals(0,original.scrollY)
                 assertTrue(link.isLinkUp());assertEquals(ControlOwner.RG,link.controlCoordinator.authority.snapshot().owner)
             }
             val effects=js("sessionStorage.getItem(window.fixtureKey)")
             assertEquals(1,Regex("click:A:1").findAll(effects).count());assertFalse(effects.contains("click:A:2"))
             assertEquals("\"A06-preserved\"",js("document.getElementById('state').value"))
-            Log.i("EyeBrowseA06","OFF_EFFECTS mission=$mission click1=true nativeY=160 sameView=true sameDocument=true interactive=false diagnostics=${fw4RunOnMainChecked { host.captureDiagnostics() }}")
+            Log.i("EyeBrowseA06","OFF_EFFECTS mission=$mission click1=true nativeY=0 sameView=true sameDocument=true interactive=false diagnostics=${fw4RunOnMainChecked { host.captureDiagnostics() }}")
             publish("wake")
             await("runner confirms physical ON",10_000) { screen.readText().trim()=="on" }
             await("Phone native foreground",3_000) { activity.hasWindowFocus() }
@@ -113,7 +126,7 @@ class RecoveryJourneyTest {
             }
             val errors=listOf<()->Unit>(
                 { fw4RunOnMainChecked { host.stop();link.stop() } },
-                { if(browser.isLive() && browser.lastCommittedUrl()==url) js("clearInterval(window.__i12Timer);delete window.__i12Timer;document.body.style.backgroundColor='';sessionStorage.removeItem('t03-$mission');true") },
+                { if(browser.isLive() && browser.lastCommittedUrl()==url) js("window.__a06Armed=false;sessionStorage.removeItem('t03-$mission');true") },
                 { scenario.close() },
                 { listOf(phone,rg,screen).forEach { it.delete();assertFalse(it.exists()) } },
             ).mapNotNull { runCatching(it).exceptionOrNull() }

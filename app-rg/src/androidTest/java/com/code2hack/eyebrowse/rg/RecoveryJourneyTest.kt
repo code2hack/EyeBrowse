@@ -87,11 +87,53 @@ class RecoveryJourneyTest {
             waitPhone("sleep");await("physical OFF confirmed",10_000) { screen.exists() && screen.readText().trim()=="off" }
             fresh("OFF initial frame")
             val context=checkNotNull(peer.browserState()).context;recording.set(context)
-            val point=geometry();action { peer.activateAt(point.getDouble("x").toFloat(),point.getDouble("y").toFloat()) }
-            await("OFF click effect",2_000) { peer.browserState()?.title?.startsWith("T03 A click 1")==true && peer.canAct() }
-            action { peer.scrollBy(0f,160f) }
-            await("OFF scroll effect",2_000) { geometry().optDouble("cssY")>0 && peer.canAct() }
+            var sampledColor=0
+            fun proof(expected:IntArray,afterSequence:Long):Boolean {
+                val state=peer.browserState() ?: return false
+                val h=peer.lastFrameHeader ?: return false
+                val profile=peer.profile() ?: return false
+                if(!peer.canAct() || state.stale || state.context!=context || h.context!=context ||
+                    state.profile!=profile || h.width!=profile.width || h.height!=profile.height || h.frameSeq<=afterSequence)return false
+                val bitmap=(activity.findViewById<android.widget.ImageView>(R.id.rg_page).drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap ?: return false
+                if(bitmap.width!=h.width || bitmap.height!=h.height)return false
+                val g=geometry();if(!g.has("proofX") || !g.has("proofY"))return false
+                val x=g.getDouble("proofX").toInt();val y=g.getDouble("proofY").toInt()
+                if(x !in 0 until bitmap.width || y !in 0 until bitmap.height)return false
+                sampledColor=bitmap.getPixel(x,y)
+                return android.graphics.Color.alpha(sampledColor)>=240 &&
+                    kotlin.math.abs(android.graphics.Color.red(sampledColor)-expected[0])<=20 &&
+                    kotlin.math.abs(android.graphics.Color.green(sampledColor)-expected[1])<=20 &&
+                    kotlin.math.abs(android.graphics.Color.blue(sampledColor)-expected[2])<=20
+            }
+            await("seeded proof patch",2_000) { proof(intArrayOf(220,30,30),-1) }
             val observed=mutableSetOf<Long>();val displayed=linkedSetOf<Long>();val started=SystemClock.elapsedRealtime()
+            fun change(slot:Long,label:String,beforeColor:IntArray,expected:IntArray,send:()->String?) {
+                while(SystemClock.elapsedRealtime()-started<slot) {
+                    check(screen.readText().trim()!="abort") { "screen runner aborted" }
+                    scenario.onActivity { assertTrue(peer.canAct()) };SystemClock.sleep(20)
+                }
+                assertTrue("change dispatched inside OFF interval",SystemClock.elapsedRealtime()-started<10_000)
+                var sequence=0L;var dispatch=0L;var id:String?=null
+                scenario.onActivity { assertTrue("$label baseline pixels",proof(beforeColor,-1));sequence=checkNotNull(peer.lastFrameHeader).frameSeq;dispatch=SystemClock.elapsedRealtime();id=send() }
+                assertNotNull(id);val deadline=dispatch+2_000
+                var matched=false
+                try {
+                    await("$label action result",(deadline-SystemClock.elapsedRealtime()).coerceAtLeast(0)) { peer.lastActionResult?.commandId==id }
+                    assertTrue(checkNotNull(peer.lastActionResult).accepted)
+                    await("$label resulting displayed pixels",(deadline-SystemClock.elapsedRealtime()).coerceAtLeast(0)) { proof(expected,sequence) }
+                    assertTrue("original per-change observation endpoint",SystemClock.elapsedRealtime()<=deadline)
+                    matched=true
+                    observed.add(checkNotNull(peer.lastFrameHeader).frameSeq)
+                } finally {
+                    Log.i("EyeBrowseA06","CHANGE_PROPAGATION mission=$mission phase=$label command=$id dispatchMs=$dispatch observedMs=${SystemClock.elapsedRealtime()} slotMs=${dispatch-started} beforeSeq=$sequence afterSeq=${peer.lastFrameHeader?.frameSeq} matched=$matched argb=$sampledColor tolerance=20 alphaMin=240 clock=RG_elapsedRealtime")
+                }
+                publish(label);waitPhone("$label-verified")
+            }
+            val point=geometry()
+            change(0,"off-click",intArrayOf(220,30,30),intArrayOf(30,70,220)) { peer.activateAt(point.getDouble("x").toFloat(),point.getDouble("y").toFloat()) }
+            change(3_000,"off-scroll",intArrayOf(30,70,220),intArrayOf(30,180,70)) { peer.scrollBy(0f,160f) }
+            change(6_000,"off-reverse",intArrayOf(30,180,70),intArrayOf(220,30,30)) { peer.scrollBy(0f,-160f) }
+            assertTrue("changes settle inside original OFF observation window",SystemClock.elapsedRealtime()-started<=10_000)
             while(SystemClock.elapsedRealtime()-started<10_000) {
                 check(screen.readText().trim()!="abort") { "screen runner aborted" }
                 scenario.onActivity {
@@ -105,11 +147,10 @@ class RecoveryJourneyTest {
             recording.set(null)
             val snapshot=samples.values.sortedBy { it.header.frameSeq }
             Log.i("EyeBrowseA06","OFF_FRAME_DIAG mission=$mission intervalMs=${SystemClock.elapsedRealtime()-started} rawReceived=${receivedDuringOff.get()} matched=${snapshot.size} mismatches=${contextMismatches.get()} overflow=${overflow.get()} receivedSeq=${snapshot.take(32).map { it.header.frameSeq }} observedCount=${observed.size} observedSeq=${observed.take(32)} displayedCount=${displayed.size} displayedSeq=${displayed.take(32)} distinctReceived=${snapshot.map { it.hash }.distinct().size} distinctObserved=${observed.mapNotNull { samples[it]?.hash }.distinct().size} firstCapture=${snapshot.firstOrNull()?.header?.captureTsMs} lastCapture=${snapshot.lastOrNull()?.header?.captureTsMs} expectedContext=$context matchedHeaders=${(snapshot.take(2)+snapshot.takeLast(2)).distinct().map { it.header }} mismatchHeaders=$mismatchHeaders")
-            assertFalse(overflow.get());assertTrue("changing accepted frames",observed.mapNotNull { samples[it]?.hash }.distinct().size>=3)
+            assertFalse(overflow.get())
             val ordered=samples.values.sortedBy { it.header.frameSeq }
-            assertTrue(ordered.size>=3)
             ordered.zipWithNext().forEach { (a,b) -> assertTrue("Phone producer cadence <=5fps",b.header.captureTsMs-a.header.captureTsMs>=200) }
-            Log.i("EyeBrowseA06","OFF_FRAMES mission=$mission intervalMs=${SystemClock.elapsedRealtime()-started} received=${ordered.size} observed=${observed.size} distinct=${observed.mapNotNull { samples[it]?.hash }.distinct().size} captureClock=Phone_elapsedRealtime firstCapture=${ordered.first().header.captureTsMs} lastCapture=${ordered.last().header.captureTsMs} cadence200ms=true")
+            Log.i("EyeBrowseA06","OFF_FRAMES mission=$mission intervalMs=${SystemClock.elapsedRealtime()-started} received=${ordered.size} observed=${observed.size} distinct=${observed.mapNotNull { samples[it]?.hash }.distinct().size} captureClock=Phone_elapsedRealtime firstCapture=${ordered.firstOrNull()?.header?.captureTsMs} lastCapture=${ordered.lastOrNull()?.header?.captureTsMs} cadence200ms=true noMinimumFps=true")
             publish("off-done");waitPhone("stop");fresh("live frame before Stop");publish("stop-ready")
             await("live Stop disables input",5_000) { !peer.canAct() };assertNull(peer.reload());waitPhone("stopped")
             native(R.id.rg_retry)
