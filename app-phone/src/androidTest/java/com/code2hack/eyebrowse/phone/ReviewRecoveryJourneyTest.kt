@@ -28,6 +28,36 @@ class ReviewRecoveryJourneyTest {
         val browser=PhoneBrowserSession.get(app);val host=HostingController.get(app);val link=PhoneLinkServer.obtain(app)
         val scenario=ActivityScenario.launch(MainActivity::class.java)
         val phase=File(app.cacheDir,"i11-review-$mission.phase");val ack=File(app.cacheDir,"i11-review-$mission.ack")
+        var cleanupRequested=false
+        var nativeStopRequested=false
+        var hostingReceipts=0
+        var previousHosting:HostingController.State?=null
+        var previousReason:String?=null
+        var restorePublisher:(()->Unit)?=null
+        fun reasonCode(reason:String?):String = when(reason) {
+            null -> "none"
+            "Profile resize did not preserve a settled focused window" -> "profile-focus-unsettled"
+            "RG presentation allocation failed" -> "rg-allocation-failed"
+            "Editor retirement unconfirmed" -> "editor-retirement-unconfirmed"
+            "private presentation became unavailable; explicit restart required" -> "private-presentation-unavailable"
+            "Profile frame deadline exceeded" -> "profile-frame-deadline"
+            "Capture unavailable" -> "capture-unavailable"
+            "In-place profile resize unavailable" -> "in-place-resize-unavailable"
+            "Frame encoding failed or exceeded limit" -> "encoding-failed"
+            app.getString(R.string.hosting_failure_browser_lost) -> "browser-lost"
+            app.getString(R.string.hosting_failure_service_lost) -> "service-lost"
+            else -> "other-present"
+        }
+        fun decisionStack():String=Thread.currentThread().stackTrace
+            .filter { it.className.startsWith("com.code2hack.eyebrowse.") }
+            .take(14).joinToString(";") { "${it.className}.${it.methodName}:${it.lineNumber}" }
+        val hostingObserver=HostingController.Listener {
+            val status=host.status();val reason=reasonCode(status.failureReason)
+            if((previousHosting!=status.state || previousReason!=reason) && hostingReceipts++<48) {
+                previousHosting=status.state;previousReason=reason
+                Log.i("EyeBrowseReviewRecovery","HOST_DECISION mission=$mission elapsedMs=${SystemClock.elapsedRealtime()} state=${status.state} reason=$reason generation=${status.generation} attachment=${status.attachment} browserLive=${status.browserLive} capture=${status.captureActive} wake=${status.wakeLockHeld} testCleanup=$cleanupRequested testNativeStop=$nativeStopRequested stack=${decisionStack()}")
+            }
+        }
         val helper=BrowserControlJourneyTest()
         fun js(script:String)=helper.js(browser,script)
         fun await(label:String,bound:Long=5_000,condition:()->Boolean)=StopRecoveryAssertions.await(label,bound,condition)
@@ -54,6 +84,7 @@ class ReviewRecoveryJourneyTest {
         var primary:Throwable?=null
         try {
             phase.writeText("");ack.writeText("")
+            fw4RunOnMainChecked { host.addListener(hostingObserver) }
             lateinit var barrier:FixtureNavigationBarrier
             scenario.onActivity {
                 host.stop();link.stop()
@@ -74,6 +105,21 @@ class ReviewRecoveryJourneyTest {
             scenario.onActivity { it.findViewById<Button>(R.id.button_hosting_toggle).performClick() }
             await("hosting") { host.status().state==HostingController.State.HOSTING }
             scenario.onActivity { link.start();link.publishPhoneViewport() }
+            fw4RunOnMainChecked {
+                // Observe the existing publisher; do not replace its decision or forwarding path.
+                val getter=PhoneLinkServer::class.java.getDeclaredMethod("getPublisher").apply { isAccessible=true }
+                val publisher=checkNotNull(getter.invoke(link))
+                val callback=PhonePresentationPublisher::class.java.getDeclaredField("degraded").apply { isAccessible=true }
+                @Suppress("UNCHECKED_CAST")
+                val original=callback.get(publisher) as (com.code2hack.eyebrowse.core.link.control.ControlContext,String)->Unit
+                var count=0
+                val observed:(com.code2hack.eyebrowse.core.link.control.ControlContext,String)->Unit={ context,reason ->
+                    if(count++<24) Log.i("EyeBrowseReviewRecovery","PUBLISHER_DEGRADED mission=$mission elapsedMs=${SystemClock.elapsedRealtime()} reason=${reasonCode(reason)} context=$context testCleanup=$cleanupRequested testNativeStop=$nativeStopRequested stack=${decisionStack()}")
+                    original(context,reason)
+                }
+                callback.set(publisher,observed)
+                restorePublisher={ callback.set(publisher,original) }
+            }
             Log.i("EyeBrowseReviewRecovery","PHONE_READY mission=$mission stopReconnect=$stopReconnect")
             if(stopReconnect) {
                 val engine=PhoneLinkServer::class.java.getDeclaredField("engine").let { it.isAccessible=true;it.get(link) as LinkServerEngine }
@@ -82,7 +128,7 @@ class ReviewRecoveryJourneyTest {
                 step("reconnect_inflight") {
                     assertFalse(link.isLinkUp());assertEquals(HostingController.State.HOSTING,host.status().state)
                     Log.i("EyeBrowseReviewRecovery","STOP_BEFORE_RELEASE mission=$mission at=${SystemClock.elapsedRealtime()} rememberedReconnectBarrier=true")
-                    scenario.onActivity { assertTrue(it.findViewById<Button>(R.id.button_hosting_toggle).performClick()) }
+                    scenario.onActivity { nativeStopRequested=true;assertTrue(it.findViewById<Button>(R.id.button_hosting_toggle).performClick()) }
                     await("Stop listener and hosting retired") { !link.isLinkUp() && engine.boundPort()==-1 && StopRecoveryAssertions.resourcesGone(host) }
                     assertTrue(link.isPaired());continuity();clickCount()
                 }
@@ -123,6 +169,7 @@ class ReviewRecoveryJourneyTest {
             Log.i("EyeBrowseReviewRecovery","PHONE_PASS mission=$mission stopReconnect=$stopReconnect")
         } catch(t:Throwable) { primary=t;throw t }
         finally {
+            cleanupRequested=true
             val errors=listOf<()->Unit>(
                 { fw4RunOnMainChecked { host.stop();link.stop() } },
                 { await("resources retired") { StopRecoveryAssertions.resourcesGone(host) && !link.isLinkUp() } },
@@ -130,6 +177,7 @@ class ReviewRecoveryJourneyTest {
                     js("sessionStorage.removeItem('${if(stopReconnect) "t03-" else "i11-loads-"}$mission');true")
                     assertEquals("null",js("sessionStorage.getItem('${if(stopReconnect) "t03-" else "i11-loads-"}$mission')"))
                 } },
+                { fw4RunOnMainChecked { restorePublisher?.invoke();host.removeListener(hostingObserver) } },
                 { scenario.close() },{ phase.delete();ack.delete();assertFalse(phase.exists());assertFalse(ack.exists()) },
             ).mapNotNull { runCatching(it).exceptionOrNull() }
             if(primary!=null)errors.forEach { primary.addSuppressed(it) }
