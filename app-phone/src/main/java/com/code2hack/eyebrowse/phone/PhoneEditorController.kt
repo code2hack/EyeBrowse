@@ -187,30 +187,31 @@ class PhoneEditorController(
                 // Resolve the original transport callback without touching the successor.
                 report(null, "EDITOR_UNCERTAIN"); return@edit
             }
-            when (if (correlated) result.status else RendererEditorAdapter.Status.UNCERTAIN) {
-                RendererEditorAdapter.Status.APPLIED -> {
-                    // Renderer-only text changes need a native traversal to request fresh capture.
-                    val ready = stateMessage().ready
-                    val view = if (ready) browser.view() else null
-                    val receipt = ++drawReceiptCount
+            val status = if (correlated) result.status else RendererEditorAdapter.Status.UNCERTAIN
+            if (status == RendererEditorAdapter.Status.APPLIED || status == RendererEditorAdapter.Status.SUBMISSION_REQUESTED) {
+                // Renderer-only edits and submit handlers need a native traversal to request fresh capture.
+                val ready = stateMessage().ready
+                val view = if (ready) browser.view() else null
+                val receipt = ++drawReceiptCount
+                if (receipt <= 32) android.util.Log.i("EyeBrowseEditorDraw",
+                    "EDIT_GUARD seq=$receipt at=${android.os.SystemClock.elapsedRealtime()} ready=$ready viewPresent=${view!=null}")
+                else if (receipt == 33) android.util.Log.i("EyeBrowseEditorDraw","EDIT_RECEIPTS_TRUNCATED")
+                if (view != null) {
                     if (receipt <= 32) android.util.Log.i("EyeBrowseEditorDraw",
-                        "EDIT_GUARD seq=$receipt at=${android.os.SystemClock.elapsedRealtime()} ready=$ready viewPresent=${view!=null}")
-                    else if (receipt == 33) android.util.Log.i("EyeBrowseEditorDraw","EDIT_RECEIPTS_TRUNCATED")
-                    if (view != null) {
-                        if (receipt <= 32) android.util.Log.i("EyeBrowseEditorDraw",
-                            "INVALIDATE_BEGIN seq=$receipt at=${android.os.SystemClock.elapsedRealtime()}")
-                        view.invalidate()
-                        if (receipt <= 32) android.util.Log.i("EyeBrowseEditorDraw",
-                            "INVALIDATE_RETURN seq=$receipt at=${android.os.SystemClock.elapsedRealtime()}")
-                        if (receipt <= 32) android.util.Log.i("EyeBrowseEditorDraw",
-                            "PARENT_INVALIDATE_BEGIN seq=$receipt at=${android.os.SystemClock.elapsedRealtime()}")
-                        // localFocusReady fences this parent to the current Presentation's content.
-                        (view.parent as? android.view.View)?.invalidate()
-                        if (receipt <= 32) android.util.Log.i("EyeBrowseEditorDraw",
-                            "PARENT_INVALIDATE_RETURN seq=$receipt at=${android.os.SystemClock.elapsedRealtime()}")
-                    }
-                    report(true, "EDITOR_APPLIED")
+                        "INVALIDATE_BEGIN seq=$receipt at=${android.os.SystemClock.elapsedRealtime()}")
+                    view.invalidate()
+                    if (receipt <= 32) android.util.Log.i("EyeBrowseEditorDraw",
+                        "INVALIDATE_RETURN seq=$receipt at=${android.os.SystemClock.elapsedRealtime()}")
+                    if (receipt <= 32) android.util.Log.i("EyeBrowseEditorDraw",
+                        "PARENT_INVALIDATE_BEGIN seq=$receipt at=${android.os.SystemClock.elapsedRealtime()}")
+                    // localFocusReady fences this parent to the current Presentation's content.
+                    (view.parent as? android.view.View)?.invalidate()
+                    if (receipt <= 32) android.util.Log.i("EyeBrowseEditorDraw",
+                        "PARENT_INVALIDATE_RETURN seq=$receipt at=${android.os.SystemClock.elapsedRealtime()}")
                 }
+            }
+            when (status) {
+                RendererEditorAdapter.Status.APPLIED -> report(true, "EDITOR_APPLIED")
                 RendererEditorAdapter.Status.SUBMISSION_REQUESTED -> report(null, "SUBMISSION_REQUESTED")
                 RendererEditorAdapter.Status.UNCERTAIN -> report(null, "EDITOR_UNCERTAIN")
                 else -> report(false, result.status.name)
