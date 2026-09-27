@@ -237,10 +237,16 @@ class ReviewRecoveryJourneyTest {
                 var nav:String?=null
                 j.main { nav=j.peer.reload() };assertNotNull(nav);assertTrue(capture(nav!!).accepted)
                 j.await("new document from one real Reload",5_000) { j.peer.browserState()?.context?.documentId!=navigationContext.documentId }
-                fresh();assertFalse(j.peer.keyboard.visible)
+                j.await("fresh navigation frame while result remains held",2_000) {
+                    val state=j.peer.browserState();val frame=j.peer.lastFrameHeader;val profile=j.peer.profile()
+                    state!=null && !state.stale && !state.loading && profile!=null && state.profile==profile &&
+                        frame?.context==state.context && frame.width==profile.width && frame.height==profile.height
+                }
+                assertEquals(nav,pending());assertFalse(j.peer.canAct());assertFalse(j.peer.keyboard.visible)
                 checkPhone("navigation_effect")
                 val reload=BrowserActionMessage(nav!!,navigationContext,BrowserAction.Reload,nav!!.split(':')[2].toLong())
                 j.main { faults!!.releaseAction(nav!!) } // Late result twice, after the document changed.
+                fresh()
                 replay(reload,"STALE_CONTEXT")
                 assertFalse(j.peer.keyboard.visible);checkPhone("navigation_duplicate")
             }

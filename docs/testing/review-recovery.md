@@ -31,7 +31,9 @@ key rejection before/after reconnect, no auto reopen/replay, preserved Phone vie
 document/history/value, fresh full context/profile/frame, and a new target only
 following explicit field activation. A fresh fourth key is separately observed.
 
-Finally hold a real Reload result through the document change, release it twice
+Finally hold a real Reload result through the document change. Require a fresh
+matching frame/state while positively asserting the command remains pending and
+input disabled; only after result release may action readiness return. Release it twice
 late, and resend its exact original ID/context/ordinal: stale-context rejection,
 no keyboard resurrection, one navigation only. An opt-in fixture sessionStorage
 ledger (`recoveryLedger=1`, key `i11-loads-<UUID>`) stores only a load count, never
