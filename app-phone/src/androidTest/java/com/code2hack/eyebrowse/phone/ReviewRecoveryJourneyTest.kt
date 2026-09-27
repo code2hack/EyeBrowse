@@ -34,6 +34,8 @@ class ReviewRecoveryJourneyTest {
         var previousHosting:HostingController.State?=null
         var previousReason:String?=null
         var restorePublisher:(()->Unit)?=null
+        var observedPublisher:PhonePresentationPublisher?=null
+        var rejectionSnapshots=0
         fun reasonCode(reason:String?):String = when(reason) {
             null -> "none"
             "Profile resize did not preserve a settled focused window" -> "profile-focus-unsettled"
@@ -51,8 +53,68 @@ class ReviewRecoveryJourneyTest {
         fun decisionStack():String=Thread.currentThread().stackTrace
             .filter { it.className.startsWith("com.code2hack.eyebrowse.") }
             .take(14).joinToString(";") { "${it.className}.${it.methodName}:${it.lineNumber}" }
+        fun read(target:Any,name:String):Any?=target.javaClass.getDeclaredField(name).let { it.isAccessible=true;it.get(target) }
+        fun identity(value:Any?):Int?=value?.let(System::identityHashCode)
+        fun rejectionSnapshot() {
+            if(rejectionSnapshots++>=8)return
+            val at=SystemClock.elapsedRealtime()
+            val displayHost=read(host,"displayHost") as? PrivateDisplayHost
+            if(displayHost==null) {
+                Log.i("EyeBrowseReviewRecovery","RESIZE_REJECTION mission=$mission elapsedMs=$at snapshotUnavailable=displayHostAbsent")
+                return
+            }
+            val epoch=(read(host,"presentationEpochs") as PresentationEpochs).current
+            val requested=epoch?.profile // The controller has already begun the new epoch.
+            val shown=read(displayHost,"presentation") as? PrivateDisplayHost.PresentationHost
+            val virtual=read(displayHost,"virtualDisplay") as? android.hardware.display.VirtualDisplay
+            val view=browser.view()
+            val readers=synchronized(checkNotNull(read(displayHost,"nativeLock"))) {
+                listOf(read(displayHost,"imageReader"),read(displayHost,"stagedProfileReader"),read(displayHost,"retiringProfileReader"))
+            }
+            val resize=read(displayHost,"profileResize")
+            val density=read(displayHost,"densityDpi") as Int
+            val publisherContext=observedPublisher?.let { read(it,"context") }
+            val request=read(link,"profileRequest") as? Pair<*,*>
+            val requestedAt=(request?.second as? Long)?.takeIf { request.first==publisherContext }
+            val deadline=requestedAt?.plus(2_000) // Source-derived only if the retained request matches.
+            val stable=org.json.JSONObject()
+                .put("displayHostId",identity(displayHost)).put("profileResizePresent",resize!=null).put("profileResizeId",identity(resize))
+                .put("imageReaderPresent",readers[0]!=null).put("imageReaderId",identity(readers[0]))
+                .put("stagedReaderPresent",readers[1]!=null).put("stagedReaderId",identity(readers[1]))
+                .put("retiringReaderPresent",readers[2]!=null).put("retiringReaderId",identity(readers[2]))
+                .put("presentationPresent",shown!=null).put("presentationId",identity(shown))
+                .put("virtualDisplayPresent",virtual!=null).put("virtualDisplayId",identity(virtual))
+                .put("viewPresent",view!=null).put("viewId",identity(view))
+                .put("actualDensity",density).put("requestedDensity",requested?.densityDpi)
+                .put("densityMismatch",requested?.let { it.densityDpi!=density })
+                .put("profileSerial",read(displayHost,"profileSerial"))
+                .put("surfaceDetached",read(displayHost,"displaySurfaceDetached"))
+            val sampled=SystemClock.elapsedRealtime()
+            val volatile=org.json.JSONObject().put("sampledElapsedMs",sampled)
+                .put("localFocusForRg",read(displayHost,"localFocusForRg"))
+                .put("localFocusReady",displayHost.localFocusReady(browser))
+                .put("presentationAvailable",shown?.isAvailable())
+                .put("displayValid",virtual?.display?.isValid).put("displayState",virtual?.display?.state)
+                .put("requestedAtFromMatchingProfileRequest",requestedAt)
+                .put("derivedDeadline",deadline).put("atOrAfterDerivedDeadline",deadline?.let { sampled>=it })
+            val ownership=org.json.JSONObject().put("postDecision",true).put("hostingState",host.status().state)
+                .put("controllerProfileTransferPresent",read(host,"profileTransfer")!=null)
+                .put("controllerEpochId",identity(epoch)).put("controllerEpochGeneration",epoch?.generation)
+                .put("controllerEpochProfile",requested?.toString())
+                .put("publisherContext",publisherContext?.toString()).put("profileRequestContext",request?.first?.toString())
+            Log.i("EyeBrowseReviewRecovery","RESIZE_REJECTION_STABLE mission=$mission elapsedMs=$at boundary=after-false-before-teardown operands=$stable")
+            Log.i("EyeBrowseReviewRecovery","RESIZE_REJECTION_VOLATILE mission=$mission operands=$volatile")
+            Log.i("EyeBrowseReviewRecovery","RESIZE_REJECTION_OWNERSHIP mission=$mission operands=$ownership")
+        }
         val hostingObserver=HostingController.Listener {
             val status=host.status();val reason=reasonCode(status.failureReason)
+            if(status.state==HostingController.State.STOPPING && Thread.currentThread().stackTrace.any {
+                    it.className==PrivateDisplayHost::class.java.name && it.methodName=="resizeProfile" && it.lineNumber==231 }) {
+                // Source-pinned synchronous rejection boundary, NOT literal entry or a replacement object.
+                runCatching { rejectionSnapshot() }.onFailure {
+                    Log.i("EyeBrowseReviewRecovery","RESIZE_REJECTION_UNAVAILABLE mission=$mission type=${it.javaClass.simpleName}")
+                }
+            }
             if((previousHosting!=status.state || previousReason!=reason) && hostingReceipts++<48) {
                 previousHosting=status.state;previousReason=reason
                 Log.i("EyeBrowseReviewRecovery","HOST_DECISION mission=$mission elapsedMs=${SystemClock.elapsedRealtime()} state=${status.state} reason=$reason generation=${status.generation} attachment=${status.attachment} browserLive=${status.browserLive} capture=${status.captureActive} wake=${status.wakeLockHeld} testCleanup=$cleanupRequested testNativeStop=$nativeStopRequested stack=${decisionStack()}")
@@ -108,7 +170,8 @@ class ReviewRecoveryJourneyTest {
             fw4RunOnMainChecked {
                 // Observe the existing publisher; do not replace its decision or forwarding path.
                 val getter=PhoneLinkServer::class.java.getDeclaredMethod("getPublisher").apply { isAccessible=true }
-                val publisher=checkNotNull(getter.invoke(link))
+                val publisher=checkNotNull(getter.invoke(link)) as PhonePresentationPublisher
+                observedPublisher=publisher
                 val callback=PhonePresentationPublisher::class.java.getDeclaredField("degraded").apply { isAccessible=true }
                 @Suppress("UNCHECKED_CAST")
                 val original=callback.get(publisher) as (com.code2hack.eyebrowse.core.link.control.ControlContext,String)->Unit
