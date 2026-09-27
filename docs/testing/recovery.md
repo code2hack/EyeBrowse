@@ -66,13 +66,16 @@ Run individually with a shared fresh `missionId` and `fixtureBaseUrl`:
    `am force-stop com.code2hack.eyebrowse.phone`; verify that PID exited.
 3. `ColdRecoveryInstrumentedTest#newProcessOffersSavedAddressWithoutReplayingPost`.
 
-The test-APK receipt contains process/lifetime/fixture metadata, never form drafts
+The test-only receipt uses targetContext app-private storage, matching the UID of
+the instrumented process. It contains process/lifetime/fixture metadata, never form drafts
 or secrets. The second invocation requires a different process start timestamp,
 checks no fabricated live page or automatic hosting, saved URL and pairing,
 then uses native Open. Fixture POST counts must remain unchanged, including
 after the explicit GET recovery. A mission-specific cookie and localStorage key
 must survive; transient JS and form state must not be claimed restored. Only the
-owned fixture keys and test receipt are removed. POST setup uses WebView.postUrl;
+owned fixture keys and test receipt are removed. An optional UUID `cleanupMissionId`
+removes only that prior mission's fixture cookie/localStorage and receipt as well.
+POST setup uses WebView.postUrl;
 this is HTTP/persistence evidence, not keyboard or native submission evidence.
 
 ## Evidence limits

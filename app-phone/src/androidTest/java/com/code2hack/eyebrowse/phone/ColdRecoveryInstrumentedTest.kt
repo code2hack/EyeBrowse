@@ -18,7 +18,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /** Run prepare, externally force-stop ONLY the Phone app, then verify with the same missionId.
- * The receipt belongs to the test APK and contains fixture/identity metadata, never form drafts.
+ * The test-only receipt uses the target process's private storage and contains no form drafts.
  */
 @RunWith(AndroidJUnit4::class)
 class ColdRecoveryInstrumentedTest {
@@ -27,7 +27,7 @@ class ColdRecoveryInstrumentedTest {
     private val args = InstrumentationRegistry.getArguments()
     private val mission = java.util.UUID.fromString(checkNotNull(args.getString("missionId"))).toString()
     private val base = checkNotNull(args.getString("fixtureBaseUrl")).trimEnd('/')
-    private val receipt = instrumentation.context.getSharedPreferences("i11-$mission", Context.MODE_PRIVATE)
+    private val receipt = app.getSharedPreferences("i11-$mission", Context.MODE_PRIVATE)
     private val storageKey = "i11-$mission"
     private val cookieName = "i11_" + mission.replace("-", "")
     private fun js(browser: PhoneBrowserSession, script: String) = BrowserControlJourneyTest().js(browser, script)
@@ -89,9 +89,14 @@ class ColdRecoveryInstrumentedTest {
             assertEquals("true", js(browser, "document.cookie.split(';').some(v=>v.trim()==='$cookieName=present')"))
             assertEquals("\"undefined\"", js(browser, "typeof window.i11Transient"))
             assertEquals("\"\"", js(browser, "document.getElementById('text-field').value"))
-            assertEquals("true", js(browser, "localStorage.removeItem('$storageKey');document.cookie='$cookieName=; Max-Age=0; Path=/';true"))
+            val priorMission = args.getString("cleanupMissionId")?.let { java.util.UUID.fromString(it).toString() }
+            for (ownedMission in listOfNotNull(mission, priorMission).distinct()) {
+                val key = "i11-$ownedMission"
+                val cookie = "i11_" + ownedMission.replace("-", "")
+                assertEquals("true", js(browser, "localStorage.removeItem('$key');document.cookie='$cookie=; Max-Age=0; Path=/';localStorage.getItem('$key')===null&&!document.cookie.split(';').some(v=>v.trim().startsWith('$cookie='))"))
+                assertTrue("remove only the owned test receipt", app.deleteSharedPreferences("i11-$ownedMission"))
+            }
             scenario.onActivity { browser.flushCookies() }
-            assertTrue(receipt.edit().clear().commit())
             android.util.Log.i("EyeBrowseRecovery", "COLD_PASS mission=$mission pid=${Process.myPid()} posts=$expectedPosts noAutoLoad=true noPostReplay=true siteStorage=true")
         } finally { scenario.close() }
     }
