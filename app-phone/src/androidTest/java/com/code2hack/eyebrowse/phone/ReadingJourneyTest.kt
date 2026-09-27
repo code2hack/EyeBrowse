@@ -98,6 +98,13 @@ class ReadingJourneyTest {
             phase("reading_disconnected") { stopped();position=y() }
             phase("reading_reconnected_held") { assertEquals(position,y());assertEquals(ControlOwner.RG,link.controlCoordinator.authority.snapshot().owner) }
             phase("reading_reconnected_neutral") { await("fresh neutral after reconnect") { y()>position+30 } }
+            phase("reading_phone_ready") {
+                assertNull("background Phone has no handoff viewport",fw4RunOnMainChecked { host.measurePhoneControlProfile() })
+                scenario.moveToState(Lifecycle.State.RESUMED)
+                await("foreground Phone handoff viewport",3_000) { fw4RunOnMainChecked { host.measurePhoneControlProfile()!=null } }
+                assertEquals(ControlOwner.RG,link.controlCoordinator.authority.snapshot().owner)
+                Log.i("EyeBrowseReadingTest","HANDOFF_PRECONDITION backgroundProfileAbsent=true foregroundProfilePresent=true ownerStillRG=true")
+            }
             phase("reading_phone_owner") {
                 stopped();assertEquals(ControlOwner.PHONE,link.controlCoordinator.authority.snapshot().owner)
                 scenario.moveToState(Lifecycle.State.RESUMED)
@@ -114,6 +121,7 @@ class ReadingJourneyTest {
                 "resources" to { await("teardown resources retired",5_000) {
                     fw4RunOnMainChecked { StopRecoveryAssertions.resourcesGone(host) && !link.isLinkUp() }
                 } },
+                "foreground" to { scenario.moveToState(Lifecycle.State.RESUMED) },
                 "scenario" to { scenario.close() },
                 "signals" to { phase.delete();ack.delete();assertFalse(phase.exists());assertFalse(ack.exists()) },
             ).mapNotNull { (name, action) ->

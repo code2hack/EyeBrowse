@@ -103,6 +103,7 @@ class KeyboardJourneyTest {
                 "resources" to { await("teardown resources retired",5_000) {
                     fw4RunOnMainChecked { StopRecoveryAssertions.resourcesGone(host) && !link.isLinkUp() }
                 } },
+                "foreground" to { scenario.moveToState(Lifecycle.State.RESUMED) },
                 "scenario" to { scenario.close() },
                 "signals" to { phase.delete();ack.delete();assertFalse(phase.exists());assertFalse(ack.exists()) },
             ).mapNotNull { (name, action) ->
