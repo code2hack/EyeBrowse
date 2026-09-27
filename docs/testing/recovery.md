@@ -57,26 +57,56 @@ input, recreation and no implicit takeover. `pause()` is the app-link fault;
 ADB/network/debugging stay available. No real RG process restart or lost-ACK
 coverage is claimed by these two companions.
 
-## Actual Phone process loss
+## Graceful persistence and actual Phone process loss
+
+The Planner hybrid ruling is recorded in issue #11 comment 5851875099. A value
+written only to renderer memory immediately before abrupt loss is not required
+to become synchronously durable. The abrupt-loss row instead uses storage that
+has already survived the graceful path below; no product flush mechanism is added.
 
 Run individually with a shared fresh `missionId` and `fixtureBaseUrl`:
 
-1. `ColdRecoveryInstrumentedTest#prepareRealProcessLossAfterFixturePost`.
-2. After its terminal JUnit PASS, record the Phone PID and app-scoped
-   `am force-stop com.code2hack.eyebrowse.phone`; verify that PID exited.
-3. `ColdRecoveryInstrumentedTest#newProcessOffersSavedAddressWithoutReplayingPost`.
+1. `ColdRecoveryInstrumentedTest#gracefulBackgroundPersistsStorageBeforeProcessLoss`.
+   It writes a mission cookie/localStorage value and verifies both in-session,
+   then moves the actual Activity to CREATED, exercising normal `onStop` (including
+   its ordinary cookie flush). The host waits for `cache/i11-<UUID>.persistence`
+   to say `backgrounded`, then **reads only** the WebView LocalStorage journal.
+   Only after a complete CRC-verified PUT for the exact fixture-origin mission key
+   and expected value may it write `durable` to that same test-only barrier file.
+   The row allows 20 seconds for ordinary persistence, then resumes/recreates the
+   Activity and checks both values. A missing durable record fails the row; the
+   host must not write the journal or acknowledge elapsed time as persistence.
+2. `ColdRecoveryInstrumentedTest#prepareRealProcessLossAfterFixturePost` runs in
+   a new actual process, proves both values survived that restart, and only then
+   creates the harmless POST fixture. Receipt metadata records the baseline.
+3. After its terminal JUnit PASS, record the prepared and current Phone PIDs,
+   app-scoped `am force-stop com.code2hack.eyebrowse.phone`, and verify the prepared
+   PID is absent. If instrumentation already ended the process, disclose that;
+   do not claim force-stop killed a live PID.
+4. `ColdRecoveryInstrumentedTest#newProcessOffersSavedAddressWithoutReplayingPost`
+   requires a different process-start identity, a changed host lifetime, saved URL,
+   remembered pairing, honest interruption UI, inactive hosting and no automatic
+   POST replay. Native Open performs explicit GET recovery. The new document ID,
+   exact URL/title, completed navigation and DOM readiness all precede storage
+   queries; retained `lastCommittedUrl` alone is insufficient. Previously durable
+   cookie/localStorage must survive, while transient JS/form state is not restored.
+5. `ColdRecoveryInstrumentedTest#cleanupOwnedMissionState` is an independent
+   cleanup row, **also run after a failed preceding row**, not a retry. Pass the
+   explicit comma-separated UUIDs in `cleanupMissionIds` to remove only current
+   and prior owned fixture keys/cookies and receipt metadata. Logs distinguish
+   already-absent localStorage/receipts from entries actually found and removed.
+   Never clear all app/site data. An uncertain still-running instrumentation must
+   be settled before cleanup is launched.
 
-The test-only receipt uses targetContext app-private storage, matching the UID of
-the instrumented process. It contains process/lifetime/fixture metadata, never form drafts
-or secrets. The second invocation requires a different process start timestamp,
-checks no fabricated live page or automatic hosting, saved URL and pairing,
-then uses native Open. Fixture POST counts must remain unchanged, including
-after the explicit GET recovery. A mission-specific cookie and localStorage key
-must survive; transient JS and form state must not be claimed restored. Only the
-owned fixture keys and test receipt are removed. An optional UUID `cleanupMissionId`
-removes only that prior mission's fixture cookie/localStorage and receipt as well.
-POST setup uses WebView.postUrl;
-this is HTTP/persistence evidence, not keyboard or native submission evidence.
+Receipts are test-only targetContext app-private metadata, never passwords or
+form drafts. The host journal decoder retains only mission results and file
+hashes, not unrelated browsing data. A compacted table or incomplete/corrupt
+record requires a supported decoder or an explicit inconclusive result, never
+an invented durability PASS. The current mission uses the read-only decoder
+and checked runner retained with its issue-linked evidence; neither modifies
+production storage. Each instrumentation command is bounded at 65 seconds and
+the guarded sequence at 180 seconds. POST setup uses WebView.postUrl; this is
+HTTP/persistence evidence, not keyboard/native-submission evidence.
 
 ## Evidence limits
 
