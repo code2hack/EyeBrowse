@@ -62,11 +62,30 @@ class KeyboardJourneyTest {
         fun clearAddress() { while(j.peer.keyboard.draft.isNotEmpty()) press(RgKeyboard.Key.Command.BACKSPACE,false) }
         fun readyKeyboard() = j.await("fresh resized field grant",2_000) { j.peer.keyboard.visible && j.peer.canKey(RgKeyboard.Key.Character("a")) && j.peer.canAct() }
         fun field(id: String) {
+            fun point() = JSONObject(checkNotNull(j.peer.browserState()?.title).substringAfter("KBD|")).getJSONArray(id)
             j.await("fresh page coordinates") { j.peer.canAct() && j.peer.browserState()?.title?.startsWith("KBD|")==true }
-            val g = JSONObject(j.peer.browserState()!!.title!!.substringAfter("KBD|"))
-            val point = g.getJSONArray(id)
+            var swipes = 0
+            while (point().getDouble(1) !in 0.0..<1.0) {
+                assertTrue("fixture field must be reachable with bounded pad scrolling",swipes++ < 4)
+                val beforeY = point().getDouble(1)
+                val beforeCapture = checkNotNull(j.peer.lastFrameHeader).captureTsMs
+                val beforeResult = j.peer.lastActionResult
+                val trace = j.dispatched(j.pad(if (beforeY >= 1.0) 292 else 293),"reveal-field")
+                j.await("scroll admitted without uncertain replay",2_000) { j.peer.lastActionResult !== beforeResult }
+                assertTrue(j.peer.lastActionResult?.accepted == true)
+                assertNull(j.peer.lastActionResult?.reason)
+                j.await("scroll updates fixture geometry and current frame",2_000) {
+                    j.peer.canAct() && point().getDouble(1) != beforeY &&
+                        (j.peer.lastFrameHeader?.captureTsMs ?: -1) > beforeCapture
+                }
+                // Honor the production swipe/tap suppression interval; never retry a suppressed tap.
+                val remaining = trace.confirmedAt + j.activity.inputRouter.doubleTapMs + 1 - SystemClock.uptimeMillis()
+                if (remaining > 0) SystemClock.sleep(remaining)
+            }
+            val target = point()
+            assertTrue("fixture field is horizontally inside the page",target.getDouble(0) in 0.0..<1.0)
             val profile = checkNotNull(j.peer.profile())
-            j.aim(j.pageRoot((point.getDouble(0)*profile.width).toFloat(),(point.getDouble(1)*profile.height).toFloat()))
+            j.aim(j.pageRoot((target.getDouble(0)*profile.width).toFloat(),(target.getDouble(1)*profile.height).toFloat()))
             j.dispatched(j.pad(),"field")
             readyKeyboard()
         }
@@ -158,7 +177,17 @@ class KeyboardJourneyTest {
             assertEquals("Done invalidates a key awaiting confirmation",beforeDismiss,j.actions)
             j.await("Done restores fresh geometry",2_000) { !j.peer.keyboard.visible && j.peer.canAct() }
             checkPhone("dismiss_pending")
-            field("password");character('p');character('7');screenshot("password");done();checkPhone("password")
+            field("password");character('p')
+            val passwordFrameBeforeFinalKey = j.peer.lastFrameHeader?.captureTsMs ?: -1
+            character('7')
+            val captureDeadline = SystemClock.uptimeMillis()+1_000
+            var newerPasswordFrame = false
+            while (SystemClock.uptimeMillis()<captureDeadline && !newerPasswordFrame) {
+                j.main { newerPasswordFrame = (j.peer.lastFrameHeader?.captureTsMs ?: -1) > passwordFrameBeforeFinalKey }
+                if (!newerPasswordFrame) SystemClock.sleep(20)
+            }
+            Log.i("EyeBrowseKeyboardTest","PASSWORD_CAPTURE newerFrame=$newerPasswordFrame visualMaskingRequiresInspection=true")
+            screenshot("password");done();checkPhone("password")
             field("multiline");character('m');press(RgKeyboard.Key.Command.ENTER);character('n');done();checkPhone("multiline")
             field("plain");character('e');done();checkPhone("plain")
             field("text");checkPhone("invalidate")
