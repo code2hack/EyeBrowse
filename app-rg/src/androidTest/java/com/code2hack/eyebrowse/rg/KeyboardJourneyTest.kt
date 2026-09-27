@@ -20,7 +20,8 @@ import java.io.File
 class KeyboardJourneyTest {
     @Test fun actualKeysEditThePairedPhoneAndRetireStaleIntents() = journey(false)
     @Test fun livePixelsAndNonemptyModeContinuity() = journey(true)
-    private fun journey(reviewEvidence: Boolean) {
+    @Test fun submissionPublishesFreshMarker() = journey(false,true)
+    private fun journey(reviewEvidence: Boolean, submitEvidence: Boolean = false) {
         val scenario = ActivityScenario.launch(MainActivity::class.java)
         val j = PointerBrowserJourneyTest.Journey(scenario)
         val phase = File(j.app.cacheDir,"kbd-${j.mission}.phase")
@@ -130,11 +131,55 @@ class KeyboardJourneyTest {
             }
             return dots
         }
+        fun markerPixels(green: Boolean): Boolean {
+            val rect=JSONObject(checkNotNull(j.peer.browserState()?.title).substringAfter("KBD|")).getJSONArray("submitMarker")
+            val bitmap=(j.activity.findViewById<android.widget.ImageView>(R.id.rg_page).drawable as android.graphics.drawable.BitmapDrawable).bitmap
+            for (dy in listOf(-.2,0.0,.2)) for (dx in listOf(-.2,0.0,.2)) {
+                val x=((rect.getDouble(0)+dx*rect.getDouble(2))*bitmap.width).toInt()
+                val y=((rect.getDouble(1)+dy*rect.getDouble(3))*bitmap.height).toInt()
+                check(x in 0 until bitmap.width && y in 0 until bitmap.height) { "submit marker outside current frame" }
+                val c=bitmap.getPixel(x,y);val r=(c shr 16) and 255;val g=(c shr 8) and 255;val b=c and 255
+                if (if(green) !(r<80 && g>100 && b<120) else !(r>120 && g<80 && b<100))return false
+            }
+            return true
+        }
         var completed = false
         try {
             j.setup(); j.native(R.id.rg_retry,"Retry")
             j.await("paired Phone state",10_000) { j.peer.browserState()?.owner==ControlOwner.PHONE && j.peer.canHandoff() }
             j.handoff(ControlOwner.RG,"A")
+            if(submitEvidence) {
+                field("text")
+                var lastCapture=checkNotNull(j.peer.lastFrameHeader).captureTsMs
+                var quietSince=SystemClock.uptimeMillis()
+                j.await("prior captures quiescent",3_000) {
+                    val current=checkNotNull(j.peer.lastFrameHeader).captureTsMs
+                    if(current!=lastCapture) { lastCapture=current;quietSince=SystemClock.uptimeMillis() }
+                    j.peer.canAct() && SystemClock.uptimeMillis()-quietSince>=300
+                }
+                j.main { assertTrue("initial marker pixels",markerPixels(false)) }
+                checkPhone("submit_ready")
+                val context=checkNotNull(j.peer.browserState()).context
+                val beforeFrame=checkNotNull(j.peer.lastFrameHeader).captureTsMs
+                press(RgKeyboard.Key.Command.ENTER)
+                val deadline=SystemClock.uptimeMillis()+1_000
+                assertEquals("SUBMISSION_REQUESTED",j.peer.lastActionResult?.reason)
+                checkPhone("submit_applied")
+                var fresh=false;var marker=false;var open=false;var observedAt=Long.MAX_VALUE
+                while(SystemClock.uptimeMillis()<deadline && !(fresh && marker && open)) {
+                    j.main {
+                        open=j.peer.keyboard.visible
+                        fresh=(j.peer.lastFrameHeader?.captureTsMs ?: -1)>beforeFrame
+                        marker=markerPixels(true);observedAt=SystemClock.uptimeMillis()
+                    }
+                    if(!(fresh && marker && open))SystemClock.sleep(20)
+                }
+                Log.i("EyeBrowseKeyboardTest","SUBMIT_PIXELS submissionBranch=true fresh=$fresh markerUpdated=$marker keyboardOpen=$open inBudget=${observedAt<=deadline}")
+                assertTrue("submit handler must produce fresh RG marker without further input",fresh && marker && open && observedAt<=deadline)
+                assertEquals(context,j.peer.browserState()?.context)
+                screenshot("submit-live");checkPhone("submit_pixels")
+                completed=true;phase.writeText("complete");return
+            }
             if (reviewEvidence) {
                 field("plain");character('a');character('B');character('1')
                 checkPhone("filled_before")

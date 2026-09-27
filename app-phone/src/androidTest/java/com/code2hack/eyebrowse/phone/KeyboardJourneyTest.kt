@@ -20,7 +20,8 @@ import java.util.UUID
 class KeyboardJourneyTest {
     @Test fun phoneObservesActualKeyboardEffectsAndPageContinuity() = journey(false)
     @Test fun phoneObservesLivePixelsAndNonemptyModeContinuity() = journey(true)
-    private fun journey(reviewEvidence: Boolean) {
+    @Test fun phoneObservesSubmissionMarker() = journey(false,true)
+    private fun journey(reviewEvidence: Boolean, submitEvidence: Boolean = false) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext
         val mission = UUID.fromString(InstrumentationRegistry.getArguments().getString("missionId")).toString()
@@ -59,6 +60,25 @@ class KeyboardJourneyTest {
             scenario.onActivity { it.findViewById<Button>(R.id.button_hosting_toggle).performClick() }
             await("hosting") { host.status().state==HostingController.State.HOSTING }
             Log.i("EyeBrowseKeyboardTest","PHONE_KBD_READY mission=$mission")
+            if(submitEvidence) {
+                phase("submit_ready") {
+                    assertEquals("0",js("fixtureSubmits"))
+                    await("capture pipeline quiescent",3_000) { fw4RunOnMainChecked {
+                        val diagnostic=host.captureDiagnostics()
+                        diagnostic.contains("pendingFrame=false") && diagnostic.contains("transaction=0") &&
+                            diagnostic.contains("activeCycle=0") && diagnostic.contains("nativeCopy=0")
+                    } }
+                    Log.i("EyeBrowseKeyboardTest","SUBMIT_BEFORE "+host.captureDiagnostics())
+                }
+                fun submitted() {
+                    assertEquals("1",js("fixtureSubmits"));assertEquals(originalIdentity,js("fixtureIdentity"));assertSame(originalView,browser.view())
+                    assertEquals("true",js("document.activeElement===document.getElementById('text') && getComputedStyle(document.getElementById('submitMarker')).backgroundColor==='rgb(0, 160, 64)'"))
+                }
+                phase("submit_applied") { submitted();Log.i("EyeBrowseKeyboardTest","SUBMIT_PHONE sameDocument=true focusRetained=true markerUpdated=true "+host.captureDiagnostics()) }
+                phase("submit_pixels") { submitted() }
+                await("RG received submit assertions",5_000) { phase.exists() && phase.readText().trim()=="complete" }
+                return
+            }
             if(reviewEvidence) {
                 var scrollBefore=0.0
                 fun continuity() {
