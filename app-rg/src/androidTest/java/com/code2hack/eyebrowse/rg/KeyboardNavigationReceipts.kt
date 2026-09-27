@@ -1,8 +1,6 @@
 package com.code2hack.eyebrowse.rg
 
 import android.os.SystemClock
-import android.text.Editable
-import android.text.TextWatcher
 import android.util.Log
 import android.widget.TextView
 import android.view.View
@@ -29,12 +27,10 @@ internal class KeyboardNavigationReceipts(private val activity: MainActivity) : 
     private val layoutListener = View.OnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
         capture("image-layout old=${oldRight-oldLeft}x${oldBottom-oldTop} new=${right-left}x${bottom-top}")
     }
-    private val watcher = object : TextWatcher {
-        override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { capture("ui-text-change") }
-        override fun afterTextChanged(s: Editable?) = Unit
-    }
     private val views = listOf(activity.findViewById<TextView>(R.id.rg_status), activity.findViewById<TextView>(R.id.rg_detail))
+    private val textObserver = PreDrawTextObserver(activity.findViewById(R.id.rg_root),views) { index ->
+        capture(if (index == 0) "ui-status-change-at-predraw" else "ui-location-change-at-predraw")
+    }
     private val observingListener = object : RgLinkClient.Listener by original {
         override fun onControl(message: BrowserControlMessage) {
             val entered = SystemClock.uptimeMillis()
@@ -52,7 +48,6 @@ internal class KeyboardNavigationReceipts(private val activity: MainActivity) : 
     }
     init {
         listenerField.set(client, observingListener)
-        views.forEach { it.addTextChangedListener(watcher) }
         image.addOnLayoutChangeListener(layoutListener)
         capture("armed-before-enter")
     }
@@ -102,7 +97,7 @@ internal class KeyboardNavigationReceipts(private val activity: MainActivity) : 
         observing = false
         // Called on Main after the await; do not retain Activity or install a successor observer.
         if (listenerField.get(client) === observingListener) listenerField.set(client, original)
-        views.forEach { it.removeTextChangedListener(watcher) }
+        textObserver.close()
         image.removeOnLayoutChangeListener(layoutListener)
         synchronized(records) {
             records.forEach { Log.i("EyeBrowseKeyboardTest", "KBD_NAV $it") }
