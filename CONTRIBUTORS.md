@@ -379,10 +379,10 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Reviewer",
-    "scope": "I12 exact-head independent review",
+    "scope": "I12 exact-head independent review (native session id per AGENTS 15.1; paseo transport id 2c644d2d-8dad-494f-b6c3-adac087c9b49)",
     "host": "spark",
     "runtime": "codex",
-    "id": "2c644d2d-8dad-494f-b6c3-adac087c9b49",
+    "id": "01a0e59c-5623-7843-8670-cbc5eee00e76",
     "model": null,
     "name": "Reviewer-codex-astra-2",
     "status": "active"
