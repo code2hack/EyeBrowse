@@ -67,6 +67,8 @@ class ColdRecoveryInstrumentedTest {
         val browser = PhoneBrowserSession.get(app)
         val scenario = ActivityScenario.launch<MainActivity>(Intent(app, MainActivity::class.java))
         val barrier = File(app.cacheDir, "i11-$mission.persistence").apply { writeText("starting") }
+        fun terminalReceipt(stage:String) = android.util.Log.i("EyeBrowseRecovery",
+            "COLD_TERMINAL mission=$mission stage=$stage elapsedMs=${SystemClock.elapsedRealtime()} clock=Phone_elapsedRealtime")
         try {
             navigate(scenario, browser, "/form.html", "Form") { browser.openAddress("$base/form.html") }
             assertEquals("true", js(browser, "localStorage.setItem('$storageKey','persisted');document.cookie='$cookieName=present; Max-Age=86400; Path=/';true"))
@@ -78,13 +80,22 @@ class ColdRecoveryInstrumentedTest {
             barrier.writeText("backgrounded")
             val deadline = started + 20_000
             while (barrier.readText() != "durable" && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(25)
+            terminalReceipt("durability-loop-exit")
             assertEquals("host must verify the exact mission value in a complete journal record", "durable", barrier.readText())
             scenario.moveToState(Lifecycle.State.RESUMED)
             scenario.recreate()
             assertStored(browser)
             assertTrue(receipt.edit().putLong("gracefulProcessStart", Process.getStartElapsedRealtime()).putBoolean("durableEstablished", true).commit())
             android.util.Log.i("EyeBrowseRecovery", "GRACEFUL_PASS mission=$mission boundary=Activity_onStop recreated=true persistenceMs=${SystemClock.elapsedRealtime()-started}")
-        } finally { barrier.delete(); scenario.close() }
+        } catch (failure:Throwable) {
+            terminalReceipt("failure-${failure.javaClass.simpleName}")
+            throw failure
+        } finally {
+            terminalReceipt("finally-entry")
+            barrier.delete()
+            terminalReceipt("before-close")
+            try { scenario.close() } finally { terminalReceipt("after-close-return-or-throw") }
+        }
     }
 
     @Test fun prepareRealProcessLossAfterFixturePost() {
