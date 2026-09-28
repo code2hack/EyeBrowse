@@ -195,6 +195,9 @@ class PhoneBrowserSession private constructor(private val appContext: Context) {
             }
         }
         view.invalidate()
+        // Capture demand follows the current hosting container's dispatchDraw, not just
+        // renderer compositing. Match the editor path without bypassing capture ownership.
+        (view.parent as? android.view.View)?.invalidate()
     }
 
     /** Flushes persistent cookies; called at the Activity stop boundary. */

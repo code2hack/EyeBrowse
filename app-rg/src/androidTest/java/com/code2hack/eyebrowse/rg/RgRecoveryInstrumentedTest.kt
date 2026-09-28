@@ -75,6 +75,82 @@ class RgRecoveryInstrumentedTest {
         override fun onPresentation(frame:PresentationFrame) { frames++ }
     }
 
+    @Test fun nativeNetworkRetryMeasuresPostTcpAuthentication() {
+        val before=trustFile.readBytes();val ownIdentity=fingerprint()
+        val scenario=ActivityScenario.launch(RgPairingActivity::class.java)
+        cleanupActions += { scenario.close() }
+        cleanupActions += { phase.delete();assertFalse(phase.exists()) }
+        lateinit var client:RgLinkClient
+        scenario.onActivity { activity ->
+            client=RgPairingActivity::class.java.getDeclaredField("client").apply { isAccessible=true }.get(activity) as RgLinkClient
+        }
+        val listenerField=RgLinkClient::class.java.getDeclaredField("listener").apply { isAccessible=true }
+        val original=listenerField.get(client) as RgLinkClient.Listener
+        val connectedNs=java.util.concurrent.atomic.AtomicLong()
+        val protectedEvents=java.util.concurrent.atomic.AtomicInteger()
+        val statuses=LinkedBlockingDeque<HostStatusValue>()
+        val failures=LinkedBlockingDeque<LinkError>()
+        val observer=object:RgLinkClient.Listener by original {
+            override fun onStateChange(state:PairingState) {
+                if(state==PairingState.CONNECTED) connectedNs.compareAndSet(0,SystemClock.elapsedRealtimeNanos())
+                original.onStateChange(state)
+            }
+            override fun onConnectFailed(error:LinkError) { failures.add(error);original.onConnectFailed(error) }
+            override fun onStatus(status:HostStatusValue) { protectedEvents.incrementAndGet();statuses.add(status);original.onStatus(status) }
+            override fun onControl(message:BrowserControlMessage) { protectedEvents.incrementAndGet();original.onControl(message) }
+            override fun onPresentation(frame:PresentationFrame) { protectedEvents.incrementAndGet();original.onPresentation(frame) }
+        }
+        listenerField.set(client,observer)
+        cleanupActions += { listenerField.set(client,original) }
+        val engine=RgLinkClient::class.java.getDeclaredMethod("startEngine").apply { isAccessible=true }.invoke(client) as LinkClientEngine
+        val seam=LinkClientEngine::class.java.getDeclaredField("tcpConnectForTest").apply { isAccessible=true }
+        val previous=seam.get(engine)
+        cleanupActions += { seam.set(engine,previous) }
+        val blocked=java.util.concurrent.atomic.AtomicBoolean(true)
+        val blockedAttempts=java.util.concurrent.atomic.AtomicInteger()
+        val successfulConnects=java.util.concurrent.atomic.AtomicInteger()
+        val tcpStartNs=java.util.concurrent.atomic.AtomicLong()
+        val tcpReturnNs=java.util.concurrent.atomic.AtomicLong()
+        val locator=java.util.concurrent.atomic.AtomicReference<String>()
+        val connect:(java.net.Socket,java.net.InetSocketAddress,Int)->Unit={socket,address,timeout ->
+            if(blocked.get()) {
+                blockedAttempts.incrementAndGet()
+                throw java.net.ConnectException("I12 declared unavailable TCP fault")
+            }
+            val start=SystemClock.elapsedRealtimeNanos()
+            socket.connect(address,timeout)
+            tcpStartNs.set(start);tcpReturnNs.set(SystemClock.elapsedRealtimeNanos())
+            locator.set("${address.address.hostAddress}:${address.port}")
+            successfulConnects.incrementAndGet()
+        }
+        seam.set(engine,connect)
+        scenario.onActivity { it.findViewById<Button>(R.id.rg_button_retry).performClick() }
+        assertEquals(LinkError.NetworkUnreachable,failures.poll(10,TimeUnit.SECONDS))
+        await("native unreachable prompt") {
+            var shown=false
+            scenario.onActivity { shown=it.findViewById<TextView>(R.id.rg_pairing_status).text.toString()==RgPairingActivity.NETWORK_NOTE }
+            shown
+        }
+        await("failed operation quiescent",2_000) { !engine.isBusy }
+        assertTrue(blockedAttempts.get()>0);assertEquals(0L,connectedNs.get())
+        assertEquals(0,protectedEvents.get());assertArrayEquals(before,trustFile.readBytes())
+        Log.i("EyeBrowseRgRecovery","NETWORK_NEGATIVE mission=$mission injectedTcp=true blockedAttempts=${blockedAttempts.get()} noProtectedEvents=true nativePrompt=true")
+        blocked.set(false)
+        var dispatchNs=0L
+        scenario.onActivity { dispatchNs=SystemClock.elapsedRealtimeNanos();it.findViewById<Button>(R.id.rg_button_retry).performClick() }
+        await("real authenticated Retry",10_000) { connectedNs.get()!=0L }
+        val completed=connectedNs.get();val tcp=tcpReturnNs.get()
+        assertEquals(1,successfulConnects.get())
+        assertTrue("same-operation TCP timestamp",tcp>=dispatchNs && tcpStartNs.get()>=dispatchNs && completed>=tcp)
+        assertTrue("Retry operation <=10s",completed-dispatchNs<=10_000_000_000L)
+        assertTrue("post-TCP TLS/auth/commit <=5s",completed-tcp<=5_000_000_000L)
+        assertEquals(HostStatusValue.HOST_INACTIVE,statuses.poll(2,TimeUnit.SECONDS))
+        assertArrayEquals(before,trustFile.readBytes());assertEquals(ownIdentity,fingerprint())
+        Log.i("EyeBrowseRgRecovery","TLS_STAGE mission=$mission clock=elapsedRealtimeNanos operation=1 dispatchNs=$dispatchNs tcpStartNs=${tcpStartNs.get()} tcpReturnNs=$tcp connectedNs=$completed locator=${locator.get()} operationMs=${(completed-dispatchNs)/1_000_000.0} postTcpMs=${(completed-tcp)/1_000_000.0}")
+        phase.writeText("network-authenticated")
+        await("Phone independently verified inactive host",10_000) { phase.readText().trim()=="network-verified" }
+    }
+
     @Test fun prepareActualRgProcessRestart() {
         assertTrue(canonical.isPaired())
         val originalTrust=trustFile.readBytes()

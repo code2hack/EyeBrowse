@@ -21,7 +21,9 @@ class KeyboardJourneyTest {
     @Test fun actualKeysEditThePairedPhoneAndRetireStaleIntents() = journey(false)
     @Test fun livePixelsAndNonemptyModeContinuity() = journey(true)
     @Test fun submissionPublishesFreshMarker() = journey(false,true)
-    private fun journey(reviewEvidence: Boolean, submitEvidence: Boolean = false) {
+    @Test fun keyboardReadingScrollAndFreshReactivationPreserveIntentBoundaries() = journey(false, crossFeature = true)
+
+    private fun journey(reviewEvidence: Boolean, submitEvidence: Boolean = false, crossFeature: Boolean = false) {
         val scenario = ActivityScenario.launch(MainActivity::class.java)
         val j = PointerBrowserJourneyTest.Journey(scenario)
         val phase = File(j.app.cacheDir,"kbd-${j.mission}.phase")
@@ -148,6 +150,45 @@ class KeyboardJourneyTest {
             j.setup(); j.native(R.id.rg_retry,"Retry")
             j.await("paired Phone state",10_000) { j.peer.browserState()?.owner==ControlOwner.PHONE && j.peer.canHandoff() }
             j.handoff(ControlOwner.RG,"A")
+            if(crossFeature) {
+                fun pose(degrees:Double) { j.main { j.source.pitchDegrees(degrees) };SystemClock.sleep(100) }
+                fun fresh(label:String) {
+                    j.await(label,2_000) { j.peer.canAct() }
+                    val state=checkNotNull(j.peer.browserState());val frame=checkNotNull(j.peer.lastFrameHeader);val profile=checkNotNull(j.peer.profile())
+                    assertFalse(state.stale);assertEquals(state.context,frame.context);assertEquals(profile,state.profile)
+                    assertEquals(profile.width,frame.width);assertEquals(profile.height,frame.height)
+                    Log.i("EyeBrowseKeyboardTest","CROSS_FRAME phase=$label context=${state.context} seq=${frame.frameSeq} capture=${frame.captureTsMs}")
+                }
+                field("plain");character('a');character('B');character('1')
+                val document=checkNotNull(j.peer.browserState()).context.documentId
+                lateinit var oldKey:RgKeyboard.Intent
+                j.main { oldKey=j.peer.keyboard.capture(RgKeyboard.Key.Character("x")) }
+                checkPhone("cross_filled")
+                pose(0.0);val beforeMode=j.actions;j.pad(291);j.confirmWindow()
+                j.await("filled Reading ready",2_000) { j.peer.reading && !j.peer.keyboard.visible && j.peer.canAct() };fresh("reading-entry")
+                assertEquals(beforeMode,j.actions);assertEquals(document,j.peer.browserState()?.context?.documentId)
+                j.main {
+                    for(id in listOf(R.id.rg_status,R.id.rg_detail,R.id.rg_utilities,R.id.rg_navigation,R.id.rg_handoff,R.id.rg_pointer))assertFalse(it.findViewById<View>(id).isShown)
+                }
+                checkPhone("cross_reading")
+                SystemClock.sleep(400);pose(10.0);checkPhone("cross_tilt")
+                pose(0.0);checkPhone("cross_neutral")
+                pose(10.0);SystemClock.sleep(350);checkPhone("cross_before_swipe")
+                val beforeSwipe=j.peer.lastActionResult
+                j.dispatched(j.pad(292),"cross-reading-swipe");j.result(beforeSwipe,"cross-reading-swipe")
+                checkPhone("cross_swipe");SystemClock.sleep(400);checkPhone("cross_held")
+                pose(0.0);SystemClock.sleep(400);checkPhone("cross_neutral_again")
+                j.pad(291);j.confirmWindow()
+                j.await("Normal stays keyboard closed",2_000) { !j.peer.reading && !j.peer.keyboard.visible && j.peer.canAct() };fresh("normal-exit")
+                assertEquals(document,j.peer.browserState()?.context?.documentId)
+                val beforeOld=j.actions;j.main { assertFalse("retired key cannot enter after Reading",j.peer.key(oldKey)) };assertEquals(beforeOld,j.actions)
+                checkPhone("cross_exit")
+                field("plain");fresh("reactivated-field")
+                val freshActions=j.actions
+                j.main { assertFalse("old key cannot target fresh editor",j.peer.key(oldKey)) };assertEquals(freshActions,j.actions)
+                character('c');checkPhone("cross_fresh_key");done();checkPhone("cross_done")
+                completed=true;phase.writeText("complete");return
+            }
             if(submitEvidence) {
                 field("text")
                 var lastCapture=checkNotNull(j.peer.lastFrameHeader).captureTsMs

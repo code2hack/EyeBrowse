@@ -57,6 +57,13 @@ class RgCameraLifecycleInstrumentationTest {
         }
     }
 
+    private fun timingReceipt(phase: String, startedMs: Long, elapsedMs: Long, observed: Boolean) {
+        InstrumentationRegistry.getInstrumentation().sendStatus(0, android.os.Bundle().apply {
+            putString("stream", "I12_CAMERA phase=$phase clock=System.currentTimeMillis " +
+                "startedMs=$startedMs elapsedMs=$elapsedMs observed=$observed\n")
+        })
+    }
+
     private fun grant() = shell("pm grant ${context.packageName} android.permission.CAMERA")
 
     // Theme applies textAllCaps: match case-insensitively by probing common casings.
@@ -107,6 +114,7 @@ class RgCameraLifecycleInstrumentationTest {
         assertTrue("scan tapped", tapText("Scan QR"))
         val frameSeen = awaitText("Camera delivering frames", 15_000)
         val elapsed = System.currentTimeMillis() - started
+        timingReceipt("cold-first-analyzer", started, elapsed, frameSeen)
         assertTrue(
             "cold first analyzer frame within 10 s (frameSeen=$frameSeen actual=${elapsed}ms)",
             frameSeen && elapsed <= 10_000,
@@ -128,6 +136,7 @@ class RgCameraLifecycleInstrumentationTest {
             awaitText("Cancelled.", 2_000),
         )
         val cancelElapsed = System.currentTimeMillis() - cancelStarted
+        timingReceipt("cancel-unbind-confirmation", cancelStarted, cancelElapsed, true)
         assertTrue("cancel took ${cancelElapsed}ms", cancelElapsed <= 2_000)
 
         // Warm reacquisition: re-bind without a fresh provider/camera open must be <= 5 s.
@@ -135,6 +144,7 @@ class RgCameraLifecycleInstrumentationTest {
         val reacquireStarted = System.currentTimeMillis()
         val reacquired = awaitText("Camera delivering frames", 15_000)
         val reacquireElapsed = System.currentTimeMillis() - reacquireStarted
+        timingReceipt("warm-reacquisition", reacquireStarted, reacquireElapsed, reacquired)
         assertTrue(
             "warm reacquisition within 5 s (reacquired=$reacquired actual=${reacquireElapsed}ms)",
             reacquired && reacquireElapsed <= 5_000,

@@ -584,6 +584,99 @@ class BrowserInstrumentedTest {
         )
     }
 
+    @Test
+    fun nativeBackForwardReloadPreservesSingleTabAndCountsReload() {
+        openAddress(fixtureUrl("/basic.html"))
+        waitForMarker()
+        openAddress(fixtureUrl("/target-blank.html"))
+        waitUntil("second document ready") { domText("page-title") == "New-window link page" }
+        onView(withId(R.id.button_back)).perform(click())
+        waitUntil("native Back") { domText("page-title") == "Basic page" }
+        waitUntil("native Forward enabled") { viewEnabled(R.id.button_forward) }
+        onView(withId(R.id.button_forward)).perform(click())
+        waitUntil("native Forward") { domText("page-title") == "New-window link page" }
+        val marker = waitForMarker()
+        val loads = loadCount("/target-blank.html")
+        onView(withId(R.id.button_reload)).perform(click())
+        waitUntil("Reload creates exactly one fresh document") {
+            domText("load-marker") != marker &&
+                domText("page-title") == "New-window link page" &&
+                jsRead("document.readyState") == "complete"
+        }
+        assertEquals(loads + 1, loadCount("/target-blank.html"))
+        assertEquals(fixtureUrl("/target-blank.html"), sessionDisplayUrl())
+        assertEquals(1, attachedWebViews())
+        recordPhoneInputState("navigation-layout")
+        awaitWindowFocus()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val bitmap = checkNotNull(instrumentation.uiAutomation.takeScreenshot())
+        try {
+            val file = java.io.File(instrumentation.targetContext.filesDir, "i12-a02-layout.png")
+            file.outputStream().use { assertTrue(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)) }
+        } finally { bitmap.recycle() }
+    }
+
+    @Test
+    fun touchFocusedAndroidKeysCorrectFieldAndSubmitExactlyOnce() {
+        openAddress(fixtureUrl("/form.html"))
+        waitForMarker()
+        val before = countPosts(SYNTHETIC_TEST_ID)
+        realClickElement("text-field")
+        waitUntil("touch focused real page field") { jsRead("document.activeElement.id") == "text-field" }
+        recordPhoneInputState("before-hardware-key-injection")
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.sendStringSync("draftx")
+        instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_DEL)
+        instrumentation.sendStringSync("7")
+        waitUntil("key insertion and correction reached page") {
+            jsRead("document.getElementById('text-field').value") == "draft7"
+        }
+        assertEquals(before, countPosts(SYNTHETIC_TEST_ID))
+        recordPhoneInputState("after-hardware-key-injection")
+        dismissIme()
+        realClickElement("submit-button")
+        waitUntil("explicit touch submission") { domText("page-title") == "Submission recorded" }
+        assertEquals(before + 1, countPosts(SYNTHETIC_TEST_ID))
+        assertFalse("fixture must not retain entered content", observationsRaw().contains("draft7"))
+    }
+
+    @Test
+    fun unavailableDestinationShowsNativeErrorAndExplicitAddressRecovers() {
+        val closedPort = java.net.ServerSocket(0).use { it.localPort }
+        val unavailable = "http://127.0.0.1:$closedPort/i12-unavailable"
+        openAddress(unavailable)
+        waitUntil("native main-frame error") {
+            val error = AtomicReference<String?>()
+            scenario.onActivity { error.set(session.errorMessage()) }
+            error.get() != null && statusText() == error.get()
+        }
+        recordPhoneInputState("native-error")
+        val loads = loadCount("/basic.html")
+        openAddress(fixtureUrl("/basic.html"))
+        waitUntil("explicit valid-address recovery") {
+            domText("page-title") == "Basic page" && jsRead("document.readyState") == "complete"
+        }
+        assertEquals(loads + 1, loadCount("/basic.html"))
+        scenario.onActivity { assertEquals(null, session.errorMessage()) }
+        assertEquals(fixtureUrl("/basic.html"), sessionDisplayUrl())
+        assertEquals(1, attachedWebViews())
+        recordPhoneInputState("recovered")
+    }
+
+    private fun recordPhoneInputState(phase: String) {
+        val facts = AtomicReference<String>()
+        scenario.onActivity { activity ->
+            val decor = activity.window.decorView
+            facts.set("I12_A02 phase=$phase uptimeMs=${SystemClock.uptimeMillis()} " +
+                "windowFocus=${activity.hasWindowFocus()} webViewFocus=${activity.findViewById<WebView>(R.id.browser_web_view)?.hasFocus()} " +
+                "imeVisible=${decor.rootWindowInsets?.isVisible(WindowInsets.Type.ime())} " +
+                "width=${decor.width} height=${decor.height} density=${activity.resources.displayMetrics.densityDpi}")
+        }
+        InstrumentationRegistry.getInstrumentation().sendStatus(0, android.os.Bundle().apply {
+            putString("stream", facts.get() + "\n")
+        })
+    }
+
     private fun openAddress(url: String) {
         submitAddress(url)
     }

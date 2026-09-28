@@ -60,12 +60,37 @@ class RgQrImagePairingInstrumentationTest {
         InstrumentationRegistry.getArguments().getString(name) ?: default
 
     private fun qrFile(): File {
-        val dir = InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null)!!
-        return File(dir, arg("qrName", "qr.png"))
+        val app = InstrumentationRegistry.getInstrumentation().targetContext
+        val cacheName = InstrumentationRegistry.getArguments().getString("qrCacheName")
+        if (cacheName != null) {
+            require(Regex("i12-expiry-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.png").matches(cacheName)) {
+                "invalid mission QR basename"
+            }
+            return File(app.cacheDir, cacheName)
+        }
+        return File(app.getExternalFilesDir(null)!!, arg("qrName", "qr.png"))
     }
 
     private fun newClient(listener: RecordingListener): RgLinkClient =
         RgLinkClient(RgLinkIdentity(), RgPairingStore(InstrumentationRegistry.getInstrumentation().targetContext), listener)
+
+    /** Preparation metadata only: does not connect or assert invitation rejection. */
+    @Test
+    fun qrImageMetadata_reportsOnlyLocatorsFingerprintAndTtl() {
+        val bitmap = checkNotNull(BitmapFactory.decodeFile(qrFile().absolutePath))
+        try {
+            val payload = checkNotNull(QrDecoder.decode(bitmap))
+            val parsed = com.code2hack.eyebrowse.core.link.invitation.InvitationCodec.parse(payload).getOrThrow()
+            val receipt = org.json.JSONObject()
+                .put("locators", org.json.JSONArray(parsed.locators.map { it.toWire() }))
+                .put("fingerprint", parsed.phoneSpkiSha256Hex)
+                .put("ttlSeconds", parsed.ttlSeconds)
+                .put("elapsedRealtimeMs", android.os.SystemClock.elapsedRealtime())
+            InstrumentationRegistry.getInstrumentation().sendStatus(0, android.os.Bundle().apply {
+                putString("stream", "I12_QR_METADATA $receipt\n")
+            })
+        } finally { bitmap.recycle() }
+    }
 
     @Test
     fun qrImageSeam_completesRealAuthenticatedPair_overActualTopology() {
