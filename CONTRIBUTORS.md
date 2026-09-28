@@ -355,7 +355,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "id": "01a0dea1-b623-7090-af06-7af242d42bac",
     "model": "gpt-6-astra/thinking-medium",
     "name": "Worker-codex-astra",
-    "status": "active"
+    "status": "retired"
   },
   {
     "role": "Reviewer",
@@ -365,7 +365,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "id": "26f5375d-958e-48fe-ba7d-eb3423aacca8",
     "model": "gpt-6-astra/thinking-max",
     "name": "Reviewer-codex-astra",
-    "status": "active"
+    "status": "retired"
   },
   {
     "role": "Worker",
@@ -375,7 +375,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "id": "01a0dec0-a417-7773-9a5a-014df131c716",
     "model": "gpt-6-astra/thinking-medium",
     "name": "Worker-codex-astra-2",
-    "status": "active"
+    "status": "retired"
   },
   {
     "role": "Reviewer",
@@ -385,7 +385,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "id": "01a0e59c-5623-7843-8670-cbc5eee00e76",
     "model": null,
     "name": "Reviewer-codex-astra-2",
-    "status": "active"
+    "status": "retired"
   }
 ]
 ```
