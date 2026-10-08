@@ -412,6 +412,28 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "model": "gpt-6.1-sol / max",
     "name": "Reviewer-v0.0.2",
     "status": "active"
+  },
+  {
+    "role": "Worker",
+    "scope": "v0.0.2; issue #28; awaiting Planner ticket plan",
+    "host": "spark",
+    "runtime": "codex",
+    "id": "01a11c86-6502-7e22-98eb-8ef0f9041207",
+    "paseo": "5b1a9f2e-a1df-4c26-9a27-6133c907713c",
+    "model": "gpt-6.1-sol / xhigh",
+    "name": "Worker-#28",
+    "status": "active"
+  },
+  {
+    "role": "Worker",
+    "scope": "v0.0.2; issue #29; awaiting Planner ticket plan",
+    "host": "spark",
+    "runtime": "codex",
+    "id": "01a11c86-65da-76f2-b4dc-462cf51a1a92",
+    "paseo": "cac5cae8-8ed0-4aca-9cc2-1cdbf950b31e",
+    "model": "gpt-6.1-sol / xhigh",
+    "name": "Worker-#29",
+    "status": "active"
   }
 ]
 ```
