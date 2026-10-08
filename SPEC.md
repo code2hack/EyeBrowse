@@ -1,402 +1,327 @@
-# EyeBrowse SPEC v0.0.1
+# EyeBrowse SPEC v0.0.2
 
-**Status:** Owner-approved unreleased development specification — unattended device-automation acceptance  
-**Target product version:** v0.0.1  
+**Revision:** D2 — Owner-directed standalone RG, multi-tab and strict HUD revision  
+**Status:** Published development-branch contract; exact HUD layout/visual approval gate OPEN  
+**Product version:** v0.0.2, unreleased development  
 **Project Owner:** code2hack  
 **Editor:** Planner: SPEC Design  
-**Product decision baseline:** 2026-09-10  
-**Acceptance baseline:** Owner-approved unattended automation, with real Phone and RG retained; see §15
+**Integration branch:** `work/v0.0.2-independent-clients`  
+**Preparation base:** `5e5299d9e0ae40a698f152c59ac939ba301a3900`  
+**Preserved v0.0.1 source:** `2b217f5fb8d376d0f3d81dcac03006aa9919f197`  
+**Mandatory companion:** [RG HUD contract H1](docs/design/v0.0.2-rg-hud.md)
 
-## 0. Authority and interpretation
+## 0. Authority and document use
 
-This document defines the current product and engineering contract for EyeBrowse v0.0.1. It replaces earlier specifications in full rather than retaining contradictory requirements beneath overrides.
+This file is the complete v0.0.2 specification on the migration branch. It replaces the previous SPEC there; obsolete requirements are not appended beneath overriding paragraphs. `main` remains a separate preserved baseline until the authorized integration process completes.
 
-The current Project Owner direction governs this specification under `AGENTS.md`. The document consolidates the approved browser-first scope, Phone/RG ownership, pairing boundary, the Owner's answers to refinement questions Q1–Q8, and the subsequent approval of unattended ADB-driven verification. The [Owner's 2026-09-28 device substitution ruling](https://github.com/code2hack/EyeBrowse/issues/12#issuecomment-5858391749) selects the real S20+ for v0.0.1 Phone validation and excludes Fold6-specific behavior and qualification from this version. Earlier Fold6-target and emulator-only/no-real-Phone directions are superseded; emulator supplementation remains as defined in §15.
+The Owner's latest directions require a standalone RG browser, built-in input, a continuously visible bounded cursor, vertical edge scrolling, multiple tabs, bookmarking, QR scan and Settings. The one-row toolbar order and black-background presentation are mandatory. The earlier single-tab and unassigned-swipe assumptions do not govern the RG design.
 
-This is the current v0.0.1 contract. Requirements from earlier drafts are not inherited unless restated here. Earlier design artifacts remain visual references only where consistent with this document. Historical specifications belong in Git history, not in an obsolete requirements appendix.
+The companion HUD document is **normative, not inspiration**. Read both documents. SPEC governs product behavior; the HUD document supplies exact control inventory, layout, rendering, state transitions and conformance gates. Any conflict is a blocking design finding, not permission for a Worker to choose a preferred version. Earlier generated images are not approved implementation references and cannot override either document.
 
-**MUST** and **MUST NOT** identify required behavior. **SHOULD** identifies a recommendation whose deviation needs a documented reason. **MAY** identifies an optional implementation choice, not additional required scope.
+`MUST` and `MUST NOT` denote requirements. `SHOULD` denotes a default requiring a recorded reason to depart. `MAY` is permission, not additional required scope. The HUD document identifies Planner completion defaults for details the Owner did not specify, such as last-tab behavior and pixel allocation; those defaults are included in the open exact-design approval gate.
 
-Specification approval, implementation completion, device validation, and release publication are separate events. The version number does not claim that v0.0.1 has been released or has passed acceptance.
+The request to edit these documents authorizes recording the requirements on the migration branch. It does not record Owner visual approval, passing implementation, a release, new device privileges, or permission to merge protected articles to `main`. `AGENTS.md` and `DEV.md` continue to govern roles, assignments, review, device access and publication. The HUD gate may be satisfied by explicit review of the exact contract and native-size references; a new image-generation session is not required by this edit.
 
 ## 1. Product definition
 
-> EyeBrowse v0.0.1 is a minimal, single-tab, Phone-hosted browser that the user can operate either on Phone or through a Rokid Glasses HUD, including while an explicitly started Phone hosting session continues with Phone securely locked and its physical screen off.
+> EyeBrowse v0.0.2 is a standalone RG browser with local tabs, a built-in head pointer and keyboard, a compact single-row top toolbar, and black-background/light-foreground presentation. The cursor never leaves the screen. Contact with the top or bottom screen edge scrolls the active browsing surface; horizontal touchpad swipes switch tabs.
 
-There is one authoritative browser session and one active page. Phone and RG are two interfaces to that page, not independent browsers with synchronized URLs.
+RG executes and renders its own websites. Phone EyeBrowse continues ordinary touch browsing independently. Each device owns its website requests, browser memory, cookies and site storage. Closing, stopping, foregrounding or locking Phone EyeBrowse does not control RG browsing. Phone may provide Internet connectivity without running the Phone EyeBrowse app.
 
-Phone MUST work as an ordinary touch-operated browser without RG. RG MUST provide usable browsing and text entry through the connected Phone host; it is not merely a passive display. RG does not provide standalone browsing when Phone is unavailable.
+The RG browser has one interaction model. Keyboard visibility, menus, tab selection, bookmarks, settings and QR scanning are utility states, not Normal/Reading modes. There is no recenter control, replacement recenter gesture, mode toggle, bottom action dock, or mode-dependent cursor hiding.
 
-**Browser is the only permanent primary product surface in v0.0.1.** Pairing, scanning, connection status, hosting status, and handoff are utility views or controls. There is no Agent surface.
+The migration preserves useful existing browser/input logic, not the requirement for Phone-hosted execution. The ordinary RG path must not start pairing, hosting, remote-frame reception or control handoff. Legacy shared/Phone consumers must be traced before removal. Phone's established browser, data and installed identity remain intact; this revision does not require redesigning Phone into the RG HUD.
 
-On RG, Browser has two presentation modes: **Normal** for interaction and **Reading** for consumption.
+### 1.1 User journeys
 
-## 2. Scope and exclusions
-
-| In v0.0.1 | Outside v0.0.1 |
+| ID | User story |
 | --- | --- |
-| Phone-owned System WebView, one live page, one tab | Multiple tabs and independent simultaneous Phone/RG browsing |
-| Manual address entry, navigation, scrolling, and ordinary field editing | Address-bar search, agent navigation, and browser automation tools |
-| Responsive Phone interface and RG HUD | Agent runtime, LLM integration, chat, and placeholder Agent controls |
-| RG head pointer, touchpad gestures, Reading head-scroll, and in-app keyboard | EyeBrowse ASR, microphone workflows, Chinese RG input, and system-wide IME/mouse |
-| Local LAN/hotspot communication and Phone-displayed QR pairing | CXR/CXR-L/CXR-S, cloud relays, Internet rendezvous, and built-in Tailscale |
-| Explicit hosting, handoff, remembered pairing, and recoverable connection loss | Automatic hosting after reboot or remote startup of an inactive Phone host |
-| Basic app-private settings and browser persistence | Cloud sync, password manager, bookmarks, history-management UI, extensions, and elaborate settings |
+| U01 | As an RG user, I want to browse without Phone EyeBrowse, so that another app is not a runtime prerequisite. |
+| U02 | As a Phone user, I want normal browsing and stored data preserved, so that the RG migration does not disrupt my phone. |
+| U03 | As an RG user, I want Close, Back, Forward, Refresh, address, bookmark star, tab position and More to remain reachable in one top row, so that the rest of the small display is useful content. |
+| U04 | As an RG user, I want black surfaces and light content, so that the HUD uses the requested display presentation consistently. |
+| U05 | As an RG user, I want the pointer to start automatically and remain visible, so that no mode or recenter step is needed. |
+| U06 | As an RG user, I want slight inward motion to release a saturated pointer, so that excess outward movement never traps it. |
+| U07 | As an RG user, I want edge contact to scroll and inward departure to stop, so that pointing and scrolling use one model. |
+| U08 | As an RG user, I want to create, select, swipe between and close local tabs, so that I can keep several pages open. |
+| U09 | As an RG user, I want each tab's Back/Forward history and live state preserved across normal switches, so that switching is not reloading. |
+| U10 | As an RG user, I want the star to save the current page and Bookmarks to reopen it, so that I can return to chosen locations. |
+| U11 | As an RG user, I want QR scan to offer a decoded webpage address for deliberate opening, so that scanning navigates without pairing. |
+| U12 | As an RG user, I want genuine, bounded pointer/scroll settings, so that the Settings entry has useful behavior. |
+| U13 | As an RG user, I want to edit full addresses with the built-in keys even though the toolbar shows a short location, so that compact display never truncates navigation data. |
+| U14 | As an RG user, I want to edit text, password, multiline and basic plain editable fields, so that supported forms remain usable. |
+| U15 | As an RG user, I want Enter and Done to differ, so that dismissal never unexpectedly submits. |
+| U16 | As an RG user, I want to scroll while the keyboard is open, so that I can inspect the page without moving the keyboard. |
+| U17 | As an RG user, I want tab changes and interruptions to retire pending input, so that old keys and scroll ticks cannot reach a different page. |
+| U18 | As a browser user, I want honest restart recovery and a data-preserving upgrade, so that lost runtime state is not fabricated or replayed. |
 
-Dedicated download/upload workflows, PDF/document viewers, guaranteed audio/video playback, DRM, and comprehensive compatibility with arbitrary rich-text editors are not acceptance requirements. A video codec used for HUD presentation does not imply website video-playback support.
+## 2. Targets, implementation and engine qualification
 
-Built-in Mihomo is removed from the required product architecture. EyeBrowse does not establish or manage a VPN. Built-in Tailscale remains a future product requirement but MUST NOT become a dependency or acceptance gate for v0.0.1. No unimplemented feature needs a placeholder module, menu, or settings screen.
+### 2.1 Display and devices
 
-**Wi-Fi and hotspot setup are permanently outside this project's scope.** EyeBrowse MUST NOT enable or configure a hotspot, provision Wi-Fi credentials through pairing, or join/switch Wi-Fi networks. This is not a deferred onboarding feature.
+The canonical HUD review canvas is **640 pixels wide by 480 pixels high, landscape**. This explicitly replaces the earlier portrait mockup assumption. The full available app display is used. Android-reported buffer orientation, display rotation, insets and density must be measured on the real RG; they are not inferred from image dimensions.
 
-## 3. Targets and canonical terms
+The runtime must implement a verified mapping to the required landscape presentation. It must not pass a portrait screenshot stretched to 640 × 480 as layout evidence. If the actual device configuration cannot expose that usable presentation through supported application behavior, report the concrete mismatch before changing the target or secretly cropping/scaling the design.
 
-Phone layouts MUST respond to actual window dimensions, density, insets, and orientation rather than fixed study screenshots.
+Retain an Android 12/API-32-compatible RG path. The historical physical RG identity is `1906092617103125`; the current Phone regression reference is the authorized S20+ SM-G9860/API31 (`R5CN30NA8GX`). Manager verifies current access, identity, software and screen procedures. No unobserved hardware or wearer condition is inferred from these references.
 
-For v0.0.1, the authorized primary Phone validation target is the **Samsung Galaxy S20+ (SM-G9860, Android 12/API 31)**, per the [Owner ruling of 2026-09-28](https://github.com/code2hack/EyeBrowse/issues/12#issuecomment-5858391749). Samsung Galaxy Z Fold6 cover/inner-display-specific behavior and hinge qualification are **out of v0.0.1 scope**, not pending `NOT EXERCISED` requirements or completion gates. S20+ evidence MUST be labeled as S20+ evidence and MUST NOT be presented as Fold6 cover/inner-display or hinge qualification.
+### 2.2 Language, packaging and boundaries
 
-The RG app MUST have an API-32-compatible runtime path. Approximately **480 × 640 physical pixels** is the RG display design target, not a guarantee of the app's available content viewport or its logical density. Insets, density, camera access, and sensor integration require target-specific checks. The unattended development evidence requirements and limits on optical/wearer claims are defined in §15.
+Keep one repository and the Phone/RG Android applications. ADR-0001 remains binding: first-party Android, shared/core, JVM/Android tooling and tests use Kotlin, Gradle uses Kotlin DSL, new first-party Java is prohibited, and actively changed Java debt is migrated. Generated and unmodified third-party sources retain their documented exceptions. Reused first-party renderer editing logic retains its Kotlin-authored build path.
 
-| Term | Meaning |
+Preserve application identifiers, signing compatibility and ordinary stored data. A qualification probe may use a distinct disposable package without replacing a product application.
+
+| Component | Responsibility |
 | --- | --- |
-| **Phone host** | The Phone-side runtime that owns and executes the browser session. |
-| **Browser session** | The live single-tab page, navigation state, and associated browser state owned by Phone. |
-| **Hosting session** | An explicitly started period during which Phone permits the paired RG to connect and use that browser. |
-| **Pairing** | Remembered authorization between one Phone and one RG; not a Wi-Fi association. |
-| **Connection** | A currently live, authenticated app-to-app link; losing it does not itself erase pairing. |
-| **Control owner** | The device currently permitted to send ordinary browser input and determine the page's presentation viewport. |
-| **Handoff** | An explicit transition of control ownership and presentation between Phone and RG. |
-| **Content viewport** | The browser content area available on the controlling device, excluding that device's visible local controls and keyboard. |
+| Phone runtime | Its existing local page, touch/IME input, navigation and storage. |
+| RG browser runtime | Local tab objects, documents, history, editor execution and rendering. |
+| RG HUD/input | Exact toolbar, cursor, keyboard and utilities; gesture interpretation and original-target validation. |
+| RG persistence | Local bookmarks, approved settings and safe location/recovery metadata. |
+| Shared logic | Applicable browser policy, input models and tests, without a shared live WebView. |
 
-Pairing, connection, hosting, control ownership, RG presentation mode, and text-entry state MUST be modeled separately. Being paired or connected MUST NOT, by itself, grant current browser control.
+### 2.3 Qualification boundary
 
-## 4. Runtime and component boundaries
+Begin #28 with the installed System WebView in an ordinary RG application window. Record provider/version, supported update route, local navigation, editor isolation, real rendering and lifecycle observations. Provider upgrades and alternate engines require the applicable compatibility and authorization decision; this document does not silently install one.
 
-### 4.0 Project-wide implementation language
+The selected engine must also be qualified for the dark-content policy in §9. Passing a local HTML sample is not proof of arbitrary website compatibility, maintainability or dark rendering. Report native theme, author-light page, dynamic content, fields and media results separately.
 
-EyeBrowse is a **Kotlin-only first-party codebase**. This is a project-wide architectural invariant across all versions, not a v0.0.1-specific preference. The durable decision is recorded in [ADR-0001](docs/decisions/0001-kotlin-only-first-party-code.md).
+A supported negative investigation can complete the investigation but cannot satisfy a downstream requirement for a working engine/editor. Qualify native editor operations where possible, or the existing bounded editor adapter where necessary. Merely moving a WebView locally does not prove that queued input is target-bound.
 
-All first-party Android application, shared/core, test, instrumentation, and maintained project-tooling source MUST be written in Kotlin where that source runs on the JVM/Android stack. Gradle configuration MUST use Kotlin DSL (`.gradle.kts`) unless a non-Gradle tool has no Kotlin-DLS equivalent.
+## 3. Browser navigation and local tabs
 
-No new first-party Java source MAY be introduced anywhere in the repository. Existing first-party Java is migration debt and MUST be converted to Kotlin as the affected area is actively changed; active production work MUST NOT be accepted while it adds to or preserves avoidable Java in that touched implementation. Existing Java already present in shipped/active product modules is specifically required to migrate, not grandfathered permanently.
+### 3.1 Navigation
 
-The only standing exceptions are generated code and vendored/third-party source that EyeBrowse does not maintain. A temporary exception for any other Java source requires an explicit Project Owner decision recorded as a new or superseding architecture decision; convenience, library examples, or historical precedent are not sufficient.
+Provide full-address entry/correction, Back, Forward, Refresh, links, ordinary buttons and clear errors. Support HTTPS, explicit HTTP including legitimate local addresses, and normalization of ordinary scheme-less domains to HTTPS under the existing address policy. Invalid input preserves the draft and current page. Free text is not silently sent to a search provider.
 
-EyeBrowse MUST remain one repository producing two Android APKs: Phone and RG. Shared contracts MUST NOT become divergent product forks.
+The compact address display may elide the path; the editable draft and navigation target must remain complete. Display actual origin information without a false security claim. URL/title/loading/history availability always belong to the active tab, not a late callback from another tab.
 
-| Boundary | Responsibility |
-| --- | --- |
-| **Phone browser host** | System WebView execution, navigation, live page and focus state, cookies/site storage, website requests, viewport management, and application of authorized input. |
-| **Phone interface** | Touch browsing, Android IME, pairing-code display, hosting controls, and explicit handoff. |
-| **RG interface** | HUD presentation, locally responsive controls and pointer, gesture interpretation, Reading behavior, in-app keyboard, QR scanning, and connection feedback. |
-| **Local connection layer** | Pairing authentication, protected communication, browser presentation/state delivery, input delivery, and connection recovery. |
-| **Shared contracts** | Browser actions/status, identity and session boundaries, handoff, viewport/focus identity, failures, and persisted non-page settings. |
+Browser-generated navigation never executes arbitrary script/file/native-intent strings from address entry or QR data. Certificate errors are not bypassed silently.
 
-The webpage MUST execute on Phone using Android System WebView. RG MUST NOT open a separate copy of the website to simulate continuity. Website cookies, private storage, and execution state remain on Phone.
+### 3.2 Tab contract
 
-RG presents the Phone-hosted page rather than mirroring the physical Phone screen. Phone-side offscreen hosting MUST allow RG use while Phone is locked. The spike's private-display approach is available implementation evidence, not a requirement to copy its debug harness unchanged.
+RG supports multiple local tabs, with at least four simultaneously open tabs demonstrated in acceptance. `2/4` means one-based active index 2 in a total of 4; it is not a hardcoded illustration or a four-tab limit.
 
-RG controls, pointer feedback, keyboard, and connection UI MUST remain locally responsive rather than depend on a returned frame for every local interaction. The precise page-presentation format, encoding, and transport library are engineering decisions within this ownership contract.
+Each tab has a stable identity, its own live document and Back/Forward history, and its own pending input/editor context. Tabs use the RG browser's normal local website-data profile; separate tabs do not promise isolated cookies. Phone has its own independent profile.
 
-Device-specific physical input MUST be translated into browser actions at device boundaries. A minimal action contract for human input is required; an agent semantic-observation runtime, arbitrary remote script executor, or CDP production control path is not.
+The toolbar `×` closes the current tab. More → **Add new tab** creates and selects a new empty tab. The counter opens a compact list for explicit selection. Touchpad swipe **right selects the next tab** and swipe **left selects the previous tab**. Directions are wearer-facing directions qualified against actual input events, not blindly copied from old forward/backward key names.
 
-## 5. Single-tab browser behavior
+Planner defaults to be reviewed at HUD-G1: tabs are ordered by creation; append new tabs; do not wrap at the first/last tab; after close, select the next tab at the same position or the previous tab if the last position closed; closing the sole tab leaves a fresh empty tab at `1/1`, not an app exit. A new empty tab focuses local address entry. These behaviors must be tested as state transitions, not inferred from a mockup.
 
-### 5.1 Address entry and navigation
+Normal switching must preserve the surviving tabs' live pages, history and form values without intentional reload. Hidden tabs receive no head/pad/keyboard operations and no edge-scroll ticks. Manage engine resources with a measured finite policy; if a new tab cannot be allocated, report it without silently closing or replacing an existing one. Actual renderer loss is reported honestly, not represented as uninterrupted state preservation.
 
-Both controlling interfaces MUST support entering a webpage address, opening it, showing the current location, going Back and Forward when available, and Reloading. They MUST support ordinary link/button activation and vertical scrolling.
+Unsolicited pop-ups may not create tabs. For this revision, ordinary user-activated links requesting another window may open in the current tab; explicit Add new tab is the required creation route. Do not invent automatic background tabs.
 
-The location field is a primary manual navigation path, not an agent fallback. It MUST support HTTPS addresses and explicit HTTP addresses, including local host addresses. Ordinary domain names without a scheme SHOULD be normalized to HTTPS. Invalid or unsupported input MUST leave the current page intact, preserve the entered text for correction, and show a compact error.
+### 3.3 Transition safety
 
-Free-text search phrases MUST NOT be silently sent to a search provider. Searching inside a webpage remains ordinary browsing. The exact accepted address grammar and normalization cases MUST be documented and tested; arbitrary script/file/native-intent execution is not part of address entry.
+Before selecting/closing a tab or performing navigation, cancel the outgoing edge episode and incompatible pending tap/key intent. End field entry without deliberate submission. Never replay an unconfirmed edit or form action into the receiving tab.
 
-Current URL, title where displayed, loading state, navigation availability, and errors MUST reflect the authoritative Phone browser. A failed navigation MUST offer a clear way to retry or enter another address.
+Keep original tab identity as well as browser lifetime, document, editor and geometry in operation guards. A→B→A tab selection must not make an old A operation current again; a structural or interaction generation must distinguish the return. Reindexing after close cannot retarget an operation bound only to a numeric index.
 
-### 5.2 One tab and webpage-created windows
+A late callback may update its still-live tab's own state but cannot overwrite the active toolbar, settle another operation, reopen a keyboard, or restore a cancelled edge episode. When a tab becomes active, new input waits for its own current content/layout readiness. A parked edge cursor does not automatically scroll it.
 
-Exactly one active tab is required. There MUST NOT be a new-tab button, tab counter, tab switcher, or hidden collection of independent browsing sessions.
+## 4. Required HUD and utility functions
 
-Ordinary user-activated links requesting a new tab/window MUST be handled in the existing tab. Unsolicited pop-up windows MUST NOT create additional browsing contexts. Flows requiring multiple windows may be reported as unsupported; they MUST NOT silently introduce another tab model.
+[The HUD contract](docs/design/v0.0.2-rg-hud.md) defines exact geometry, colors, states and tests. The mandatory toolbar is one row, in this order:
 
-First use without a recoverable URL MAY present an empty browser with accessible address entry. A home feed or branded start-page product is not required.
+`×  |  ←  |  →  |  ↻  |  [ compact address …  ☆/★ ]  |  i/n  |  ⋮`
 
-### 5.3 Supported field interaction
+**The bookmark star is a separate clickable control INSIDE the trailing end of the address slot. It must not be omitted or moved into More.** Back and Forward are separate visible controls, including when disabled. No second title/address row, lower action dock, time/battery strip, decorative device frame or duplicate menu is part of the app HUD.
 
-Both controlling interfaces MUST support entering, correcting, and submitting text in standard single-line text inputs, password inputs, multiline text areas, and basic plain editable webpage regions. Ordinary form controls needed by the validated browsing journeys MUST remain operable.
+The overflow contains exactly these first-level items, in this order: **Add new tab; Bookmarks; QR scan; Settings.** Every item has implemented behavior and a recoverable exit. Clicking through an overlay to the webpage is prohibited.
 
-Universal support for complex rich-text editors, file pickers, special authentication flows, and every custom webpage widget is not claimed. Unsupported behavior MUST be visible rather than represented as a successful action.
+### 4.1 Bookmarks
 
-## 6. Phone interface
+The outline star saves the active tab's actual current navigable URL and useful title in app-private persistent bookmarks. Filled star represents saved state. Activating it again removes that bookmark; failed persistence must not be displayed as durable success. The active page's bookmark state updates after navigation, tab switch and list deletion.
 
-While Phone owns control, EyeBrowse MUST provide direct touch interaction, ordinary scrolling, the normal Android IME, and accessible browser navigation controls.
+The star always refers to the committed current page, not an unsubmitted address draft. It does not blur or submit an editor solely to save a page. During address entry it stays visible and still bookmarks the underlying page; an empty/non-navigable page shows a disabled outline star with no hidden replacement action.
 
-Android Back MUST first dismiss an active local keyboard or utility view when applicable, then traverse browser history when available. At the root, it follows normal application back behavior; leaving the activity MUST NOT be confused with the explicit Stop hosting action.
+The Bookmarks view supports empty state, opening a saved URL in the current tab, and explicit removal. Duplicate saving is idempotent by the documented URL identity; preserve meaningful path/query/fragment components. Bookmark persistence is distinct from logging sensitive URLs in diagnostics.
 
-Resizing, orientation changes, and ordinary activity recreation MUST NOT intentionally create an unrelated browser session or force RG handoff. A surviving Phone host remains the session owner across interface recreation.
+### 4.2 QR scan
 
-While RG owns control, the Phone EyeBrowse interface MUST show compact hosting/connection status and a **Use on phone** action, not a second independently interactive page or a required live preview. It MUST also provide access to Stop hosting and pairing management.
+QR scan is a local address acquisition flow, not Phone pairing. Request camera permission only for deliberate scanner entry. Decode into a bounded preview; the user explicitly selects Open to navigate the current tab through the same address policy. Decode alone must not navigate, submit, run script or change device/network settings.
 
-Unlocking Phone or bringing EyeBrowse to the foreground MUST NOT automatically take control away from RG.
+Provide cancel, permission-denied, invalid-code/unsupported-value and camera-unavailable states. Release camera resources on result, cancellation, pause or exit. Bind preview/confirmation to its original session/tab; a late scan callback cannot navigate a newly selected tab. The camera image is media, not an app-background color.
 
-## 7. RG interface and interaction
+### 4.3 Settings
 
-### 7.1 Normal Mode
+Settings must contain working controls, not future placeholders. Planner completion default for HUD-G1: **Pointer sensitivity** (Low `0.75×`, Standard `1.0×`, High `1.25×`) and **Edge-scroll speed** (Slow `120`, Standard `240`, Fast `360` native viewport px/s). Persist the selected non-secret values locally; fresh installs use Standard. Report the exact setting in test evidence.
 
-Normal Mode shows browser controls, webpage content, and a visible head pointer. Head yaw controls horizontal pointer movement and head pitch controls vertical movement. Pointer motion MUST be usable for both local controls and the remotely hosted page.
+These bounded alternatives are newly specified review defaults; the preserved mandatory default-rate test remains 240 px/s. A setting change ends an active edge episode and incompatible pending input, takes effect once, and does not replay accumulated movement or introduce a recenter command. Dark presentation is fixed, not a light-theme preference. Numeric layout/tuning defaults and the minimal settings contents require approval at the open HUD gate before acceptance.
 
-A short tap activates the current target. The pointer MUST use suitable smoothing, a noise dead zone, and a usable recenter/reset mechanism. No dwell activation or new hardware gesture is implied. Exact tuning and the recenter affordance MUST be documented with the evidence actually obtained. Automated controller and on-device sensor checks are required under §15; they do not establish wearer calibration or comfort.
+## 5. Bounded always-visible pointer
 
-Forward touchpad swipes scroll down; backward swipes scroll up. The target is the current scrollable browser region, not whichever field or page happened to be active before a handoff.
+Keep a single built-in pointer over the active EyeBrowse window, including keyboard, menu and utility states. Sensor unavailability freezes a visible unavailable cursor and disables unsafe actions; it does not hide the pointer or continue scrolling. The app is not required to draw over Android system permission screens it does not own.
 
-### 7.2 Reading Mode
+Automatically establish a fresh head reference near the screen center on initial usable acquisition. Resume/reacquisition must avoid stale deltas and cannot rearm an old edge episode. No button, menu item or substitute gesture for manual recentering is introduced.
 
-Reading Mode shows the same webpage with EyeBrowse's browser controls, pointer, and keyboard hidden. It uses the available content viewport. It MUST NOT extract, summarize, invert, or otherwise rewrite webpage content. Ordinary layout changes caused by viewport resizing are permitted; a separate reader document is not.
+Yaw and pitch control horizontal and vertical pointer motion through timestamp-aware smoothing/noise handling. Measure the full drawable app screen, actual insets, rotation and glyph size. The entire glyph, internal executable pointer position and hit-test coordinates stay in bounds. The page viewport and full cursor bounds are distinct.
 
-On entry, EyeBrowse MUST dismiss the RG keyboard, end active text entry without deliberate submission, preserve entered text where the page permits, and initialize the head-scroll neutral reference. Returning to Normal MUST NOT automatically reopen the keyboard.
+At any boundary, discard outward excess from angular offset, target position and filter backlog. Equal inward input must yield equivalent inward return regardless of previous overshoot amount or hold duration. Merely clipping the drawn cursor while storing hidden travel does not meet the requirement. Test all edges, corners and slow intentional inward movement.
 
-Relative upward head pitch scrolls upward; downward pitch scrolls downward. A neutral dead zone stops scrolling. Larger displacement SHOULD produce greater speed within a bounded maximum. Neutral acquisition, drift control, and the response curve remain tunable values. Automated tests MUST exercise their behavior; final wearer tuning is not claimed by the unattended profile.
+A relative-motion model or equivalent boundary rebasing is an engineering choice. Preserve bounded velocity and noise suppression without permanently discarding deliberate small movements.
 
-An isolated short tap in Reading Mode does nothing. Double tap returns to Normal.
+## 6. Edge scrolling and gestures
 
-### 7.3 Gesture and scroll arbitration
+### 6.1 Direction and rate
 
-| Input | Normal | Reading |
-| --- | --- | --- |
-| Short tap | Activate pointer target | No action |
-| Double tap | Enter Reading | Return to Normal |
-| Forward swipe | Scroll down | Scroll down |
-| Backward swipe | Scroll up | Scroll up |
-| Head movement | Move pointer | Control continuous vertical scrolling |
+On a usable browser surface, actual clamped displayed-pointer contact with the full-screen top boundary scrolls the active tab up; contact with the bottom scrolls it down. Interior positions and left/right-only contact do not generate page scrolling. At corners the vertical edge supplies the direction. A held pointer at the edge continues while samples remain fresh; additional outward rotation is unnecessary and does not accelerate scrolling.
 
-Double-tap recognition MUST NOT dispatch either constituent tap as an unintended activation. Its recognition window MUST be bounded and tunable.
+No broad near-edge hot zone or absolute-pitch threshold substitutes for actual edge contact. Only declared pixel/subpixel rounding is allowed. Initial standard rate is constant **240 native viewport px/s**; the bounded Settings choices in §4.3 are subject to HUD-G1. Page endpoints cannot accumulate unused distance for later replay.
 
-A swipe in Reading Mode MUST suspend continuous head-scroll, perform the discrete scroll, and keep head-scroll suspended until the head returns to neutral. A held tilt MUST NOT immediately fight the swipe.
+### 6.2 Cancellation
 
-Head-scroll MUST stop on loss of usable sensor data, connection, browser control, or active RG presentation. The Phone host MUST expire continuous remote input after a bounded loss of liveness; safety MUST NOT depend on receiving a final stop packet from a disconnected RG.
+Immediately before every effect, recheck active surface, tab/document/layout identity, fresh sensor data and displayed edge contact. Maintain one cancellable ticker and at most 50 ms of movement per integration step. Scheduling stalls must not cause catch-up motion.
 
-After a handoff or connection recovery, continuous scrolling MUST remain stopped until fresh state and a neutral reference are established. Sensor failure MUST be reported recoverably and MUST leave a safe exit or Phone takeover path rather than uncontrollable motion.
+Cancel on inward departure, pause/occlusion, sensor expiry, incompatible geometry, tab switch/close, navigation, scanner/menu/utility entry or engine loss. After cancellation, require fresh tracking and a fresh deliberate interior-to-edge entry before scrolling the new context. Network recovery, equal geometry, focus return, or a cursor clamped by layout is not fresh entry.
 
-### 7.4 RG keyboard
+Menu, tab list, bookmarks, settings and scanner states must not scroll the covered webpage. Long utility lists may scroll their own explicitly active list via the same top/bottom mechanism; this never continues the page's old edge episode. Dismissing an overlay requires fresh page edge entry.
 
-The in-app keyboard MUST allow URL entry and supported webpage field editing without unlocking Phone during an established hosting session. Phone-assisted typing MUST NOT be the only input path.
+### 6.3 Keyboard coexistence
 
-The initial keyboard uses English QWERTY with letters, Shift/case control, numbers, common punctuation/symbols, Space, Backspace, and appropriate Enter/Done actions. Chinese input, prediction, swipe typing, and a system-wide Android IME are outside v0.0.1.
+With the built-in keyboard open, the full-screen top/bottom boundaries still scroll the active webpage; the keyboard remains stationary. Its top divider is not a trigger. All keys have selectable interior positions. Page scroll alone must not change the selected editor or invalidate an otherwise unchanged native key solely because page pixels moved.
 
-Head pointer plus short tap operates keys. The focused field or useful field context MUST remain visible above the keyboard. Keyboard sizing must preserve usable text and targets on real RG hardware; study dimensions are not fixed requirements. On-device layout and automated key-selection checks support development acceptance under §15 without claiming optical comfort.
+Required field reveal, page-authored scrolling and explicit webpage scroll controls are distinct from EyeBrowse head/pad scrolling. Reveal logic must not fight a deliberate edge-scroll episode or focus another field. Keep cause labels in evidence.
 
-Done dismisses text entry without silently submitting an unrelated form. Enter follows the focused field's semantics, including newline for a multiline target or the relevant submit action. Editing MUST affect the current intended target, not a stale focus left by navigation or handoff.
+### 6.4 Gesture contract
 
-Password fields MUST remain masked in EyeBrowse-controlled displays. Keyboard and transport diagnostics MUST NOT log passwords or typed text. Navigating, losing control, or invalidating the target MUST stop input delivery to that target.
+A short tap activates one original, currently valid target. A recognized double tap has no new action and suppresses both constituent activations. Swipe right/left switches next/previous tab as §3.2 specifies; it does not scroll vertically or traverse webpage Back/Forward history. One physical sequence has one logical owner; native controls must not duplicate the recognizer's action.
 
-## 8. Hosting lifecycle
+A swipe during keyboard entry discards incompatible pending key intents and ends that editing session without submission before switching. Swipes in non-browser utility/permission/scanner states have no background tab action. Tab-list selection remains an explicit tap action.
 
-### 8.1 Explicit start
+## 7. Built-in keyboard and editor safety
 
-The user MUST be able to start a hosting session explicitly from Phone while unlocked. Starting hosting makes the current browser available to the paired RG; it MUST NOT discard the current page or automatically grant RG control.
+Retain English QWERTY, Shift/case, numbers, common punctuation/symbols, Space, Backspace, Enter/Open and a distinct **Done**. The HUD contract names required keys; generated pictures cannot add or remove them. Actual built-in keys operate both address drafts and local webpage editors.
 
-The active hosting session MUST have visible Phone status and an explicit Stop action. Implementation MUST use an appropriate ordinary Android lifecycle path for the supported device, without root, privileged signatures, device-owner privileges, a disabled secure lock, or an unlocked-black-screen workaround. MediaProjection-based physical-screen capture is not the hosting solution.
+Full address editing uses a horizontally revealable draft inside the same compact toolbar slot; it does not widen the row. Invalid Open preserves the draft/current page. Done dismisses without navigating. Saving the current page via star never substitutes the unsent draft.
 
-After successful startup, RG browsing MUST continue with Phone securely locked and its physical display off, while the supported local connection remains available. Merely locking Phone does not transfer control; an explicit RG handoff action remains necessary when Phone owns the page.
+Supported webpage targets are single-line text/password, textarea and basic plain contenteditable. Preserve selection replacement, caret and Backspace semantics, surrogate-pair-safe deletion, relevant constraints, and appropriate cancellable editing notifications. Multiline Enter inserts newline; single-line/password Enter follows the applicable field/form behavior with validation and no unrelated submission. Done dismisses without deliberate submission and without undoing a completed edit.
 
-### 8.2 Stop and restart
+Bind executable edits to the original live tab/document/element/selection and keyboard-session generation. Navigation, focus departure, element replacement/removal, readonly/disabled state, tab switch/close, dismissal and incompatible layout retire authority. A→B→A element or tab changes cannot revive an old grant by current-value equality.
 
-Stop hosting MUST revoke live RG control, terminate the remote connection, and release hosting-specific resources such as capture/encoding, private displays, service work, and wake locks. Phone-only browsing MAY continue without retaining those remote-hosting resources. Pairing and normal persisted browser data are not erased by stopping.
+Validate at the actual mutation boundary and again after synchronous page callbacks capable of changing the target. A native method's acceptance is not proof that a later queued write is target-bound. Maintain uncertainty honestly and do not retry potentially consequential edits, clicks, navigation or submission blindly.
 
-A disconnected RG MUST receive or eventually detect the inactive/unavailable host state. It MUST NOT continue to present an old page as live.
+Keep the selected field or useful context visible on entry and layout completion. Current password output remains masked during typing, not only in a later dismissed screenshot. No payload, password or form-draft logging is permitted. Late results cannot reopen, close or edit a successor session.
 
-Automatic hosting after reboot and remote startup of an inactive Phone host are not required. After a stop or process loss, the supported recovery is for the user to restart hosting on Phone. Resources retained during a temporary reconnect window MUST be bounded and documented; the app MUST NOT perform indefinite high-rate capture for an absent client.
+Keyboard show/hide changes only the local content viewport. It must not intentionally reload the tab or discard meaningful form values. Suspend incompatible page coordinates until new layout is ready while keeping local dismissal available. Scrolling invalidates a delayed page-hit snapshot when content moved under it; unchanged keyboard-key semantics are validated independently.
 
-## 9. Local networking and QR pairing
+## 8. Lifecycle, persistence and Phone independence
 
-### 9.1 Existing-network prerequisite
-
-Phone–RG communication MUST use ordinary local networking. The primary supported topology is RG connected to Phone's hotspot; a shared reachable Wi-Fi LAN is also supported. Website Internet access is separate from this local connection.
-
-The apps MUST NOT depend on CXR, cloud relay/rendezvous, a tailnet, or an EyeBrowse-managed VPN. Website requests use Phone's externally managed networking and applicable VPN policy.
-
-QR scanning MUST NOT be gated by matching SSIDs, matching subnets, or a same-network precheck. Scanning obtains pairing information; EyeBrowse then attempts to reach the identified Phone host.
-
-When Phone cannot be reached, a sufficient prompt is: **“Cannot reach Phone. Connect both devices to the same local network and retry.”** The app MAY mention Phone's existing hotspot. It MUST NOT automatically change network settings or claim a particular failure cause without evidence. Reachability, expired invitation, and authentication failure MUST remain distinguishable.
-
-### 9.2 First pairing
-
-Phone MUST provide a **Pair glasses** action displaying a QR code. RG MUST scan and decode that code using its own camera, without CXR or a separate desktop/ADB decoding step in the normal journey.
-
-The code MUST supply enough information to locate the host and securely establish the intended app pairing without manual IP/port entry. Pairing MUST authenticate the intended host and establish protected communication before browser content or input is exchanged.
-
-Invitations MUST have bounded validity and be cancellable; successful consumption or cancellation MUST prevent reuse as a standing browser-control credential. Exact payload, invitation lifetime, credential format, and cryptographic implementation are engineering decisions. Long-lived trust MUST NOT be an unauthenticated IP address or a reusable screenshot of an invitation.
-
-Successful pairing establishes authorization and connection, not implicit handoff. RG uses its explicit **Use on glasses** action to take control.
-
-Camera permission denial, scanning failure, or an invalid/expired code MUST produce a recoverable status. The camera MUST be released on completion, cancellation, or leaving the scanner. QR pairing does not authorize continuous capture or webpage camera access.
-
-### 9.3 Remembered pairing and reconnect
-
-v0.0.1 MUST remember one Phone–RG pairing across ordinary disconnects and app restarts. Reopening RG may reconnect to the remembered Phone when that Phone host is active and reachable; ordinary reconnect MUST NOT require a new scan each time.
-
-A changed network address is a locator change, not proof of changed identity. Reconnection MUST authenticate the remembered peer. A different device occupying an old address MUST NOT become trusted.
-
-Automatic address rediscovery is not a requirement. A fresh Phone QR scan MAY recover when the saved locator no longer works, provided pairing/authentication and explicit peer-replacement rules are preserved. Re-scan does not configure the network.
-
-Each device MUST offer a small Forget pairing action. Local forgetting removes its stored authorization, closes its live connection, and prevents reuse of the forgotten trust. It does not promise to erase secrets remotely from an offline peer. Replacing the one paired peer requires an explicit user action rather than silent replacement.
-
-An unauthenticated local client MUST NOT view the page, submit browser input, or acquire control merely because it can reach the port.
-
-## 10. Control handoff and viewport ownership
-
-### 10.1 Single controller
-
-Phone remains the execution host at all times. Only one device owns ordinary browser input and the presentation viewport at a time.
-
-| Control owner | Phone interface | RG interface |
-| --- | --- | --- |
-| Phone | Interactive touch browser | Compact “Browsing on phone” status and explicit Use on glasses action |
-| RG | Hosting status and explicit Use on phone action | Interactive RG browser in Normal or Reading Mode |
-
-Handoff controls remain usable even on the inactive interface; they are not ordinary webpage input. A Phone takeover MUST remain possible after RG disconnects. Taking RG control requires an authenticated live connection and an active host.
-
-Unlocking Phone, launching an interface, pairing, or restoring a connection MUST NOT implicitly change the current control owner. Reconnection can resume existing RG ownership only if Phone has not since taken control and the session is still valid.
-
-### 10.2 Transition behavior
-
-A handoff MUST suspend outgoing browser input and continuous scroll, end active text entry without intentional submission, preserve the live Phone-owned page, update the receiving content viewport, and enable the receiving input only against fresh presentation/state.
-
-The Phone host MUST serialize competing handoff requests so both devices cannot simultaneously believe their ordinary input is authorized. Delayed input from the former owner MUST NOT execute after the transition.
-
-EyeBrowse MUST NOT implement handoff by opening the same URL in a different browser or intentionally reloading the existing page. Navigation history, live form values, and page execution state MUST not be deliberately discarded. Exact pixel-identical scroll positions across different viewport sizes are not required; preserve logical reading position where practical.
-
-### 10.3 Viewport changes
-
-The controlling device determines the actual content viewport. On Phone it follows the current window and IME/insets. On RG it follows the available browser area in Normal, Reading, or keyboard presentation; the full 480 × 640 target MUST NOT be mistaken for the content size in every state.
-
-Viewport or focus changes MUST invalidate incompatible in-flight coordinates and edit targets. Input MUST use the current document, control, and viewport context. RG MUST not activate a target using a frame from an earlier handoff or an incompatible viewport.
-
-## 11. Connection, input, and presentation contract
-
-The local protocol MUST provide version/capability compatibility checks, authenticated session identity, current ownership/status, ordered browser input, and enough document/viewport/focus identity to reject known-stale operations.
-
-Browser presentation MUST originate from the Phone-owned page and carry sufficient freshness information to distinguish current output from buffered old output. Queues, message sizes, retries, and liveness timers MUST be bounded. Recovery MUST converge to current state rather than replay a backlog of obsolete frames or actions.
-
-Inputs with potentially duplicating effects—clicks, text edits, navigation, and form submissions—MUST NOT be blindly resent after uncertain delivery. Identifiable duplicates MUST be rejected or safely resolved within the active session. An acknowledgement of delivery MUST NOT be represented as proof of a website-side transaction's success.
-
-The connection MUST expose compact recoverable states such as connecting, connected, reconnecting, host unavailable, authentication failure, and incompatible protocol. A stale last frame may remain only with an unmistakable stale/disconnected indication and disabled webpage input. Local recovery controls MUST remain usable.
-
-A disconnected client MUST NOT resume typing into a changed field, resume held head-scroll, or retake control without reconciling the host's current session and ownership. Continuous input needs fresh liveness and neutral acquisition even when the last page frame appears unchanged.
-
-These are behavior requirements, not a mandated wire schema or transport library. The implementation MUST document its concrete protocol before integrated acceptance.
-
-## 12. Persistence and recovery
+Keep local browser lifetime, stable tab IDs, active-tab selection generation, document/editor context, layout, tracking health, utility/keyboard state and edge episode distinct. Do not use displayed `i/n` alone as identity.
 
 | Event | Required behavior |
 | --- | --- |
-| Phone/RG handoff or RG Normal/Reading transition | Keep the same live browser session; no intentional reload or loss of entered text. |
-| Temporary RG connection loss while Phone browser lives | Preserve page and pairing, stop remote input, show connection loss, and reconcile on reconnect. |
-| Phone interface recreation while host lives | Reattach to the existing session rather than create another one. |
-| RG app restart while Phone host lives | Use remembered pairing and reconcile the existing session and control owner. |
-| Browser/host process loss | Report interruption; do not claim that the former live page survived. |
-| Explicit Stop hosting | End remote use and release hosting resources without erasing pairing or normal browser persistence. |
-| Forget pairing | Revoke local remembered authorization and end its active connection. |
+| Initial/empty launch | Usable local tab and address entry; automatic pointer acquisition; no Phone connection. |
+| Normal tab switch | Preserve surviving live tabs; cancel outgoing input; update toolbar atomically; no automatic keyboard or scroll resumption. |
+| Keyboard/layout change | Preserve live document/values; invalidate old geometry; no invented edge entry. |
+| Pause, occlusion, screen-off or stale tracking | Stop controller motion; release/suspend appropriate work; preserve still-live browser state. |
+| Resume | Fresh tracking/current layout before input; no old deltas, pending-key replay or automatic reopen. |
+| UI recreation with surviving runtime | Reattach without intentionally replacing the surviving tabs; stale UI callbacks cannot acquire the successor. |
+| Actual tab renderer/process loss | Mark the affected context interrupted; do not claim JS/form memory survived; offer safe local recovery. |
+| Network request failure | Show actual error; loaded local content and local controls remain usable as appropriate. |
+| Phone stopped or absent | No effect on RG runtime when its own network route remains available. |
 
-App-private persistence MUST cover remembered pairing, relevant non-secret settings, and the last visited URL. The Phone browser MUST use normal app-private cookies and site-storage persistence, subject to site expiry and user/OS clearing.
+Persist local bookmarks, approved settings, safe last-location/tab metadata and normal engine cookies/site storage in app-private storage. Ordinary RG tabs may share local website login state; none imports Phone credentials automatically. Cold recovery may reconstruct recorded tab slots/locations with honest interruption feedback and explicit safe opening; it must not automatically replay an uncertain POST or form action. Unsaved forms/JavaScript memory are not custom-persisted.
 
-After actual browser-process loss, recovery MAY reload the last URL with clear recovery feedback. Exact restoration of JavaScript memory, unsaved forms, or the prior in-memory history stack is not guaranteed. Reloading MUST NOT automatically replay an uncertain POST or other consequential action from the lost session.
+Preserve data already durably established before abrupt loss; distinguish graceful persistence from unflushed renderer memory. Upgrade does not require clearing either product application's data. Old pairing/mode records are inert and cannot start remote work or restore a removed mode. Missing new preferences use documented defaults.
 
-Passwords, transient keystrokes, and arbitrary webpage form drafts MUST NOT be added to a custom persistent recovery log. Ordinary website-managed storage is distinct from EyeBrowse recording keyboard input.
+Retire sensor listeners, scan sessions, timers, owned browser resources and callbacks safely. Closed/hidden tabs cannot receive controller movement. No unused Phone-link/capture work should run merely to support RG-local browsing. Trace consumers before deleting shared code. The Phone app retains its ordinary touch/system-keyboard behavior, navigation and storage; independent simultaneous Phone/RG tests must use different pages.
 
-A new browser-host lifetime MUST be distinguishable from the lost one so old commands, focus tokens, and presentation references cannot be reused against it.
+## 9. Native black presentation and website compatibility
 
-## 13. Security and privacy boundaries
+The RG presentation is black by default regardless of Phone or OS light theme. App window, toolbar, address field, menu, keyboard, utilities, empty/error/loading surfaces and non-media background fills are **opaque `#000000`**. Use light text/icons and outlined controls; no gray-filled cards, frosted panels, gradients, wallpaper or ornamental glow. Exact tokens are in the HUD document.
 
-Phone–RG browser presentation, typed input, and session messages MUST use authenticated, encrypted communication through maintained platform/library primitives. No plaintext “trusted LAN” exception or custom cryptographic algorithm is permitted.
+A black toolbar over a white webpage does not pass. The selected engine/theme path must provide light readable text on black primary document surfaces for the supported website/fixture set, including fields and dynamic content. Apply presentation styling without replacing the live page or breaking links, focus, forms and scripts. Native/author dark-theme hints and engine darkening are mechanisms to qualify, not proof that every background became black.
 
-Secrets MUST NOT be committed to the repository or included in routine logs. Stored pairing credentials MUST use app-private secure storage appropriate to their type. Normal diagnostics SHOULD record timings, state transitions, and non-sensitive identifiers, not page images, full URLs with sensitive parameters, or field contents. Explicit debug evidence capture must be deliberate and kept separate from normal operation. The Owner authorizes every project agent to capture, transfer, inspect, and retain screenshots from both real devices when useful for mission-scoped testing, debugging, or review, without per-capture approval. Use authorized, explicitly targeted ADB; prefer EyeBrowse/test-fixture screens, redact incidental private content before public attachments, and do not bypass OS capture restrictions.
+Photos, video/canvas content and camera previews are media, not background fill; they need not be flattened to black or globally inverted. Preserve useful media colors. Document custom-painted/cross-origin or incompatible content limitations separately. Do not silently report white primary page output as conforming, conceal a software failure under a generic compatibility label, or claim universal recoloring is proven. An unsatisfied required site/fixture result returns to Planner before weakening the contract.
 
-Arbitrary webpage code is untrusted. Web content MUST NOT obtain pairing credentials, hosting controls, unrestricted native bridges, or app-level device capabilities. Native/page messages, where needed for input integration, MUST be scoped and validated.
+The black launch/recovery surface must prevent app-origin white flashes during page load, tab switch, keyboard transitions, menus and engine failure. Test startup and transition frames, not only settled screenshots. No confidence claim about real optical comfort follows from RGB screenshots.
 
-EyeBrowse MUST NOT silently bypass certificate errors or weaken Phone's VPN policy to make browsing appear successful. Local Phone–RG traffic and website traffic MUST be handled without globally bypassing the VPN for all EyeBrowse traffic.
+Android's documented darkening behavior depends on the app target/theme, WebView feature support and page styling; see the official references in the HUD contract. Engine limitations must be measured on the installed provider. Do not silently downgrade this output requirement to setting a dark-theme flag.
 
-Required hosting and RG interaction MUST NOT depend on root, system signing, device-owner privileges, a system-wide accessibility mouse, or disabling secure lock. Debug-only ADB controls from the spike MUST NOT become a production remote-control interface.
+## 10. Privacy, networking and permission boundaries
 
-## 14. Visual and usability contract
+Each device uses its own existing Internet and VPN route. A Phone hotspot is connectivity, not proof of Phone VPN routing or an EyeBrowse app dependency. EyeBrowse does not configure Wi-Fi/hotspots. Explicit HTTP is not presented as encrypted; certificate failures remain visible and are not bypassed for testing.
 
-Retain the applicable **Soft Dock** direction: restrained rounded browser controls, large enough RG targets, and sparse persistent chrome. Phone and RG should share a visual identity without identical physical layouts.
+Webpages and scanned values are untrusted. Native/page integrations expose only scoped validated operations, not private credentials, unrestricted native bridges or arbitrary commands. No ordinary browsing, typing, scrolling or QR decoding depends on production ADB commands.
 
-There MUST NOT be disabled Agent buttons, tab controls, microphone controls, or menus reserved for absent features. A small utility menu MAY contain actual navigation, pairing, hosting, handoff, and recovery actions; exact placement is a design implementation decision.
+Use app-private storage for deliberately saved locations/bookmarks. Routine diagnostics record timing, classes and non-sensitive IDs, not passwords, typed payloads, QR tokens or arbitrary full sensitive URLs. Mission-scoped screenshots remain permitted under existing authorization and must be sanitized before public sharing. Use dummy credentials and fixture text.
 
-RG Reading Mode has no persistent app controls during healthy browsing. A genuine error or disconnection MAY interrupt the clean presentation with necessary recovery UI; hiding an important failure is not part of Reading Mode.
+Camera access is limited to explicit QR scanning, with permission, cancellation and release. Permission dialogs are system UI; do not imitate permission success or manufacture device access. Device/provider/security-setting mutations still need their applicable authority.
 
-Text must remain legible after presentation transport. Pointer motion, key feedback, and local controls MUST not feel blocked by a remote round trip. Input-to-visible-page latency, frame freshness, reconnect delay, and active/idle resource use MUST be measured on the available intended devices under declared conditions. Screenshots and layout checks assess rendered output; optical readability and wearer comfort remain explicitly unqualified when no physical observation is available.
+## 11. Quantitative contract
 
-This specification does not invent fixed frame rates, bitrate, latency, battery-life, or ergonomic thresholds. The implementation plan MUST set measurable automated targets and test conditions before integrated acceptance. Synthetic inputs, screenshots, charging-state simulation, or emulator results cannot establish wearer comfort or unplugged physical power behavior.
-
-## 15. Acceptance and evidence
-
-### 15.1 Approved unattended development profile
-
-The current v0.0.1 implementation run uses **unattended device-automation acceptance**. The real S20+ (SM-G9860, Android 12/API 31) and real RG are the authorized primary test/debug targets for v0.0.1, kept connected and operated through ADB. An explicitly selected emulator may supplement repeatable or otherwise unavailable conditions; it does not replace real-Phone testing by default. Host-side builds, fixture services, analysis, and Git operations do not need to run through ADB.
-
-All agents may automate mission-scoped installation, launch, navigation, typing, test execution, screenshots, and diagnostics on these targets through existing authorized ADB connections. Manager coordinates explicit target identity, exclusive mutable-resource ownership, and recovery. Routine actions and screenshots do not require the Owner to act or approve each occurrence. The run's operating record is `docs/plans/v0.0.1-unattended-run.md`; governance and protected-article gates remain in `AGENTS.md` and `DEV.md`.
-
-Acceptance MUST identify the exact candidate/build, actual targets/software, input source, and connection topology. Drive ordinary UI and application behavior through ADB-launched UI automation/instrumentation. Browser operations MUST still use the implemented browser, keyboard/controller paths, and authenticated app protocol; setting a field through JavaScript, directly setting paired state, or substituting the spike's ADB command receiver is not equivalent evidence.
-
-Required automated functional, security, lifecycle, and target-integration checks MUST pass, with independent review and verified cleanup. Missing physical-only observations—wearer/optical judgments, optical QR alignment, unplugging, or a setup requiring unavailable private authentication—are **not merge, ticket-closure, or downstream-readiness prerequisites for this run**. Record each as `NOT EXERCISED — unattended profile`, with its exact coverage limit, rather than PASS. Do not move those same waits unchanged into the final integration ticket. Fold6 cover/inner-display and hinge qualification is out of v0.0.1 scope under §3 and MUST NOT be carried as pending physical coverage in the acceptance ledger.
-
-This is an evidence-profile change, not removal of production QR, sensor, keyboard, Phone-hosting, LAN, or security requirements. A failing executable software assertion, missing required implementation, or unavailable essential device/app integration is not excused merely by labeling it a physical limitation. Fix such defects or record a genuine blocker. A successful development-profile closeout is not full physical qualification or release authorization.
-
-### 15.2 Required unattended acceptance matrix
-
-| ID | Required demonstration and evidence boundary |
+| Quantity | Bound/default |
 | --- | --- |
-| **A01 — Build and targets** | Build both debug APKs and launch on real S20+ (SM-G9860, Android 12/API 31) and API-32 RG through ADB. Check the actual S20+ display/window and supplement generic narrow/wide resize/recreation cases on a reserved emulator as needed. Record actual insets/density/layout screenshots; S20+ or synthetic-sizing evidence does not qualify Fold6 cover/inner displays or hinge behavior. |
-| **A02 — Phone-only browsing** | Automate Phone address normalization, Back/Forward/Reload, links, scrolling, supported input correction, harmless submission, and navigation-error recovery. Include actual native controls and supported IME/field integration; distinguish key-event injection from software-IME key selection. No search provider or extra tabs. |
-| **A03 — QR and protected pairing** | Test Phone-generated QR output, the same RG decoder and genuine authenticated pairing with valid/invalid/expired/cancelled invitations and unauthorized peers. Where stationary camera alignment prevents an optical scan, feed the image through an instrumentation-only decoder input. Separately exercise actual RG camera open/capture, denial/cancel and release where ADB permits. Record optical scanning as unexercised, not simulated success. |
-| **A04 — Network boundary** | Test scanning without SSID/subnet prechecks, unreachable-host feedback, and successful retry after controlled link restoration. EyeBrowse never joins/configures Wi-Fi or hotspot. Fault injection or test infrastructure must not become network-onboarding product code. |
-| **A05 — Local networking** | Exercise both real applications and protected browser traffic on the existing reachable local network. Test already configured hotspot/VPN coexistence when it can be exercised safely through ADB without a physical setup gate. Where test routing/forwarding is necessary, preserve end-to-end app authentication/encryption and label that route; it is not evidence of direct hotspot/VPN routing or wireless performance. Unavailable physical topology qualification is non-blocking and explicitly unexercised. |
-| **A06 — Hosting and screen state** | Start/stop hosting using real Phone UI automation; verify same-page offscreen output, navigation/input while backgrounded or display-off, and cleanup. Exercise secure lock only when the authorized setup remains recoverable without unavailable credentials; measure actual lock/interactive state. Screen-off is not proof of secure lock. Leave devices connected; physical unplugged/power and unavailable secure-lock conditions remain unqualified rather than blockers. |
-| **A07 — Handoff and viewport** | Automate Phone → RG → Phone using actual apps and protocol. Preserve a deterministic page's state/history, check inactive status and fresh geometry, and reject stale/old-owner input. Unlock/foreground/reconnect must not implicitly change ownership. Use actual S20+ windows plus explicitly labeled resize tests. |
-| **A08 — RG Normal** | Test real RG rendering and sensor registration/event acquisition. Replay timestamped yaw/pitch and tap/swipe sequences into the same controller to verify pointer movement, local/page target activation, directions, recentering, and stale-input rejection. Record real versus replayed sources; stationary acquisition and screenshots do not qualify dynamic physical touchpad/head calibration or comfort. |
-| **A09 — RG Reading** | Automate real RG Normal/Reading/keyboard transitions; replay tilt/neutral/swipe through the controller. Verify no double-tap leakage, isolated-tap no-op, hidden chrome/pointer/keyboard, correct up/down/neutral behavior, swipe suspension until neutral, and stop on lost liveness even without a final stop packet. No wearer sign-off is required for development acceptance. |
-| **A10 — RG keyboard** | Operate actual RG keys through UI/controller automation and verify remote URL/text/password/multiline/basic editable input, correction, case/symbols, Enter/Done, masking, and stale-focus rejection. Verify actual key activation, not direct DOM assignment. Test against the real Phone host and supported background/screen states; declare untested secure-lock/optical conditions. |
-| **A11 — Connection recovery** | Interrupt/restore the app link, delay/duplicate/drop messages, change a test locator, and refuse a different peer at the former locator. Preserve the live page/pairing, stop continuous input, mark stale output, reconcile ownership/focus, and prevent blind uncertain-input replay. Preserve ADB as the recovery channel. |
-| **A12 — Restart, forgetting, and cleanup** | Automate Activity recreation, RG app restart, and scoped Phone/browser process loss separately. Verify settings/pairing/URL/site storage, honest cold recovery with no automatic consequential replay, Forget/re-pair, and Stop cleanup. Use app-scoped operations rather than factory reset, device reboot, or ADB revocation. |
-| **A13 — Measured behavior and scope** | Record latency/freshness/reconnect/resource measurements against declared automated targets, with device/input/route labels and screenshots. Confirm no agent, ASR, built-in VPN/Mihomo, tailnet, CXR, multi-tab, or network-onboarding dependency. Include a non-blocking ledger of unexercised physical qualification; do not require an Owner optical/ergonomic sign-off to close this run. |
+| Canonical HUD canvas | 640 × 480, width × height, landscape. |
+| Reference toolbar | One fixed 48-reference-pixel row, details in HUD H1; numeric layout awaits HUD-G1. |
+| Standard edge-scroll rate | 240 native viewport px/s; new bounded Settings presets require HUD-G1. |
+| Valid sample → visible cursor / edge response | At most 100 ms in declared device/replay conditions. |
+| Inward return after saturation | At most 100 ms after valid inward input, independent of prior outward angle/duration. |
+| Sensor-age cutoff | No scroll effect when last valid sample age is at or beyond 250 ms. |
+| Scroll integration step | At most 50 ms elapsed motion; no catch-up backlog. |
+| Confirmed tap/key → local dispatch | At most 100 ms; recognition, editor completion and visible results reported separately. |
 
-### 15.3 Test boundaries and completion
+Measure native scroll units and qualified monotonic clocks. Do not redefine no-op as successful dispatch or reset deadlines to hide stalls. Tab/utility transitions cancel old effects synchronously at admission; actual rendering/readiness is separately observed. Other resource, engine and tab-allocation bounds must be declared before acceptance. Local rendering does not inherit the former streaming frame-rate cap.
 
-Prefer stable externally observable interfaces and end-to-end application journeys. Deterministic pages should expose counters, navigation, scrolling, focus, field values, and harmless submission observations. Live-page smoke tests remain separate from repeatable regressions. Preserve existing valid evidence with its original candidate, target, and human/automated provenance; do not repeat an already recorded Owner observation merely to fill a new form.
+## 12. Acceptance and mandatory HUD gate
 
-Test-only camera/sensor inputs and fault injection MUST be confined to instrumentation or controlled test-only seams. They MUST exercise the real downstream implementation and must not create a production authentication bypass, exported arbitrary-command interface, or user-facing ADB dependency. Source/manifest review and automated checks establish that boundary; no release build is introduced merely to check it.
+### 12.1 HUD-G1 / HUD-G2
 
-Target screenshot capture and inspection are permitted under §13. Screenshots prove only visible rendering/layout; correlate them with state/event/fixture observations for interaction claims. Record actual durations and interruptions; separate physical plugged-in operation from simulated battery state, actual lock from display-off, real network routing from test forwarding, and physical sensor events from replay.
+**HUD-G1 is OPEN.** Before production HUD work is accepted for implementation, the Owner must review the exact HUD contract revision and a complete native-size reference/prototype set or explicitly waive the image portion while approving the exact layout contract. The record identifies revision/hash, approved states and any deviations. None of the existing generated images is a complete approved reference: omissions, portrait geometry, duplicate pointer marks or missing keys are not authorized behavior.
 
-After the revised required checks pass and independent review/cleanup complete, implementation tickets may close and unblock dependents. The final integration ticket closes this same development profile, with a complete A01–A13 evidence ledger. Unavailable authorization, essential device connectivity, quota, privilege, or exhausted recovery remains a genuine blocker handled under the current run instructions; it is not a reason to fabricate evidence or bypass security.
+Qualification and behavior-preserving work in #28/#29 may continue. Prototype/layout validation specifically needed for HUD-G1 may be assigned as design work; that is not permission to ship a provisional layout. Manager must reconcile the design gate and expanded tab/bookmark/QR/settings/dark-output work into current ticket plans before dispatching affected implementation.
 
-### 15.4 Existing spike evidence
+**HUD-G2** is exact-candidate implementation conformance. Automated structure/geometry/color/state checks and native-size screenshots must demonstrate the approved contract. Missing star, Forward, Refresh, Done, menu item, wrong order, a second toolbar row, wrong orientation or nonblack app background produces `CHANGES_REQUESTED`, not stylistic discretion. Passing functional navigation alone is insufficient.
 
-Issue #1 was accepted under revised Owner acceptance and merged through PR #3. That record includes accepted historical Fold6 locked-command/unplugged evidence and supplemental current-head observations; it does not demonstrate final-head Fold6 post-lock command execution or a complete Phone–RG product path. This historical provenance is retained; it creates no Fold6 qualification requirement for v0.0.1 under §3.
+### 12.2 Evidence boundaries
 
-The accepted evidence is sufficient to proceed with this architecture. This specification does not reopen the cancelled repeat spike test. New automated integration evidence must exercise the implemented product, while preserving historical coverage limits. New architecture approval comes from the Owner's subsequent decisions, not retroactively from the spike's scope.
+Use the real RG and currently authorized Phone for applicable regressions, via reserved mission-scoped ADB automation. Replay raw pose/pad events through production input paths. Positive keyboard/QR/navigation evidence uses actual implemented controls; direct DOM assignment or arbitrary state injection is not a replacement for those journeys.
 
-## 16. Engineering decisions and implementation readiness
+Use independent owned-fixture observations for values, selection, submissions, tab identity, navigation and scrolling. Predeclare cases, timebases and finite per-command safety limits. Preserve exact source/APK/provider/device/route/input bindings, executed versus cached checks, failure history, screenshots and cleanup. Physical optical/wearer claims require their own observation; unattended screenshots do not establish them.
 
-The following remain engineering work, not unresolved product features: Android module organization; offscreen-host integration and foreground-service details; transport/encoding; authenticated pairing protocol and key storage; concrete message schema and freshness checks; ordinary field-input integration; camera/QR library; sensor filters; and documented timing/resource budgets.
+### 12.3 Acceptance groups
 
-Implementers MAY propose the simplest supported choices within this contract. They MUST test device-dependent assumptions under §15, document unqualified physical conditions, and record concrete contracts before claiming development-profile acceptance. A limitation requiring scope or user-visible behavior to change is escalated to Planner/Owner rather than silently replaced with CXR, an RG browser engine, plaintext transport, remote-start machinery, or another unapproved workaround.
+| ID | Required demonstration |
+| --- | --- |
+| V2-A01 | Exact-head builds, applicable tests/lint, real launches and engine/display/rotation measurements. |
+| V2-A02 | RG local execution with Phone stopped; simultaneous independent browser use. |
+| V2-A03 | Complete address policy, draft preservation, Back/Forward/Refresh, links and errors on the active tab. |
+| V2-A04 | Always-visible pointer, automatic acquisition, all control targets reachable, no recenter/mode routes. |
+| V2-A05 | Four-edge/corner overshoot regression with three amounts and multiple hold durations; no hidden angle/filter payback. |
+| V2-A06 | Actual vertical edge-only movement, held-edge continuation, bounded configured speed, no lateral/pad vertical scroll. |
+| V2-A07 | Lifecycle/document/tab/layout cancellation and fresh-edge re-entry; stale ticks cannot move a successor. |
+| V2-A08 | Exact single activation, double-tap suppression, no duplicate recognizer/native handling and current target checks. |
+| V2-A09 | Real built-in keys across four editor classes; selection/case/symbols/Space/Backspace/Enter/Done. |
+| V2-A10 | Keyboard viewport preservation, full-screen pointer/edge limits, visible current masked feedback. |
+| V2-A11 | Editor and tab ABA, replacement, reentrant focus changes, uncertain/duplicate result and dismissal safety. |
+| V2-A12 | Restart/durable storage/network loss with honest recovery and no consequential replay. |
+| V2-A13 | Data-preserving upgrade, inert obsolete records and intact Phone browser/data. |
+| V2-A14 | Exact-head review, combined journey, limits/privacy and verified cleanup. |
+| V2-A15 | HUD-G1 receipt and HUD-G2: all eight toolbar hit targets, one row, landscape geometry, black palette, keys/menu/state inventory. |
+| V2-A16 | At least four real tabs: add/select/counter/swipe/close/boundaries/last-tab behavior, history and no background input. |
+| V2-A17 | Outline/filled star on correct committed page, add/remove persistence, list/empty/error and reopen semantics. |
+| V2-A18 | Real camera lifecycle plus decoder path, URL preview/confirmation, invalid/permission/cancel and stale scan guards. |
+| V2-A19 | Actual bounded settings, persistence/defaults and safe cancellation without recentering. |
+| V2-A20 | Black first-party surfaces and dark supported website/field/dynamic output, media preservation, no app-origin white transition flash. |
 
-No ADR file, glossary framework, future subsystem scaffold, or particular third-party package is a prerequisite merely because a planning skill normally creates one. Meaningful architectural rationale can be recorded separately without duplicating or contradicting the current SPEC.
+Final integration includes navigation, multiple tabs and both swipe directions, star save/remove/list, QR URL confirmation, settings, overshoot/reversal, edge scrolling, actual field entry, utilities, sleep/resume and safe cold recovery. Each feature must appear in a canonical plan/evidence map; no new rows are automatically passed by the old six-ticket inventory.
 
-This document specifies the product; it does not dispatch work, create tickets, or claim a passing implementation. Execution, independent review, protected-document changes, and milestone approval follow the existing `AGENTS.md` and `DEV.md` procedures.
+## 13. Migration and planning reconciliation
 
-## 17. References
+Issues #28–#33 remain the original canonical migration tickets. Their publication predates the added tabs/bookmarks/QR/settings and strict HUD directions. The issue index records the updated authority. It is not accurate to treat the old single-page text or unassigned swipes as current requirements.
 
-The current Owner instructions and approved Q1–Q8 answers are the product-decision basis. Subsequent Owner approval authorizes unattended automation while retaining the real Phone and RG and allowing all agents to inspect screenshots; the current run record consolidates those instructions. Existing repository materials provide governance, visual evidence, and bounded experiment evidence:
+The responsible Planner and Manager must reconcile affected ticket scopes/dependencies and supply current-baseline ticket plans before work. #28 engine/editor qualification and #29 refactoring remain independently useful. #30 and later UI work must use this SPEC and HUD H1, pass HUD-G1, and have a mapped implementation slice for the newly required functions. This edit does not silently assign all new work to an already dispatched Worker or invent completed tickets.
 
-- Governance: `AGENTS.md`; verified development procedures: `DEV.md`.
-- Visual evidence: `design/soft-dock/design-decisions.md` and `design/soft-dock/design-qa.md`. Earlier Agent/tab/menu fixtures are not current requirements.
-- [Issue #1 — Phone-hosted locked WebView spike](https://github.com/code2hack/EyeBrowse/issues/1).
-- [Independent review under revised Owner acceptance](https://github.com/code2hack/EyeBrowse/pull/3#issuecomment-5614157830).
-- [Manager acceptance and preserved limitations](https://github.com/code2hack/EyeBrowse/issues/1#issuecomment-5614203779).
+Keep historical R3 and v0.0.1 evidence at their original references. Maintain an explicit mapping of surviving safety tests and intentionally replaced behavior. Do not delete still-needed Phone/shared code, nor carry remote-only ordinals/capture leases into local operations.
 
----
+The designated editors handle protected articles. Implementation PRs target the migration branch with independent exact-head review. Publication here does not move `main`, reopen retired agents, dispatch new ones, or record a release.
 
-**v0.0.1 succeeds when one Phone-hosted page can be used as a normal Phone browser and as an independently operable RG browser over the user's existing local connection, with explicit handoff, QR app pairing, reliable recovery, and no agent or network-management product hidden inside the scope.**
+## 14. References
+
+- [Mandatory RG HUD H1](docs/design/v0.0.2-rg-hud.md).
+- [Current issue index and reconciliation status](docs/plans/v0.0.2-issues.md).
+- `AGENTS.md`, `DEV.md`, and `docs/decisions/0001-kotlin-only-first-party-code.md`.
+- Historical R3: `docs/plans/v0.0.2-standalone-rg-r3.md`; its earlier tab/swipe/layout assumptions are not the current contract.
+
+**Completion means independent RG browsing with the complete one-row black HUD, built-in input, local tabs and utilities, safe bounded edge scrolling, and verified conformance—not merely a similar-looking screenshot.**
