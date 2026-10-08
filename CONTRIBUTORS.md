@@ -422,7 +422,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "paseo": "5b1a9f2e-a1df-4c26-9a27-6133c907713c",
     "model": "gpt-6.1-sol / xhigh",
     "name": "Worker-#28",
-    "status": "active"
+    "status": "retired"
   },
   {
     "role": "Worker",
