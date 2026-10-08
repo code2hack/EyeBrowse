@@ -12,7 +12,7 @@ The Manager MUST record material Owner decisions and reconcile affected project 
 
 ## 2. Sources of truth
 
-`AGENTS.md` and `DEV.md` govern how work is performed. The approved `SPEC.md` and architecture/design decisions define the product. Version plans, tickets, ticket plans, and mission assignments operate within those boundaries.
+`AGENTS.md` and `DEV.md` govern how work is performed. The approved `SPEC.md` and architecture/design decisions define the product. Version plans, canonical tickets, and mission assignments operate within those boundaries.
 
 Agents MUST refresh remote repository evidence, identify the branch/commit being used, and read the relevant articles, decisions, and issue/PR records before planning, implementation, or acceptance-sensitive claims. Implementation and test evidence describe what exists; summaries and conversation memory are navigation aids, not substitutes for authoritative records.
 
@@ -35,7 +35,7 @@ Changes to `AGENTS.md` or `DEV.md` MUST be prepared outside `main`. The Project 
 
 The canonical copies live on remote `main`. Workers, Experts, and Reviewers MUST treat all four articles as read-only project inputs. Protected-article updates are handled separately from implementation PRs by their designated editors.
 
-A request for a version plan or ticket plan, an operational setup authorization, or a suggested Manager prompt does not itself authorize changes to `AGENTS.md` or `DEV.md`. The responsible editor records the explicit Owner request and exact-candidate publication approval. Ordinary planning and execution records belong in issues or linked artifacts rather than requiring a protected-article edit for every mission.
+A request for a version plan or implementation work, an operational setup authorization, or a suggested Manager prompt does not itself authorize changes to `AGENTS.md` or `DEV.md`. The responsible editor records the explicit Owner request and exact-candidate publication approval. Ordinary planning and execution records belong in issues or linked artifacts rather than requiring a protected-article edit for every mission.
 
 `CONTRIBUTORS.md` is a separate jointly maintained registry under Section 15.1 and is not a protected project article.
 
@@ -45,7 +45,7 @@ Roles determine authority; models, runtimes, and hosts identify how an agent ope
 
 | Role | Responsibility | Lifecycle |
 | --- | --- | --- |
-| Planner | Product/specification decisions, Owner-requested version plans, canonical tickets, and Manager-requested ticket plans | Persistent |
+| Planner | Product/specification decisions, Owner-requested version plans, canonical tickets, and material scope/design/acceptance clarification | Persistent |
 | Manager | Implementation preflight, DAG/todo scheduling, assignments, resources, communication, Expert handoffs, PRs, review coordination, merge, cleanup, and closure | One active project-wide coordinator |
 | Worker | Execute the ticket's approved todos, provide evidence, simplify, push implementation, and perform assigned cleanup; a local helper is also a Worker | Ticket/mission-scoped |
 | Expert | Diagnose and fix the specifically assigned escalated todo, verify its result, and hand back to the Worker | Todo-scoped; no fixed attempt-count ceiling |
@@ -59,40 +59,37 @@ Reviewers remain independent of all candidate implementers, including Experts an
 
 An Expert assignment covers the escalated todo, not the remainder of the ticket. After its verified handback, the Manager returns later todos to the ticket Worker under Section 14.4. Additional persistent roles require an ongoing responsibility and Owner approval.
 
-## 5. Version planning, ticket planning, and mission assignment
+## 5. Version planning, canonical tickets, and mission assignment
 
 These are distinct activities:
 
 | Activity | Requested by | Prepared by | Timing | Purpose |
 | --- | --- | --- | --- | --- |
 | Version plan | Project Owner | Planner | Before that version's implementation | Define the version's delivery scope, ordering, and acceptance |
-| Ticket plan | Manager | Responsible Planner | During implementation, before dispatch of that ticket | Give the Worker a detailed approach for one approved ticket |
-| Mission assignment | Manager | Manager | After the ticket plan is available | Assign the agent, workspace, resources, limits, and reporting paths |
+| Canonical ticket | Authorized version scope or Owner-directed work | Planner | Before mission assignment | Define the objective, scope, dependencies, acceptance, and relevant decision references |
+| Mission assignment | Manager | Manager | When the authorized ticket and applicable prerequisites are ready | Assign the agent, workspace, resources, limits, and reporting paths |
 
 ### 5.1 Version plan
 
 The Planner prepares a version plan when explicitly requested by the Project Owner. It identifies the version and specification baseline, included/excluded work, milestone or ticket breakdown, planned dependencies, version-level acceptance evidence, risks, and anticipated human gates.
 
-The Planner presents the version plan to the Owner for review. Version implementation requires Owner authorization of that version's scope and plan. A version plan does not replace its tickets' detailed Worker plans.
+The Planner presents the version plan to the Owner for review. Version implementation requires Owner authorization of that version's scope and plan. A version plan does not replace canonical ticket scope/acceptance or the Manager's mission assignment; no separate ticket-plan stage is required.
 
 The Planner creates canonical GitHub tickets from authorized scope. Each ticket MUST identify its scope, acceptance criteria, relevant version/decision references, and `Blocked by:` prerequisites; use `Blocked by: none` when appropriate. Publish the version plan as a durable planning record linked from its tickets, with its baseline and approval status, using existing project conventions and Section 3 for protected-article changes.
 
 New product work, ticket splitting, and material version-plan revisions return through the Manager to the Planner and Owner as applicable. The Manager schedules the approved work rather than independently redefining the version.
 
-### 5.2 Ticket plan
+### 5.2 Direct execution from authorized tickets
 
-During implementation, the Manager MUST request and receive a detailed ticket plan from the responsible Planner for every ticket before dispatching its Worker. The request includes the ticket, current code/reference commit, known constraints, and available operational evidence.
+Separate ticket planning is permanently removed from the EyeBrowse workflow across the project and all versions. Neither the Manager nor a Worker is required to request, receive, or wait for a Planner-authored ticket plan before dispatch, implementation, or continuation.
 
-The Planner MUST return a durable plan in an attributed issue comment or linked artifact containing:
+The execution contract is the authorized canonical ticket and its acceptance criteria, the current approved specification/design decisions and applicable version scope, and the Manager's ordinary mission assignment. Before dispatch, the Manager checks that the ticket matches the current code and actual dependency outcomes, resolves any material conflict, and supplies the assigned baseline, resources, constraints, and reporting path under Section 5.3. This check is not a separate implementation-plan approval.
 
-- objective, scope boundaries, dependencies, and relevant specification/design decisions;
-- affected components/interfaces, implementation approach, and ordered steps;
-- acceptance criteria, verification commands or procedures, required devices/evidence, and expected results;
-- known risks, anticipated human gates, and stop/escalation conditions.
+The Worker chooses the implementation approach and ordered working steps within that contract. Working notes and todo breakdowns may be maintained as useful execution records; neither their authorship nor prior Planner/Manager approval is a new prerequisite to start. The removed stage MUST NOT be recreated as a mandatory Worker approach document, Planner acknowledgment, Manager-approved implementation plan, or renamed per-ticket planning gate. Existing todo accounting, evidence declarations, and verification requirements remain; they do not require a separate Planner plan.
 
-The Manager checks that the plan still matches current code and dependencies. Materially stale or contradictory plans return to the Planner before affected execution.
+A genuinely missing product requirement or material change to scope, architecture, approved design, or acceptance returns through the Manager to the responsible Planner and Owner as applicable. Route the concrete question or proposed change, not a routine whole-ticket plan request. Independent authorized work may continue while only the affected work waits. Version authorization, explicit Owner holds, design approval, device/security authority, independent review, and protected-article publication gates remain unchanged.
 
-A ticket plan stays within the authorized ticket and version. It does not require a separate Owner review by default; Owner-reserved decisions and protected-article changes still use their existing gates. The Worker may choose implementation details within the plan; changes to its material assumptions, scope, architecture, or acceptance return to the Planner through the Manager.
+Existing plan requests or holds based solely on the removed stage must be retired in the run record; retain the same assignments, candidates, evidence, and attempt history. Historical ticket plans may be consulted where useful and consistent with current authority, but their existence or replacement is not a dispatch prerequisite. Preserve historical findings without retroactively claiming that a former pre-dispatch requirement was met. Older template, issue, or procedure references to that removed prerequisite do not reinstate it.
 
 ### 5.3 Todos and mission assignment
 
@@ -102,16 +99,16 @@ Use these work-item terms consistently:
 | --- | --- |
 | Version | Owner-authorized delivery scope |
 | Ticket | Planner-created GitHub issue with scope, dependencies, and acceptance |
-| Todo | Bounded, verifiable objective within the approved ticket plan; the unit of Worker failure accounting and Expert escalation |
+| Todo | Bounded, verifiable objective within the authorized ticket; the unit of Worker failure accounting and Expert escalation |
 | Attempt | One implementation or correction round on a todo |
 
 The Manager coordinates canonical todo identity, objective, completion condition, dependencies, assignment, and attempt history before execution. Workers and Experts maintain execution progress. Use the installed todo tool where suitable, with durable references in mission records where needed; one objective has one canonical record, not competing per-session failure counters. Commands such as inspecting a callback or running a test can be steps of the same todo rather than separate failure budgets.
 
-Todos do not require new GitHub issues or another Planner approval ceremony. They stay within the existing ticket plan. Material scope, architecture, plan-assumption, or acceptance changes still return to the Planner; a local checklist cannot silently redefine the ticket.
+Todos do not require new GitHub issues or another Planner approval ceremony. They stay within the authorized ticket and current specification/design decisions. Material scope, architecture, design-assumption, or acceptance changes still return to the Planner; a local checklist cannot silently redefine the ticket.
 
-The Manager MUST supply the implementer with ticket/plan/todo references, assigned identity, exact branch and baseline, workspace and unique mission-owned temporary space, reserved devices/services, resource limits, todo failure history, and direct reporting/Owner-contact paths. For local execution, specify the exact worktree CWD, scratch path, and verified Paseo project/workspace/agent binding under Sections 8 and 15.1. For a remote tool-only session, specify its repository/branch access and verify available capabilities rather than inventing local paths or tools.
+The Manager MUST supply the implementer with ticket/specification/design/todo references, assigned identity, exact branch and baseline, workspace and unique mission-owned temporary space, reserved devices/services, resource limits, todo failure history, and direct reporting/Owner-contact paths. For local execution, specify the exact worktree CWD, scratch path, and verified Paseo project/workspace/agent binding under Sections 8 and 15.1. For a remote tool-only session, specify its repository/branch access and verify available capabilities rather than inventing local paths or tools.
 
-Every mission identifies its affected target(s): Phone, RG, shared core, or cross-device integration. Mark experiments separately. Acceptance remains defined by the authorized ticket and its Planner plan; the assignment adds operational details rather than rewriting either.
+Every mission identifies its affected target(s): Phone, RG, shared core, or cross-device integration. Mark experiments separately. Acceptance remains defined by the authorized ticket and current specification/design decisions; the assignment adds operational details rather than rewriting those requirements.
 
 ### 5.4 ChatGPT implementers and local helper Workers
 
@@ -135,7 +132,7 @@ The Manager MUST verify the selected session's editing, test, GitHub, and return
 
 ### 6.1 Entry and preflight
 
-An open canonical issue labeled `ready-for-agent` places the project in implementation status and prompts Manager preparation. The label does not replace version authorization, preflight, or a ticket plan. Standalone Owner-authorized spikes follow Section 10.
+An open canonical issue labeled `ready-for-agent` places the project in implementation status and prompts Manager preparation. The label does not replace version authorization, preflight, applicable design approval, or a mission assignment. Standalone Owner-authorized spikes follow Section 10.
 
 An implementation run is the authorized set of tickets being executed; a batch is the concurrent subset currently assigned.
 
@@ -153,7 +150,7 @@ The Manager reports newly discovered human gates to the Owner before the affecte
 
 Select unassigned `ready-for-agent` tickets with satisfied dependencies, up to the approved Worker limit. Check existing claims, assignments, and PRs to avoid duplicate dispatch. Shared-resource constraints may require a smaller batch; review activity also stays within approved resources.
 
-For each selected ticket, obtain its Planner-authored ticket plan, establish its todos, register the Worker and any required local helper, reserve resources, and provide the complete mission assignment. Record batch membership and dispatch on the issues; remove `ready-for-agent` when dispatch is recorded.
+For each selected ticket, verify its current scope, acceptance and dependency readiness, establish its todos, register the Worker and any required local helper, reserve resources, and provide the complete mission assignment. No separate ticket-plan request or approval precedes dispatch. Record batch membership and dispatch on the issues; remove `ready-for-agent` when dispatch is recorded.
 
 The Manager MUST confirm receipt and successful startup for all dispatched agents in the batch, including required local helpers. For local agents, verify the Paseo binding, actual native session, process CWD, and effective Owner-selected model/effort; a created entry or title is not startup confirmation. A startup failure becomes a reported blocker. Once dispatch is complete and no actionable report remains pending, the Manager ends its turn and waits for reports.
 
@@ -167,9 +164,9 @@ Agent work has no active-work or wall-clock time ceiling and no clock-based chec
 
 Start the next batch only after every ticket in the current batch completes closeout, unless the Owner explicitly changes the batch scope or scheduling policy. Expert work, local-helper verification, review, handback, or cleanup of the current batch is not a new batch; finishing one ticket does not authorize backfilling its slot with another ticket.
 
-After a batch finishes, refresh the DAG, verify dependency outcomes, update readiness, request the next tickets' plans, and repeat. A closed prerequisite is satisfied only when its actual outcome meets the dependent ticket's requirement.
+After a batch finishes, refresh the DAG, verify dependency outcomes, update readiness, and prepare the next eligible mission assignments. A closed prerequisite is satisfied only when its actual outcome meets the dependent ticket's requirement.
 
-Implementation remains active through ticket planning, todo execution, Expert help, local verification, review, and cleanup. No ready tickets does not mean completion: report remaining blocked work and the required decisions. Once all tickets in the authorized run are finished, report consolidated results and any remaining version-level acceptance gates to the Owner. Implementation completion does not itself authorize release publication.
+Implementation remains active through mission preparation, todo execution, Expert help, local verification, review, and cleanup. No ready tickets does not mean completion: report remaining blocked work and the required decisions. Once all tickets in the authorized run are finished, report consolidated results and any remaining version-level acceptance gates to the Owner. Implementation completion does not itself authorize release publication.
 
 ## 7. Owner notifications, human gates, and alarms
 
@@ -237,7 +234,7 @@ Immediately relock when the reserved work finishes or fails, and verify actual l
 
 ## 10. Experiments and architecture spikes
 
-An explicitly Owner-authorized spike may precede a settled version plan or product architecture. It still requires a Planner-created ticket, a Manager-requested ticket plan, implementation preflight, bounded scope, and independent review of its evidence.
+An explicitly Owner-authorized spike may precede a settled version plan or product architecture. It still requires a Planner-created ticket, an ordinary Manager mission assignment, implementation preflight, bounded scope, and independent review of its evidence; no separate ticket plan is required.
 
 The ticket MUST identify the exact question, expected evidence, pass/fail interpretation, experimental assumptions, and production decisions outside its scope.
 
@@ -247,9 +244,9 @@ Experiment results inform later Owner/Planner decisions; they do not automatical
 
 ## 11. Execution and completion evidence
 
-Workers and Experts MUST implement within the ticket plan and assigned todo, perform a simplification/ablation pass after implementation and corrections, rerun affected verification, and commit/push a reviewable candidate for a change mission. A cloud-to-local handoff uses `CANDIDATE_READY`; `COMPLETED` means the assigned work and required verification are ready for acceptance, not accepted.
+Workers and Experts MUST implement within the authorized ticket, current specification/design decisions, and assigned todo, perform a simplification/ablation pass after implementation and corrections, rerun affected verification, and commit/push a reviewable candidate for a change mission. A cloud-to-local handoff uses `CANDIDATE_READY`; `COMPLETED` means the assigned work and required verification are ready for acceptance, not accepted.
 
-Reports MUST identify the ticket, plan and todo, attempt and responsible agent, branch/workspace, exact remote commit, changed files, criteria/results, executed verification with evidence links, simplifications, and remaining risks or missing evidence. Distinguish cloud checks from local-helper checks and identify which candidate each actually exercised.
+Reports MUST identify the ticket, applicable specification/design references and todo, attempt and responsible agent, branch/workspace, exact remote commit, changed files, criteria/results, executed verification with evidence links, simplifications, and remaining risks or missing evidence. Distinguish cloud checks from local-helper checks and identify which candidate each actually exercised.
 
 An unsuccessful completed attempt reports `FAILED` or `NOT_PASSED` with evidence and recoverable working state. Any pushed checkpoint is identified as incomplete rather than a passed candidate. Expected local checks still pending are a handoff/wait, not an already-concluded failure. Read-only investigations report agreed evidence instead of manufacturing code changes or a PR.
 
@@ -257,13 +254,13 @@ Detailed logs may remain in artifacts or CI. Issue/PR reports summarize and link
 
 ## 12. Target-specific verification
 
-Shared-core changes MUST assess both Phone and RG consumers. Phone-only, RG-only, and cross-device claims require the corresponding evidence defined by the ticket plan.
+Shared-core changes MUST assess both Phone and RG consumers. Phone-only, RG-only, and cross-device claims require the corresponding evidence defined by the authorized ticket and applicable specification/design acceptance criteria.
 
 Hardware-sensitive evidence MUST identify the actual device, relevant Android/One UI/YodaOS and WebView versions, application commit/build, commands/procedure, results, and limitations. Relevant Phone checks distinguish cover and inner display behavior.
 
 Synthetic input and emulators support only the behavior exercised. Head-motion ergonomics, optical readability, hardware interaction, and other physical claims require appropriate real-device evidence when claimed. Apply the Owner-approved acceptance profile: required missing evidence remains open; explicitly permitted unexercised physical conditions remain documented limitations, not fabricated PASS or a reinstated hidden gate. An operationally authorized test device does not silently replace a specified product target.
 
-Build modes, toolchain procedures, and verification commands follow the approved `DEV.md` and ticket requirements; a plan cannot silently introduce an Owner-restricted release gate.
+Build modes, toolchain procedures, and verification commands follow the approved `DEV.md` and ticket requirements; an implementation approach cannot silently introduce an Owner-restricted release gate.
 
 ## 13. GitHub workflow, review, and closeout
 
@@ -273,7 +270,6 @@ Build modes, toolchain procedures, and verification commands follow the approved
 | --- | --- |
 | Create/revise canonical tickets, planned dependencies, and acceptance | Planner |
 | Produce version plans | Planner, at Owner request before version implementation |
-| Produce ticket plans | Planner, at Manager request during implementation |
 | Manage execution labels, claims, batches, and resources | Manager |
 | Commit/push implementation and corrections | Assigned Worker or Expert; a local helper only under explicit write assignment |
 | Open/manage PRs, request review, merge, coordinate cleanup, and close issues | Manager |
@@ -287,7 +283,7 @@ Implementation changes reach `main` through this PR workflow. Protected-article 
 
 Worker/Expert `COMPLETED` means ready for acceptance, not accepted. Todo handback under Section 14.4 does not itself merge or close a ticket.
 
-The Manager registers the Reviewer and supplies the approved requirements, ticket plan, relevant todo records, exact base/head commits, diff, and cloud/local verification evidence. The Reviewer records one verdict against the exact candidate:
+The Manager registers the Reviewer and supplies the authorized ticket, current approved specification/design requirements, relevant todo records, exact base/head commits, diff, and cloud/local verification evidence. The Reviewer records one verdict against the exact candidate:
 
 | Verdict | Meaning |
 | --- | --- |
@@ -311,7 +307,7 @@ Use this standalone label vocabulary; it does not require Matt's skills or any o
 | --- | --- |
 | `needs-triage` | Incoming/unstructured work needs classification and an actionable ticket |
 | `needs-info` | Specific missing information prevents action |
-| `ready-for-agent` | Authorized, unassigned ticket with defined scope/acceptance and satisfied dependencies; eligible for Manager ticket planning and dispatch preparation |
+| `ready-for-agent` | Authorized, unassigned ticket with defined scope/acceptance and satisfied dependencies; eligible for Manager preflight and mission assignment |
 | `ready-for-human` | The next required action is an Owner/human decision or physical interaction |
 | `wontfix` | Explicitly rejected, duplicate/already satisfied, or intentionally out of scope |
 
@@ -329,8 +325,8 @@ Agents MUST record these material events with their registered role/name attribu
 
 | Role | Issue or version/run record | PR record |
 | --- | --- | --- |
-| Planner | Version plan and Owner decisions; ticket creation; requested ticket plan; material scope/acceptance/dependency revisions | Required decision clarifications |
-| Manager | Run approvals/DAG; batch/todo assignments; human gates; todo failure counts; Expert escalation/Owner notification/Worker handback; verified cleanup, retirement, and closure | Candidate/plan links; review and local-verification requests; correction ownership; merge and acceptance result |
+| Planner | Version plan and Owner decisions; ticket creation; material scope/design/acceptance/dependency revisions | Required decision clarifications |
+| Manager | Run approvals/DAG; batch/todo assignments; human gates; todo failure counts; Expert escalation/Owner notification/Worker handback; verified cleanup, retirement, and closure | Candidate/requirements links; review and local-verification requests; correction ownership; merge and acceptance result |
 | Worker / local helper | Todo progress, material failures/gates/discoveries, candidate or verification evidence, handoff receipt, cleanup result | Candidate/correction SHA, exact local checks, findings addressed, remaining limitations |
 | Expert | Assigned todo diagnosis, attempts, verified resolution or genuine blocker, and handback package | Expert commits, relevant findings, verification, and residual risks |
 | Reviewer | Ambiguities or verdict for missions without a PR | Verdict, exact reviewed commit, findings, evidence, and unresolved limitations |
@@ -359,7 +355,7 @@ Keep the original ticket Worker available for handback or local-helper work. Unr
 
 The Expert owns diagnosis and correction of the assigned todo with no fixed attempt-count ceiling and no per-attempt Owner permission gate. Its scope, resource/compute limits, command timeouts, security boundaries, evidence requirements, and Owner stop instructions still apply. The Manager coordinates; it does not become the technical recovery implementer.
 
-The Expert commits/pushes its own corrections, verifies the todo's required outcomes, records meaningful findings and changes of approach, and uses a local helper under Section 5.4 when running in ChatGPT. It may adapt implementation within the approved plan; material plan, architecture, scope, or acceptance changes return through the Manager to the responsible Planner/Owner. Report genuinely missing access/resources promptly rather than repeating ineffective operations without new evidence.
+The Expert commits/pushes its own corrections, verifies the todo's required outcomes, records meaningful findings and changes of approach, and uses a local helper under Section 5.4 when running in ChatGPT. It may adapt implementation within the authorized ticket and specification/design constraints; material architecture, scope, design, or acceptance changes return through the Manager to the responsible Planner/Owner. Report genuinely missing access/resources promptly rather than repeating ineffective operations without new evidence.
 
 ### 14.4 Expert to Worker
 
@@ -438,7 +434,7 @@ Routine delivery must preserve ongoing work and pending Owner permission/authent
 
 Preserve pending-request and ownership state durably across restart and reconcile uncertain delivery before resending; a wait timeout or lost subscription is not a fresh-send allowance. Recover the correlated complete result, not only a finish notification. Transport adapters may perform bounded observation/recovery; the Manager remains event-driven rather than repeatedly polling conversations for progress. An observed assistant reply or settled runtime proves neither execution of all requested work nor its correctness. Record lifecycle/race limitations where they remain unqualified rather than claiming platform-enforced exactly-once behavior.
 
-Required routes include Manager-to-Planner ticket-plan requests, Planner-to-Manager plan delivery, Manager-to-Worker/Expert/helper assignments, implementer/helper/Reviewer reports to Manager, and Expert-to-Worker handback via Manager. Owner-to-Planner version-plan requests and Owner notifications/gates use Section 7's authenticated human channel; a human is not required to have a fabricated agent-registry tuple. Delivery machinery and connection diagnostics belong in `DEV.md`, skills, and runtime. Text headers are not transport authentication.
+Required routes include Manager-to-Worker/Expert/helper assignments, concrete material scope/design/acceptance questions and dispositions between Manager and Planner as needed, implementer/helper/Reviewer reports to Manager, and Expert-to-Worker handback via Manager. Routine ticket-plan request/delivery is not a required route or dispatch dependency. Owner-to-Planner version-plan requests and Owner notifications/gates use Section 7's authenticated human channel; a human is not required to have a fabricated agent-registry tuple. Delivery machinery and connection diagnostics belong in `DEV.md`, skills, and runtime. Text headers are not transport authentication.
 
 ## 16. Runtime and documentation boundary
 
