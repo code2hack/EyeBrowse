@@ -415,7 +415,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Worker",
-    "scope": "v0.0.2; issue #28; awaiting Planner ticket plan",
+    "scope": "v0.0.2; issue #28; RG-local engine/editor qualification",
     "host": "spark",
     "runtime": "codex",
     "id": "01a11c86-6502-7e22-98eb-8ef0f9041207",
@@ -426,7 +426,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Worker",
-    "scope": "v0.0.2; issue #29; awaiting Planner ticket plan",
+    "scope": "v0.0.2; issue #29; input/execution boundary refactor",
     "host": "spark",
     "runtime": "codex",
     "id": "01a11c86-65da-76f2-b4dc-462cf51a1a92",
