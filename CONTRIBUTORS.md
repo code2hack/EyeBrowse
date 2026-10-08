@@ -173,7 +173,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Expert",
-    "scope": "issue #5; I5-T01 replacement Expert; rounds 8-10 corrections, IME-evocation diagnosis and dda3d2cc handback; §14.4 sign-off delivered; retired at #5 closeout",
+    "scope": "issue #5; I5-T01 replacement Expert; rounds 8-10 corrections, IME-evocation diagnosis and dda3d2cc handback; \u00a714.4 sign-off delivered; retired at #5 closeout",
     "host": "chatgpt.com",
     "runtime": "chatgpt",
     "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70-eyebrowse/c/6aaa3ed7-f170-83e9-b793-000f0e2065f2",
@@ -433,6 +433,17 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "paseo": "cac5cae8-8ed0-4aca-9cc2-1cdbf950b31e",
     "model": "gpt-6.1-sol / xhigh",
     "name": "Worker-#29",
+    "status": "active"
+  },
+  {
+    "role": "Expert",
+    "scope": "v0.0.2 issue29 I29-T02 native password masking only",
+    "host": "spark",
+    "runtime": "codex",
+    "id": "01a11d7e-2017-70e3-bf47-500b1c475261",
+    "paseo": "e039d26e-6dbe-4eb0-8d03-00fefc9424c5",
+    "model": "gpt-6.1-sol",
+    "name": "Expert-I29-T02",
     "status": "active"
   }
 ]
