@@ -11,6 +11,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -35,6 +36,31 @@ class NativeInputInstrumentedTest {
         val child = IntArray(2); val root = IntArray(2)
         view.getLocationOnScreen(child); activity.root.getLocationOnScreen(root)
         return InputPoint(child[0] - root[0] + view.width / 2f, child[1] - root[1] + view.height / 2f)
+    }
+    private fun capture(scenario: ActivityScenario<NativeInputTestActivity>, name: String): JSONObject {
+        val started = SystemClock.elapsedRealtimeNanos()
+        val wallTime = System.currentTimeMillis()
+        val shot = checkNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+        val finished = SystemClock.elapsedRealtimeNanos()
+        val observation = JSONObject().put("file", name).put("captureStartNs", started)
+            .put("captureEndNs", finished).put("wallTimeMs", wallTime)
+            .put("width", shot.width).put("height", shot.height)
+        try {
+            scenario.onActivity { activity ->
+                fun bounds(view: View): JSONArray {
+                    val origin = IntArray(2); view.getLocationOnScreen(origin)
+                    return JSONArray(listOf(origin[0], origin[1], view.width, view.height))
+                }
+                observation.put("windowFocused", activity.hasWindowFocus())
+                    .put("rootAttached", activity.root.isAttachedToWindow).put("rootBounds", bounds(activity.root))
+                    .put("pageFocused", activity.page.hasFocus()).put("pageBounds", bounds(activity.page))
+                    .put("nativeFocusClass", activity.currentFocus?.javaClass?.simpleName)
+                    .put("keyRowShown", activity.keyboard.isShown).put("keyRowBounds", bounds(activity.keyboard))
+                    .put("buttonBounds", bounds(activity.button)).put("buttonLabel", activity.button.text.toString())
+                activity.openFileOutput(name, 0).use { assertTrue(shot.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+            }
+        } finally { shot.recycle() }
+        return observation.put("observationEndNs", SystemClock.elapsedRealtimeNanos())
     }
     private fun tap(scenario: ActivityScenario<NativeInputTestActivity>, source: RawPoseReplay, point: InputPoint,
                     count: Int = 1) {
@@ -85,6 +111,10 @@ class NativeInputInstrumentedTest {
             assertTrue("native dispatch <=100ms", checkNotNull(it.router.lastDispatchMs) <= 100)
             Log.i("EyeBrowseNativeInput", "activationCount=${it.activations} dispatchMs=${it.router.lastDispatchMs}")
         }
+        val activation = capture(scenario, "native-input-activation.png")
+        scenario.onActivity { it.openFileOutput("native-input-activation-observation.json", 0).use { file ->
+            file.write(activation.toString().toByteArray(Charsets.UTF_8))
+        } }
         scenario.moveToState(Lifecycle.State.CREATED)
         assertFalse("paused native source", source.registered)
         scenario.moveToState(Lifecycle.State.RESUMED)
@@ -122,11 +152,25 @@ class NativeInputInstrumentedTest {
         field("password"); repeat(3) { key(RgKeyboardKeys.Key.Character("x")) }
         await("password edit without a local value mirror") { js(scenario, "document.getElementById('password').value.length") == "3" }
         assertEquals("\"password\"", js(scenario, "document.activeElement.type"))
-        val shot = checkNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
-        scenario.onActivity { activity -> activity.openFileOutput("native-input-password.png", 0).use {
-            assertTrue(shot.compress(Bitmap.CompressFormat.PNG, 100, it))
+        // Observe the unchanged native rendering for five seconds; never read a field value into evidence.
+        val windowStart = SystemClock.elapsedRealtime()
+        val frames = JSONArray()
+        for (i in 0..4) {
+            val wait = windowStart + i * 1_000 - SystemClock.elapsedRealtime()
+            if (wait > 0) SystemClock.sleep(wait)
+            if (SystemClock.elapsedRealtime() >= windowStart + 5_000) break
+            val frame = capture(scenario, if (i == 0) "native-input-password.png" else "native-input-password-$i.png")
+            frame.put("field", JSONObject(js(scenario, "(()=>{const e=document.activeElement,r=e.getBoundingClientRect();" +
+                "return {id:e.id,type:e.type,bounds:[r.x,r.y,r.width,r.height]}})()")))
+            frames.put(frame)
+        }
+        val remaining = windowStart + 5_000 - SystemClock.elapsedRealtime()
+        if (remaining > 0) SystemClock.sleep(remaining)
+        val observations = JSONObject().put("windowStartMs", windowStart)
+            .put("windowEndMs", SystemClock.elapsedRealtime()).put("frames", frames)
+        scenario.onActivity { it.openFileOutput("native-input-password-observations.json", 0).use { file ->
+            file.write(observations.toString().toByteArray(Charsets.UTF_8))
         } }
-        shot.recycle() // Real rendered evidence; masking must also be inspected, not inferred from input.type.
         key(RgKeyboardKeys.Key.Command.DONE)
         scenario.onActivity { assertEquals(1, it.dismissals); assertEquals(View.GONE, it.keyboard.visibility) }
         assertEquals("3", js(scenario, "document.getElementById('password').value.length"))
