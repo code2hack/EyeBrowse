@@ -15,7 +15,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "paseo": null,
     "model": "gpt-6 Pro",
     "name": "AGENTS.md Design",
-    "status": "active"
+    "status": "retired"
   },
   {
     "role": "Manager",
@@ -70,7 +70,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "paseo": null,
     "model": "gpt-6-astra",
     "name": "v0.0.1 Planner-fallback",
-    "status": "paused"
+    "status": "retired"
   },
   {
     "role": "Worker",
@@ -158,7 +158,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "paseo": null,
     "model": "GPT-5.6 Sol / gpt-5-6-thinking / Extra High",
     "name": "v0.0.1 Planner",
-    "status": "active"
+    "status": "retired"
   },
   {
     "role": "Reviewer",
@@ -173,7 +173,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Expert",
-    "scope": "issue #5; I5-T01 replacement Expert; rounds 8-10 corrections, IME-evocation diagnosis and dda3d2cc handback; §14.4 sign-off delivered; retired at #5 closeout",
+    "scope": "issue #5; I5-T01 replacement Expert; rounds 8-10 corrections, IME-evocation diagnosis and dda3d2cc handback; \u00a714.4 sign-off delivered; retired at #5 closeout",
     "host": "chatgpt.com",
     "runtime": "chatgpt",
     "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70-eyebrowse/c/6aaa3ed7-f170-83e9-b793-000f0e2065f2",
@@ -345,7 +345,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "paseo": "da2bec35-54c5-4d8d-952f-092fb81ec0c5",
     "model": "GLM-5.3-Flash-EXL3 / max",
     "name": "EyeBrowse-Manager-GLM-r3",
-    "status": "active"
+    "status": "retired"
   },
   {
     "role": "Worker",
@@ -353,6 +353,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "spark",
     "runtime": "codex",
     "id": "01a0dea1-b623-7090-af06-7af242d42bac",
+    "paseo": null,
     "model": "gpt-6-astra/thinking-medium",
     "name": "Worker-codex-astra",
     "status": "retired"
@@ -363,6 +364,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "spark",
     "runtime": "codex",
     "id": "26f5375d-958e-48fe-ba7d-eb3423aacca8",
+    "paseo": null,
     "model": "gpt-6-astra/thinking-max",
     "name": "Reviewer-codex-astra",
     "status": "retired"
@@ -373,6 +375,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "spark",
     "runtime": "codex",
     "id": "01a0dec0-a417-7773-9a5a-014df131c716",
+    "paseo": null,
     "model": "gpt-6-astra/thinking-medium",
     "name": "Worker-codex-astra-2",
     "status": "retired"
@@ -383,9 +386,21 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "host": "spark",
     "runtime": "codex",
     "id": "01a0e59c-5623-7843-8670-cbc5eee00e76",
+    "paseo": null,
     "model": null,
     "name": "Reviewer-codex-astra-2",
     "status": "retired"
+  },
+  {
+    "role": "Manager",
+    "scope": "v0.0.2; project-wide coordinator",
+    "host": "spark",
+    "runtime": "codex",
+    "id": "01a11c79-209e-7ad3-baf1-85df8e6a9b91",
+    "paseo": "3e8c03f5-df67-4765-a83a-ab5b2b127053",
+    "model": "gpt-6.1-sol / xhigh",
+    "name": "Manager-v0.0.2",
+    "status": "active"
   }
 ]
 ```
