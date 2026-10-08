@@ -62,7 +62,7 @@ class RgPresentationController(context: Context, private val surface: Surface) :
             commands.demand(reservationOwner,CommandSequence.Namespace.of(current.context))
         else commands.cancel(reservationOwner)
     }
-    internal val keyboard = RgKeyboard()
+    internal val keyboard = RgKeyboard<EditorTarget>()
     internal var reading = false
         private set
     private val headScroll = HeadScrollModel()

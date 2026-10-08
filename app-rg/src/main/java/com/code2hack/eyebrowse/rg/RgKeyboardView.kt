@@ -11,12 +11,12 @@ internal class RgKeyboardView(context: Context) : LinearLayout(context) {
     private var rendered: List<Any?>? = null
     init { orientation = VERTICAL; visibility = GONE; setBackgroundColor(android.graphics.Color.BLACK) }
 
-    fun render(controller: RgPresentationController) {
-        val keyboard = controller.keyboard
+    fun render(input: RgKeyboardInput) {
+        val keyboard = input.keyboard
         val rows = keyboard.rows() + listOf(listOf(RgKeyboard.Key.Command.SHIFT, RgKeyboard.Key.Command.SYMBOLS,
             RgKeyboard.Key.Command.SPACE, RgKeyboard.Key.Command.BACKSPACE, RgKeyboard.Key.Command.ENTER,
             RgKeyboard.Key.Command.DONE))
-        val signature = listOf(keyboard.generation, keyboard.visible, rows.flatten().map(controller::canKey))
+        val signature = listOf(keyboard.generation, keyboard.visible, rows.flatten().map(input::canKey))
         if (signature == rendered) return
         rendered = signature
         removeAllViews(); visibility = if (keyboard.visible) VISIBLE else GONE
@@ -24,7 +24,7 @@ internal class RgKeyboardView(context: Context) : LinearLayout(context) {
         if (keyboard.destination == RgKeyboard.Destination.ADDRESS) {
             addView(LinearLayout(context).apply {
                 orientation = HORIZONTAL
-                addView(button(controller, RgKeyboard.Key.Command.LEFT), LayoutParams(dp(42), dp(32)))
+                addView(button(input, RgKeyboard.Key.Command.LEFT), LayoutParams(dp(42), dp(32)))
                 addView(TextView(context).apply {
                     text = keyboard.draft.substring(0, keyboard.caret) + "│" + keyboard.draft.substring(keyboard.caret)
                     setTextColor(android.graphics.Color.WHITE); textSize = 13f
@@ -32,18 +32,18 @@ internal class RgKeyboardView(context: Context) : LinearLayout(context) {
                     contentDescription = context.getString(R.string.keyboard_address)
                     isSaveEnabled = false
                 }, LayoutParams(0, dp(32), 1f))
-                addView(button(controller, RgKeyboard.Key.Command.RIGHT), LayoutParams(dp(42), dp(32)))
+                addView(button(input, RgKeyboard.Key.Command.RIGHT), LayoutParams(dp(42), dp(32)))
             })
         }
         rows.forEach { keys ->
             addView(LinearLayout(context).apply {
                 orientation = HORIZONTAL
-                keys.forEach { key -> addView(button(controller, key), LayoutParams(0, dp(36), 1f)) }
+                keys.forEach { key -> addView(button(input, key), LayoutParams(0, dp(36), 1f)) }
             }, LayoutParams(LayoutParams.MATCH_PARENT, dp(36)))
         }
     }
-    private fun button(controller: RgPresentationController, key: RgKeyboard.Key) = Button(context).apply {
-        val keyboard = controller.keyboard
+    private fun button(input: RgKeyboardInput, key: RgKeyboard.Key) = Button(context).apply {
+        val keyboard = input.keyboard
         text = when (key) {
             is RgKeyboard.Key.Character -> key.text
             RgKeyboard.Key.Command.SHIFT -> if (keyboard.uppercase) "ABC" else "abc"
@@ -66,8 +66,8 @@ internal class RgKeyboardView(context: Context) : LinearLayout(context) {
         isAllCaps = false; textSize = 12f; minWidth = 0; minimumWidth = 0; minHeight = 0; minimumHeight = 0
         setPadding(0,0,0,0); isSaveEnabled = false
         tag = keyboard.capture(key)
-        isEnabled = controller.canKey(key)
-        setOnClickListener { controller.key(tag as RgKeyboard.Intent) }
+        isEnabled = input.canKey(key)
+        setOnClickListener { input.key(tag as RgKeyboard.Intent) }
     }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 }

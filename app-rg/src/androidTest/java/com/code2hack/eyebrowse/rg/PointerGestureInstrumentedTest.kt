@@ -235,7 +235,7 @@ class PointerGestureInstrumentedTest {
         s.main { activity ->
             val image=activity.findViewById<ImageView>(R.id.rg_page)
             val input=activity.presentation.inputSnapshot().copy(owner=ControlOwner.RG,pageReady=true)
-            val center=s.center(activity,image);val g=checkNotNull(activity.inputRouter.imageGeometry(input))
+            val center=s.center(activity,image);val g=checkNotNull(activity.inputTarget.imageGeometry(input))
             val mapped=checkNotNull(g.pagePoint(center))
             assertEquals(g.profile.width/2f,mapped.x,1f);assertEquals(g.profile.height/2f,mapped.y,1f)
             val recenter=activity.findViewById<Button>(R.id.rg_recenter);recenter.isEnabled=false

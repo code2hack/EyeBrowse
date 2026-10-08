@@ -18,6 +18,8 @@ class MainActivity : Activity() {
     private lateinit var pointer: PointerOverlay
     internal lateinit var inputRouter: RgInputRouter
         private set
+    internal lateinit var inputTarget: LegacyRgInputTarget
+        private set
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -68,7 +70,7 @@ class MainActivity : Activity() {
                 if(::inputRouter.isInitialized) inputRouter.surfaceChanged()
             }
             override fun keyboardChanged() {
-                keyboard.render(presentation)
+                keyboard.render(inputTarget)
                 location.isEnabled = presentation.canOpenAddress()
                 val reading = presentation.reading
                 val compact = presentation.keyboard.visible || reading
@@ -119,7 +121,8 @@ class MainActivity : Activity() {
             startActivity(Intent(this,RgPairingActivity::class.java))
             finish()
         }
-        inputRouter=RgInputRouter(this,pointer,presentation) { accepted ->
+        inputTarget=LegacyRgInputTarget(this,pointer,presentation)
+        inputRouter=RgInputRouter(this,pointer,inputTarget,root) { accepted ->
             findViewById<TextView>(R.id.rg_pointer_status).setText(when {
                 !pointer.inputPosition().available -> R.string.pointer_unavailable
                 accepted -> R.string.pointer_ready
@@ -128,6 +131,8 @@ class MainActivity : Activity() {
         }
         presentation.inputSurfaceAvailable = inputRouter::surfaceAvailable
         inputRouter.onModeToggleIntent = { presentation.toggleReading() }
+        inputRouter.legacyReadingActive = { presentation.reading }
+        inputRouter.onLegacySwipe = presentation::suspendReadingScroll
     }
     @Deprecated("Legacy Activity Back callback")
     override fun onBackPressed() {

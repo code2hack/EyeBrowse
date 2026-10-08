@@ -1,10 +1,9 @@
 package com.code2hack.eyebrowse.rg
 
 import com.code2hack.eyebrowse.core.link.control.EditorLimits
-import com.code2hack.eyebrowse.core.link.control.EditorTarget
 
 /** Only address text is held locally. Webpage values/passwords never enter this model. */
-internal class RgKeyboard {
+internal class RgKeyboard<Editor> {
     enum class Destination { ADDRESS, FIELD }
     sealed interface Key {
         data class Character(val text: String) : Key {
@@ -20,7 +19,7 @@ internal class RgKeyboard {
         private set
     var activationCommandId: String? = null
         private set
-    var target: EditorTarget? = null
+    var target: Editor? = null
         private set
     var generation = 0L
         private set
@@ -40,7 +39,7 @@ internal class RgKeyboard {
         draft = address.takeIf { it.toByteArray(Charsets.UTF_8).size <= EditorLimits.ADDRESS_BYTES } ?: ""
         caret = draft.length
     }
-    fun openField(editor: EditorTarget, activation: String? = null) {
+    fun openField(editor: Editor, activation: String? = null) {
         reset(Destination.FIELD); target = editor; activationCommandId = activation
     }
     private fun reset(next: Destination) {
@@ -48,7 +47,7 @@ internal class RgKeyboard {
         draft = ""; caret = 0
     }
     fun close() { generation++; destination = null; target = null; activationCommandId = null; draft = ""; caret = 0 }
-    fun rebind(editor: EditorTarget?) { if (target != editor) { target = editor; generation++ } }
+    fun rebind(editor: Editor?) { if (target != editor) { target = editor; generation++ } }
     fun capture(key: Key) = Intent(generation, key)
     fun current(intent: Intent) = visible && intent.generation == generation
 
@@ -85,4 +84,11 @@ internal class RgKeyboard {
         generation++
         return true
     }
+}
+
+/** Native key rendering and dispatch need no concrete browser/controller or remote editor type. */
+internal interface RgKeyboardInput {
+    val keyboard: RgKeyboard<*>
+    fun canKey(key: RgKeyboard.Key): Boolean
+    fun key(intent: RgKeyboard.Intent): Boolean
 }

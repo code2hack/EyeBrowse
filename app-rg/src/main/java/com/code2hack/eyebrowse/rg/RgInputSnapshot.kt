@@ -9,12 +9,12 @@ internal enum class LocalInputAction { RECENTER, RETRY, PAIR, USE_GLASSES, USE_P
 /** A local delayed-intent fence. It is never sent on the wire or persisted as command authority. */
 internal data class RgInputSnapshot(
     val context: ControlContext?, val owner: ControlOwner?, val profile: PresentationProfile?,
-    val revision: Long, val pageReady: Boolean, val handoffReady: Boolean,
+    val revision: Long, override val pageReady: Boolean, val handoffReady: Boolean,
     val canGoBack: Boolean, val canGoForward: Boolean,
     val reservationRevision: Long = 0,
     val addressAvailable: Boolean = false,
     val addressReady: Boolean = false,
-) {
+) : RgInputState {
     fun allows(action: LocalInputAction): Boolean = when(action) {
         LocalInputAction.RECENTER,LocalInputAction.RETRY,LocalInputAction.PAIR -> true
         LocalInputAction.USE_GLASSES -> handoffReady && owner==ControlOwner.PHONE
