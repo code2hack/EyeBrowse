@@ -1,18 +1,18 @@
 # EyeBrowse SPEC v0.0.2
 
-**Revision:** D2 — Owner-directed standalone RG, multi-tab and strict HUD revision  
-**Status:** Published development-branch contract; exact HUD layout/visual approval gate OPEN  
+**Revision:** D2.1 — portrait-dimension correction to the standalone RG, multi-tab and strict HUD contract  
+**Status:** Published development-branch portrait correction; exact HUD layout/visual approval gate OPEN  
 **Product version:** v0.0.2, unreleased development  
 **Project Owner:** code2hack  
 **Editor:** Planner: SPEC Design  
 **Integration branch:** `work/v0.0.2-independent-clients`  
-**Preparation base:** `5e5299d9e0ae40a698f152c59ac939ba301a3900`  
+**Preparation base:** `f6ca270b41cebf04275be1b4b713e08d194967e2`  
 **Preserved v0.0.1 source:** `2b217f5fb8d376d0f3d81dcac03006aa9919f197`  
-**Mandatory companion:** [RG HUD contract H1](docs/design/v0.0.2-rg-hud.md)
+**Mandatory companion:** [RG HUD contract H1.1](docs/design/v0.0.2-rg-hud.md)
 
 ## 0. Authority and document use
 
-This file is the complete v0.0.2 specification on the migration branch. It replaces the previous SPEC there; obsolete requirements are not appended beneath overriding paragraphs. `main` remains a separate preserved baseline until the authorized integration process completes.
+This file is the complete v0.0.2 portrait-corrected specification on the migration branch. It replaces the previous SPEC there; obsolete requirements are not appended beneath overriding paragraphs. `main` remains a separate preserved baseline until the authorized integration process completes.
 
 The Owner's latest directions require a standalone RG browser, built-in input, a continuously visible bounded cursor, vertical edge scrolling, multiple tabs, bookmarking, QR scan and Settings. The one-row toolbar order and black-background presentation are mandatory. The earlier single-tab and unassigned-swipe assumptions do not govern the RG design.
 
@@ -59,9 +59,9 @@ The migration preserves useful existing browser/input logic, not the requirement
 
 ### 2.1 Display and devices
 
-The canonical HUD review canvas is **640 pixels wide by 480 pixels high, landscape**. This explicitly replaces the earlier portrait mockup assumption. The full available app display is used. Android-reported buffer orientation, display rotation, insets and density must be measured on the real RG; they are not inferred from image dimensions.
+The RG display and canonical HUD review canvas are **480 pixels wide by 640 pixels high, portrait**. Dimensions in this specification always use **width × height** order. The full available app display is used. Android-reported buffer orientation, display rotation, insets and density must be measured on the real RG; they are not inferred from image dimensions.
 
-The runtime must implement a verified mapping to the required landscape presentation. It must not pass a portrait screenshot stretched to 640 × 480 as layout evidence. If the actual device configuration cannot expose that usable presentation through supported application behavior, report the concrete mismatch before changing the target or secretly cropping/scaling the design.
+The runtime must use the native **480 × 640 portrait** presentation. Do not request landscape rotation, transpose width and height, stretch a landscape screenshot, or crop the screen to satisfy the erroneous previous 640-wide layout. Any genuine runtime geometry mismatch must be recorded without silently changing the target. The one-row toolbar is recomputed for 480 pixels of width; its compact address text yields space, not the required controls or the bookmark star.
 
 Retain an Android 12/API-32-compatible RG path. The historical physical RG identity is `1906092617103125`; the current Phone regression reference is the authorized S20+ SM-G9860/API31 (`R5CN30NA8GX`). Manager verifies current access, identity, software and screen procedures. No unobserved hardware or wearer condition is inferred from these references.
 
@@ -253,8 +253,8 @@ Camera access is limited to explicit QR scanning, with permission, cancellation 
 
 | Quantity | Bound/default |
 | --- | --- |
-| Canonical HUD canvas | 640 × 480, width × height, landscape. |
-| Reference toolbar | One fixed 48-reference-pixel row, details in HUD H1; numeric layout awaits HUD-G1. |
+| Canonical HUD canvas | 480 × 640, width × height, portrait. |
+| Reference toolbar | One fixed 48-reference-pixel row, details in HUD H1.1; numeric layout awaits HUD-G1. |
 | Standard edge-scroll rate | 240 native viewport px/s; new bounded Settings presets require HUD-G1. |
 | Valid sample → visible cursor / edge response | At most 100 ms in declared device/replay conditions. |
 | Inward return after saturation | At most 100 ms after valid inward input, independent of prior outward angle/duration. |
@@ -268,7 +268,7 @@ Measure native scroll units and qualified monotonic clocks. Do not redefine no-o
 
 ### 12.1 HUD-G1 / HUD-G2
 
-**HUD-G1 is OPEN.** Before production HUD work is accepted for implementation, the Owner must review the exact HUD contract revision and a complete native-size reference/prototype set or explicitly waive the image portion while approving the exact layout contract. The record identifies revision/hash, approved states and any deviations. None of the existing generated images is a complete approved reference: omissions, portrait geometry, duplicate pointer marks or missing keys are not authorized behavior.
+**HUD-G1 is OPEN.** Before production HUD work is accepted for implementation, the Owner must review the exact HUD contract revision and a complete native-size reference/prototype set or explicitly waive the image portion while approving the exact layout contract. The record identifies revision/hash, approved states and any deviations. None of the existing generated images is a complete approved reference: omissions, incorrect dimensions/orientation, duplicate pointer marks or missing keys are not authorized behavior.
 
 Qualification and behavior-preserving work in #28/#29 may continue. Prototype/layout validation specifically needed for HUD-G1 may be assigned as design work; that is not permission to ship a provisional layout. Manager must reconcile the design gate and expanded tab/bookmark/QR/settings/dark-output work into current ticket plans before dispatching affected implementation.
 
@@ -298,7 +298,7 @@ Use independent owned-fixture observations for values, selection, submissions, t
 | V2-A12 | Restart/durable storage/network loss with honest recovery and no consequential replay. |
 | V2-A13 | Data-preserving upgrade, inert obsolete records and intact Phone browser/data. |
 | V2-A14 | Exact-head review, combined journey, limits/privacy and verified cleanup. |
-| V2-A15 | HUD-G1 receipt and HUD-G2: all eight toolbar hit targets, one row, landscape geometry, black palette, keys/menu/state inventory. |
+| V2-A15 | HUD-G1 receipt and HUD-G2: all eight toolbar hit targets, one row, 480-wide × 640-high portrait geometry, black palette, keys/menu/state inventory. |
 | V2-A16 | At least four real tabs: add/select/counter/swipe/close/boundaries/last-tab behavior, history and no background input. |
 | V2-A17 | Outline/filled star on correct committed page, add/remove persistence, list/empty/error and reopen semantics. |
 | V2-A18 | Real camera lifecycle plus decoder path, URL preview/confirmation, invalid/permission/cancel and stale scan guards. |
@@ -311,7 +311,7 @@ Final integration includes navigation, multiple tabs and both swipe directions, 
 
 Issues #28–#33 remain the original canonical migration tickets. Their publication predates the added tabs/bookmarks/QR/settings and strict HUD directions. The issue index records the updated authority. It is not accurate to treat the old single-page text or unassigned swipes as current requirements.
 
-The responsible Planner and Manager must reconcile affected ticket scopes/dependencies and supply current-baseline ticket plans before work. #28 engine/editor qualification and #29 refactoring remain independently useful. #30 and later UI work must use this SPEC and HUD H1, pass HUD-G1, and have a mapped implementation slice for the newly required functions. This edit does not silently assign all new work to an already dispatched Worker or invent completed tickets.
+The responsible Planner and Manager must reconcile affected ticket scopes/dependencies and supply current-baseline ticket plans before work. #28 engine/editor qualification and #29 refactoring remain independently useful. #30 and later UI work must use this SPEC and HUD H1.1, pass HUD-G1, and have a mapped implementation slice for the newly required functions. This edit does not silently assign all new work to an already dispatched Worker or invent completed tickets.
 
 Keep historical R3 and v0.0.1 evidence at their original references. Maintain an explicit mapping of surviving safety tests and intentionally replaced behavior. Do not delete still-needed Phone/shared code, nor carry remote-only ordinals/capture leases into local operations.
 
@@ -319,7 +319,7 @@ The designated editors handle protected articles. Implementation PRs target the 
 
 ## 14. References
 
-- [Mandatory RG HUD H1](docs/design/v0.0.2-rg-hud.md).
+- [Mandatory RG HUD H1.1](docs/design/v0.0.2-rg-hud.md).
 - [Current issue index and reconciliation status](docs/plans/v0.0.2-issues.md).
 - `AGENTS.md`, `DEV.md`, and `docs/decisions/0001-kotlin-only-first-party-code.md`.
 - Historical R3: `docs/plans/v0.0.2-standalone-rg-r3.md`; its earlier tab/swipe/layout assumptions are not the current contract.
