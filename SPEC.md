@@ -153,7 +153,7 @@ These bounded alternatives are review defaults; the mandatory initial rate stays
 
 Keep a single built-in pointer over the active EyeBrowse window, including keyboard, menu and utility states. Sensor unavailability freezes a visible unavailable cursor and disables unsafe actions; it does not hide the pointer or continue scrolling. The app is not required to draw over Android system permission screens it does not own.
 
-Automatically establish a fresh head reference near the screen center on initial usable acquisition. Resume/reacquisition must avoid stale deltas and cannot rearm an old edge episode. No button, menu item or substitute gesture for manual recentering is introduced.
+Automatically establish a head reference near screen center when tracking becomes usable. On resume, use current fresh sensor samples for ordinary pointer/edge behavior; do not synthesize motion from paused tracking. No manual recenter button, menu item or substitute gesture is introduced.
 
 Yaw and pitch control horizontal and vertical pointer motion through timestamp-aware smoothing/noise handling. Measure the full drawable app screen, actual insets, rotation and glyph size. The entire glyph, internal executable pointer position and hit-test coordinates stay in bounds. The page viewport and full cursor bounds are distinct.
 
