@@ -6,9 +6,9 @@ import com.code2hack.eyebrowse.core.link.presentation.PresentationProfile
 internal data class PointerImageGeometry(
     val rootToDrawable: List<Float>, val drawableWidth: Int, val drawableHeight: Int,
     val visibleContent: PointerBounds, val profile: PresentationProfile,
-) : RgInputGeometry {
+) {
     init { require(rootToDrawable.size==9 && rootToDrawable.all(Float::isFinite)) }
-    override fun pagePoint(root: InputPoint): InputPoint? {
+    fun pagePoint(root: InputPoint): InputPoint? {
         if(!visibleContent.contains(root) || drawableWidth<=0 || drawableHeight<=0) return null
         val m=rootToDrawable
         val w=m[6]*root.x+m[7]*root.y+m[8]

@@ -62,7 +62,7 @@ class RgPresentationController(context: Context, private val surface: Surface) :
             commands.demand(reservationOwner,CommandSequence.Namespace.of(current.context))
         else commands.cancel(reservationOwner)
     }
-    internal val keyboard = RgKeyboard<EditorTarget>()
+    internal val keyboard = RgKeyboard()
     internal var reading = false
         private set
     private val headScroll = HeadScrollModel()
@@ -171,13 +171,13 @@ class RgPresentationController(context: Context, private val surface: Surface) :
         addressEligible() && slot.phase == CommandSequence.Phase.READY &&
             slot.namespace == CommandSequence.Namespace.of(current.context)
     }
-    internal fun canKey(key: RgKeyboard.Key): Boolean = synchronized(lock) {
+    internal fun canKey(key: RgKeyboardKeys.Key): Boolean = synchronized(lock) {
         if (!keyboard.visible) return@synchronized false
         when (key) {
-            RgKeyboard.Key.Command.DONE, RgKeyboard.Key.Command.SHIFT, RgKeyboard.Key.Command.SYMBOLS -> true
-            RgKeyboard.Key.Command.LEFT, RgKeyboard.Key.Command.RIGHT -> keyboard.destination == RgKeyboard.Destination.ADDRESS
+            RgKeyboardKeys.Key.Command.DONE, RgKeyboardKeys.Key.Command.SHIFT, RgKeyboardKeys.Key.Command.SYMBOLS -> true
+            RgKeyboardKeys.Key.Command.LEFT, RgKeyboardKeys.Key.Command.RIGHT -> keyboard.destination == RgKeyboard.Destination.ADDRESS
             else -> if (keyboard.destination == RgKeyboard.Destination.ADDRESS)
-                key != RgKeyboard.Key.Command.ENTER || canSubmitAddress()
+                key != RgKeyboardKeys.Key.Command.ENTER || canSubmitAddress()
             else keyboardCompatible && canAct() && editorState?.let { it.ready && it.context == state?.context && it.target == keyboard.target } == true
         }
     }
@@ -203,20 +203,20 @@ class RgPresentationController(context: Context, private val surface: Surface) :
     internal fun key(intent: RgKeyboard.Intent): Boolean = synchronized(lock) {
         if (!keyboard.current(intent) || !canKey(intent.key)) return@synchronized false
         when (val key = intent.key) {
-            RgKeyboard.Key.Command.DONE -> { dismissKeyboard(); true }
-            RgKeyboard.Key.Command.SHIFT, RgKeyboard.Key.Command.SYMBOLS -> keyboard.local(intent).also { status(statusText) }
+            RgKeyboardKeys.Key.Command.DONE -> { dismissKeyboard(); true }
+            RgKeyboardKeys.Key.Command.SHIFT, RgKeyboardKeys.Key.Command.SYMBOLS -> keyboard.local(intent).also { status(statusText) }
             else -> if (keyboard.destination == RgKeyboard.Destination.ADDRESS) {
-                if (key == RgKeyboard.Key.Command.ENTER) {
+                if (key == RgKeyboardKeys.Key.Command.ENTER) {
                     val id = action(BrowserAction.OpenAddress(keyboard.draft)) ?: return@synchronized false
                     pendingAddress = id to keyboard.generation; true
                 } else keyboard.local(intent).also { ok -> status(if (ok) "Edit address" else "Address is too long") }
             } else {
                 val target = keyboard.target ?: return@synchronized false
                 val operation = when (key) {
-                    is RgKeyboard.Key.Character -> EditorOperation.Insert(key.text)
-                    RgKeyboard.Key.Command.SPACE -> EditorOperation.Insert(" ")
-                    RgKeyboard.Key.Command.BACKSPACE -> EditorOperation.Backspace
-                    RgKeyboard.Key.Command.ENTER -> EditorOperation.Enter
+                    is RgKeyboardKeys.Key.Character -> EditorOperation.Insert(key.text)
+                    RgKeyboardKeys.Key.Command.SPACE -> EditorOperation.Insert(" ")
+                    RgKeyboardKeys.Key.Command.BACKSPACE -> EditorOperation.Backspace
+                    RgKeyboardKeys.Key.Command.ENTER -> EditorOperation.Enter
                     else -> return@synchronized false
                 }
                 action(BrowserAction.Edit(target, operation)) != null

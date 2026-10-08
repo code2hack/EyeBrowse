@@ -1,5 +1,6 @@
 package com.code2hack.eyebrowse.rg
 
+import android.app.Activity
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -30,7 +31,7 @@ internal class RawPoseReplay : HeadPoseSource {
         val half=Math.toRadians(-degrees)/2
         sample=RotationSample(0,sin(half).toFloat(),0f,0f,cos(half).toFloat())
     }
-    fun aim(activity: MainActivity, point: InputPoint) {
+    fun aim(activity: Activity, point: InputPoint) {
         val root=activity.findViewById<View>(R.id.rg_root)
         val radius=8*activity.resources.displayMetrics.density
         val left=root.paddingLeft+radius;val right=root.width-root.paddingRight-radius

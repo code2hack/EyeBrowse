@@ -82,7 +82,7 @@ class ReviewRecoveryJourneyTest {
             val profile=checkNotNull(j.peer.profile())
             val x=(geometry.getDouble(0)*profile.width).toFloat();val y=(geometry.getDouble(1)*profile.height).toFloat()
             j.aim(j.pageRoot(x,y));j.dispatched(j.pad(),"activate real field")
-            j.await("real field keyboard ready",2_000) { j.peer.keyboard.visible && j.peer.canKey(RgKeyboard.Key.Character("a")) }
+            j.await("real field keyboard ready",2_000) { j.peer.keyboard.visible && j.peer.canKey(RgKeyboardKeys.Key.Character("a")) }
             fresh()
         }
         fun buttons(view:View):List<Button> = when(view) {
@@ -90,7 +90,7 @@ class ReviewRecoveryJourneyTest {
             is ViewGroup -> (0 until view.childCount).flatMap { buttons(view.getChildAt(it)) }
             else -> emptyList()
         }
-        fun key(key:RgKeyboard.Key,operation:EditorOperation):Pair<BrowserActionMessage,Long> {
+        fun key(key:RgKeyboardKeys.Key,operation:EditorOperation):Pair<BrowserActionMessage,Long> {
             j.await("native key eligible",2_000) { j.peer.canKey(key) }
             val context=checkNotNull(j.peer.browserState()).context
             val target=checkNotNull(j.peer.keyboard.target)
@@ -182,25 +182,25 @@ class ReviewRecoveryJourneyTest {
                 screenshot("stopped");checkPhone("settled_after_stop")
             } else {
                 fieldKeyboard();faults!!.holdActions=true
-                val (a,at)=key(RgKeyboard.Key.Character("a"),EditorOperation.Insert("a"))
+                val (a,at)=key(RgKeyboardKeys.Key.Character("a"),EditorOperation.Insert("a"))
                 val originalTarget=j.peer.keyboard.target
                 expired(at);checkPhone("lost_edit")
                 faults!!.holdActions=false;fieldKeyboard();faults!!.holdActions=true
                 assertNotEquals(originalTarget,j.peer.keyboard.target)
-                val (b,_)=key(RgKeyboard.Key.Character("b"),EditorOperation.Insert("b"))
+                val (b,_)=key(RgKeyboardKeys.Key.Character("b"),EditorOperation.Insert("b"))
                 val successor=j.peer.keyboard.target
                 j.main { faults!!.releaseAction(a.commandId) }
                 assertEquals(b.commandId,pending());assertEquals(successor,j.peer.keyboard.target)
                 j.main { faults!!.releaseAction(b.commandId) }
                 j.await("B matching result retires",2_000) { pending()==null }
                 replay(b,"STALE_COMMAND_SEQUENCE");checkPhone("duplicate_edit")
-                val (enter,enterAt)=key(RgKeyboard.Key.Command.ENTER,EditorOperation.Enter)
+                val (enter,enterAt)=key(RgKeyboardKeys.Key.Command.ENTER,EditorOperation.Enter)
                 assertEquals("SUBMISSION_REQUESTED",capture(enter.commandId).reason)
                 faults!!.discardActions();expired(enterAt);fresh()
                 replay(enter,"STALE_CONTEXT");checkPhone("lost_enter")
                 faults!!.holdActions=false;fieldKeyboard();faults!!.holdActions=true
-                val intent=j.peer.keyboard.capture(RgKeyboard.Key.Character("x"))
-                val (c,_)=key(RgKeyboard.Key.Character("c"),EditorOperation.Insert("c"))
+                val intent=j.peer.keyboard.capture(RgKeyboardKeys.Key.Character("x"))
+                val (c,_)=key(RgKeyboardKeys.Key.Character("c"),EditorOperation.Insert("c"))
                 val before=checkNotNull(j.peer.browserState()).context
                 assertTrue(j.peer.keyboard.visible);assertEquals(c.commandId,pending())
                 screenshot("pending");checkPhone("pending_edit")
@@ -229,7 +229,7 @@ class ReviewRecoveryJourneyTest {
                 replay(c,"STALE_CONTEXT");screenshot("recovered");checkPhone("editor_recovered");observingRecovery.set(false)
                 faults!!.holdActions=false;fieldKeyboard();faults!!.holdActions=true
                 assertNotEquals((c.action as BrowserAction.Edit).target,j.peer.keyboard.target)
-                val (d,_)=key(RgKeyboard.Key.Character("d"),EditorOperation.Insert("d"))
+                val (d,_)=key(RgKeyboardKeys.Key.Character("d"),EditorOperation.Insert("d"))
                 j.main { faults!!.releaseAction(d.commandId) };checkPhone("explicit_fresh_edit")
                 j.main { j.peer.dismissKeyboard() };fresh()
                 faults!!.holdActions=true
