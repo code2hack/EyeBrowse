@@ -39,6 +39,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":core:browser"))
     implementation(project(":core:link"))
     implementation("androidx.activity:activity-ktx:1.9.3")
     implementation("androidx.core:core-ktx:1.13.1")
