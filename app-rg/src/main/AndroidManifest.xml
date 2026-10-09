@@ -20,6 +20,9 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/Theme.EyeBrowseRg">
+        <!-- RG-local browser foundation. #33 owns the ordinary launcher/default cutover. -->
+        <activity android:name=".LocalBrowserActivity" android:exported="false"
+            android:screenOrientation="portrait" android:theme="@style/Theme.LocalBrowser" />
         <activity
             android:name=".MainActivity"
             android:exported="true">

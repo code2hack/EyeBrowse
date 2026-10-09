@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.http.SslError
 import android.view.View
+import android.view.MotionEvent
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
@@ -19,7 +20,7 @@ import com.code2hack.eyebrowse.core.browser.AddressPolicy
 import org.json.JSONObject
 
 /** One RG-owned page. No Phone link, captured input target, tab policy or production HUD. */
-internal class LocalBrowserSession(context: Context) {
+internal class LocalBrowserSession(context: Context, private val onPageTouchUp: () -> Unit = {}) {
     enum class Phase { EMPTY, LOADING, READY, ERROR, INTERRUPTED }
 
     class State(
@@ -48,6 +49,10 @@ internal class LocalBrowserSession(context: Context) {
         view.setBackgroundColor(Color.BLACK)
         view.visibility = View.INVISIBLE
         view.defaultFocusHighlightEnabled = false
+        view.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_UP) onPageTouchUp()
+            false // Native WebView handles the touch, including after explicit renderer recovery.
+        }
         view.settings.apply {
             javaScriptEnabled = true
             allowFileAccess = false

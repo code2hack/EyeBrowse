@@ -1,15 +1,236 @@
-# RG-local navigation preparation and HUD-G1 reference
+# RG-local browser, HUD and navigation evidence
 
-Worker: Worker-#30 · issue #30 · assignment revision 1 · batch-002.
+Worker: Worker-#30 · issue #30 · assignment revision 1 · production continuation 1 · batch-002.
 
-This record covers **I30-T01/T02 pre-G1 preparation**, not the completed issue,
-production HUD conformance or the ordinary RG launcher cutover. The assigned
-baseline is `5e7585fb532958343222dedeca19ab0ad74b42ba`, SPEC **D2.2** and HUD
-**H1.2**. [HUD-G1](../../design/v0.0.2-hud-g1-review.md) remains **OPEN**.
-I30-T03 production tabs/HUD/Bookmarks completion awaits the actual Owner design
-disposition; final I30-T04 review/acceptance follows the required evidence.
+**HUD-G1 is approved.** The [Owner decision](https://github.com/code2hack/EyeBrowse/issues/30#issuecomment-6075367078)
+approves unchanged SPEC D2.2 / HUD H1.2 and its numeric, typography, tab-close and
+Settings completion defaults. The [Planner reconciliation](https://github.com/code2hack/EyeBrowse/issues/30#issuecomment-6075552489)
+is at integration 221d676f8f0eabdceca38aa959819a64d7efbe81; its two changed planning
+documents do not change the implementation inputs. SPEC blob
+1acb8ad6d7a0d77d660a5137010efe17ad39ff0a and HUD blob
+070ef8b84d321974af2f35fc68dc1ed2febb91cc remain binding.
 
-## Source boundary
+The production continuation starts from independently accepted preparation
+3d308c04ec34d9f28064bdcec23f486b2b26f89e, on the original integration baseline
+5e7585fb532958343222dedeca19ab0ad74b42ba. T01 attempt3/failure2 and T02
+attempt1/failure0 remain their historical accounting. T03 and T04 are separate
+attempt1 objectives. **Production native verification and independent whole-candidate
+review are pending**; this source/check record does not complete issue #30 or HUD-G2.
+
+## Production source and entry
+
+LocalBrowserActivity is main-source product code with native Views and one
+LocalBrowserSession/WebView per tab. Its release manifest entry is non-exported;
+the debug overlay exports an explicit development entry for qualification.
+The ordinary MainActivity launcher is unchanged until #33. This Activity starts
+no Phone pairing, remote frame, controller, ordinal or Phone-link service.
+
+LocalTabs owns ordered live browser objects. Add appends and selects without a
+four-tab cap; boundaries do not wrap. Close selects the next remaining position
+or the preceding last position; closing the sole tab creates a fresh empty 1/1.
+A new empty tab begins address entry. Selection hides the old surface, clears
+ordinary native focus, dismisses its keyboard and pauses that WebView; selection
+resumes the existing chosen View and its own history. No tab is reconstructed
+merely to select it.
+
+The reused RgInputRouter is the single pad recognizer. One confirmed short tap
+dispatches one ordinary native touch at the current pointer; a double tap has
+no action. OEM Android 292/293 are bound to next/previous tab in browsing and
+keyboard states. Utility swipes are no-ops. **A replay using the observed pad
+device ID does not establish actual wearer-facing right/left directions.**
+That physical qualification remains an explicit resource/evidence need.
+
+NativeRgInputTarget remains the only direct input writer. Keys use the current
+shown native focus and its InputConnection; page/utility visibility controls
+ordinary input eligibility. No page-hit snapshots, retained editor/selection
+identities, generations, ABA validation, deferred keys or action queues are
+added. Navigation retains the unchanged shared AddressPolicy.
+
+A short, cancelable animation-frame observation after native page touch checks
+the current public WebView.onCheckIsTextEditor/hasFocus state for up to 750 ms to
+show the local keyboard. It retains no touch/key or original editor. Dismissal,
+navigation, tab/utility changes and pause remove the callback. This accommodates
+asynchronous renderer focus while the app window excludes the system IME.
+Native RG verification of automatic opening remains required; full field types,
+constraints and editor semantics remain #32's acceptance. Renderer replacement
+reattaches the same ordinary touch callback.
+
+## Approved geometry and current scope
+
+All coordinates and text sizes are rendered pixels, independent of Android dp.
+
+| Native region | Bounds (x, y, width, height) |
+| --- | --- |
+| Canvas / pointer overlay | 0, 0, 480, 640 |
+| One toolbar | 0, 0, 480, 48 |
+| Close / Back / Forward / Refresh | x = 0 / 48 / 96 / 144, y = 0, 48 × 48 |
+| Address slot | 192, 0, 176, 48 |
+| Editable address / independent trailing star | 192, 0, 128, 48 / 320, 0, 48, 48 |
+| Live tab counter / More | 368, 0, 64, 48 / 432, 0, 48, 48 |
+| Normal page / page with keyboard | 0, 48, 480, 592 / 0, 48, 480, 392 |
+| Built-in keyboard | 0, 440, 480, 200 |
+| More menu | 256, 48, 224, 192 |
+
+All eight controls remain visible and separately actionable, with disabled
+Back/Forward/Refresh/star retained. The compact address elides inside its fixed
+region; native editing reveals the retained full draft without moving the star
+or other controls. Outside editing, the compact preview uses the actual native
+location, independently of an unsent draft. A visible compact error/status
+consumes its covered-page taps. Ordinary labels are 20 px, secondary/status
+18 px, headings 24 px.
+App-owned fills are opaque black; outlines are #606060 at 1 px or selected
+#F2F2F2 at 2 px. Light/disabled text uses H1.2's palette. The production pointer
+uses a 16-pixel bounded light ring/dot footprint and gray unavailable indication;
+legacy consumers retain their existing appearance.
+
+Keyboard rows use H1.2's 44/44/44/48-pixel heights, 4-pixel gaps and 8-pixel side
+padding. English rows are qwertyuiop / asdfghjkl / Shift + zxcvbnm + Backspace.
+Shift changes case. Symbol rows are 1234567890 / :-@_?&=#% /
+Shift + +,;!'"() + Backspace. Both layers retain 123/ABC, Space, period, slash,
+Enter/Open and Done in the bottom row. Open and Done are separate real targets
+at (296,588,96,48) and (396,588,76,48). Address Open validates and navigates;
+invalid Open retains the draft/current page. Done does not intentionally submit.
+
+More has exactly Add new tab / Bookmarks / QR scan / Settings. Its outside-page
+tap is consumed while dismissing; native toolbar controls remain available.
+Tabs and Bookmarks have local Done exits below the same toolbar. QR scan and
+Settings destinations explicitly say they are not implemented here and name
+#33 / #31. They do not request camera access or change settings. Edge scrolling
+and overshoot remain #31, the complete field keyboard #32, and QR/ordinary
+launcher cutover/final integration #33.
+
+## Persistence, recovery and truthful errors
+
+A star toggles the committed READY page URL/title, even while an unsent address
+draft differs. It never submits the draft or deliberately blurs a current
+editor. The filled star reflects a successful durable result. LocalBookmarks
+stores normalized URL keys and titles in app-private
+local-browser/bookmarks.properties. Identity preserves meaningful path/query/
+fragment distinctions; repeated saves update the same entry.
+
+The store writes a same-directory temporary file, syncs its bytes and atomically
+replaces the destination before publishing success. Read/write/validation
+failures retain truthful state and a compact error; an unreadable file is not
+silently overwritten. Bookmarks lists saved entries, opens one in the current
+tab, removes an explicit item, and offers Retry/empty/error states. Native
+qualification must prove this filesystem route on RG, not only on the host.
+
+Only safe committed locations and selected tab index are saved at normal stop
+and in Activity saved state. Cold/recreated pages start interrupted/empty with
+recovery locations and require deliberate Open or bookmark selection; no
+uncertain navigation, POST, field values or JavaScript memory is replayed.
+Ordinary still-live pause/resume keeps the actual WebView/document. Normal
+engine cookies/site data remain under WebView ownership.
+
+Black loading/error pages use the accepted native INVISIBLE/clearFocus route;
+visible recovery controls remain usable. The live public stylesheet and
+FORCE_DARK_OFF policy remain bounded by the supported fixtures. Media is not
+inverted. This implementation does not claim arbitrary-site compatibility,
+provider security, compositor/optical evidence or full field acceptance.
+Release network policy, provider/global/private settings, trust and data are
+unchanged. The existing debug HTTP fixture allowance remains debug-only.
+
+## Current checks and requested native evidence
+
+Host checks use the shared build lock, measured memory before/at acquisition,
+JDK17, the assigned Android SDK and the existing two-worker/Xmx2g caps:
+
+~~~sh
+JAVA_HOME=/usr/lib/jvm/java-17-openjdk-arm64 \
+ANDROID_HOME=/home/code2hack/Android/Sdk \
+timeout 900s flock "$HOST_BUILD_LOCK" ./gradlew \
+  --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g --console=plain \
+  :app-rg:testDebugUnitTest :app-rg:assembleDebug \
+  :app-rg:assembleDebugAndroidTest :app-rg:lintDebug
+~~~
+
+The new host cases exercise four surviving tab objects/history, boundaries/
+closing, actual allocation failure, bookmark Unicode and URL distinctions,
+disk reload/removal, real filesystem failure and corrupt-file recovery.
+Only RG source/resources/manifests/tests change; no shared core or Phone source
+changes. Phone remains unavailable/unreserved, with applicable simultaneous
+integration evidence pending #33.
+
+The first host run executed 103 JVM cases with zero failures/errors/skips and
+built the app. Instrumentation compilation then rejected IntArray.mapNotNull;
+conversion to List corrects that test-source error. Lint had not completed.
+The failed log is retained as an intermediate check within this same T03 attempt.
+The final complete run passed all four requested gates in 42 seconds, with all 103
+RG JVM cases executed successfully (16 XML reports; zero failures/errors/skips).
+Gradle reported 19 executed/63 up-to-date actionable tasks. The full task log
+also retains skipped and NO-SOURCE tasks; dependency cache reuse is not a new
+core/Phone test result. Lint reported zero errors and 22 warnings. Two new
+orientation warnings describe the explicitly required portrait Activity; no
+suppression or layout waiver is applied. Nineteen Kotlin2.2-versus2.0 metadata
+reader diagnostics remain a static-analysis limitation despite task success.
+Exact task states, reports, APK/source hashes and diagnostics are preserved in
+the candidate handoff.
+
+The simplification pass retains one session class, one small ordered-tab model,
+one durable bookmark store and native Activity composition. It reuses the
+address policy, input writer, recognizer and pointer acquisition/model. Redundant
+keyboard layout requests during repeated loading callbacks were removed;
+focus observation is canceled through ordinary lifecycle handling. There is no
+new framework, parallel writer or feature/policy expansion.
+
+LocalBrowserInstrumentedTest targets the real production Activity and unchanged
+#28 fixture, with no device/bootstrap/service-start code. Proposed one reserved
+class invocation has four methods:
+
+| Method | Real observation required |
+| --- | --- |
+| approvedGeometryAndAddressEditingStayBlackAndRecoverable | Measured 480×640/toolbar/eight hit regions, 200-pixel keyboard, independent Open/Done, invalid long draft, actual links/history/refresh, exact More geometry/order/outside consumption, explicit incomplete utility exits and visible unavailable cursor. |
+| fourLiveTabsAndPadGesturesKeepCurrentNativeEffects | Four actual WebViews and independent history/live field, native pad short/double allocation effects including a fifth tab, both OEM tab bindings/boundaries, keyboard dismissal, no page scroll/submit/input effect, list selection and close/last-tab policy. Physical right/left qualification remains separate. |
+| bookmarksUseCommittedLocationAndDurableTruth | Actual star while draft differs, preserved focus, disk persistence, Activity recreation without automatic replay, bookmark open/removal, controlled owned app-private filesystem failure and truthful error/Retry/empty state. |
+| liveBlackAndHiddenRecoveryUseProductionWindow | Unchanged author-light/dynamic/author-dark field/media RGB samples, current native input/Done/pause-resume, real delayed loading/404, hidden touch/key/submit no-effect and visible input recovery. |
+
+Fifteen reached-only captures are declared: empty, address, more,
+tracking-unavailable, four-tabs, bookmarked-draft, cold-recovery, bookmarks,
+bookmark-error, bookmarks-empty, author-light, dynamic, field, loading and
+http-error. Each is an uncropped 480×640 owned-window PixelCopy after native
+frame commit, with a field-free geometry/focus/phase/visibility/timing sidecar.
+Native built-in key return and confirmed pad More/Add dispatch retain the
+SPEC's strict 100-ms check; recognition, editor completion and rendered results
+are separate observations. Sidecars retain measured dispatch counts/maxima.
+One recovery JSON records fixed dummy-fixture predicates/counters before/after
+native b, including after a failed wait. Strict original black/media oracles
+and fixture bytes are unchanged. Captures do not prove optical or physical
+compositor behavior; the 28 approved-design drawings remain simulated.
+
+The suite temporarily changes only this Activity's recovery metadata and
+restores the prior value in-process after closing. It adds/removes only its
+previously absent dummy fixture bookmark. It verifies that no preexisting
+entries would enter a capture. The controlled failure uses a unique owned cache
+file as a non-directory parent, then removes that file; it does not
+fill disk, change permissions, replace normal bookmark bytes or clear app data.
+Those precise effects require a fresh Manager native grant alongside the exact
+frozen app/test hashes, identity/access/trust preflight and fixed fixture.
+
+~~~sh
+adb -s "$RESERVED_RG_ENDPOINT" shell -T am instrument -w -r \
+  -e fixtureBaseUrl "$RESERVED_FIXTURE_BASE_URL" \
+  -e class com.code2hack.eyebrowse.rg.LocalBrowserInstrumentedTest \
+  com.code2hack.eyebrowse.rg.test/androidx.test.runner.AndroidJUnitRunner
+~~~
+
+There is currently **no device reservation**. No native production result,
+physical swipe direction, Phone PASS, final HUD-G2 or whole-issue acceptance is
+claimed. The exact candidate request supplies a bounded procedure and safe
+owned cleanup; resources are controlled by Manager.
+
+## Preserved preparation record
+
+The following is the original pre-G1 preparation boundary, results and procedure.
+Its OPEN/proposed/later-work statements describe that historical phase and are
+superseded by the current approval/production sections above. Original negatives,
+pixels, oracles and exact-head provenance remain intact. T01 attempt3 later
+completed five actual methods with five PASS terminals and five fresh 480×640
+captures/sidecars plus the field-free recovery JSON. The bounded owned cleanup
+was verified and resources released. Independent preparation acceptance is
+[PR #36 review 5466008458](https://github.com/code2hack/EyeBrowse/pull/36#pullrequestreview-5466008458).
+It is scoped preparation evidence, not a production HUD result.
+
+### Source boundary
 
 `LocalBrowserSession` owns one local Android WebView and black backing. Its
 ordinary callbacks expose actual URL/title/history/loading/error state to its
@@ -52,7 +273,7 @@ and fixed presentation; the diagnostic Activity and deterministic renderer
 remain separate. The simplification pass retains the existing policy and input
 components without introducing a browser/provider plugin framework.
 
-## Supported black-page route and limits
+### Supported black-page route and limits
 
 Preparation reuses #28's positively qualified route: black native window/root/
 page backing, `FORCE_DARK_OFF`, disabled native WebView focus highlighting, and
@@ -76,7 +297,7 @@ required actual failures must be retained/routed, not hidden as generic limits.
 The narrow existing Owner native temporary password-echo decision is preserved.
 This preparation adds no masking or global/provider setting workaround.
 
-## Deterministic G1 reference
+### Deterministic G1 reference
 
 [Open all 18 state IDs and 28 original PNGs](../hud-g1-reference/index.html).
 [The manifest](../hud-g1-reference/manifest.json) contains exact source/font/
@@ -95,7 +316,7 @@ trailing star, black fills, one pointer, Enter/Open and Done, exact More order,
 tab/bookmark/QR/Settings/tracking/error/edge/dark state coverage. Numeric
 completion defaults remain proposed. #31–#33 functional ownership is unchanged.
 
-## Host checks and reserved-device procedure
+### Host checks and reserved-device procedure
 
 Use the mission's lock with memory observations before and at acquisition,
 JDK17 `/usr/lib/jvm/java-17-openjdk-arm64`, SDK `/home/code2hack/Android/Sdk`, and

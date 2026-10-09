@@ -18,7 +18,8 @@ class PointerOverlay(context: Context, attrs: AttributeSet?=null) : View(context
     private var pendingFrame=false
     private var publishedAvailable=false
     private val paint=Paint(Paint.ANTI_ALIAS_FLAG)
-    private val radius=8*resources.displayMetrics.density
+    private var radius=8*resources.displayMetrics.density
+    private var hudAppearance=false
     val position get() = model.position
     val sourceRegistered get() = source.registered
     val sourceDescription get() = source.description
@@ -38,9 +39,13 @@ class PointerOverlay(context: Context, attrs: AttributeSet?=null) : View(context
 
     init { isClickable=false;isFocusable=false;importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO }
 
+    /** H1.2's 16 rendered-pixel footprint and light palette, independent of Android density. */
+    internal fun useLocalHudAppearance() { hudAppearance=true;radius=6f;invalidate() }
+
     fun bounds(left: Float, top: Float, right: Float, bottom: Float, rotation: Int) {
         // Keep the entire ring inside the measured usable root, including its actual insets.
-        val inset=minOf(radius,(right-left).coerceAtLeast(0f)/2,(bottom-top).coerceAtLeast(0f)/2)
+        val inset=minOf(if(hudAppearance) 8f else radius,
+            (right-left).coerceAtLeast(0f)/2,(bottom-top).coerceAtLeast(0f)/2)
         displayRotation=rotation
         model.resize(PointerBounds(left+inset,top+inset,right-inset,bottom-inset),rotation)
         publishAvailability();requestFrame()
@@ -117,9 +122,11 @@ class PointerOverlay(context: Context, attrs: AttributeSet?=null) : View(context
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val point=position
-        paint.style=Paint.Style.STROKE;paint.strokeWidth=4f;paint.color=Color.BLACK
+        paint.style=Paint.Style.STROKE;paint.strokeWidth=if(hudAppearance) 3f else 4f;paint.color=Color.BLACK
         canvas.drawCircle(point.x,point.y,radius,paint)
-        paint.strokeWidth=2f;paint.color=if(point.available) Color.CYAN else Color.GRAY
+        paint.strokeWidth=2f;paint.color=if(hudAppearance) {
+            if(point.available) 0xfff2f2f2.toInt() else 0xff8a8a8a.toInt()
+        } else if(point.available) Color.CYAN else Color.GRAY
         canvas.drawCircle(point.x,point.y,radius,paint)
         paint.style=Paint.Style.FILL
         canvas.drawCircle(point.x,point.y,2f,paint)
