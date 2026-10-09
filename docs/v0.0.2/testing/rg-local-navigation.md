@@ -324,7 +324,8 @@ product input/recognizer code and the unchanged `ab` oracle.
 
 After refocus, the test records field-free dummy editor predicates, selection
 offsets, counters and current native focus/visibility. It uses the existing
-on-screen Right key, then requires the actual unchanged `a` and collapsed
+native input target's Right command (no compact-keyboard button is added), then
+requires the actual unchanged `a` and collapsed
 selection1/1 before typing `b`. Caret movement must leave input/submit counts
 and the current tab unchanged. The test awaits and asserts actual `ab`, then
 retains the original tab-switch keyboard-dismissal and field-preservation

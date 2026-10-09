@@ -373,9 +373,16 @@ class LocalBrowserInstrumentedTest {
             }
         }
         observeEditor("after-refocus")
-        // A refocus does not establish an append position. Use the existing native
-        // keyboard to place the caret; never assign a DOM value or selection.
-        key(scene, RgKeyboardKeys.Key.Command.RIGHT)
+        // A refocus does not establish an append position. Dispatch the existing
+        // native caret command; it has no button in this issue's compact keyboard.
+        // Never assign a DOM value or selection.
+        scene.onActivity {
+            val start = SystemClock.uptimeMillis()
+            assertTrue(it.input.key(RgKeyboardKeys.Key.Command.RIGHT))
+            val elapsed = SystemClock.uptimeMillis() - start
+            keyDispatchCount++; maxKeyDispatchMs = maxOf(maxKeyDispatchMs, elapsed)
+            assertTrue("native caret dispatch <=100ms", elapsed <= 100)
+        }
         await("native Right collapses the current caret at the unchanged field end") {
             js(scene, "(()=>{const e=document.getElementById('text');return document.activeElement===e && " +
                 "e.value==='a' && e.selectionStart===1 && e.selectionEnd===1})()") == "true"
