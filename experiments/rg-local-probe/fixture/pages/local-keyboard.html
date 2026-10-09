@@ -1,0 +1,24 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>RG built-in keyboard fixture</title>
+<style>
+html,body { background:#000; color:#fff; margin:0; font:16px sans-serif; color-scheme:dark }
+label { display:block; margin:8px; height:62px }
+input,textarea,[contenteditable] { display:block; width:96%; height:36px; box-sizing:border-box; background:#000; color:#fff; border:1px solid #888; font:18px sans-serif; white-space:pre-wrap }
+button { background:#000; color:#fff; border:1px solid #888 }
+</style>
+<!-- Declarative dummy seeds exercise native Unicode preservation/deletion. No private values. -->
+<form id="form" action="/submit"><label>Text<input id="text" value="aé中🙂z" autocomplete="off"></label><button type="submit">Harmless submit</button></form>
+<label>Password<input id="password" type="password" value="aé中🙂z" autocomplete="off"></label>
+<label>Textarea<textarea id="multiline">aé中🙂z</textarea></label>
+<label>Plain<div id="plain" contenteditable="true">aé中🙂z</div></label>
+<div style="height:120px">Field reveal context</div>
+<label>Lower text<input id="lower" autocomplete="off"></label>
+<div style="height:900px">Scroll area</div>
+<script>
+window.fixtureInputs=0; window.fixtureSubmits=0; window.fixtureIdentity=String(Math.random());
+document.addEventListener('input',()=>fixtureInputs++);
+document.getElementById('form').addEventListener('submit',e=>{e.preventDefault();fixtureSubmits++});
+</script>
