@@ -525,6 +525,19 @@ class LocalBrowserInstrumentedTest {
             scene.onActivity { index = it.bookmarks.entries.indexOfFirst { b -> b.url == url }; assertTrue(index >= 0) }
             tagged(scene, "bookmark.open." + index); ready(scene)
             await("bookmark opens the saved page instead of the draft") { js(scene, "document.title") == "\"RG local editor fixture\"" }
+            open(scene, "does-not-exist.html")
+            await("bookmarked tab reaches actual HTTP error") {
+                var failed = false
+                scene.onActivity { failed = it.tabs.current.session.state.phase == LocalBrowserSession.Phase.ERROR }
+                failed
+            }
+            scene.onActivity {
+                assertFalse(it.controls.getValue("hud.bookmark").isEnabled)
+                assertEquals("non-navigable page retains disabled outline, even with a prior saved page",
+                    "☆", it.controls.getValue("hud.bookmark").text.toString())
+            }
+            control(scene, "more"); tagged(scene, "menu.1")
+            tagged(scene, "bookmark.open." + index); ready(scene)
             control(scene, "more"); tagged(scene, "menu.1")
             tagged(scene, "bookmark.remove." + index); added = false
             scene.onActivity {

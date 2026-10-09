@@ -275,8 +275,9 @@ class LocalBrowserActivity : Activity() {
         controls.getValue("hud.tab_counter").text = "${tabs.selectedIndex + 1}/${tabs.count}"
         controls.getValue("hud.bookmark").apply {
             isEnabled = state.phase == LocalBrowserSession.Phase.READY && AddressPolicy.resolve(tab.committedUrl).accepted()
-            text = if (bookmarks.contains(tab.committedUrl)) "★" else "☆"
-            contentDescription = if (bookmarks.contains(tab.committedUrl)) "Remove bookmark" else "Bookmark page"
+            val savedPage = isEnabled && bookmarks.contains(tab.committedUrl)
+            text = if (savedPage) "★" else "☆"
+            contentDescription = if (savedPage) "Remove bookmark" else "Bookmark page"
         }
         updateStatus()
     }

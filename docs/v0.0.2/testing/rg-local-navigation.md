@@ -72,7 +72,8 @@ All coordinates and text sizes are rendered pixels, independent of Android dp.
 | More menu | 256, 48, 224, 192 |
 
 All eight controls remain visible and separately actionable, with disabled
-Back/Forward/Refresh/star retained. The compact address elides inside its fixed
+Back/Forward/Refresh/star retained. A non-navigable page keeps a disabled outline
+star even if an earlier page was saved. The compact address elides inside its fixed
 region; native editing reveals the retained full draft without moving the star
 or other controls. Outside editing, the compact preview uses the actual native
 location, independently of an unsent draft. A visible compact error/status
