@@ -1,13 +1,14 @@
 # RG pointer, full-screen edge scrolling and Settings
 
-Worker: Worker-#31 · issue #31 · I31-T01 attempt1/failure0 · assignment revision1.
+Worker: Worker-#31 · issue #31 · I31-T01 correction attempt2/failure1 · assignment revision1.
 
 The implementation baseline is accepted integration
 `7b055cbdd848440346e9f873ac44cf2e688af9d8`, under SPEC D2.2, HUD H1.2 and the
 [approved HUD-G1 decision](https://github.com/code2hack/EyeBrowse/issues/30#issuecomment-6075367078).
 The external frozen-candidate manifest identifies the pushed commit, Git tree,
 source hashes, app/test APK bytes, host evidence and proposed native procedure.
-This document records host implementation and **unexecuted native qualification**.
+This document records host implementation, the failed original native procedure,
+and **pending corrected-candidate native qualification**.
 It does not complete I31-T02/T03, independent acceptance, HUD-G2 or a release.
 
 ## Production behavior and consumers
@@ -78,7 +79,7 @@ recorded execution sequence contains no intervening test-source edit before
 green; case-name equality alone is not the basis for the source binding.
 
 Subsequent runs copy/hash every changed and untracked source before execution.
-The final `frozen-source-host` package records these explicit affected gates:
+The original `frozen-source-host` package records these explicit affected gates:
 
 ```text
 :app-rg:testDebugUnitTest
@@ -91,7 +92,7 @@ The host suite includes all existing RG tests and controls for every edge/corner
 three overshoot amounts and three hold durations, equal first slow inward return,
 filter reversal, all gains, persistence failure/recreation, literal edges,
 held-edge rates, exact freshness cutoff, cancellation and no catch-up. The new
-Android tests compile; compilation is not device execution. Lint's XML reports
+Android tests compiled; compilation is not device execution. Lint's XML reports
 22 warnings and no reported errors; Kotlin metadata-reader diagnostics limit
 its analysis. The external task ledger distinguishes actual execution,
 UP-TO-DATE, NO-SOURCE and SKIPPED results. It makes no clean-build/cache-free claim.
@@ -102,11 +103,50 @@ identity protocol, action queue, second recognizer or target snapshot. Affected
 host checks follow that final source pass. Documentation/manifest packaging does
 not change compiled source.
 
+## I31-R1 procedure correction and retained negative evidence
+
+The original candidate `b9ce1c80b8d97a6dc647afe279a9f1d6c3439b14` ran once on
+the exclusively granted RG under grant13. Its actual terminal was three methods,
+one pass and two failures, native duration 92.526 s, outer exit0/runner code-1.
+The boundary method passed; both page methods failed in native URL entry because
+the helper did not select the symbol/letter keyboard layer. Neither reached page
+navigation, so those failures do not diagnose product scrolling. Independent
+review I31-R1 and the actual exception agree. The affected #30 invocation was
+not started. Grant13 cleanup and RG/39030 return were verified and accepted.
+
+Three original full480×640 capture pairs (top, corner, tracking unavailable),
+raw streams, source/APKs and all negative evidence remain unchanged in
+`native-rg-grant13`. The common observation file was overwritten by a later
+method during host copying; the hash/size check rejected that copy, and its final
+original is `[]`. No 72-entry timing table survived. The boundary method's status
+and three captures remain evidence, without reconstructed measurements.
+
+The correction changes only the new Android test and this document. Before each
+character it observes the rendered key map and, when necessary, activates the
+actual SYMBOLS/ABC control. Each tap resolves the current shown, enabled, laid-out
+target; no address text or DOM value/selection/scroll outcome is assigned. Existing
+native page, rate, gain, timing, RGB, dispatch and cleanup assertions remain.
+
+Each method now writes its own `edge-scroll-<exact-method-name>-observations.json`
+after all cleanup attempts, and flushes the file with `fd.sync()`. It retains the
+actual observations, partial failure data, method/class, PID/UID, monotonic start/
+finish, body completion, cleanup results and failure class. The required
+`evidenceRunId` and `candidateHead` instrumentation arguments are external binding
+labels; the host must independently verify source/APKs/installed bytes and match
+them with these labels and timestamps. They do not prove their own authenticity.
+Methods cannot overwrite each other's evidence. The old common file is untouched.
+
+The correction's `r1-procedure-correction-02` packet records only affected
+`:app-rg:assembleDebugAndroidTest` and `:app-rg:lintDebug` host gates. The original
+119-case JVM suite and product build evidence are historical unchanged-source
+evidence, not another execution. The product APK's actual byte reuse and the new
+test APK's hashes/task states/analysis limits are recorded in that packet.
+
 ## Proposed exact-candidate native qualification — pending grant
 
-No ADB/USB/device query, wake, installation, fixture listener, instrumentation,
-input or screenshot has run for #31. RG/port39030 remain Manager-held. All old
-#30 grants and device-state observations are historical and consumed.
+No device operation has run for the correction. RG/port39030 are Manager-held;
+grant13 and all old #30 grants are consumed. The corrected source/test APK needs
+a fresh exclusive exact-candidate grant.
 
 The concrete external proposal requests only the frozen app/test APKs, one owned
 unchanged #28 fixture listener, and two bounded instrumentation invocations on
@@ -141,9 +181,14 @@ window evidence, not compositor/optical latency or ergonomics.
 
 Predeclared new captures are `edge-scroll-{pointer-top,pointer-corner,
 tracking-unavailable,settings,keyboard-bottom,scrolling-top}.{png,json}`, plus
-`edge-scroll-observations.json`. Existing scoped methods can reach seven named
+three `edge-scroll-<exact-method-name>-observations.json` files for the methods
+listed above. Existing scoped methods can reach seven named
 `local-browser-*.png`/sidecars and `local-browser-native-editor-observation.json`.
-The proposal enumerates exact names. Only files actually produced in the granted
+The proposal enumerates all 30 exact potential names. Harvest the three distinct
+method files after the terminal; do not rely on copying a common file between
+methods. Verify each method identity, invocation/source labels, PID/UID, current
+monotonic interval, cleanup outcome and actual records, including all 72 boundary
+measurements on a successful boundary run. Only files actually produced in the granted
 run count; stale/hypothetical files never supply evidence. PNGs are full native
 480×640 window copies following public frame-commit/visual-state waits, with
 unscaled origin/bounds asserted. Settings background regions are predeclared.
@@ -160,7 +205,7 @@ settles owned instrumentation/app/sensors/fixture and verifies the Manager's
 required RG state without borrowing a Phone screen policy or issuing compensating
 input. Unexpected data/trust/identity/access/ownership stops affected operations.
 
-Physical head movement, optics and comfort require separately supplied real
-observations/authority. Missing physical or device evidence remains open; there
-is no fabricated waiver or automatic Owner observation. Manager owns the fresh
-resource grant, independent review, PR and acceptance.
+Replay and native window evidence do not establish physical head movement,
+optics or comfort. No extra universal physical gate or Owner observation is
+inferred. Manager owns the fresh resource grant, independent review, PR and
+acceptance.

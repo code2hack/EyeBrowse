@@ -16,7 +16,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TestName
 import org.junit.runner.RunWith
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -25,6 +27,7 @@ import kotlin.math.abs
 /** Requires a new exclusive grant. Raw pose replay is application evidence, never physical head evidence. */
 @RunWith(AndroidJUnit4::class)
 class EdgeScrollInstrumentedTest {
+    @get:Rule val testName=TestName()
     private val evidence=JSONArray()
     private fun await(label: String, timeout: Long=10_000, condition: () -> Boolean) {
         val end=SystemClock.elapsedRealtime()+timeout
@@ -39,24 +42,51 @@ class EdgeScrollInstrumentedTest {
         val keys=listOf("pointer.sensitivity","edge.speed")
         val previous=keys.associateWith { preferences.getString(it,null) }
         val source=RawPoseReplay()
-        val scene=ActivityScenario.launch(LocalBrowserActivity::class.java)
+        val arguments=InstrumentationRegistry.getArguments()
+        val invocationId=arguments.getString("evidenceRunId")
+        val candidateHead=arguments.getString("candidateHead")
+        val startedNs=SystemClock.elapsedRealtimeNanos()
+        var scene: ActivityScenario<LocalBrowserActivity>?=null
         var failure: Throwable?=null
+        var bodyCompleted=false
+        val cleanup=JSONObject()
         try {
-            scene.onActivity { while(it.tabs.count>1) it.closeTab();it.closeTab();it.pointer.stop();it.pointer.replaceSourceForTest(source) }
-            reset(scene,source)
-            body(scene,source)
+            assertFalse("fresh invocation evidence binding",invocationId.isNullOrBlank())
+            assertTrue("exact source evidence binding",candidateHead?.matches(Regex("[0-9a-f]{40}"))==true)
+            val active=ActivityScenario.launch(LocalBrowserActivity::class.java)
+            scene=active
+            active.onActivity { while(it.tabs.count>1) it.closeTab();it.closeTab();it.pointer.stop();it.pointer.replaceSourceForTest(source) }
+            reset(active,source)
+            body(active,source)
+            bodyCompleted=true
         } catch(t: Throwable) { failure=t }
         finally {
-            for(cleanup in listOf<() -> Unit>(
-                { scene.close();assertFalse(source.registered) },
-                { assertTrue(metadata.edit().apply {
+            for((name,action) in listOf<Pair<String,() -> Unit>>(
+                "activityAndRawSource" to { scene?.close();assertFalse(source.registered) },
+                "localTabsRestored" to { assertTrue(metadata.edit().apply {
                     if(previousMetadata==null) remove("local.tabs") else putString("local.tabs",previousMetadata)
                 }.commit()) },
-                { assertTrue(preferences.edit().apply { previous.forEach { (key,value) ->
+                "settingsRestored" to { assertTrue(preferences.edit().apply { previous.forEach { (key,value) ->
                     if(value==null) remove(key) else putString(key,value)
                 } }.commit()) },
-                { context.openFileOutput("edge-scroll-observations.json",0).use { it.write(evidence.toString().toByteArray()) } },
-            )) try { cleanup() } catch(t: Throwable) { if(failure==null) failure=t else failure.addSuppressed(t) }
+            )) try { action();cleanup.put(name,true) } catch(t: Throwable) {
+                cleanup.put(name,false)
+                if(failure==null) failure=t else failure.addSuppressed(t)
+            }
+            val report=JSONObject().put("class",javaClass.name).put("method",testName.methodName)
+                .put("invocationId",invocationId).put("candidateHead",candidateHead)
+                .put("processPid",android.os.Process.myPid()).put("processUid",android.os.Process.myUid())
+                .put("startedNs",startedNs).put("finishedNs",SystemClock.elapsedRealtimeNanos())
+                .put("bodyCompleted",bodyCompleted).put("cleanup",cleanup)
+                .put("failureClass",failure?.javaClass?.name ?: JSONObject.NULL)
+                .put("suppressedFailureClasses",JSONArray(failure?.suppressed?.map { it.javaClass.name } ?: emptyList<String>()))
+                .put("observations",evidence)
+            try {
+                // Distinct, durable originals survive the next method and retain partial failure evidence.
+                context.openFileOutput("edge-scroll-${testName.methodName}-observations.json",0).use {
+                    it.write(report.toString().toByteArray());it.fd.sync()
+                }
+            } catch(t: Throwable) { if(failure==null) failure=t else failure.addSuppressed(t) }
         }
         failure?.let { throw it }
     }
@@ -68,8 +98,15 @@ class EdgeScrollInstrumentedTest {
         }
     }
     private fun tap(scene: ActivityScenario<LocalBrowserActivity>, view: (LocalBrowserActivity) -> View) {
+        await("current laid-out native target") {
+            var ready=false
+            scene.onActivity { val child=view(it)
+                ready=!it.root.isLayoutRequested && child.isShown && child.isEnabled && child.isLaidOut && child.width>0 && child.height>0
+            }
+            ready
+        }
         scene.onActivity {
-            val child=view(it);assertTrue(child.isShown && child.isEnabled)
+            val child=view(it);assertTrue(child.isShown && child.isEnabled && child.isLaidOut && child.width>0 && child.height>0)
             val xy=IntArray(2);val origin=IntArray(2);child.getLocationOnScreen(xy);it.root.getLocationOnScreen(origin)
             assertTrue(it.input.activate(InputPoint(xy[0]-origin[0]+child.width/2f,xy[1]-origin[1]+child.height/2f)))
         }
@@ -78,6 +115,11 @@ class EdgeScrollInstrumentedTest {
     private fun tagged(scene: ActivityScenario<LocalBrowserActivity>, name: String)=tap(scene) { it.root.findViewWithTag(name) }
     private fun key(scene: ActivityScenario<LocalBrowserActivity>, key: RgKeyboardKeys.Key) {
         await("current native key layout") { var ready=false;scene.onActivity { ready=it.keyboard.isShown && !it.root.isLayoutRequested };ready }
+        var exists=false
+        scene.onActivity { exists=key in it.keyButtons }
+        if(!exists && key is RgKeyboardKeys.Key.Character) {
+            tap(scene) { it.keyButtons.getValue(RgKeyboardKeys.Key.Command.SYMBOLS) }
+        }
         tap(scene) { it.keyButtons.getValue(key) }
     }
     private fun open(scene: ActivityScenario<LocalBrowserActivity>, route: String="keyboard.html") {
