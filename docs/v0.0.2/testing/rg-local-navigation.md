@@ -14,7 +14,8 @@ The production continuation starts from independently accepted preparation
 3d308c04ec34d9f28064bdcec23f486b2b26f89e, on the original integration baseline
 5e7585fb532958343222dedeca19ab0ad74b42ba. T01 attempt3/failure2 and T02
 attempt1/failure0 remain their historical accounting. Production T03 is now
-correction attempt2/failure1 after R4; T04 remains attempt1/failure0.
+correction attempt3/failure2 after actual physical swipe negatives; T04 remains
+attempt1/failure0. R4 and its scoped native verification remain preserved history.
 **Affected native verification and independent whole-candidate
 review are pending**; this source/check record does not complete issue #30 or HUD-G2.
 
@@ -36,8 +37,10 @@ merely to select it.
 
 The reused RgInputRouter is the single pad recognizer. One confirmed short tap
 dispatches one ordinary native touch at the current pointer; a double tap has
-no action. OEM Android 292/293 are bound to next/previous tab in browsing and
-keyboard states. Utility swipes are no-ops. **A replay using the observed pad
+no action. Only the named ROKID,PSOC-TP-R keyboard source admits native horizontal
+DPAD_RIGHT/DPAD_LEFT (22/21) and the retained OEM Android 292/293 to next/previous
+tab in browsing and keyboard states. Other keyboards/sources and vertical keys
+retain ordinary native dispatch. Utility swipes are no-ops. **A replay using the observed pad
 device ID does not establish actual wearer-facing right/left directions.**
 That physical qualification remains an explicit resource/evidence need.
 
@@ -180,7 +183,8 @@ new framework, parallel writer or feature/policy expansion.
 
 LocalBrowserInstrumentedTest targets the real production Activity and unchanged
 #28 fixture, with no device/bootstrap/service-start code. Proposed one reserved
-class invocation has four methods:
+original class invocation had four methods; the current correction adds the
+native-DPAD boundary method below:
 
 | Method | Real observation required |
 | --- | --- |
@@ -188,11 +192,13 @@ class invocation has four methods:
 | fourLiveTabsAndPadGesturesKeepCurrentNativeEffects | Four actual WebViews and independent history/live field, native pad short/double allocation effects including a fifth tab, both OEM tab bindings/boundaries, keyboard dismissal, no page scroll/submit/input effect, list selection and close/last-tab policy. Physical right/left qualification remains separate. |
 | bookmarksUseCommittedLocationAndDurableTruth | Actual star while draft differs, preserved focus, disk persistence, Activity recreation without automatic replay, bookmark open/removal, controlled owned app-private filesystem failure and truthful error/Retry/empty state. |
 | liveBlackAndHiddenRecoveryUseProductionWindow | Unchanged author-light/dynamic/author-dark field/media RGB samples, current native input/Done/pause-resume, real delayed loading/404, hidden touch/key/submit no-effect and visible input recovery. |
+| nativeDpadAdmissionPreservesScopeAndTabEffects | Actual assigned-device/source/scan/key/action/repeat/meta/timing KeyEvents through the production Activity, four tabs/no wrap, legacy OEM support, utility/focus/lifecycle/aged/repeat/cancel guards, other-device/source/vertical pass-through and real current-editor recovery. Synthetic native metadata does not establish wearer-facing direction. |
 
-Fifteen reached-only captures are declared: empty, address, more,
+The original four methods declare fifteen reached-only captures: empty, address, more,
 tracking-unavailable, four-tabs, bookmarked-draft, cold-recovery, bookmarks,
 bookmark-error, bookmarks-empty, author-light, dynamic, field, loading and
-http-error. Each is an uncropped 480×640 owned-window PixelCopy after native
+http-error. The native-DPAD method adds `native-dpad-before` and
+`native-dpad-after-right`, with actual counter/selection sidecars. Each is an uncropped 480×640 owned-window PixelCopy after native
 frame commit, with a field-free geometry/focus/phase/visibility/timing sidecar.
 Shown READY pages first await the public WebView visual callback. Opaque
 utilities and empty/loading/error backing await the owned native window frame;
@@ -242,11 +248,55 @@ verified at 2026-10-09T07:53:37.598599Z before resource release. These are
 timestamped observations, not current device-state claims. Independent source
 review then identified R4's ownership loss on failed removal; that normal-path
 4-PASS result did not exercise the failure and the round was NOT_PASSED.
-This R4 test-only correction has no device reservation or new native result.
+Exact `1179c7363e2b34e99e2ba265bdf61589edff1232` subsequently passed the one
+affected bookmark method in 10.909 seconds under grant7, with five fresh native
+captures/sidecars and unchanged app APK. Independent review supported that
+software/native correction; the host failure controls remain JVM evidence, not
+a reproduced RG persistence failure. The later physical checks still failed to
+switch tabs, independently of that supported R4 result.
 Physical swipe direction, Phone PASS, final HUD-G2 and whole-issue acceptance
 remain pending. The dynamic capture's visible focused input/open keyboard is
 retained without a DOM focus-cause inference. Exact candidate requests supply
 bounded affected verification and owned cleanup; Manager controls resources.
+
+## Native pad admission correction and remaining physical evidence
+
+Actual physical checks at `1179c736` retained the Owner's right/left negatives
+and counter2/4; mixed kernel names did not establish a framework mapping cause.
+The separately reviewed, opt-in debug probe at `21f57ffc` then recorded assigned
+pad device3/source257 native scan105/key21 and scan106/key22 at the original
+Window.Callback. The existing router returned `unmapped-key` before eligibility
+or recognizer admission, while recorded current browsing state was active,
+focused, shown and pointer-available. No292/293 or recognized swipe appeared in
+that diagnostic trace. Recorded counter remained2/4. Gesture counts/onsets and
+individual physical directions were unmeasured; these events do not establish
+wearer-facing orientation or explain all older mixed OEM history.
+
+The current correction adds only those horizontal native keys to the same
+named-pad/source admission function and existing recognizer. A focused JVM red
+regression first failed at scan106/key22 admission while legacy and foreign-input
+controls passed. It uses the production admission function plus the existing
+recognizer and LocalTabs to assert selection effects and no-wrap boundaries.
+The Android regression constructs real KeyEvents with the observed metadata
+shape and fresh Android uptime, passes them through the production Activity,
+and checks current tab effects and retained native editing/input guards.
+It requires its own exact-candidate RG grant; compilation is not execution.
+
+All temporary diagnostic Application/manifest/router/recognizer observers and
+the opt-in probe control are removed. The immutable probe source/APKs, original
+native traces and all earlier failures remain retained as separate evidence.
+During the diagnostic run, a finite watcher stopped both readers on foreground
+loss; the post-report foreground was the ordinary launcher, so no new owned
+counter screenshot was fabricated. Exact own app/helper/readers settled, only
+prior local.tabs absence was restored, opaque trust matched, and the retained
+end-state was Awake/interactive at the prior safe launcher with connectivity.
+
+A fresh candidate still requires affected native regression and separately
+coordinated one-real-right/one-real-left plus boundary observations, with owned
+UI/counter evidence and authenticated human direction kept separate. Logical
+DPAD names, JVM PASS and native injection do not satisfy that physical criterion.
+Manager reserves resources and coordinates the visible prompt; no device access
+or new human step follows from this document.
 
 ## Preserved preparation record
 

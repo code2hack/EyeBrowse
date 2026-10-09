@@ -277,6 +277,88 @@ class LocalBrowserInstrumentedTest {
         }
     }
 
+    @Test fun nativeDpadAdmissionPreservesScopeAndTabEffects() = scene { scene, _ ->
+        val device = InputDevice.getDeviceIds().toList().mapNotNull(InputDevice::getDevice).single { it.name == "ROKID,PSOC-TP-R" }
+        fun native(code: Int, scan: Int, repeat: Int = 0, meta: Int = 0, age: Long = 0, flags: Int = 0) {
+            var down = 0L
+            for (action in listOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP)) {
+                scene.onActivity {
+                    val at = SystemClock.uptimeMillis() - age
+                    if (action == KeyEvent.ACTION_DOWN) down = at
+                    // Actual native metadata observed on device3/source257, with fresh event/down times.
+                    val event = KeyEvent(down, at, action, code, repeat, meta, device.id, scan, flags, 257)
+                    assertEquals("ROKID,PSOC-TP-R", event.device?.name)
+                    assertEquals(device.id, event.deviceId); assertEquals(scan, event.scanCode)
+                    val start = SystemClock.uptimeMillis()
+                    assertTrue("assigned horizontal sequence admitted", it.dispatchKeyEvent(event))
+                    assertTrue("native dispatch <=100ms", SystemClock.uptimeMillis() - start <= 100)
+                }
+                if (action == KeyEvent.ACTION_DOWN) SystemClock.sleep(22)
+            }
+        }
+        fun selected(index: Int) = scene.onActivity {
+            assertEquals(index, it.tabs.selectedIndex)
+            assertEquals("${index + 1}/4", it.controls.getValue("hud.tab_counter").text.toString())
+        }
+        open(scene, "keyboard.html"); ready(scene); focusText(scene)
+        key(scene, RgKeyboardKeys.Key.Character("a")); key(scene, RgKeyboardKeys.Key.Command.DONE)
+        val inputCount = js(scene, "fixtureInputs")
+        repeat(3) { control(scene, "more"); tagged(scene, "menu.0"); key(scene, RgKeyboardKeys.Key.Command.DONE) }
+        scene.onActivity { it.selectTab(1) }; selected(1)
+        capture(scene, "native-dpad-before").recycle()
+        native(KeyEvent.KEYCODE_DPAD_RIGHT, 106); selected(2)
+        capture(scene, "native-dpad-after-right").recycle()
+        native(KeyEvent.KEYCODE_DPAD_LEFT, 105); selected(1)
+        native(KeyEvent.KEYCODE_DPAD_RIGHT, 106); native(KeyEvent.KEYCODE_DPAD_RIGHT, 106); selected(3)
+        native(KeyEvent.KEYCODE_DPAD_RIGHT, 106); selected(3) // No wrap at last.
+        repeat(3) { native(KeyEvent.KEYCODE_DPAD_LEFT, 105) }; selected(0)
+        native(KeyEvent.KEYCODE_DPAD_LEFT, 105); selected(0) // No wrap at first.
+        native(292, 183); selected(1); native(293, 184); selected(0) // Legacy OEM path.
+        control(scene, "more")
+        native(KeyEvent.KEYCODE_DPAD_RIGHT, 106); selected(0)
+        scene.onActivity { assertEquals(LocalBrowserActivity.Utility.MORE, it.utility) }
+        control(scene, "more")
+        native(KeyEvent.KEYCODE_DPAD_RIGHT, 106, repeat = 1); selected(0)
+        native(KeyEvent.KEYCODE_DPAD_RIGHT, 106, meta = KeyEvent.META_SHIFT_ON); selected(0)
+        native(KeyEvent.KEYCODE_DPAD_RIGHT, 106, age = 300); selected(0)
+        native(KeyEvent.KEYCODE_DPAD_RIGHT, 106, flags = KeyEvent.FLAG_CANCELED); selected(0)
+        scene.onActivity { it.router.focus(false) }
+        try { native(KeyEvent.KEYCODE_DPAD_RIGHT, 106); selected(0) }
+        finally { scene.onActivity { it.router.focus(true) } }
+        scene.moveToState(Lifecycle.State.CREATED)
+        native(KeyEvent.KEYCODE_DPAD_RIGHT, 106); selected(0)
+        scene.moveToState(Lifecycle.State.RESUMED)
+        await("resumed owned native window and pointer") {
+            var available = false
+            scene.onActivity { available = it.hasWindowFocus() && it.pointer.inputPosition().available }
+            available
+        }
+        focusText(scene)
+        scene.onActivity {
+            val now = SystemClock.uptimeMillis()
+            for (code in listOf(KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT)) {
+                assertFalse("other keyboard retains native input", it.router.key(KeyEvent(now, now, KeyEvent.ACTION_DOWN,
+                    code, 0, 0, -1, 0, 0, InputDevice.SOURCE_KEYBOARD)))
+                assertFalse("non-keyboard source passes through", it.router.key(KeyEvent(now, now, KeyEvent.ACTION_DOWN,
+                    code, 0, 0, device.id, 0, 0, InputDevice.SOURCE_TOUCHSCREEN)))
+            }
+            for (code in listOf(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN)) {
+                assertFalse("vertical input stays outside horizontal tab gestures", it.router.key(KeyEvent(now, now,
+                    KeyEvent.ACTION_DOWN, code, 0, 0, device.id, if (code == KeyEvent.KEYCODE_DPAD_UP) 103 else 108, 0, 257)))
+            }
+            assertEquals(0, it.tabs.selectedIndex); assertTrue(it.keyboard.isShown)
+        }
+        assertEquals("\"a\"", js(scene, "document.getElementById('text').value"))
+        assertEquals("admission guards do not edit", inputCount, js(scene, "fixtureInputs"))
+        assertEquals("0", js(scene, "fixtureSubmits"))
+        key(scene, RgKeyboardKeys.Key.Character("b"))
+        assertEquals("native current-focus keyboard remains usable", "\"ab\"", js(scene, "document.getElementById('text').value"))
+        native(KeyEvent.KEYCODE_DPAD_RIGHT, 106); selected(1)
+        scene.onActivity { assertFalse("existing tab-switch keyboard dismissal", it.keyboard.isShown) }
+        native(KeyEvent.KEYCODE_DPAD_LEFT, 105); selected(0)
+        assertEquals("tab switch preserves actual field value", "\"ab\"", js(scene, "document.getElementById('text').value"))
+    }
+
     @Test fun approvedGeometryAndAddressEditingStayBlackAndRecoverable() = scene { scene, source ->
         fun geometry(editing: Boolean) {
             await("approved measured geometry after keyboard transition") {

@@ -99,25 +99,4 @@ class PadGestureRecognizerTest {
         val t=Trial();t.recognizer.cancel();t.tap(1000);t.recognizer.confirm(1320)
         assertEquals(listOf("original"),t.singles)
     }
-    @Test fun optInObservationPreservesSwipeEffectsAndRejectedSequenceNoEffects() {
-        for (observed in listOf(false, true)) {
-            val t=Trial();val records=mutableListOf<String>()
-            if (observed) t.recognizer.diagnostic = { records.add(it) }
-            t.tap(1000,Key.FORWARD);t.tap(1500,Key.BACKWARD)
-            t.event(Key.FORWARD,Phase.DOWN,2000,receipt=2251)
-            t.event(Key.FORWARD,Phase.UP,2020,2000,receipt=2252)
-            t.event(Key.BACKWARD,Phase.DOWN,2500,repeat=1)
-            t.event(Key.BACKWARD,Phase.UP,2520,2500)
-            t.recognizer.confirm(4000)
-            assertEquals(listOf(160,-160),t.scrolls)
-            assertTrue(t.singles.isEmpty());assertEquals(0,t.modes);assertEquals(0,t.captures)
-            assertFalse(t.recognizer.hasWork)
-            if (observed) {
-                assertEquals(2,records.count { it.startsWith("recognizer swipe ") })
-                assertTrue(records.any { it.startsWith("recognizer reject-time ") })
-                assertTrue(records.contains("recognizer cancel-or-repeat"))
-                assertTrue(records.contains("recognizer unmatched-up"))
-            } else assertTrue(records.isEmpty())
-        }
-    }
 }

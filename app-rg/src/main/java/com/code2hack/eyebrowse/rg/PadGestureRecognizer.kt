@@ -21,33 +21,30 @@ internal class PadGestureRecognizer<T>(
     private var modeDedupUntil=0L
     val deadline get() = pending?.deadline
     val hasWork get() = press!=null || pending!=null
-    /** Temporary opt-in debug observation; never supplies or replays an input. */
-    internal var diagnostic: ((String) -> Unit)? = null
 
     init { require(doubleTapMs in 100..600 && longPressMs in 200..2_000) }
 
     fun accept(event: Event, receiptUptimeMs: Long) {
         if (event.timeMs<=0 || event.timeMs<lastEventMs || event.timeMs>receiptUptimeMs ||
             receiptUptimeMs-event.timeMs>MAX_EVENT_AGE_MS || event.downTimeMs<0 || event.downTimeMs>event.timeMs) {
-            cancel();diagnostic?.invoke("recognizer reject-time last=$lastEventMs receipt=$receiptUptimeMs event=${event.timeMs} down=${event.downTimeMs}");return
+            cancel();return
         }
         lastEventMs=event.timeMs
-        if (event.phase==Phase.CANCEL || event.repeat!=0) { cancel();diagnostic?.invoke("recognizer cancel-or-repeat");return }
-        if (event.key==Key.TAP && event.timeMs<suppressTapsUntil) { diagnostic?.invoke("recognizer suppressed-tap");return }
+        if (event.phase==Phase.CANCEL || event.repeat!=0) { cancel();return }
+        if (event.key==Key.TAP && event.timeMs<suppressTapsUntil) return
         if (event.phase==Phase.DOWN) {
-            if (press?.let { it.key==event.key && it.downTimeMs==event.downTimeMs }==true) { diagnostic?.invoke("recognizer duplicate-down");return }
+            if (press?.let { it.key==event.key && it.downTimeMs==event.downTimeMs }==true) return
             confirm(event.timeMs)
             val second=event.key==Key.TAP && pending!=null
             // Swipe/OEM double/second tap supersedes, never flushes an unconfirmed single.
             pending=null
             press=Press(event.key,event.downTimeMs,second)
-            diagnostic?.invoke("recognizer armed key=${event.key}")
             return
         }
-        val old=press ?: run { diagnostic?.invoke("recognizer unmatched-up");return }
-        if (old.key!=event.key || old.downTimeMs!=event.downTimeMs) { cancel();diagnostic?.invoke("recognizer mismatched-up");return }
+        val old=press ?: return
+        if (old.key!=event.key || old.downTimeMs!=event.downTimeMs) { cancel();return }
         press=null
-        if (event.timeMs-old.downTimeMs>=longPressMs) { cancel();diagnostic?.invoke("recognizer long-press");return }
+        if (event.timeMs-old.downTimeMs>=longPressMs) { cancel();return }
         when(event.key) {
             Key.TAP -> if(old.second) emitMode(event.timeMs)
                 else pending=Pending(capture(),event.timeMs+doubleTapMs)
@@ -55,7 +52,6 @@ internal class PadGestureRecognizer<T>(
             Key.FORWARD,Key.BACKWARD -> {
                 pending=null;suppressTapsUntil=event.timeMs+doubleTapMs
                 scroll(if(event.key==Key.FORWARD) 160 else -160)
-                diagnostic?.invoke("recognizer swipe key=${event.key}")
             }
         }
     }
