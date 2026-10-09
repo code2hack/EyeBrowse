@@ -351,12 +351,56 @@ class LocalBrowserInstrumentedTest {
         assertEquals("\"a\"", js(scene, "document.getElementById('text').value"))
         assertEquals("admission guards do not edit", inputCount, js(scene, "fixtureInputs"))
         assertEquals("0", js(scene, "fixtureSubmits"))
-        key(scene, RgKeyboardKeys.Key.Character("b"))
+        val editorObservations = JSONArray()
+        fun observeEditor(stage: String) {
+            val observation = JSONObject(js(scene, """(()=>{const e=document.getElementById('text');return {
+                activeText:document.activeElement===e,textLength:e.value.length,
+                selectionStart:e.selectionStart,selectionEnd:e.selectionEnd,
+                expectedA:e.value==='a',expectedAB:e.value==='ab',
+                inputs:fixtureInputs,submits:fixtureSubmits}})()"""))
+            scene.onActivity {
+                observation.put("stage", stage).put("observedAtNs", SystemClock.elapsedRealtimeNanos())
+                    .put("phase", it.tabs.current.session.state.phase.name)
+                    .put("pageShown", it.tabs.current.session.page?.isShown == true)
+                    .put("pageFocused", it.tabs.current.session.page?.hasFocus() == true)
+                    .put("keyboardShown", it.keyboard.isShown)
+                    .put("nativeFocusClass", it.currentFocus?.javaClass?.simpleName)
+                    .put("tabCount", it.tabs.count).put("selectedIndex", it.tabs.selectedIndex)
+                editorObservations.put(observation)
+                it.openFileOutput("local-browser-native-editor-observation.json", 0).use { file ->
+                    file.write(editorObservations.toString().toByteArray())
+                }
+            }
+        }
+        observeEditor("after-refocus")
+        // A refocus does not establish an append position. Use the existing native
+        // keyboard to place the caret; never assign a DOM value or selection.
+        key(scene, RgKeyboardKeys.Key.Command.RIGHT)
+        await("native Right collapses the current caret at the unchanged field end") {
+            js(scene, "(()=>{const e=document.getElementById('text');return document.activeElement===e && " +
+                "e.value==='a' && e.selectionStart===1 && e.selectionEnd===1})()") == "true"
+        }
+        observeEditor("after-native-right")
+        selected(0)
+        assertEquals("native caret movement does not edit", inputCount, js(scene, "fixtureInputs"))
+        assertEquals("0", js(scene, "fixtureSubmits"))
+        try {
+            key(scene, RgKeyboardKeys.Key.Character("b"))
+            await("native current-focus keyboard appends at the observed caret") {
+                js(scene, "document.getElementById('text').value") == "\"ab\""
+            }
+        } catch (failure: Throwable) {
+            try { observeEditor("after-b-failure") }
+            catch (observationFailure: Throwable) { failure.addSuppressed(observationFailure) }
+            throw failure
+        }
+        observeEditor("after-b")
         assertEquals("native current-focus keyboard remains usable", "\"ab\"", js(scene, "document.getElementById('text').value"))
         native(KeyEvent.KEYCODE_DPAD_RIGHT, 106); selected(1)
         scene.onActivity { assertFalse("existing tab-switch keyboard dismissal", it.keyboard.isShown) }
         native(KeyEvent.KEYCODE_DPAD_LEFT, 105); selected(0)
         assertEquals("tab switch preserves actual field value", "\"ab\"", js(scene, "document.getElementById('text').value"))
+        observeEditor("after-tab-return")
     }
 
     @Test fun approvedGeometryAndAddressEditingStayBlackAndRecoverable() = scene { scene, source ->

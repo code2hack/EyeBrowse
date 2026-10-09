@@ -14,7 +14,7 @@ The production continuation starts from independently accepted preparation
 3d308c04ec34d9f28064bdcec23f486b2b26f89e, on the original integration baseline
 5e7585fb532958343222dedeca19ab0ad74b42ba. T01 attempt3/failure2 and T02
 attempt1/failure0 remain their historical accounting. Production T03 is now
-correction attempt3/failure2 after actual physical swipe negatives; T04 remains
+correction attempt4/failure3 after the exact739 native editor failure; T04 remains
 attempt1/failure0. R4 and its scoped native verification remain preserved history.
 **Affected native verification and independent whole-candidate
 review are pending**; this source/check record does not complete issue #30 or HUD-G2.
@@ -297,6 +297,49 @@ UI/counter evidence and authenticated human direction kept separate. Logical
 DPAD names, JVM PASS and native injection do not satisfy that physical criterion.
 Manager reserves resources and coordinates the visible prompt; no device access
 or new human step follows from this document.
+
+## Current native editor procedure and retained failure
+
+Grant10 at exact `73948318cfb7602f87d5e27d039f3842f8b72d48` ran only
+`nativeDpadAdmissionPreservesScopeAndTabEffects` and
+`fourLiveTabsAndPadGesturesKeepCurrentNativeEffects`. Raw terminals were
+2 run / 1 PASS / 1 FAIL, native 20.657 seconds, outer exit0 and runner code-1.
+The new method failed at its current-editor append assertion: expected `ab`,
+actual `b`. Earlier `a`/input/submit preservation and the reached DPAD/tab/guard
+checks are bounded support; its final keyboard-dismissal and post-switch `ab`
+checks were not reached. The existing four-tab method passed. Three current
+480×640 PNGs/sidecars include native counter2/4 before and3/4 after synthetic
+DPAD_RIGHT, and the original four-tab black sample remained RGB0/0/0.
+The immutable packet is `issue-30/evidence/native-dpad-rg-grant10/spark-usb-resume-01`;
+the original transport stop and every older negative remain separate history.
+
+The source exposes a test precondition gap, without proving the old failure's
+cause. Refocusing with a native touch did not observe or establish the selection
+before assuming append. Android's public
+[InputConnection.commitText contract](https://developer.android.com/reference/android/view/inputmethod/InputConnection#commitText(java.lang.CharSequence,int))
+replaces a composing range or the current selection, otherwise inserting at the
+current caret. NativeRgInputTarget already delegates to this ordinary API.
+This correction changes only the test procedure and this record, preserving
+product input/recognizer code and the unchanged `ab` oracle.
+
+After refocus, the test records field-free dummy editor predicates, selection
+offsets, counters and current native focus/visibility. It uses the existing
+on-screen Right key, then requires the actual unchanged `a` and collapsed
+selection1/1 before typing `b`. Caret movement must leave input/submit counts
+and the current tab unchanged. The test awaits and asserts actual `ab`, then
+retains the original tab-switch keyboard-dismissal and field-preservation
+checks. Read-only DOM observations never assign values or selection. A single
+`local-browser-native-editor-observation.json` retains reached stages, including
+after a failed append wait; it contains no raw values, URLs, titles or trust.
+These observations are acceptance-test evidence, with no product probe/hooks.
+
+The corrected procedure requires a fresh affected native grant and exact-head
+review. Host compilation cannot establish its RG result or diagnose the old
+replacement. Physical wearer-facing directions remain unqualified and require
+separately coordinated human checks. Grant10 ended with owned app/test/fixture
+settled, exact prior local.tabs absence and unrelated preferences preserved,
+opaque trust unchanged and recorded Awake/Tailscale connectivity; this is a
+timestamped cleanup observation, not a continuous device-state claim.
 
 ## Preserved preparation record
 
