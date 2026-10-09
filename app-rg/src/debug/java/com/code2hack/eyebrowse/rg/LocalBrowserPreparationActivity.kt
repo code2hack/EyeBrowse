@@ -38,6 +38,8 @@ class LocalBrowserPreparationActivity : Activity() {
             id = R.id.rg_root
             setBackgroundColor(Color.BLACK)
             isFocusableInTouchMode = true
+            // This focus holder must not paint Material's highlight over the entire black page.
+            defaultFocusHighlightEnabled = false
         }
         val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(column, FrameLayout.LayoutParams(-1, -1))

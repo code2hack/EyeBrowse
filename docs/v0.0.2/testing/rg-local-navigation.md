@@ -130,7 +130,7 @@ original native PNGs and the full negative remain preserved. Safe cleanup,
 unchanged opaque trust, actual Awake/interactive, connectivity and prior Rokid
 launcher foreground were verified before the Manager released the resources.
 
-**I30-T01 attempt2/failure1** also addresses Reviewer finding I30-R1: opacity
+**I30-T01 attempt2** addressed Reviewer finding I30-R1: opacity
 alone did not remove the hidden page's native input eligibility. The correction
 uses normal visibility/focus and adds a focused hidden touch/key/form-no-effect
 and visible recovery check. Capture observation now waits for the owned hardware
@@ -146,9 +146,49 @@ Window-buffer captures do not establish compositor presentation or optical time.
 The public contracts are
 [WebView visual-state visibility](https://developer.android.com/reference/android/webkit/WebView#postVisualStateCallback(long,%20android.webkit.WebView.VisualStateCallback))
 and [frame commit](https://developer.android.com/reference/android/view/ViewTreeObserver#registerFrameCommitCallback(java.lang.Runnable)).
-These source/observation corrections require a fresh exact-candidate RG grant
-and renewed independent review. Compiling the new test is not native PASS; no
-changed-candidate device work is implied by the previous consumed grant.
+The actual corrected-source run at
+`ce283d7e91391d9c889d48f6367c7cc37f5e92f7` was also **NOT_PASSED**:
+five methods ran, two passed and three failed in 30.218 seconds. The field black
+sample was `#101010`; the loading sample `(450,300)` was `#030303` instead of
+exact black. The retained `(450,620)` loading pixel was also `#030303`, but its
+assertion was not reached. The hidden-loading eligibility/no-effect assertions
+preceded a timeout awaiting recovered visible editor value `b`; this does not
+pass the complete hidden-input/recovery method. Actual HTTP404/error input and
+recovery, dynamic/author-dark/error capture continuation remain unqualified.
+Only two new original PNGs and two sidecars were reached, separately retained
+from the four original-run pictures. Both new captures record a focused root
+`FrameLayout`; the loading sidecar records LOADING/page hidden/keyboard hidden.
+The strict oracles and authored fixture bytes remain unchanged. Owned safe
+cleanup was verified and the Manager released grant3; none of its operation
+budgets may be reused.
+
+**I30-T01 attempt3/failure2** disables the preparation root's default focus
+highlight. That focus holder has a flat black background but was allowed to
+paint Android Material's highlight over its entire child tree. Primary
+[Android 12.1 View source](https://github.com/aosp-mirror/platform_frameworks_base/blob/android-12.1.0_r1/core/java/android/view/View.java#L23808)
+and [Material ripple source](https://github.com/aosp-mirror/platform_frameworks_base/blob/android-12.1.0_r1/graphics/java/android/graphics/drawable/RippleBackground.java)
+support this application-level explanation for both the lifted field/media
+colors and transient loading grey. This is an evidence-supported source
+diagnosis, not a new device reproduction or proof of the vendor's actual
+highlight resource. The existing WebView visibility/input correction is kept;
+neither focus nor the recognizer is disabled to obtain black pixels.
+
+Native test observation now waits for current laid-out key geometry and actual
+shown WebView/text-editor focus before typing. Recovery first observes the
+authored replacement fixture's blank editor, then checks READY/current focus;
+the final expected `b`/`a`, no-hidden-effect checks and exact RGB samples stay
+unchanged. A field-free recovery observation records native state, fixed
+empty/expected-`b` predicates and fixture input/submit counts before/after `b`,
+including after a failed effect wait. No field strings, URLs or expected DOM
+assignments are stored. This closes previously missing observation conditions;
+the exact native recovery-timeout cause remains unproven. Capture sidecars also
+record root focus/highlight, page focus and address focus.
+
+These changes require fresh exact-candidate RG resources and renewed independent
+review. Compiling the updated tests is not native PASS. The next bounded
+procedure retains all five methods, all original black/media samples, five
+uncropped 480×640 captures/sidecars and the one field-free recovery observation;
+only actually reached artifacts count.
 
 **No device access is implicit.** Request/obtain the exact-candidate RG and
 owned fixed-fixture listener reservation first. Phone is unavailable/unreserved;

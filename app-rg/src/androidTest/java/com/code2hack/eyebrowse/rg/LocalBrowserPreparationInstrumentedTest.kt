@@ -51,6 +51,15 @@ class LocalBrowserPreparationInstrumentedTest {
     }
 
     private fun key(scene: ActivityScenario<LocalBrowserPreparationActivity>, key: RgKeyboardKeys.Key) {
+        await("visible key has current native layout") {
+            var laidOut = false
+            scene.onActivity {
+                val button = it.keyButtons.getValue(key)
+                laidOut = button.isShown && !it.root.isLayoutRequested &&
+                    button.isLaidOut && button.width > 0 && button.height > 0
+            }
+            laidOut
+        }
         scene.onActivity {
             val button = it.keyButtons.getValue(key)
             assertTrue("visible real built-in preparation key", button.isShown)
@@ -111,6 +120,15 @@ class LocalBrowserPreparationInstrumentedTest {
         scene.onActivity { assertTrue(it.input.activate(point)) }
     }
 
+    private fun focusText(scene: ActivityScenario<LocalBrowserPreparationActivity>) {
+        tapElement(scene, "#text")
+        await("current visible native text editor focused") {
+            var focused = false
+            scene.onActivity { focused = it.session.page?.let { page -> page.isShown && page.hasFocus() } == true }
+            focused && js(scene, "document.activeElement.id") == "\"text\""
+        }
+    }
+
     private fun capture(scene: ActivityScenario<LocalBrowserPreparationActivity>, name: String): Bitmap {
         val visual = CountDownLatch(1)
         scene.onActivity {
@@ -148,6 +166,10 @@ class LocalBrowserPreparationInstrumentedTest {
             observation.put("phase", it.session.state.phase.name).put("keyboardShown", it.keyboard.isShown)
                 .put("pageShown", it.session.page?.isShown == true).put("windowFocused", true)
                 .put("nativeFocusClass", it.currentFocus?.javaClass?.simpleName)
+                .put("rootFocused", it.root.isFocused)
+                .put("rootDefaultFocusHighlightEnabled", it.root.defaultFocusHighlightEnabled)
+                .put("pageFocused", it.session.page?.hasFocus() == true)
+                .put("addressFocused", it.address.hasFocus())
                 .put("copyRequestedAtNs", SystemClock.elapsedRealtimeNanos())
             PixelCopy.request(it.window, bitmap, { result ->
                 copyResult = result
@@ -224,8 +246,7 @@ class LocalBrowserPreparationInstrumentedTest {
     @Test fun currentNativeFocusAndDonePreserveEditingAcrossPauseResume() = scene { scene ->
         open(scene, "keyboard.html"); ready(scene)
         val identity = js(scene, "fixtureIdentity")
-        tapElement(scene, "#text")
-        await("native text field focus") { js(scene, "document.activeElement.id") == "\"text\"" }
+        focusText(scene)
         scene.onActivity { it.controls.getValue("Keys").performClick() }
         type(scene, "a")
         await("real built-in native text effect") { js(scene, "document.getElementById('text').value") == "\"a\"" }
@@ -297,7 +318,7 @@ class LocalBrowserPreparationInstrumentedTest {
         }
 
         open(scene, "keyboard.html"); ready(scene)
-        tapElement(scene, "#text")
+        focusText(scene)
         scene.onActivity { it.controls.getValue("Keys").performClick() }
         type(scene, "a")
         await("ready native editor effect") { js(scene, "document.getElementById('text').value") == "\"a\"" }
@@ -322,11 +343,34 @@ class LocalBrowserPreparationInstrumentedTest {
         assertEquals("no hidden input event", inputs, js(scene, "fixtureInputs"))
         assertEquals("no hidden form submit", submits, js(scene, "fixtureSubmits"))
 
-        open(scene, "keyboard.html"); ready(scene) // Real visible recovery controls cancel the pending request.
-        tapElement(scene, "#text")
+        open(scene, "keyboard.html") // Real visible recovery controls cancel the pending request.
+        // Observe the authored replacement fixture before typing; READY alone isn't DOM truth.
+        await("recovered authored blank editor") { js(scene, "document.getElementById('text')?.value") == "\"\"" }
+        ready(scene)
+        focusText(scene)
         scene.onActivity { it.controls.getValue("Keys").performClick() }
-        type(scene, "b")
-        await("recovered visible native editor effect") { js(scene, "document.getElementById('text').value") == "\"b\"" }
+        val recovery = JSONArray()
+        fun observeRecovery(stage: String) {
+            // Only fixed fixture predicates/counters and native state; no field strings or URLs.
+            val observation = JSONObject(js(scene, """(()=>{const e=document.getElementById('text');return {
+                activeText:document.activeElement===e,emptyText:e?.value==='',expectedB:e?.value==='b',
+                inputs:fixtureInputs,submits:fixtureSubmits}})()"""))
+            scene.onActivity {
+                observation.put("stage", stage).put("observedAtNs", SystemClock.elapsedRealtimeNanos())
+                    .put("phase", it.session.state.phase.name).put("pageShown", it.session.page?.isShown == true)
+                    .put("pageFocused", it.session.page?.hasFocus() == true).put("keyboardShown", it.keyboard.isShown)
+                    .put("nativeFocusClass", it.currentFocus?.javaClass?.simpleName)
+                recovery.put(observation)
+                it.openFileOutput("local-preparation-recovery-input-observation.json", 0).use { file ->
+                    file.write(recovery.toString().toByteArray(Charsets.UTF_8))
+                }
+            }
+        }
+        observeRecovery("before-b")
+        try {
+            type(scene, "b")
+            await("recovered visible native editor effect") { js(scene, "document.getElementById('text').value") == "\"b\"" }
+        } finally { observeRecovery("after-b") }
         scene.onActivity { assertTrue(it.session.open("$fixtureBase/does-not-exist.html").accepted()) }
         await("actual main-frame HTTP404") {
             var error = false
@@ -341,7 +385,7 @@ class LocalBrowserPreparationInstrumentedTest {
         }
         hidden(LocalBrowserSession.Phase.ERROR)
         open(scene, "keyboard.html"); ready(scene)
-        tapElement(scene, "#text")
+        focusText(scene)
         scene.onActivity { it.controls.getValue("Keys").performClick() }
         type(scene, "a")
         await("visible address recovery restores ordinary native keys") {
