@@ -16,7 +16,7 @@ class MainActivity : Activity() {
     lateinit var presentation: RgPresentationController
         private set
     private lateinit var pointer: PointerOverlay
-    internal lateinit var inputRouter: RgInputRouter
+    internal lateinit var inputRouter: LegacyRgInputRouter
         private set
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -119,7 +119,7 @@ class MainActivity : Activity() {
             startActivity(Intent(this,RgPairingActivity::class.java))
             finish()
         }
-        inputRouter=RgInputRouter(this,pointer,presentation) { accepted ->
+        inputRouter=LegacyRgInputRouter(this,pointer,presentation) { accepted ->
             findViewById<TextView>(R.id.rg_pointer_status).setText(when {
                 !pointer.inputPosition().available -> R.string.pointer_unavailable
                 accepted -> R.string.pointer_ready

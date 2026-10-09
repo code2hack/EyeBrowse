@@ -6,7 +6,7 @@ import com.code2hack.eyebrowse.core.link.presentation.PresentationProfile
 
 internal enum class LocalInputAction { RECENTER, RETRY, PAIR, USE_GLASSES, USE_PHONE, BACK, FORWARD, RELOAD }
 
-/** A local delayed-intent fence. It is never sent on the wire or persisted as command authority. */
+/** Historical remote delayed-intent fence; never used by the direct local input interface. */
 internal data class RgInputSnapshot(
     val context: ControlContext?, val owner: ControlOwner?, val profile: PresentationProfile?,
     val revision: Long, val pageReady: Boolean, val handoffReady: Boolean,

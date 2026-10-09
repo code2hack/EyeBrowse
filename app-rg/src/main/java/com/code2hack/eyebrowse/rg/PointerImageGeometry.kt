@@ -2,10 +2,6 @@ package com.code2hack.eyebrowse.rg
 
 import com.code2hack.eyebrowse.core.link.presentation.PresentationProfile
 
-internal data class InputPoint(val x: Float, val y: Float)
-internal fun PointerBounds.contains(p: InputPoint) =
-    p.x.isFinite() && p.y.isFinite() && p.x>=left && p.x<right && p.y>=top && p.y<bottom
-
 /** Android supplies this measured inverse matrix, including ancestors, view padding and ImageView matrix. */
 internal data class PointerImageGeometry(
     val rootToDrawable: List<Float>, val drawableWidth: Int, val drawableHeight: Int,

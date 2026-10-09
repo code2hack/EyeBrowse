@@ -28,14 +28,14 @@ import kotlin.math.abs
 class PointerBrowserJourneyTest {
     /** Dispatch-only probe; preparation is independently traced by the real process allocator/store. */
     @Suppress("UNCHECKED_CAST")
-    internal class DispatchProbe(private val router:RgInputRouter) : AutoCloseable {
+    internal class DispatchProbe(private val router:LegacyRgInputRouter) : AutoCloseable {
         data class Sample(val entry:Long,val cpuEntry:Long,var emitted:Long=-1,var cpuTotal:Long=-1,
-            var trace:RgInputRouter.DispatchTrace?=null)
+            var trace:LegacyRgInputRouter.DispatchTrace?=null)
         private val restore=mutableListOf<()->Unit>()
         var last:Sample?=null
             private set
         init {
-            val gestures=RgInputRouter::class.java.getDeclaredField("gestures").apply { isAccessible=true }.get(router)
+            val gestures=LegacyRgInputRouter::class.java.getDeclaredField("gestures").apply { isAccessible=true }.get(router)
             for(name in listOf("single","scroll")) {
                 val callback=PadGestureRecognizer::class.java.getDeclaredField(name).apply { isAccessible=true }
                 val delegate=callback.get(gestures) as (Any?)->Unit
@@ -147,9 +147,9 @@ class PointerBrowserJourneyTest {
             val g=geometry();val point=pageRoot(g.getDouble(if(next) "nx" else "x").toFloat(),g.getDouble(if(next) "ny" else "y").toFloat())
             aim(point);return point
         }
-        data class Tap(val down:Long,val up:Long,val previous:RgInputRouter.DispatchTrace?)
+        data class Tap(val down:Long,val up:Long,val previous:LegacyRgInputRouter.DispatchTrace?)
         fun pad(code:Int=66):Tap {
-            var down=0L;var up=0L;var previous:RgInputRouter.DispatchTrace?=null
+            var down=0L;var up=0L;var previous:LegacyRgInputRouter.DispatchTrace?=null
             main { previous=it.inputRouter.lastDispatch;down=SystemClock.uptimeMillis()
                 assertTrue(it.dispatchKeyEvent(KeyEvent(down,down,KeyEvent.ACTION_DOWN,code,0,0,pad.id,0,0,InputDevice.SOURCE_KEYBOARD))) }
             SystemClock.sleep(20)
@@ -157,9 +157,9 @@ class PointerBrowserJourneyTest {
                 assertTrue(it.dispatchKeyEvent(KeyEvent(down,up,KeyEvent.ACTION_UP,code,0,0,pad.id,0,0,InputDevice.SOURCE_KEYBOARD))) }
             return Tap(down,up,previous)
         }
-        fun dispatched(tap:Tap,name:String):RgInputRouter.DispatchTrace {
+        fun dispatched(tap:Tap,name:String):LegacyRgInputRouter.DispatchTrace {
             await("confirmed dispatch $name",1_000) { activity.inputRouter.lastDispatch !== tap.previous }
-            lateinit var trace:RgInputRouter.DispatchTrace
+            lateinit var trace:LegacyRgInputRouter.DispatchTrace
             main {
                 trace=checkNotNull(it.inputRouter.lastDispatch)
                 val observed=SystemClock.uptimeMillis();val sample=checkNotNull(probe?.last)
@@ -185,12 +185,12 @@ class PointerBrowserJourneyTest {
             assertTrue("$name context changed while tap pending ($elapsed ms)",elapsed<activity.inputRouter.doubleTapMs && peer.browserState()?.let(changed)==true)
             return elapsed
         }
-        fun effect(name:String,trace:RgInputRouter.DispatchTrace) {
+        fun effect(name:String,trace:LegacyRgInputRouter.DispatchTrace) {
             val elapsed=SystemClock.uptimeMillis()-trace.confirmedAt
             Log.i(TAG,"NAV_EFFECT name=$name effectMs=$elapsed")
             assertTrue("$name fixture effect <=1s ($elapsed ms)",elapsed<=1_000)
         }
-        fun native(id:Int,name:String):RgInputRouter.DispatchTrace { aimNative(id);return dispatched(pad(),name) }
+        fun native(id:Int,name:String):LegacyRgInputRouter.DispatchTrace { aimNative(id);return dispatched(pad(),name) }
         fun confirmWindow() { SystemClock.sleep(450) }
         fun request(name:String) { Log.i(TAG,"I8_PHONE_OP $name mission=$mission") }
         fun check(name:String) { request(name);await("Phone independent $name",8_000) { title()=="I8 ACK $name" } }
@@ -218,7 +218,7 @@ class PointerBrowserJourneyTest {
             }
             return crc.value
         }
-        fun handoff(owner:ControlOwner,page:String):RgInputRouter.DispatchTrace {
+        fun handoff(owner:ControlOwner,page:String):LegacyRgInputRouter.DispatchTrace {
             val previous=peer.lastHandoffResult
             val trace=native(R.id.rg_handoff,"handoff-$owner")
             await("authoritative $owner result",1_000) { peer.lastHandoffResult !== previous && peer.lastHandoffResult?.let { it.accepted && it.owner==owner }==true }

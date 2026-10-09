@@ -34,7 +34,7 @@ class KeyboardJourneyTest {
             is ViewGroup -> (0 until view.childCount).flatMap { buttons(view.getChildAt(it)) }
             else -> emptyList()
         }
-        fun keyView(key: RgKeyboard.Key): Button = buttons(j.activity.findViewById(R.id.rg_keyboard_container))
+        fun keyView(key: RgKeyboardKeys.Key): Button = buttons(j.activity.findViewById(R.id.rg_keyboard_container))
             .first { (it.tag as? RgKeyboard.Intent)?.key == key }
         fun checkPhone(name: String) {
             phase.writeText(name)
@@ -42,11 +42,11 @@ class KeyboardJourneyTest {
             while (SystemClock.elapsedRealtime()<end && (!ack.exists() || ack.readText().trim()!=name)) SystemClock.sleep(30)
             assertEquals("Phone independently verified $name",name,ack.takeIf { it.exists() }?.readText()?.trim())
         }
-        fun press(key: RgKeyboard.Key, pointer: Boolean = true) {
+        fun press(key: RgKeyboardKeys.Key, pointer: Boolean = true) {
             j.await("key is eligible",3_000) { j.peer.canKey(key) }
             val before = j.peer.lastActionResult
             var remote = false
-            j.main { remote = j.peer.keyboard.destination == RgKeyboard.Destination.FIELD && key !in listOf(RgKeyboard.Key.Command.SHIFT,RgKeyboard.Key.Command.SYMBOLS,RgKeyboard.Key.Command.DONE) }
+            j.main { remote = j.peer.keyboard.destination == RgKeyboard.Destination.FIELD && key !in listOf(RgKeyboardKeys.Key.Command.SHIFT,RgKeyboardKeys.Key.Command.SYMBOLS,RgKeyboardKeys.Key.Command.DONE) }
             if (pointer) {
                 lateinit var point: InputPoint
                 j.main { point = j.nativeCenter(keyView(key)) }
@@ -57,15 +57,15 @@ class KeyboardJourneyTest {
             SystemClock.sleep(40) // Local view publication only, not a product success oracle.
         }
         fun character(char: Char, pointer: Boolean = true) {
-            if (char == ' ') { press(RgKeyboard.Key.Command.SPACE,pointer);return }
+            if (char == ' ') { press(RgKeyboardKeys.Key.Command.SPACE,pointer);return }
             val letter = char.isLetter()
-            if (letter && j.peer.keyboard.symbols) press(RgKeyboard.Key.Command.SYMBOLS,pointer)
-            if (letter && char.isUpperCase()!=j.peer.keyboard.uppercase) press(RgKeyboard.Key.Command.SHIFT,pointer)
-            if (j.peer.keyboard.rows().flatten().none { it == RgKeyboard.Key.Character(char.toString()) }) press(RgKeyboard.Key.Command.SYMBOLS,pointer)
-            press(RgKeyboard.Key.Character(char.toString()),pointer)
+            if (letter && j.peer.keyboard.symbols) press(RgKeyboardKeys.Key.Command.SYMBOLS,pointer)
+            if (letter && char.isUpperCase()!=j.peer.keyboard.uppercase) press(RgKeyboardKeys.Key.Command.SHIFT,pointer)
+            if (j.peer.keyboard.rows().flatten().none { it == RgKeyboardKeys.Key.Character(char.toString()) }) press(RgKeyboardKeys.Key.Command.SYMBOLS,pointer)
+            press(RgKeyboardKeys.Key.Character(char.toString()),pointer)
         }
-        fun clearAddress() { while(j.peer.keyboard.draft.isNotEmpty()) press(RgKeyboard.Key.Command.BACKSPACE,false) }
-        fun readyKeyboard() = j.await("fresh resized field grant",2_000) { j.peer.keyboard.visible && j.peer.canKey(RgKeyboard.Key.Character("a")) && j.peer.canAct() }
+        fun clearAddress() { while(j.peer.keyboard.draft.isNotEmpty()) press(RgKeyboardKeys.Key.Command.BACKSPACE,false) }
+        fun readyKeyboard() = j.await("fresh resized field grant",2_000) { j.peer.keyboard.visible && j.peer.canKey(RgKeyboardKeys.Key.Character("a")) && j.peer.canAct() }
         fun field(id: String) {
             fun point() = JSONObject(checkNotNull(j.peer.browserState()?.title).substringAfter("KBD|")).getJSONArray(id)
             j.await("fresh page coordinates") { j.peer.canAct() && j.peer.browserState()?.title?.startsWith("KBD|")==true }
@@ -95,7 +95,7 @@ class KeyboardJourneyTest {
             readyKeyboard()
         }
         fun done() {
-            press(RgKeyboard.Key.Command.DONE)
+            press(RgKeyboardKeys.Key.Command.DONE)
             j.await("Done restores current page",2_000) { !j.peer.keyboard.visible && j.peer.canAct() }
         }
         fun screenshot(name: String) {
@@ -162,7 +162,7 @@ class KeyboardJourneyTest {
                 field("plain");character('a');character('B');character('1')
                 val document=checkNotNull(j.peer.browserState()).context.documentId
                 lateinit var oldKey:RgKeyboard.Intent
-                j.main { oldKey=j.peer.keyboard.capture(RgKeyboard.Key.Character("x")) }
+                j.main { oldKey=j.peer.keyboard.capture(RgKeyboardKeys.Key.Character("x")) }
                 checkPhone("cross_filled")
                 pose(0.0);val beforeMode=j.actions;j.pad(291);j.confirmWindow()
                 j.await("filled Reading ready",2_000) { j.peer.reading && !j.peer.keyboard.visible && j.peer.canAct() };fresh("reading-entry")
@@ -202,7 +202,7 @@ class KeyboardJourneyTest {
                 checkPhone("submit_ready")
                 val context=checkNotNull(j.peer.browserState()).context
                 val beforeFrame=checkNotNull(j.peer.lastFrameHeader).captureTsMs
-                press(RgKeyboard.Key.Command.ENTER)
+                press(RgKeyboardKeys.Key.Command.ENTER)
                 val deadline=SystemClock.uptimeMillis()+1_000
                 assertEquals("SUBMISSION_REQUESTED",j.peer.lastActionResult?.reason)
                 checkPhone("submit_applied")
@@ -263,7 +263,7 @@ class KeyboardJourneyTest {
             "not an address".forEach { character(it,false) }
             val draft = j.peer.keyboard.draft
             val before = j.peer.lastActionResult
-            press(RgKeyboard.Key.Command.ENTER)
+            press(RgKeyboardKeys.Key.Command.ENTER)
             j.await("address rejection") { j.peer.lastActionResult !== before }
             assertEquals("ADDRESS_REJECTED",j.peer.lastActionResult?.reason)
             assertEquals(draft,j.peer.keyboard.draft);assertTrue(j.peer.keyboard.visible)
@@ -272,8 +272,8 @@ class KeyboardJourneyTest {
             assertEquals("reopening address does not erase correction",draft,j.peer.keyboard.draft)
             lateinit var stale: RgKeyboard.Intent
             j.main {
-                stale=j.peer.keyboard.capture(RgKeyboard.Key.Character("x"))
-                assertTrue(keyView(RgKeyboard.Key.Command.DONE).performClick())
+                stale=j.peer.keyboard.capture(RgKeyboardKeys.Key.Character("x"))
+                assertTrue(keyView(RgKeyboardKeys.Key.Command.DONE).performClick())
                 assertTrue(it.findViewById<Button>(R.id.rg_detail).performClick())
                 assertFalse("closed-session key cannot enter a successor",j.peer.key(stale))
             }
@@ -285,7 +285,7 @@ class KeyboardJourneyTest {
             lateinit var receipts: KeyboardNavigationReceipts
             j.main { receipts=KeyboardNavigationReceipts(it) }
             try {
-                press(RgKeyboard.Key.Command.ENTER)
+                press(RgKeyboardKeys.Key.Command.ENTER)
                 receipts.capture("await-start boundMs=5000")
                 j.await("real address navigation",5_000) {
                     receipts.capture("await-predicate",onlyChange=true)
@@ -311,7 +311,7 @@ class KeyboardJourneyTest {
             screenshot("field")
             // Real double tap on a key must not produce either constituent character.
             lateinit var keyPoint: InputPoint
-            j.main { keyPoint=j.nativeCenter(keyView(RgKeyboard.Key.Character("a"))) }
+            j.main { keyPoint=j.nativeCenter(keyView(RgKeyboardKeys.Key.Character("a"))) }
             j.aim(keyPoint);val count=j.actions
             j.pad();SystemClock.sleep(40);j.pad();j.confirmWindow()
             assertEquals(count,j.actions);checkPhone("double_tap")
@@ -327,20 +327,20 @@ class KeyboardJourneyTest {
             }
             field("text")
             val afterReactivation=j.actions
-            j.main { keyPoint=j.nativeCenter(keyView(RgKeyboard.Key.Character("a"))) }
+            j.main { keyPoint=j.nativeCenter(keyView(RgKeyboardKeys.Key.Character("a"))) }
             j.aim(keyPoint)
             // A pending lowercase key cannot become an uppercase key after the layer changes.
-            j.pad();j.main { keyView(RgKeyboard.Key.Command.SHIFT).performClick() };j.confirmWindow()
+            j.pad();j.main { keyView(RgKeyboardKeys.Key.Command.SHIFT).performClick() };j.confirmWindow()
             assertEquals(afterReactivation,j.actions);checkPhone("stale_case")
             character('a');character('B');character('1')
-            press(RgKeyboard.Key.Command.SPACE);press(RgKeyboard.Key.Command.BACKSPACE)
-            press(RgKeyboard.Key.Command.ENTER);checkPhone("text_submit")
-            if (j.peer.keyboard.symbols) press(RgKeyboard.Key.Command.SYMBOLS)
+            press(RgKeyboardKeys.Key.Command.SPACE);press(RgKeyboardKeys.Key.Command.BACKSPACE)
+            press(RgKeyboardKeys.Key.Command.ENTER);checkPhone("text_submit")
+            if (j.peer.keyboard.symbols) press(RgKeyboardKeys.Key.Command.SYMBOLS)
             lateinit var pendingPoint: InputPoint
             j.main { pendingPoint=j.nativeCenter(keyView(j.peer.keyboard.rows().first().first())) }
             j.aim(pendingPoint);val beforeDismiss=j.actions
             j.pad()
-            j.main { val done=keyView(RgKeyboard.Key.Command.DONE);assertTrue(done.isEnabled);assertTrue(done.performClick()) }
+            j.main { val done=keyView(RgKeyboardKeys.Key.Command.DONE);assertTrue(done.isEnabled);assertTrue(done.performClick()) }
             j.confirmWindow()
             assertEquals("Done invalidates a key awaiting confirmation",beforeDismiss,j.actions)
             j.await("Done restores fresh geometry",2_000) { !j.peer.keyboard.visible && j.peer.canAct() }
@@ -356,7 +356,7 @@ class KeyboardJourneyTest {
             }
             Log.i("EyeBrowseKeyboardTest","PASSWORD_CAPTURE newerFrame=$newerPasswordFrame visualMaskingRequiresInspection=true")
             screenshot("password");done();checkPhone("password")
-            field("multiline");character('m');press(RgKeyboard.Key.Command.ENTER);character('n');done();checkPhone("multiline")
+            field("multiline");character('m');press(RgKeyboardKeys.Key.Command.ENTER);character('n');done();checkPhone("multiline")
             field("plain");character('e');done();checkPhone("plain")
             field("text");checkPhone("invalidate")
             j.await("readonly field closes",2_000) { !j.peer.keyboard.visible && j.peer.canAct() }
