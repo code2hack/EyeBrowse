@@ -13,8 +13,9 @@ documents do not change the implementation inputs. SPEC blob
 The production continuation starts from independently accepted preparation
 3d308c04ec34d9f28064bdcec23f486b2b26f89e, on the original integration baseline
 5e7585fb532958343222dedeca19ab0ad74b42ba. T01 attempt3/failure2 and T02
-attempt1/failure0 remain their historical accounting. T03 and T04 are separate
-attempt1 objectives. **Production native verification and independent whole-candidate
+attempt1/failure0 remain their historical accounting. Production T03 is now
+correction attempt2/failure1 after R4; T04 remains attempt1/failure0.
+**Affected native verification and independent whole-candidate
 review are pending**; this source/check record does not complete issue #30 or HUD-G2.
 
 ## Production source and entry
@@ -210,6 +211,19 @@ previously absent dummy fixture bookmark. It verifies that no preexisting
 entries would enter a capture. The controlled failure uses a unique owned cache
 file as a non-directory parent, then removes that file; it does not
 fill disk, change permissions, replace normal bookmark bytes or clear app data.
+The R4 correction retains entry ownership until both memory and readable disk
+confirm removal. Failure cleanup reloads the current store before removing only
+that owned entry; unreadable or unwritable persistence remains an explicit
+unresolved cleanup error. Repository restoration/removal and blocker deletion
+are both attempted, with the original failure and all cleanup errors retained.
+The existing test-shared source set compiles these cleanup functions for both
+instrumentation and three focused JVM cases. Actual failed atomic replacement,
+transient recovery preserving unrelated entries, and persistent failure with a
+second cleanup error all passed on the host (3 cases, zero failures/errors/skips).
+Affected test-APK assembly and lint passed in 20 seconds, with 14 executed/51
+up-to-date tasks; lint retained 22 reported warnings and 13 metadata-reader
+diagnostics. Product code and the app APK are unchanged from the original
+production candidate; the changed instrumentation APK needs fresh qualification.
 Those precise effects require a fresh Manager native grant alongside the exact
 frozen app/test hashes, identity/access/trust preflight and fixed fixture.
 
@@ -220,10 +234,19 @@ adb -s "$RESERVED_RG_ENDPOINT" shell -T am instrument -w -r \
   com.code2hack.eyebrowse.rg.test/androidx.test.runner.AndroidJUnitRunner
 ~~~
 
-There is currently **no device reservation**. No native production result,
-physical swipe direction, Phone PASS, final HUD-G2 or whole-issue acceptance is
-claimed. The exact candidate request supplies a bounded procedure and safe
-owned cleanup; resources are controlled by Manager.
+Exact `db01e14610774f08cb91f3bad35de179e1f14a70` received one grant6 native
+invocation: four methods passed in 45.368 seconds, with all 15 fresh 480×640
+captures/sidecars and recovery JSON. Owned operations settled, opaque trust
+matched, and the prior safe Tailscale foreground/connectivity/Awake state were
+verified at 2026-10-09T07:53:37.598599Z before resource release. These are
+timestamped observations, not current device-state claims. Independent source
+review then identified R4's ownership loss on failed removal; that normal-path
+4-PASS result did not exercise the failure and the round was NOT_PASSED.
+This R4 test-only correction has no device reservation or new native result.
+Physical swipe direction, Phone PASS, final HUD-G2 and whole-issue acceptance
+remain pending. The dynamic capture's visible focused input/open keyboard is
+retained without a DOM focus-cause inference. Exact candidate requests supply
+bounded affected verification and owned cleanup; Manager controls resources.
 
 ## Preserved preparation record
 

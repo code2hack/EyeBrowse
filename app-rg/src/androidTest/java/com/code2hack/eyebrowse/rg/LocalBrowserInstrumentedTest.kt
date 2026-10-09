@@ -483,7 +483,8 @@ class LocalBrowserInstrumentedTest {
         var added = false
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val blocker = File.createTempFile("local-bookmark-failure-", ".owned", context.cacheDir)
-        try {
+        val bookmarkFile = File(context.filesDir, "local-browser/bookmarks.properties")
+        withOwnedBookmarkCleanup(body = {
             open(scene, "keyboard.html"); ready(scene)
             scene.onActivity {
                 store = it.bookmarks
@@ -540,10 +541,10 @@ class LocalBrowserInstrumentedTest {
             control(scene, "more"); tagged(scene, "menu.1")
             tagged(scene, "bookmark.open." + index); ready(scene)
             control(scene, "more"); tagged(scene, "menu.1")
-            tagged(scene, "bookmark.remove." + index); added = false
+            tagged(scene, "bookmark.remove." + index)
             scene.onActivity {
-                assertFalse(it.bookmarks.contains(url))
-                assertFalse(LocalBookmarks(File(it.filesDir, "local-browser/bookmarks.properties")).contains(url))
+                confirmOwnedBookmarkRemoved(it.bookmarks, bookmarkFile, url)
+                added = false // Keep ownership until both memory and readable disk confirm removal.
                 assertEquals("☆", it.controls.getValue("hud.bookmark").text.toString())
             }
             tagged(scene, "utility.done")
@@ -559,15 +560,19 @@ class LocalBrowserInstrumentedTest {
             scene.onActivity { assertNull(it.bookmarks.error); assertTrue(it.bookmarks.entries.isEmpty()) }
             capture(scene, "bookmarks-empty").checked { assertEquals(Color.BLACK, it.getPixel(450,620)) }
             tagged(scene, "utility.done")
-        } finally {
+        }, restoreAndRemove = {
             scene.onActivity {
                 store?.let { original ->
                     it.bookmarks = original
-                    if (added) assertTrue("remove only this test's new fixture bookmark", original.remove(url))
+                    if (added) {
+                        removeOwnedBookmark(original, bookmarkFile, url)
+                        added = false
+                    }
                 }
             }
+        }, deleteBlocker = {
             assertTrue("remove only owned failure file", blocker.delete())
-        }
+        })
     }
 
     @Test fun liveBlackAndHiddenRecoveryUseProductionWindow() = scene { scene, _ ->
