@@ -333,7 +333,8 @@ class LocalBrowserInstrumentedTest {
         scene.onActivity {
             row.put("stage",stage).put("observedAtNs",SystemClock.elapsedRealtimeNanos())
                 .put("keyboardShown",it.keyboard.isShown).put("pageFocused",it.tabs.current.session.page?.hasFocus()==true)
-                .put("addressFocused",it.address.hasFocus()).put("contentBounds",bounds(it.content))
+                .put("addressFocused",it.address.hasFocus()).put("lastConfirmedPadDispatchMs",it.router.lastDispatchMs ?: JSONObject.NULL)
+                .put("contentBounds",bounds(it.content))
                 .put("keyboardBounds",bounds(it.keyboard)).put("nativeFocusClass",it.currentFocus?.javaClass?.simpleName)
         }
         keyboardEvidence.put(row)
@@ -413,7 +414,7 @@ class LocalBrowserInstrumentedTest {
         }
     }
 
-    @Test fun fourNativeEditorsPreserveUnicodeSelectionCaseAndDone() = keyboardScene { scene,_ ->
+    @Test fun fourNativeEditorsPreserveUnicodeSelectionCaseAndDone() = keyboardScene { scene,source ->
         open(scene,"local-keyboard.html");ready(scene)
         val identity=js(scene,"fixtureIdentity")
         for(id in listOf("text","password","multiline","plain")) {
@@ -427,6 +428,22 @@ class LocalBrowserInstrumentedTest {
             nativeEditorKey(scene,KeyEvent.KEYCODE_A,KeyEvent.META_CTRL_ON)
             key(scene,RgKeyboardKeys.Key.Character("x"))
             await("built-in key replaces native selection") { editorEquals(scene,id,"x") }
+            if(id=="text") {
+                var point=InputPoint(0f,0f)
+                scene.onActivity { point=center(it,it.keyButtons.getValue(RgKeyboardKeys.Key.Character("b"))) }
+                aim(scene,source,point)
+                val inputs=js(scene,"fixtureInputs").toInt()
+                pad(scene,KeyEvent.KEYCODE_ENTER,2);SystemClock.sleep(700)
+                assertTrue("double tap suppresses both native key actions",editorEquals(scene,id,"x"))
+                assertEquals(inputs,js(scene,"fixtureInputs").toInt())
+                pad(scene,KeyEvent.KEYCODE_ENTER)
+                await("one recognized tap writes one actual built-in key") { editorEquals(scene,id,"xb") }
+                assertEquals(inputs+1,js(scene,"fixtureInputs").toInt())
+                scene.onActivity { assertTrue("recognized native key dispatch <=100ms",checkNotNull(it.router.lastDispatchMs)<=100) }
+                keyboardObservation(scene,"recognized-key-single")
+                key(scene,RgKeyboardKeys.Key.Command.BACKSPACE)
+                await("normal native key remains usable after pad gesture") { editorEquals(scene,id,"x") }
+            }
             if(id=="password") {
                 assertEquals("\"password\"",js(scene,"document.activeElement.type"))
                 keyboardObservation(scene,"password-after-key")

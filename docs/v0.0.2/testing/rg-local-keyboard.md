@@ -55,7 +55,7 @@ Three new methods in `LocalBrowserInstrumentedTest` use the production Activity:
 
 | Method | Required effects |
 | --- | --- |
-| `fourNativeEditorsPreserveUnicodeSelectionCaseAndDone` | Native text/password/textarea/plain editable; static dummy `aé中🙂z`; actual Backspace over supplementary Unicode; native selection replacement/caret; built-in case, symbols, Space, Backspace, Enter/newline/form, Done; document/focus/value preservation. |
+| `fourNativeEditorsPreserveUnicodeSelectionCaseAndDone` | Native text/password/textarea/plain editable; static dummy `aé中🙂z`; actual Backspace over supplementary Unicode; native selection replacement/caret; one recognized native key tap and zero double-tap constituent edits; built-in case, symbols, Space, Backspace, Enter/newline/form, Done; document/focus/value preservation. |
 | `actualAddressKeysKeepDraftAndFixedToolbarUntilOpen` | Every visible letter/case/digit/required symbol through native key controls; long horizontal draft; separate Open/Done; invalid Open, star saves the committed page during editing, preserved draft on reopening, and valid Open navigation. |
 | `nativeFieldRevealSettlesOnceWithoutReloadOrFocusChange` | Activate a lower field before resize; selected field visible within the smaller viewport; edit, dismiss, reopen and edit the same live native field without reload/submission. |
 
