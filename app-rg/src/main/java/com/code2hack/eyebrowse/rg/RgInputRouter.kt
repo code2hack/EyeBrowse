@@ -48,14 +48,7 @@ internal class RgInputRouter(
         pointer.inputPosition().available
 
     fun key(event: KeyEvent): Boolean {
-        if (event.device?.name != "ROKID,PSOC-TP-R" || !event.isFromSource(InputDevice.SOURCE_KEYBOARD)) return false
-        val key = when (event.keyCode) {
-            KeyEvent.KEYCODE_ENTER -> PadGestureRecognizer.Key.TAP
-            291 -> PadGestureRecognizer.Key.DOUBLE
-            292 -> PadGestureRecognizer.Key.FORWARD
-            293 -> PadGestureRecognizer.Key.BACKWARD
-            else -> return false
-        }
+        val key = nativePadKey(event.device?.name, event.source, event.keyCode) ?: return false
         if (!usable() || event.metaState != 0) { cancel(); feedback(false); return true }
         val phase = when {
             event.isCanceled || event.isLongPress -> PadGestureRecognizer.Phase.CANCEL
@@ -72,5 +65,17 @@ internal class RgInputRouter(
     private fun schedule() {
         main.removeCallbacks(confirmation)
         if (active) gestures.deadline?.let { main.postAtTime(confirmation, it) }
+    }
+}
+
+/** Native admission shared by the router and its JVM regression; all other keyboards pass through. */
+internal fun nativePadKey(deviceName: String?, source: Int, keyCode: Int): PadGestureRecognizer.Key? {
+    if (deviceName != "ROKID,PSOC-TP-R" || (source and InputDevice.SOURCE_KEYBOARD) != InputDevice.SOURCE_KEYBOARD) return null
+    return when (keyCode) {
+        KeyEvent.KEYCODE_ENTER -> PadGestureRecognizer.Key.TAP
+        291 -> PadGestureRecognizer.Key.DOUBLE
+        KeyEvent.KEYCODE_DPAD_RIGHT, 292 -> PadGestureRecognizer.Key.FORWARD
+        KeyEvent.KEYCODE_DPAD_LEFT, 293 -> PadGestureRecognizer.Key.BACKWARD
+        else -> null
     }
 }
