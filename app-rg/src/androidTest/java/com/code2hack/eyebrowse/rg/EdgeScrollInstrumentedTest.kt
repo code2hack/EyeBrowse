@@ -97,7 +97,12 @@ class EdgeScrollInstrumentedTest {
                 abs(it.pointer.position.x-240)<.01 && abs(it.pointer.position.y-320)<.01 };ready
         }
     }
-    private fun tap(scene: ActivityScenario<LocalBrowserActivity>, stopTrigger: String?=null, view: (LocalBrowserActivity) -> View) {
+    private fun nativeTap(activity: LocalBrowserActivity, child: View) {
+        assertTrue(child.isShown && child.isEnabled && child.isLaidOut && child.width>0 && child.height>0)
+        val xy=IntArray(2);val origin=IntArray(2);child.getLocationOnScreen(xy);activity.root.getLocationOnScreen(origin)
+        assertTrue(activity.input.activate(InputPoint(xy[0]-origin[0]+child.width/2f,xy[1]-origin[1]+child.height/2f)))
+    }
+    private fun tap(scene: ActivityScenario<LocalBrowserActivity>, view: (LocalBrowserActivity) -> View) {
         await("current laid-out native target") {
             var ready=false
             scene.onActivity { val child=view(it)
@@ -105,20 +110,10 @@ class EdgeScrollInstrumentedTest {
             }
             ready
         }
-        scene.onActivity {
-            val child=view(it);assertTrue(child.isShown && child.isEnabled && child.isLaidOut && child.width>0 && child.height>0)
-            val xy=IntArray(2);val origin=IntArray(2);child.getLocationOnScreen(xy);it.root.getLocationOnScreen(origin)
-            val dispatchNs=if(stopTrigger!=null) SystemClock.elapsedRealtimeNanos() else 0L
-            assertTrue(it.input.activate(InputPoint(xy[0]-origin[0]+child.width/2f,xy[1]-origin[1]+child.height/2f)))
-            if(stopTrigger!=null) {
-                val returnedNs=SystemClock.elapsedRealtimeNanos()
-                evidence.put(edgeObservation(it).put("case","native-stop-trigger")
-                    .put("trigger",stopTrigger).put("dispatchNs",dispatchNs).put("dispatchReturnedNs",returnedNs))
-            }
-        }
+        scene.onActivity { nativeTap(it,view(it)) }
     }
-    private fun control(scene: ActivityScenario<LocalBrowserActivity>, name: String, stopTrigger: String?=null)=tap(scene,stopTrigger) { it.controls.getValue("hud.$name") }
-    private fun tagged(scene: ActivityScenario<LocalBrowserActivity>, name: String, stopTrigger: String?=null)=tap(scene,stopTrigger) { it.root.findViewWithTag(name) }
+    private fun control(scene: ActivityScenario<LocalBrowserActivity>, name: String)=tap(scene) { it.controls.getValue("hud.$name") }
+    private fun tagged(scene: ActivityScenario<LocalBrowserActivity>, name: String)=tap(scene) { it.root.findViewWithTag(name) }
     private fun key(scene: ActivityScenario<LocalBrowserActivity>, key: RgKeyboardKeys.Key) {
         await("current native key layout") { var ready=false;scene.onActivity { ready=it.keyboard.isShown && !it.root.isLayoutRequested };ready }
         var exists=false
@@ -164,16 +159,51 @@ class EdgeScrollInstrumentedTest {
             .put("layoutRequested",activity.root.isLayoutRequested).put("finishing",activity.isFinishing)
             .put("speed",activity.inputSettings.speed.pixelsPerSecond).put("sensitivity",activity.inputSettings.sensitivity.gain)
     }
-    private fun stopped(scene: ActivityScenario<LocalBrowserActivity>) {
-        val scenarioState=scene.state.name
-        val start=SystemClock.elapsedRealtimeNanos()
-        var end=start;var polls=0;var first: JSONObject?=null;var last: JSONObject?=null
-        val observation=JSONObject().put("case","callback-stop").put("startNs",start).put("scenarioState",scenarioState)
+    private fun startScrolling(scene: ActivityScenario<LocalBrowserActivity>, source: RawPoseReplay) {
+        reset(scene,source)
+        val before=y(scene)
+        scene.onActivity { source.orientationDegrees(0.0,50.0) }
+        await("fresh literal bottom edge is actually scrolling before cancellation") {
+            var running=false
+            scene.onActivity { running=it.edgeScrollRunning && it.pointer.position.y==632f &&
+                it.tabs.current.session.page?.let { page -> page.scrollY>before+5 && page.canScrollVertically(1) }==true }
+            running
+        }
+    }
+    private fun stopped(scene: ActivityScenario<LocalBrowserActivity>, triggerName: String="observation",
+                        requireRunning: Boolean=false, effect: (LocalBrowserActivity) -> Boolean={true},
+                        trigger: (LocalBrowserActivity) -> Unit={}) {
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        var activity: LocalBrowserActivity?=null
+        var start=0L;var end=0L;var polls=0;var first: JSONObject?=null;var last: JSONObject?=null
+        val observation=JSONObject().put("case","callback-stop").put("trigger",triggerName)
+            .put("requireRunning",requireRunning).put("scenarioState",scene.state.name)
         evidence.put(observation)
         try {
+            // Acquire the current Activity before the timing window. onActivity waits for idle;
+            // measured samples instead use runOnMainSync directly, without that extra barrier.
+            scene.onActivity {
+                activity=it;observation.put("before",edgeObservation(it))
+                if(requireRunning) {
+                    assertTrue("running callback before $triggerName",it.edgeScrollRunning)
+                    assertEquals(632f,it.pointer.position.y,.001f)
+                    assertTrue(it.pointer.position.available && SystemClock.elapsedRealtimeNanos()<it.pointer.expiresAtNs)
+                    assertEquals(LocalBrowserActivity.Utility.BROWSING,it.utility)
+                    assertEquals(LocalBrowserSession.Phase.READY,it.tabs.current.session.state.phase)
+                    assertTrue(it.hasWindowFocus() && !it.root.isLayoutRequested)
+                    assertTrue(it.tabs.current.session.page?.let { page -> page.isShown && page.canScrollVertically(1) }==true)
+                }
+                start=SystemClock.elapsedRealtimeNanos();observation.put("startNs",start)
+                trigger(it)
+                observation.put("dispatchReturnedNs",SystemClock.elapsedRealtimeNanos())
+            }
             await("ordinary callback cancelled",100) {
                 var stopped=false;val callNs=SystemClock.elapsedRealtimeNanos()
-                scene.onActivity { stopped=!it.edgeScrollRunning;last=edgeObservation(it).put("callNs",callNs) }
+                instrumentation.runOnMainSync {
+                    val current=checkNotNull(activity)
+                    stopped=!current.edgeScrollRunning && effect(current)
+                    last=edgeObservation(current).put("callNs",callNs).put("effectReached",stopped)
+                }
                 last?.put("returnedNs",SystemClock.elapsedRealtimeNanos())
                 if(first==null) first=last
                 polls++;observation.put("polls",polls).put("first",first).put("last",last)
@@ -181,8 +211,7 @@ class EdgeScrollInstrumentedTest {
             }
         } finally {
             end=SystemClock.elapsedRealtimeNanos()
-            // Record even a timeout or over-budget observation before the original assertion.
-            observation.put("observedNs",end).put("elapsedNs",end-start).put("polls",polls)
+            observation.put("observedNs",end).put("elapsedNs",if(start==0L) JSONObject.NULL else end-start).put("polls",polls)
                 .put("first",first ?: JSONObject.NULL).put("last",last ?: JSONObject.NULL)
         }
         assertTrue(end-start<=100_000_000)
@@ -196,14 +225,15 @@ class EdgeScrollInstrumentedTest {
         evidence.put(observation)
         try {
             await("top endpoint") {
-                var top=false
                 scene.onActivity {
-                    top=it.pointer.position.y==8f && it.tabs.current.session.page?.canScrollVertically(-1)==false
+                    val page=it.tabs.current.session.page
+                    val top=it.pointer.position.y==8f && page?.canScrollVertically(-1)==false
+                    checkedY=if(top) page?.scrollY else null
+                    reached=top && checkedY==0
                     last=edgeObservation(it)
                 }
                 if(first==null) first=last
-                checkedY=if(top) y(scene) else null
-                reached=top && checkedY==0;polls++
+                polls++
                 observation.put("polls",polls).put("reached",reached).put("checkedY",checkedY ?: JSONObject.NULL)
                     .put("first",first).put("last",last)
                 reached
@@ -308,7 +338,7 @@ class EdgeScrollInstrumentedTest {
             val after=y(scene);val elapsed=SystemClock.elapsedRealtimeNanos()-time
             val observed=(after-before)*1e9/elapsed
             assertTrue("native rate ${speed.pixelsPerSecond}: $observed",abs(observed-speed.pixelsPerSecond)<=speed.pixelsPerSecond*.12+4)
-            scene.onActivity {source.orientationDegrees(0.0,49.95)};stopped(scene)
+            stopped(scene,"edge departure",requireRunning=true) { source.orientationDegrees(0.0,49.95) }
             val dom=pageOracle(scene)
             evidence.put(JSONObject().put("case","rate").put("speed",speed.pixelsPerSecond).put("beforeY",before).put("afterY",after).put("elapsedNs",elapsed).put("observedNativePxPerSecond",observed).put("domObservation",dom))
         }
@@ -349,27 +379,47 @@ class EdgeScrollInstrumentedTest {
             assertEquals(632f,it.pointer.position.y,.001f)
         }
         capture(scene,"keyboard-bottom")
-        scene.onActivity {source.orientationDegrees(0.0,49.95)};stopped(scene)
+        stopped(scene,"edge departure",requireRunning=true) { source.orientationDegrees(0.0,49.95) }
         val departure=y(scene);SystemClock.sleep(150);assertEquals(departure,y(scene))
         key(scene,RgKeyboardKeys.Key.Character("b"));assertEquals("\"ab\"",js(scene,"document.querySelector('#text').value"));assertEquals("0",js(scene,"fixtureSubmits"))
         reset(scene,source);scene.onActivity {source.orientationDegrees(0.0,50.0)};await("scroll resumes") {y(scene)>departure+5}
         scene.onActivity {source.flowing=false}
         await("no effect at sample age cutoff") {var stale=false;scene.onActivity {stale=SystemClock.elapsedRealtimeNanos()>=it.pointer.expiresAtNs};stale}
         val staleY=y(scene);SystemClock.sleep(150);assertEquals(staleY,y(scene));stopped(scene)
-        reset(scene,source);scene.onActivity {source.orientationDegrees(0.0,50.0)}
-        control(scene,"more");stopped(scene);val covered=y(scene);SystemClock.sleep(150);assertEquals(covered,y(scene))
+        startScrolling(scene,source)
+        stopped(scene,"More cover",requireRunning=true,effect={it.utility==LocalBrowserActivity.Utility.MORE}) {
+            nativeTap(it,it.controls.getValue("hud.more"))
+        }
+        val covered=y(scene);SystemClock.sleep(150);assertEquals(covered,y(scene))
         tagged(scene,"menu.3");SystemClock.sleep(150);assertEquals("Settings edge cannot scroll covered page",covered,y(scene));tagged(scene,"utility.done")
+        startScrolling(scene,source)
         scene.moveToState(Lifecycle.State.CREATED);stopped(scene);assertFalse(source.registered)
         scene.moveToState(Lifecycle.State.RESUMED)
         assertEquals(identity,js(scene,"fixtureIdentity"));assertEquals("\"ab\"",js(scene,"document.querySelector('#text').value"))
         // Current tab changes and navigation use ordinary callbacks, with no stale-tick protocol.
-        reset(scene,source);scene.onActivity {source.orientationDegrees(0.0,50.0)}
-        control(scene,"more","More before New Tab");tagged(scene,"menu.0","New Tab");stopped(scene)
-        scene.onActivity {it.selectTab(0);assertFalse("tab switch cancels synchronously",it.edgeScrollRunning)}
-        control(scene,"close_tab");stopped(scene)
+        startScrolling(scene,source)
+        stopped(scene,"More before New Tab",requireRunning=true,effect={it.utility==LocalBrowserActivity.Utility.MORE}) {
+            nativeTap(it,it.controls.getValue("hud.more"))
+        }
+        // More already cancelled the page callback. New Tab must stay stopped, not claim a second cancellation.
+        tagged(scene,"menu.0")
+        await("actual new tab") {var added=false;scene.onActivity {added=it.tabs.count==2 && it.tabs.selectedIndex==1};added}
+        stopped(scene)
+        scene.onActivity {it.selectTab(0)}
+        startScrolling(scene,source)
+        stopped(scene,"current tab switch",requireRunning=true,effect={it.tabs.selectedIndex==1}) {
+            it.selectTab(1);assertFalse("tab switch cancels synchronously",it.edgeScrollRunning)
+        }
+        scene.onActivity {it.selectTab(0)}
+        startScrolling(scene,source)
+        stopped(scene,"close current tab",requireRunning=true,effect={it.tabs.count==1}) {
+            nativeTap(it,it.controls.getValue("hud.close_tab"))
+        }
         open(scene)
-        control(scene,"refresh");stopped(scene)
-        await("new document after actual Refresh") {js(scene,"fixtureIdentity")!=identity}
+        val beforeRefresh=js(scene,"fixtureIdentity")
+        startScrolling(scene,source)
+        stopped(scene,"Refresh",requireRunning=true) {nativeTap(it,it.controls.getValue("hud.refresh"))}
+        await("new document after actual Refresh") {js(scene,"fixtureIdentity")!=beforeRefresh}
         reset(scene,source);scene.onActivity {source.orientationDegrees(0.0,50.0)}
         await("actual bottom endpoint") {var bottom=false;scene.onActivity {bottom=it.pointer.position.y==632f && it.tabs.current.session.page?.canScrollVertically(1)==false};bottom}
         val endpoint=pageOracle(scene);val endpointY=y(scene)

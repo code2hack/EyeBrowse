@@ -7,8 +7,8 @@ The implementation baseline is accepted integration
 [approved HUD-G1 decision](https://github.com/code2hack/EyeBrowse/issues/30#issuecomment-6075367078).
 The external frozen-candidate manifest identifies the pushed commit, Git tree,
 source hashes, app/test APK bytes, host evidence and proposed native procedure.
-This document records host implementation, two retained native runs, and a
-**host-only diagnostic candidate awaiting a fresh native grant**.
+This document records implementation and all three retained native runs, followed
+by a **host-only endpoint/procedure correction awaiting fresh qualification**.
 It does not complete I31-T02/T03, independent acceptance, HUD-G2 or a release.
 
 ## Production behavior and consumers
@@ -40,7 +40,10 @@ callback. A later fresh pose evaluates the current visible surface normally.
 native viewport rate. Integer nanosecond arithmetic retains less than one pixel
 of rounding fraction. Stop/direction change/endpoints discard that fraction and
 unused distance; a stall cannot create catch-up travel. A last sample age at or
-beyond 250 ms has no scroll effect. Keyboard position and native editor focus/
+beyond 250 ms has no scroll effect. The existing native writer bounds an upward
+tick by the remaining nonnegative View.scrollY, so a final tick cannot cross the
+physical top while the renderer clamps a separate scroll offset. Interior and
+downward deltas are unchanged. Keyboard position and native editor focus/
 text are untouched by the callback.
 
 More's fourth row opens working black/light Settings below the unchanged toolbar.
@@ -182,30 +185,89 @@ remain unchanged. Observation adds execution cost; it is not an independent
 cancellation timestamp or a product probe. Compilation cannot diagnose the
 native failures or establish a pass.
 
-## Proposed exact-candidate native diagnosis and qualification — pending grant
+## Native15 diagnosis and current host correction
 
-No device operation has run for this diagnostic candidate. RG/port39030 are
-Manager-held; grants13/14 and all old #30 grants are consumed. The frozen
-source/test APK needs a fresh exclusive exact-candidate grant.
+The immutable diagnostic candidate `9072b029f0680173508ea5c0f015789cee914d03`
+ran only the two previously failing methods under grant15: two run, keyboard PASS,
+Settings FAIL, native34.411 s/host record interval37.467518 s, outer0/runner-1.
+The reports retain14 keyboard and4 Settings observations, with independent
+installed APK/PID/UID/time bindings. All three reached480×640 capture pairs,
+raw failures, restoration and resource return remain in `native-rg-grant15`.
+No boundary or affected #30 invocation ran. The partial Slow rate was
+119.73251934776488 native px/s; later rates/gains were not reached.
 
-The smallest proposed diagnostic invocation selects only the two previously
-failing methods, once, with a300 s outer bound and new persisted invocation/source
-labels. It retains their complete original journeys and strict assertions. Stop
-on any failure, missing/current-binding uncertainty or cleanup problem, preserve
-all reached originals and return resources. The unchanged boundary method still
-requires renewed exact-head qualification if requested for final acceptance.
-Full qualification additionally requires that boundary method and the affected
-#30 methods below; none is automatically replayed or started by this proposal.
-The external manifest gives exact filters and separates diagnostic execution
-from any later explicitly granted qualification.
+At current Standard240's top-endpoint failure the last sample is fresh, READY,
+shown and window-focused, pointerY8, canScrollUpfalse, nativeY/checkedY-3. This
+identifies the current failed zeroY conjunct. It does not reconstruct c653's
+missing failed values. The keyboard method passed its reached checks; its old
+elapsed failure was not reproduced. Both current More/New Tab dispatch-return
+snapshots were interior, with edgeScrollRunningfalse, before completed click
+effects. They cannot establish cancellation of an already running edge scroll.
 
-The external proposal binds the frozen app/test APKs and one owned unchanged
-#28 fixture listener on a newly reserved/verified RG. The app APK is unchanged;
-verify its installed bytes and stop on mismatch rather than reinstall it. Only
-the new test APK needs one explicitly granted install. Proposed fixed fixture routes are keyboard,
-history, author-light and media, with the existing delayed load route; fixture
-source/pages are unchanged. Its imported accepted artifact is separately hashed
-and staged, not rebuilt or started here.
+Host tracing supports a narrow product writer gap. The Activity admits a full
+upward tick when canScrollVertically(-1) is true, without bounding it by the
+remaining native distance. [Android12 View.scrollBy](https://android.googlesource.com/platform/frameworks/base/+/android-12.0.0_r1/core/java/android/view/View.java)
+stores the unbounded sum. WebView forwards its scroll-change notification, while
+[Chromium95 AwScrollOffsetManager](https://chromium.googlesource.com/chromium/src/+/95.0.4638.74/android_webview/java/src/org/chromium/android_webview/AwScrollOffsetManager.java)
+clamps the renderer offset separately in that notification path. These primary
+sources match the recorded platform/provider version; they are not an
+authenticated disassembly of the installed OEM provider or a trace of the exact
+failing native tick. The current production correction bounds only the upward
+native delta in the existing writer. No test assigns a native/DOM scroll outcome.
+
+`NativePageScrollTest` calls that same production delta function, including with
+the actual EdgeScrollMotion at all three presets. The red control extracts the
+old unchanged delta into an identity function used by the writer: three tests,
+two failures/one pass (final crossing-3 and held endpoint-1). It is a semantically
+unchanged old-behavior control, not execution of an unmodified9072 APK. The
+corrected function passes all three controls. Exact test source and compiled
+class bytes match red/green; every tracked/untracked pre-run source is copied and
+hashed. Logs/XML and the provenance record remain in
+`r3-native15-host-continuation-02`. These are host controls; fresh real WebView
+qualification remains required.
+
+The native procedure now waits for actual page movement at the literal bottom
+edge and asserts a fresh running callback/current READY shown page before timed
+departure, More, tab switch, close and Refresh. It retains the existing native
+pose/touch writer and current selectTab product path. More, close and New Tab
+also require their actual utility/count/index effects; New Tab follows More's
+cancellation and is checked for staying stopped, without claiming a second
+running cancellation. Pause follows an observed running scroll; its stopped
+check follows the actual lifecycle transition. The affected #30 tests supply
+the unchanged DPAD/OEM native dispatch regression.
+
+A timed trigger runs on main after Activity acquisition. The clock starts before
+the actual action; subsequent read-only main samples use runOnMainSync directly,
+without ActivityScenario.onActivity's pre-sample idle wait. The original100 ms
+poll and elapsed≤100,000,000 ns assertion remain, including dispatch and observer
+return cost. Before/first/last state and dispatch-return/elapsed records survive
+failed assertions. This improves measurement preconditions without diagnosing
+the historical elapsed failure or claiming exact callback/optical latency. The
+top predicate still requires pointerY8, canScrollUpfalse and nativeY0 within10 s;
+all three are read on the same main-thread observation now. Rates, gains,
+freshness, editor/focus, fixed keyboard, geometry, RGB and cleanup criteria stay
+strict. No dependency, second writer, queue or generation protocol is added.
+
+## Proposed exact-candidate native qualification — pending grant
+
+No device operation has run for the current correction. All grants13/14/15 are
+consumed/released; RG/39030 are Manager-held. The new production and test APKs
+both need fresh exact-candidate install authority and independent installed-byte
+verification. The external immutable manifest binds the actual new source/APKs
+and separately retains every historical packet and result.
+
+The smallest complete affected qualification is one EdgeScrollInstrumentedTest
+three-method invocation, ≤900 s, with fresh persisted invocation/source labels.
+Any assertion, report/binding or cleanup uncertainty stops later invocation; no
+replay or repair is proposed. Only all three passing current reports, all72
+boundary rows, strict native effects, and successful scene/raw-source/Activity
+cleanup permit one conditional affected #30 three-method invocation, ≤300 s.
+The external proposal supplies exact filters and all30 potential artifact names.
+
+The proposal uses one owned unchanged #28 fixture with fixed keyboard/history/
+author-light/media/delayed-load routes, independently hashed source/JAR/pages,
+fresh interface/freeport and exact PID/UID/start/argv/listener ownership. It is
+staged evidence only; no fixture is built or started by host preparation.
 
 The three new `EdgeScrollInstrumentedTest` methods are:
 
