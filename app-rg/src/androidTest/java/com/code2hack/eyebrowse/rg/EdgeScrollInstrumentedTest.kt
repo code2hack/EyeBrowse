@@ -168,20 +168,22 @@ class EdgeScrollInstrumentedTest {
         val scenarioState=scene.state.name
         val start=SystemClock.elapsedRealtimeNanos()
         var end=start;var polls=0;var first: JSONObject?=null;var last: JSONObject?=null
+        val observation=JSONObject().put("case","callback-stop").put("startNs",start).put("scenarioState",scenarioState)
+        evidence.put(observation)
         try {
             await("ordinary callback cancelled",100) {
                 var stopped=false;val callNs=SystemClock.elapsedRealtimeNanos()
                 scene.onActivity { stopped=!it.edgeScrollRunning;last=edgeObservation(it).put("callNs",callNs) }
                 last?.put("returnedNs",SystemClock.elapsedRealtimeNanos())
                 if(first==null) first=last
-                polls++;stopped
+                polls++;observation.put("polls",polls).put("first",first).put("last",last)
+                stopped
             }
         } finally {
             end=SystemClock.elapsedRealtimeNanos()
             // Record even a timeout or over-budget observation before the original assertion.
-            evidence.put(JSONObject().put("case","callback-stop").put("startNs",start).put("observedNs",end)
-                .put("elapsedNs",end-start).put("polls",polls).put("scenarioState",scenarioState)
-                .put("first",first ?: JSONObject.NULL).put("last",last ?: JSONObject.NULL))
+            observation.put("observedNs",end).put("elapsedNs",end-start).put("polls",polls)
+                .put("first",first ?: JSONObject.NULL).put("last",last ?: JSONObject.NULL)
         }
         assertTrue(end-start<=100_000_000)
     }
@@ -189,6 +191,9 @@ class EdgeScrollInstrumentedTest {
         val scenarioState=scene.state.name
         val start=SystemClock.elapsedRealtimeNanos()
         var first: JSONObject?=null;var last: JSONObject?=null;var polls=0;var reached=false;var checkedY: Int?=null
+        val observation=JSONObject().put("case","top-endpoint").put("speed",speed.pixelsPerSecond)
+            .put("startNs",start).put("scenarioState",scenarioState)
+        evidence.put(observation)
         try {
             await("top endpoint") {
                 var top=false
@@ -198,13 +203,15 @@ class EdgeScrollInstrumentedTest {
                 }
                 if(first==null) first=last
                 checkedY=if(top) y(scene) else null
-                reached=top && checkedY==0;polls++;reached
+                reached=top && checkedY==0;polls++
+                observation.put("polls",polls).put("reached",reached).put("checkedY",checkedY ?: JSONObject.NULL)
+                    .put("first",first).put("last",last)
+                reached
             }
         } finally {
-            evidence.put(JSONObject().put("case","top-endpoint").put("speed",speed.pixelsPerSecond)
-                .put("startNs",start).put("finishedNs",SystemClock.elapsedRealtimeNanos()).put("polls",polls)
-                .put("reached",reached).put("checkedY",checkedY ?: JSONObject.NULL).put("scenarioState",scenarioState)
-                .put("first",first ?: JSONObject.NULL).put("last",last ?: JSONObject.NULL))
+            observation.put("finishedNs",SystemClock.elapsedRealtimeNanos()).put("polls",polls)
+                .put("reached",reached).put("checkedY",checkedY ?: JSONObject.NULL)
+                .put("first",first ?: JSONObject.NULL).put("last",last ?: JSONObject.NULL)
         }
     }
     private fun pageOracle(scene: ActivityScenario<LocalBrowserActivity>): JSONObject {
