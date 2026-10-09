@@ -448,14 +448,14 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Worker",
-    "scope": "v0.0.2; issue #30; RG local-session/navigation preparation and HUD-G1 review prototype",
+    "scope": "v0.0.2; issue #30; RG-local browser/HUD/tabs/bookmarks delivered in PR #36; postmerge cleanup and exact Paseo/native archival verified; worktree and evidence retained",
     "host": "spark",
     "runtime": "codex",
     "id": "01a11e53-da22-7dc1-a66e-4cf1a574bed2",
     "paseo": "42427e14-41b6-45d2-b0b5-549d7b4b5317",
     "model": "gpt-6.1-sol",
     "name": "Worker-#30",
-    "status": "active"
+    "status": "retired"
   }
 ]
 ```
