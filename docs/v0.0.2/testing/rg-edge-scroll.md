@@ -1,14 +1,14 @@
 # RG pointer, full-screen edge scrolling and Settings
 
-Worker: Worker-#31 · issue #31 · I31-T02 correction attempt2/failure1 · assignment revision1.
+Worker: Worker-#31 · issue #31 · I31-T02 correction attempt3/failure2 · assignment revision1.
 
 The implementation baseline is accepted integration
 `7b055cbdd848440346e9f873ac44cf2e688af9d8`, under SPEC D2.2, HUD H1.2 and the
 [approved HUD-G1 decision](https://github.com/code2hack/EyeBrowse/issues/30#issuecomment-6075367078).
 The external frozen-candidate manifest identifies the pushed commit, Git tree,
 source hashes, app/test APK bytes, host evidence and proposed native procedure.
-This document records implementation and all three retained native runs, followed
-by a **host-only endpoint/procedure correction awaiting fresh qualification**.
+This document records implementation and the four retained native grants13–16,
+followed by a **host-only affected aiming-procedure correction awaiting fresh qualification**.
 It does not complete I31-T02/T03, independent acceptance, HUD-G2 or a release.
 
 ## Production behavior and consumers
@@ -323,3 +323,70 @@ Replay and native window evidence do not establish physical head movement,
 optics or comfort. No extra universal physical gate or Owner observation is
 inferred. Manager owns the fresh resource grant, independent review, PR and
 acceptance.
+
+
+## Native16 results and affected aiming correction03
+
+Exact `4bc843c3e04e0cff3ea428811071ddea8263277c` first returned3PASS in
+122.328s. The independently bound original reports retain72/10/14 actual rows,
+all120/240/360 rates, gain ratios/recreation, three native zero top endpoints,
+and actual running-edge cancellation effects. Boundary maxima were19.122083ms
+from receipt/31.566666ms from input; largest timed running-stop observation was
+42.090625ms. These are software observer measurements, not exact callback/optical
+timestamps. Six reached original480×640 captures and all scene cleanup passed.
+
+The conditionally authorized original affected #30 invocation returned2PASS/
+1FAIL in34.428s. Geometry/address and nativeDPAD admission passed. The four-tab
+journey failed `raw quaternion reaches current native target` at oldaim270 via558.
+Its exact failed coordinates/state/cause were not emitted. This prevents complete
+affected qualification. Twelve current original images across both invocations,
+raw failures, three reports and all122 indexed native members remain immutable.
+Recorded cleanup20:13:40.580625Z preserved exact three keys/unrelated preferences/
+opaque trust, settled only independently qualified own processes/fixture, and
+returned RG+39030. This records a past state, not current device access authority.
+
+A host trace of the actual production model and original replay formula at the
+recorded480×640/density204/160, with declared neutral reference/settled fresh
+stream, demonstrates an obsolete procedure assumption: Standard More target
+(456,24) settles at(458.0679,21.897995), then Add target(368,72) settles at
+(373.86542,61.72976), outside the original strict eight-pixel criterion. These
+host values are not reconstructed historical device observations. The helper
+used launch-relative absolute geometry, a density-derived radius and fixed gain;
+the current pointer integrates movement and discards boundary/reversal debt.
+
+Only the local-browser test aiming path now generates one relative raw movement
+from its current observed cursor, actual glyph motion bounds, adopted/current
+quaternion and current gain. It retains the original HeadPoseSource/model/overlay
+route, held fresh samples, strict `<8` criterion and10s bound. It does not retry,
+recenter, assign a cursor/result/DOM value, modify production gain/filter, or bypass
+the subsequent native pad action. The legacy absolute helper and its other callers
+are unchanged. No product source, writer, dependency or framework changed.
+
+`RawPoseAimTest` invokes the same test-only generator as the native path and the
+real production model. Three controls cover More→Add, corner reversal and interior
+target sequences at all three gains. The old formula's semantic extraction at
+recorded RG geometry fails3/3; the relative generator passes3/3. Exact test source
+and compiled test bytes match red/green. This is a host control, not an unmodified
+4bc APK run or proof of the unknown native cause.
+
+Minimal field-free aiming reports record target/before/first/last bounds, actual
+pointer, gain, freshness/source registration, layout/window focus, utility/tab
+state, elapsed samples and original failure class before returning/throwing.
+Each method owns `local-browser-<exact-method-name>-aim-observations.json`; the
+same method's array retains both aim calls and flushes with `fd.sync()`. Source/
+run/PID labels need independent installed/time binding. These are **aim-only**
+reports; original JUnit outcomes and external scene/raw-source/metadata cleanup
+remain necessary. File-write failures preserve the original primary exception.
+No field text, URL or private payload is recorded. All original `@Test` bodies,
+native effects, short/double/tab/editor/history/no-wrap assertions are unchanged.
+
+The smallest proposed fresh native action is one explicit original
+`fourLiveTabsAndPadGesturesKeepCurrentNativeEffects` invocation,≤180s total,
+with current source/run labels, unchanged installed app verification and one new
+test APK install, one owned unchanged fixture, strict original effects and normal
+finally. Exactly three potential outputs are its aim report and four-tabs PNG/
+sidecar. No additional method/replay/repair is proposed. A fresh Manager grant is
+required; this candidate contains no device execution or changed-head native PASS.
+Earlier positive tests retain their exact4bc binding and do not automatically
+qualify changed test bytes. Independent changed-head review and affected native
+qualification remain pending.

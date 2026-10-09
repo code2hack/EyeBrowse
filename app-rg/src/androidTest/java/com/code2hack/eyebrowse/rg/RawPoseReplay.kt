@@ -36,6 +36,11 @@ internal class RawPoseReplay : HeadPoseSource {
         val half=Math.toRadians(-degrees)/2
         sample=RotationSample(0,sin(half).toFloat(),0f,0f,cos(half).toFloat())
     }
+    fun aimRelative(activity: LocalBrowserActivity, point: InputPoint) {
+        val a=reference
+        sample=rawPoseToward(RotationSample(0,a[0],a[1],a[2],a[3]),sample,
+            activity.pointer.inputPosition(),activity.pointer.motionBounds,point,activity.inputSettings.sensitivity.gain)
+    }
     fun aim(activity: Activity, point: InputPoint) {
         val root=activity.findViewById<View>(R.id.rg_root)
         val radius=8*activity.resources.displayMetrics.density
