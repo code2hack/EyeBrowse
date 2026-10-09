@@ -467,6 +467,17 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "model": "gpt-6.1-sol / xhigh",
     "name": "Worker-#31",
     "status": "retired"
+  },
+  {
+    "role": "Worker",
+    "scope": "v0.0.2; issue #32; RG built-in keyboard, direct native field/address editing and keyboard-visible edges",
+    "host": "spark",
+    "runtime": "codex",
+    "id": "01a122ba-50eb-79e3-a72e-9430e6c7cd18",
+    "paseo": "b7044aab-2e31-49f8-873a-b6c4a06f31c4",
+    "model": "gpt-6.1-sol / xhigh",
+    "name": "Worker-#32",
+    "status": "active"
   }
 ]
 ```
