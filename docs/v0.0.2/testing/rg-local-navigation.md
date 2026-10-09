@@ -57,8 +57,12 @@ components without introducing a browser/provider plugin framework.
 Preparation reuses #28's positively qualified route: black native window/root/
 page backing, `FORCE_DARK_OFF`, disabled native WebView focus highlighting, and
 one fixed public presentation-only stylesheet on the live document. A public
-visual-state callback reveals the styled WebView. Pending loads/errors retain
-black backing. The fixed selectors cover ordinary HTML containers and editors;
+visual-state callback reveals the attached styled WebView from `INVISIBLE` to
+`VISIBLE`. Empty/loading/error pages relinquish native focus and remain
+`INVISIBLE`, retaining layout while black backing is shown. This uses ordinary
+Android visibility so hidden fields/buttons do not receive native touch,
+focused keys or scroll. Visible address/navigation recovery remains available.
+The fixed selectors cover ordinary HTML containers and editors;
 they do not assign field values, replace the document, invert images, or style
 `img`, `svg`, `canvas` or `video`.
 
@@ -115,6 +119,37 @@ up-to-date and NO-SOURCE tasks are distinguished in the private phase evidence.
 The initial renderer plugin-version configuration error is preserved as an
 intermediate correction within attempt1, not a concluded todo failure.
 
+The first exact-source RG run at
+`6a4dd3ae39eea0a5ea696e992ade079779e55517` concluded **NOT_PASSED**: four tests
+ran, three passed and the loading/error method failed its original black sample
+at `(450,620)` (white). `(450,300)` was black. The retained loading screenshot
+shows the earlier address-entry status and visible keyboard; `(450,620)` lies
+on the Done label. It does not establish a white page-background cause. The
+actual HTTP404 continuation and fifth error capture were not reached; four
+original native PNGs and the full negative remain preserved. Safe cleanup,
+unchanged opaque trust, actual Awake/interactive, connectivity and prior Rokid
+launcher foreground were verified before the Manager released the resources.
+
+**I30-T01 attempt2/failure1** also addresses Reviewer finding I30-R1: opacity
+alone did not remove the hidden page's native input eligibility. The correction
+uses normal visibility/focus and adds a focused hidden touch/key/form-no-effect
+and visible recovery check. Capture observation now waits for the owned hardware
+window's public frame-commit callback, then uses `PixelCopy` on that exact
+480×640 window buffer, with origin `(0,0)` checked and no scaling/cropping. Ready
+pages first retain the existing WebView visual-state wait. The original black
+coordinates, fixed authored fixture, loading state and actual HTTP404 checks
+are retained. Sidecars record phase, page/keyboard visibility, focus and commit/
+copy times without field values. This addresses a missing rendered-frame wait;
+the original synchronization cause remains an inference until revalidation.
+Window-buffer captures do not establish compositor presentation or optical time.
+
+The public contracts are
+[WebView visual-state visibility](https://developer.android.com/reference/android/webkit/WebView#postVisualStateCallback(long,%20android.webkit.WebView.VisualStateCallback))
+and [frame commit](https://developer.android.com/reference/android/view/ViewTreeObserver#registerFrameCommitCallback(java.lang.Runnable)).
+These source/observation corrections require a fresh exact-candidate RG grant
+and renewed independent review. Compiling the new test is not native PASS; no
+changed-candidate device work is implied by the previous consumed grant.
+
 **No device access is implicit.** Request/obtain the exact-candidate RG and
 owned fixed-fixture listener reservation first. Phone is unavailable/unreserved;
 no Phone command, simultaneous-use claim or Phone regression PASS is made.
@@ -122,11 +157,11 @@ Record the assigned source/app/test hashes, physical serial/model, actual
 provider/software/display/route and canonical opaque trust match before any
 installation/mutation. Do not switch a working listener/server, pair/change
 trust, clear app data, change screen/security/provider/network settings or issue
-power cycles as part of these four checks.
+power cycles as part of these scoped checks.
 
 The existing fixed #28 fixture serves `keyboard.html`, `history.html`,
 `author-light.html`, `media.svg`, and a real delayed `loading.html`. One scoped
-instrumentation class exercises:
+instrumentation class now exercises five methods:
 
 | Method | Observations |
 | --- | --- |
@@ -134,17 +169,18 @@ instrumentation class exercises:
 | `currentNativeFocusAndDonePreserveEditingAcrossPauseResume` | Native field tap, actual built-in key effect, Done without submit, pause sensor cleanup and the same still-live document/value after resume. |
 | `liveBlackPresentationKeepsFieldsDynamicUpdatesAndMediaColors` | Actual author-light/field/dynamic/author-dark pixels and un-inverted external SVG; owned native captures. |
 | `pendingLoadAndHttpFailureLeaveBlackRecoverableLocalControls` | Real delayed HTTP load, black pending frames and actual main-frame HTTP error with usable local recovery controls. |
+| `hiddenPageRejectsNativeEffectsAndVisibleRecoveryRestoresInput` | Hide an actually focused editor during real delayed owner navigation; attempt native hidden field/button/Enter input with unchanged field/input/submit observations; actual HTTP404 native invisibility and ordinary visible address recovery restore ready-page editing. |
 
 ```sh
-adb -s "$RESERVED_RG_ENDPOINT" shell am instrument -w \
+adb -s "$RESERVED_RG_ENDPOINT" shell -T am instrument -w -r \
   -e fixtureBaseUrl "$RESERVED_FIXTURE_BASE_URL" \
   -e class com.code2hack.eyebrowse.rg.LocalBrowserPreparationInstrumentedTest \
   com.code2hack.eyebrowse.rg.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
 The suite does not connect/bootstrap devices, install packages or start fixture
-services itself. Individual native/JS observations are bounded; screenshot
-regions/fractions are declared before capture. JS reads only owned fixture
+services itself. Individual native/JS/frame/copy observations are bounded;
+screenshot regions/fractions are declared before capture. JS reads only owned fixture
 truth/geometry; positive navigation/editing uses the actual native controls.
 These synthetic native touch checks support only the exercised direct input;
 they do not claim physical head/pad directions, optical comfort, full field

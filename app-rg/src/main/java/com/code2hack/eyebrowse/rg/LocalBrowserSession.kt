@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.http.SslError
+import android.view.View
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
@@ -45,6 +46,7 @@ internal class LocalBrowserSession(context: Context) {
     private fun createPage(): WebView = WebView(surface.context).also { view ->
         page = view
         view.setBackgroundColor(Color.BLACK)
+        view.visibility = View.INVISIBLE
         view.defaultFocusHighlightEnabled = false
         view.settings.apply {
             javaScriptEnabled = true
@@ -65,7 +67,7 @@ internal class LocalBrowserSession(context: Context) {
         }
         view.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
-                view.alpha = 0f
+                hidePage(view)
                 publish(Phase.LOADING)
             }
             override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
@@ -78,7 +80,7 @@ internal class LocalBrowserSession(context: Context) {
                     view.postVisualStateCallback(0, object : WebView.VisualStateCallback() {
                         override fun onComplete(requestId: Long) {
                             if (state.phase == Phase.LOADING) {
-                                view.alpha = 1f
+                                view.visibility = View.VISIBLE
                                 publish(Phase.READY)
                             }
                         }
@@ -92,18 +94,18 @@ internal class LocalBrowserSession(context: Context) {
             }
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                 if (request.isForMainFrame) {
-                    view.alpha = 0f
+                    hidePage(view)
                     publish(Phase.ERROR, "Page unavailable (${error.errorCode})")
                 }
             }
             override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
                 handler.cancel()
-                view.alpha = 0f
+                hidePage(view)
                 publish(Phase.ERROR, "Certificate error; connection refused")
             }
             override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
                 if (request.isForMainFrame) {
-                    view.alpha = 0f
+                    hidePage(view)
                     publish(Phase.ERROR, "HTTP error ${response.statusCode}")
                 }
             }
@@ -125,7 +127,7 @@ internal class LocalBrowserSession(context: Context) {
         val result = AddressPolicy.resolve(draft)
         if (result.accepted()) {
             val view = page ?: createPage() // Deliberate recovery only; never replay a failed form.
-            view.alpha = 0f
+            hidePage(view)
             publish(Phase.LOADING)
             view.loadUrl(checkNotNull(result.url()))
         }
@@ -136,7 +138,7 @@ internal class LocalBrowserSession(context: Context) {
     fun forward() { page?.takeIf { it.canGoForward() }?.goForward() }
     fun refresh() {
         page?.takeIf { state.phase != Phase.EMPTY && state.phase != Phase.INTERRUPTED }?.let {
-            it.alpha = 0f
+            hidePage(it)
             publish(Phase.LOADING)
             it.reload()
         }
@@ -147,6 +149,12 @@ internal class LocalBrowserSession(context: Context) {
         onStateChanged = {}
         page?.let { surface.removeView(it); it.stopLoading(); it.destroy() }
         page = null
+    }
+
+    private fun hidePage(view: WebView) {
+        // Transparency alone still admits native touch/focus. Keep layout for the visual callback.
+        view.clearFocus()
+        view.visibility = View.INVISIBLE
     }
 
     private fun publish(phase: Phase, error: String? = null) {
