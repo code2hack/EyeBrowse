@@ -34,7 +34,7 @@ class LocalBrowserActivity : Activity() {
         var draft: String? = null
         var recoveryUrl = ""
     }
-    internal enum class Utility { BROWSING, MORE, TABS, BOOKMARKS, QR_PENDING, SETTINGS_PENDING }
+    internal enum class Utility { BROWSING, MORE, TABS, BOOKMARKS, QR_PENDING, SETTINGS }
     internal lateinit var root: FrameLayout
     internal lateinit var toolbar: FrameLayout
     internal lateinit var content: FrameLayout
@@ -45,6 +45,7 @@ class LocalBrowserActivity : Activity() {
     internal lateinit var router: RgInputRouter
     internal lateinit var tabs: LocalTabs<Tab>
     internal lateinit var bookmarks: LocalBookmarks
+    internal lateinit var inputSettings: LocalInputSettings
     internal val controls = linkedMapOf<String, TextView>()
     internal val keyButtons = linkedMapOf<RgKeyboardKeys.Key, TextView>()
     internal var utility = Utility.BROWSING
@@ -55,6 +56,49 @@ class LocalBrowserActivity : Activity() {
     private var addressEditing = false
     private var localError: String? = null
     private var resumed = false
+    private var utilityScroll: ScrollView? = null
+    private val edgeMotion = EdgeScrollMotion()
+    internal var edgeScrollRunning = false
+        private set
+    private val edgeScroll = object : Runnable {
+        override fun run() {
+            val surface = scrollSurface()
+            val now = SystemClock.elapsedRealtimeNanos()
+            val direction = edgeMotion.direction(pointer.inputPosition(),pointer.motionBounds,pointer.expiresAtNs,now)
+            if (surface == null || direction == 0) { stopEdgeScroll(); return }
+            val pixels = edgeMotion.step(pointer.position,pointer.motionBounds,pointer.expiresAtNs,now,
+                inputSettings.speed.pixelsPerSecond)
+            if (surface.canScrollVertically(direction)) {
+                if (utility==Utility.BROWSING) input.scroll(pixels) else surface.scrollBy(0,pixels)
+            }
+            else edgeMotion.stop() // Endpoints never bank unused travel.
+            root.postDelayed(this,16)
+        }
+    }
+    private fun scrollSurface(): View? {
+        if (!resumed || !hasWindowFocus()) return null
+        return when (utility) {
+            Utility.BROWSING -> tabs.current.session.page?.takeIf {
+                it.isShown && tabs.current.session.state.phase == LocalBrowserSession.Phase.READY
+            }
+            Utility.TABS, Utility.BOOKMARKS, Utility.SETTINGS -> utilityScroll?.takeIf { it.isShown }
+            else -> null
+        }
+    }
+    private fun updateEdgeScroll() {
+        val now=SystemClock.elapsedRealtimeNanos()
+        if (scrollSurface()==null || edgeMotion.direction(pointer.position,pointer.motionBounds,pointer.expiresAtNs,now)==0) {
+            stopEdgeScroll();return
+        }
+        if (!edgeScrollRunning) {
+            edgeScrollRunning=true
+            edgeMotion.step(pointer.position,pointer.motionBounds,pointer.expiresAtNs,now,inputSettings.speed.pixelsPerSecond)
+            root.postDelayed(edgeScroll,16)
+        }
+    }
+    private fun stopEdgeScroll() {
+        root.removeCallbacks(edgeScroll);edgeScrollRunning=false;edgeMotion.stop()
+    }
     private var observeEditorUntil = 0L
     private val editorObservation = object : Runnable {
         override fun run() {
@@ -126,7 +170,11 @@ class LocalBrowserActivity : Activity() {
         bookmarks = LocalBookmarks(File(filesDir, "local-browser/bookmarks.properties"))
         tabs = LocalTabs(::createTab) { tab -> pages.removeView(tab.session.surface); tab.session.destroy() }
         restoreMetadata(savedInstanceState?.getString("local.tabs") ?: getPreferences(MODE_PRIVATE).getString("local.tabs", null))
-        pointer = PointerOverlay(this).apply { useLocalHudAppearance() }
+        val preferences=getSharedPreferences("local-input-settings",MODE_PRIVATE)
+        inputSettings=LocalInputSettings({ key -> preferences.getString(key,null) }) { key,value ->
+            preferences.edit().putString(key,value).commit()
+        }
+        pointer = PointerOverlay(this).apply { useLocalHudAppearance();sensitivity(inputSettings.sensitivity.gain) }
         root.addView(pointer, box(-1, -1))
         input = NativeRgInputTarget(root, pointer, {
             if (utility == Utility.BROWSING) tabs.current.session.page else null
@@ -134,6 +182,7 @@ class LocalBrowserActivity : Activity() {
         router = RgInputRouter(this, pointer, root, input) {}
         // OEM forward/back bindings are retained; wearer-facing direction qualification is separate evidence.
         router.onSwipe = { direction -> if (utility == Utility.BROWSING) switchTab { tabs.swipe(direction) } }
+        pointer.onPositionChanged = ::updateEdgeScroll
         pointer.onAvailabilityChanged = { available -> if (!available) router.cancel(); updateStatus() }
         root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             pointer.bounds(0f, 0f, root.width.toFloat(), root.height.toFloat(), display?.rotation ?: 0)
@@ -150,6 +199,7 @@ class LocalBrowserActivity : Activity() {
                 tab.committedUrl = state.url; tab.committedTitle = state.title; tab.recoveryUrl = ""
             }
             if (::tabs.isInitialized && tabs.current === tab) {
+                if (state.phase != LocalBrowserSession.Phase.READY) stopEdgeScroll()
                 if (state.phase == LocalBrowserSession.Phase.LOADING && !addressEditing) localError = null
                 if (state.phase != LocalBrowserSession.Phase.READY && !addressEditing) dismissKeyboard()
                 updateHud()
@@ -238,7 +288,7 @@ class LocalBrowserActivity : Activity() {
         // Ordinary visibility/focus teardown; no captured event or editor identity survives a switch.
         val old = tabs.current
         if (!change()) return
-        dismissKeyboard(); old.session.surface.clearFocus(); localError = null
+        stopEdgeScroll(); dismissKeyboard(); old.session.surface.clearFocus(); localError = null
         dismissUtility(); root.requestFocus(); showSelected()
     }
     internal fun selectTab(index: Int) = switchTab { tabs.select(index) }
@@ -251,13 +301,13 @@ class LocalBrowserActivity : Activity() {
     }
     internal fun closeTab() {
         try {
-            dismissKeyboard(); dismissUtility(); tabs.closeCurrent(); localError = null
+            stopEdgeScroll(); dismissKeyboard(); dismissUtility(); tabs.closeCurrent(); localError = null
             showSelected(); root.requestFocus()
         } catch (_: RuntimeException) { localError = "The tab could not be replaced."; updateStatus() }
           catch (_: OutOfMemoryError) { localError = "The tab could not be replaced."; updateStatus() }
     }
     private fun navigate(action: (LocalBrowserSession) -> Unit) {
-        dismissKeyboard(); dismissUtility(); tabs.current.draft = null; localError = null
+        stopEdgeScroll(); dismissKeyboard(); dismissUtility(); tabs.current.draft = null; localError = null
         action(tabs.current.session); updateHud()
     }
 
@@ -303,16 +353,18 @@ class LocalBrowserActivity : Activity() {
     }
 
     internal fun showUtility(next: Utility) {
-        dismissKeyboard(); tabs.current.session.surface.clearFocus(); root.requestFocus()
+        stopEdgeScroll(); dismissKeyboard(); tabs.current.session.surface.clearFocus(); root.requestFocus()
         utility = next; localError = null; overlay.visibility = View.VISIBLE
         showSelected(); renderUtility()
     }
     internal fun dismissUtility() {
         if (!::overlay.isInitialized) return
+        stopEdgeScroll(); utilityScroll=null
         utility = Utility.BROWSING; overlay.visibility = View.GONE; overlay.removeAllViews()
         if (::tabs.isInitialized) showSelected()
     }
     private fun renderUtility() {
+        stopEdgeScroll(); utilityScroll=null
         overlay.removeAllViews(); overlay.setBackgroundColor(if (utility == Utility.MORE) Color.TRANSPARENT else Color.BLACK)
         overlay.setOnClickListener { if (utility == Utility.MORE) dismissUtility() }
         if (utility == Utility.MORE) {
@@ -324,7 +376,7 @@ class LocalBrowserActivity : Activity() {
                         0 -> addTab()
                         1 -> showUtility(Utility.BOOKMARKS)
                         2 -> showUtility(Utility.QR_PENDING)
-                        else -> showUtility(Utility.SETTINGS_PENDING)
+                        else -> showUtility(Utility.SETTINGS)
                     }
                 }.apply { tag = "menu.$i" }, box(224, 48, y = i * 48))
             }
@@ -340,7 +392,7 @@ class LocalBrowserActivity : Activity() {
         overlay.addView(button("Done") { dismissUtility() }.apply { tag = "utility.done" }, box(96, 44, 368, 14))
         val scroll = ScrollView(this).apply { setBackgroundColor(Color.BLACK); isFillViewport = true }
         val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.BLACK) }
-        scroll.addView(rows); overlay.addView(scroll, box(-1, -1, y = 76))
+        scroll.addView(rows); overlay.addView(scroll, box(-1, -1, y = 76));utilityScroll=scroll
         fun row(view: View, height: Int) { rows.addView(view, LinearLayout.LayoutParams(-1, height).apply { setMargins(16, 0, 16, 8) }) }
         when (utility) {
             Utility.TABS -> tabs.items.forEachIndexed { index, tab ->
@@ -368,8 +420,23 @@ class LocalBrowserActivity : Activity() {
                     row(group, 80)
                 }
             }
-            else -> row(text(if (utility == Utility.QR_PENDING) "Not implemented here. QR scanning follows in issue #33."
-                else "Not implemented here. Settings controls follow in issue #31.", 18f), 96)
+            Utility.SETTINGS -> {
+                inputSettings.error?.let { row(text(it,18f),52) }
+                row(text("Pointer sensitivity"),40)
+                LocalInputSettings.Sensitivity.entries.forEach { value ->
+                    row(button("${value.label} (${value.gain}×)") {
+                        if (inputSettings.select(value)) pointer.sensitivity(value.gain)
+                        renderUtility()
+                    }.apply { tag="settings.sensitivity.${value.name.lowercase()}";isSelected=inputSettings.sensitivity==value },48)
+                }
+                row(text("Edge-scroll speed"),40)
+                LocalInputSettings.Speed.entries.forEach { value ->
+                    row(button("${value.label} (${value.pixelsPerSecond} px/s)") {
+                        inputSettings.select(value);renderUtility()
+                    }.apply { tag="settings.speed.${value.name.lowercase()}";isSelected=inputSettings.speed==value },48)
+                }
+            }
+            else -> row(text("Not implemented here. QR scanning follows in issue #33.",18f),96)
         }
     }
 
@@ -449,7 +516,7 @@ class LocalBrowserActivity : Activity() {
         if (::router.isInitialized) {
             router.focus(hasFocus)
             if (resumed) {
-                if (hasFocus) pointer.start() else { pointer.stop(); root.removeCallbacks(editorObservation) }
+                if (hasFocus) pointer.start() else { stopEdgeScroll(); pointer.stop(); root.removeCallbacks(editorObservation) }
             }
         }
     }
@@ -459,8 +526,8 @@ class LocalBrowserActivity : Activity() {
         if (hasWindowFocus()) pointer.start()
         router.resume()
     }
-    override fun onPause() { resumed = false; router.pause(); pointer.stop(); dismissKeyboard(); tabs.items.forEach { it.session.pause() }; super.onPause() }
-    override fun onDestroy() { router.pause(); pointer.stop(); tabs.destroy(); super.onDestroy() }
+    override fun onPause() { resumed = false; stopEdgeScroll(); router.pause(); pointer.stop(); dismissKeyboard(); tabs.items.forEach { it.session.pause() }; super.onPause() }
+    override fun onDestroy() { stopEdgeScroll(); router.pause(); pointer.stop(); tabs.destroy(); super.onDestroy() }
 
     companion object {
         private const val LIGHT = 0xfff2f2f2.toInt()

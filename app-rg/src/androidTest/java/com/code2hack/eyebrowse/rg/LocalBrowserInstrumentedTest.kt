@@ -19,6 +19,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
+import org.junit.Rule
+import org.junit.rules.TestName
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -32,6 +34,8 @@ import kotlin.math.abs
  */
 @RunWith(AndroidJUnit4::class)
 class LocalBrowserInstrumentedTest {
+    @get:Rule val testName=TestName()
+    private val aimEvidence=JSONArray()
     private var maxKeyDispatchMs = 0L
     private var keyDispatchCount = 0
     private val fixtureBase = checkNotNull(InstrumentationRegistry.getArguments().getString("fixtureBaseUrl")) {
@@ -265,16 +269,57 @@ class LocalBrowserInstrumentedTest {
             if (count > 1) SystemClock.sleep(40)
         }
     }
+    private fun aimState(activity: LocalBrowserActivity, point: PointerPosition): JSONObject {
+        val bounds=activity.pointer.motionBounds
+        return JSONObject().put("sampleNs",SystemClock.elapsedRealtimeNanos())
+            .put("x",point.x).put("y",point.y).put("available",point.available)
+            .put("bounds",JSONArray(listOf(bounds.left,bounds.top,bounds.right,bounds.bottom)))
+            .put("gain",activity.inputSettings.sensitivity.gain).put("sourceRegistered",activity.pointer.sourceRegistered)
+            .put("sourceReceiptNs",activity.pointer.lastSampleReceiptNs).put("expiresAtNs",activity.pointer.expiresAtNs)
+            .put("windowFocused",activity.hasWindowFocus()).put("layoutRequested",activity.root.isLayoutRequested)
+            .put("utility",activity.utility.name).put("selectedTab",activity.tabs.selectedIndex).put("tabCount",activity.tabs.count)
+    }
     private fun aim(scene: ActivityScenario<LocalBrowserActivity>, source: RawPoseReplay, point: InputPoint) {
-        scene.onActivity { source.aim(it, point) }
-        await("raw quaternion reaches current native target") {
-            var aimed = false
+        val observation=JSONObject().put("targetX",point.x).put("targetY",point.y)
+            .put("startedNs",SystemClock.elapsedRealtimeNanos())
+        aimEvidence.put(observation)
+        var failure: Throwable?=null
+        var first: JSONObject?=null;var last: JSONObject?=null;var polls=0;var reached=false
+        try {
             scene.onActivity {
-                val p = it.pointer.inputPosition()
-                aimed = p.available && abs(p.x - point.x) < 8 && abs(p.y - point.y) < 8
+                observation.put("before",aimState(it,it.pointer.inputPosition()))
+                source.aimRelative(it, point)
+                observation.put("dispatchReturnedNs",SystemClock.elapsedRealtimeNanos())
             }
-            aimed
+            await("raw quaternion reaches current native target") {
+                scene.onActivity {
+                    val p=it.pointer.inputPosition()
+                    reached=p.available && abs(p.x-point.x)<8 && abs(p.y-point.y)<8
+                    last=aimState(it,p)
+                }
+                if(first==null) first=last
+                polls++;reached
+            }
+        } catch(t: Throwable) { failure=t }
+        finally {
+            observation.put("finishedNs",SystemClock.elapsedRealtimeNanos()).put("reached",reached).put("polls",polls)
+                .put("first",first ?: JSONObject.NULL).put("last",last ?: JSONObject.NULL)
+                .put("failureClass",failure?.javaClass?.name ?: JSONObject.NULL)
+            val arguments=InstrumentationRegistry.getArguments()
+            val report=JSONObject().put("class",javaClass.name).put("method",testName.methodName)
+                .put("invocationId",arguments.getString("evidenceRunId") ?: JSONObject.NULL)
+                .put("candidateHead",arguments.getString("candidateHead") ?: JSONObject.NULL)
+                .put("processPid",android.os.Process.myPid()).put("processUid",android.os.Process.myUid())
+                .put("stage","aim-only; method result and scene cleanup remain in original JUnit/host evidence")
+                .put("observations",aimEvidence)
+            try {
+                InstrumentationRegistry.getInstrumentation().targetContext.openFileOutput(
+                    "local-browser-${testName.methodName}-aim-observations.json",0).use {
+                    it.write(report.toString().toByteArray());it.fd.sync()
+                }
+            } catch(t: Throwable) { if(failure==null) failure=t else failure.addSuppressed(t) }
         }
+        failure?.let { throw it }
     }
 
     @Test fun nativeDpadAdmissionPreservesScopeAndTabEffects() = scene { scene, _ ->
@@ -507,7 +552,7 @@ class LocalBrowserInstrumentedTest {
         scene.onActivity { assertEquals(LocalBrowserActivity.Utility.QR_PENDING, it.utility); assertFalse(checkNotNull(it.tabs.current.session.page).isShown) }
         tagged(scene, "utility.done")
         control(scene, "more"); tagged(scene, "menu.3")
-        scene.onActivity { assertEquals(LocalBrowserActivity.Utility.SETTINGS_PENDING, it.utility) }
+        scene.onActivity { assertEquals(LocalBrowserActivity.Utility.SETTINGS, it.utility) }
         tagged(scene, "utility.done")
         // Measured cursor bounds and unavailable indication, without a physical head-motion claim.
         control(scene, "close_tab")

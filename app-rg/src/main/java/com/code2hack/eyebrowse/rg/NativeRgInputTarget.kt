@@ -41,7 +41,7 @@ internal class NativeRgInputTarget(
 
     override fun scroll(delta: Int): Boolean {
         val visible = page()?.takeIf { it.isShown } ?: return false
-        visible.scrollBy(0, delta)
+        visible.scrollBy(0, nativePageScrollDelta(visible.scrollY, delta))
         return true
     }
 
@@ -68,3 +68,7 @@ internal class NativeRgInputTarget(
         }
     }
 }
+
+/** View.scrollBy can cross zero even when the renderer clamps its own offset. */
+internal fun nativePageScrollDelta(scrollY: Int, delta: Int): Int =
+    delta.coerceAtLeast(-scrollY.coerceAtLeast(0))

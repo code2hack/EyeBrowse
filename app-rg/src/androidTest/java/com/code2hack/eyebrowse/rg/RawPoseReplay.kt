@@ -27,9 +27,19 @@ internal class RawPoseReplay : HeadPoseSource {
     }
     override fun start(consumer: (RotationSample)->Unit): Boolean { this.consumer=consumer;registered=true;handler.post(pump);return true }
     override fun stop() { registered=false;handler.removeCallbacks(pump);consumer=null }
+    fun orientationDegrees(yaw: Double, pitch: Double) {
+        val sy=sin(Math.toRadians(-yaw)/2);val cy=cos(Math.toRadians(-yaw)/2)
+        val sx=sin(Math.toRadians(-pitch)/2);val cx=cos(Math.toRadians(-pitch)/2)
+        sample=RotationSample(0,(cy*sx).toFloat(),(sy*cx).toFloat(),(-sy*sx).toFloat(),(cy*cx).toFloat())
+    }
     fun pitchDegrees(degrees: Double) {
         val half=Math.toRadians(-degrees)/2
         sample=RotationSample(0,sin(half).toFloat(),0f,0f,cos(half).toFloat())
+    }
+    fun aimRelative(activity: LocalBrowserActivity, point: InputPoint) {
+        val a=reference
+        sample=rawPoseToward(RotationSample(0,a[0],a[1],a[2],a[3]),sample,
+            activity.pointer.inputPosition(),activity.pointer.motionBounds,point,activity.inputSettings.sensitivity.gain)
     }
     fun aim(activity: Activity, point: InputPoint) {
         val root=activity.findViewById<View>(R.id.rg_root)
