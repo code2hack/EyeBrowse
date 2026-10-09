@@ -156,11 +156,12 @@ class LocalBrowserInstrumentedTest {
     private fun capture(scene: ActivityScenario<LocalBrowserActivity>, name: String): Bitmap {
         val visual = CountDownLatch(1)
         scene.onActivity {
-            if (it.tabs.current.session.state.phase == LocalBrowserSession.Phase.READY) {
+            if (it.tabs.current.session.state.phase == LocalBrowserSession.Phase.READY &&
+                it.tabs.current.session.page?.isShown == true) {
                 checkNotNull(it.tabs.current.session.page).postVisualStateCallback(0, object : WebView.VisualStateCallback() {
                     override fun onComplete(requestId: Long) { visual.countDown() }
                 })
-            } else visual.countDown()
+            } else visual.countDown() // Utilities/black backing need their native frame, not hidden page presentation.
         }
         assertTrue("public settled page observation", visual.await(3, TimeUnit.SECONDS))
         val frame = CountDownLatch(1); var committed = 0L

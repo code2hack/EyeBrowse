@@ -164,6 +164,9 @@ core/Phone test result. Lint reported zero errors and 22 warnings. Two new
 orientation warnings describe the explicitly required portrait Activity; no
 suppression or layout waiver is applied. Nineteen Kotlin2.2-versus2.0 metadata
 reader diagnostics remain a static-analysis limitation despite task success.
+The final instrumentation observation change then passed test-APK assembly
+and lint in 17 seconds (7 executed/52 up-to-date tasks; 6 metadata diagnostics).
+Product source and JVM cases were unchanged from the complete run.
 Exact task states, reports, APK/source hashes and diagnostics are preserved in
 the candidate handoff.
 
@@ -190,6 +193,9 @@ tracking-unavailable, four-tabs, bookmarked-draft, cold-recovery, bookmarks,
 bookmark-error, bookmarks-empty, author-light, dynamic, field, loading and
 http-error. Each is an uncropped 480×640 owned-window PixelCopy after native
 frame commit, with a field-free geometry/focus/phase/visibility/timing sidecar.
+Shown READY pages first await the public WebView visual callback. Opaque
+utilities and empty/loading/error backing await the owned native window frame;
+they do not claim a hidden page was presented.
 Native built-in key return and confirmed pad More/Add dispatch retain the
 SPEC's strict 100-ms check; recognition, editor completion and rendered results
 are separate observations. Sidecars retain measured dispatch counts/maxima.
