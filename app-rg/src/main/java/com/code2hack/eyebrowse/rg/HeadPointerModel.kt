@@ -28,6 +28,7 @@ class HeadPointerModel(val settings: Settings = Settings()) {
         }
     }
     private var bounds = PointerBounds(0f,0f,0f,0f)
+    val motionBounds get() = bounds
     private var rotation = 0
     private var running = false
     private var reference: HeadOrientation? = null
@@ -39,6 +40,12 @@ class HeadPointerModel(val settings: Settings = Settings()) {
     private var targetX = .5
     private var targetY = .5
     private var fresh = false
+    private var yaw = 0.0
+    private var pitch = 0.0
+    private var quietYaw = 0.0
+    private var quietPitch = 0.0
+    var sensitivity = 1.0
+        private set
     val position get() = PointerPosition((bounds.left+x*bounds.width).toFloat(),
         (bounds.top+y*bounds.height).toFloat(),running && fresh && bounds.width>0 && bounds.height>0)
     val settling get() = position.available && (abs(targetX-x)*bounds.width > .05 || abs(targetY-y)*bounds.height > .05)
@@ -47,7 +54,7 @@ class HeadPointerModel(val settings: Settings = Settings()) {
     fun start() { stop();running=true }
     fun stop() {
         running=false;fresh=false;reference=null;latest=null;sourceTimeNs=0;frameTimeNs=0
-        x=.5;y=.5;targetX=.5;targetY=.5
+        targetX=x;targetY=y
     }
     fun resize(value: PointerBounds, displayRotation: Int) {
         require(displayRotation in 0..3)
@@ -64,15 +71,38 @@ class HeadPointerModel(val settings: Settings = Settings()) {
         latest=current;sourceTimeNs=sample.timestampNs;fresh=true
         if (rebase) {
             reference=current;x=.5;y=.5;targetX=.5;targetY=.5;frameTimeNs=nowNs
+            yaw=0.0;pitch=0.0;quietYaw=0.0;quietPitch=0.0
         } else aim(checkNotNull(reference).inverse()*current)
         return true
     }
 
     private fun aim(q: HeadOrientation) {
-        val (yaw,pitch)=q.angles(rotation)
-        fun deadband(degrees: Double) = sign(degrees)*max(0.0,abs(degrees)-settings.deadbandDegrees)
-        targetX=(.5+deadband(yaw)/(2*settings.horizontalHalfRangeDegrees)).coerceIn(0.0,1.0)
-        targetY=(.5+deadband(pitch)/(2*settings.verticalHalfRangeDegrees)).coerceIn(0.0,1.0)
+        val (nextYaw,nextPitch)=q.angles(rotation)
+        fun delta(next: Double, previous: Double) = (next-previous+540.0)%360.0-180.0
+        fun axis(next: Double, previous: Double, quiet: Double, current: Double,
+                 target: Double, halfRange: Double): Pair<Double,Double> {
+            val movement=delta(next,previous)
+            // Discard angular excess at saturation and filtered travel against the new direction.
+            // Even a slow first inward sample moves immediately, independent of the old overshoot.
+            val reversing=movement*(target-current)<0
+            if (target==0.0 || target==1.0 || reversing) {
+                val origin=if (reversing) current else target
+                return (origin+movement*sensitivity/(2*halfRange)).coerceIn(0.0,1.0) to next
+            }
+            val travel=delta(next,quiet)
+            val accepted=sign(travel)*max(0.0,abs(travel)-settings.deadbandDegrees)
+            return (target+accepted*sensitivity/(2*halfRange)).coerceIn(0.0,1.0) to (quiet+accepted)
+        }
+        val horizontal=axis(nextYaw,yaw,quietYaw,x,targetX,settings.horizontalHalfRangeDegrees)
+        val vertical=axis(nextPitch,pitch,quietPitch,y,targetY,settings.verticalHalfRangeDegrees)
+        targetX=horizontal.first;quietYaw=horizontal.second;yaw=nextYaw
+        targetY=vertical.first;quietPitch=vertical.second;pitch=nextPitch
+    }
+
+    /** Change future gain without moving the cursor or retaining an old filtered destination. */
+    fun sensitivity(value: Double, nowNs: Long) {
+        require(value in listOf(.75,1.0,1.25))
+        sensitivity=value;targetX=x;targetY=y;quietYaw=yaw;quietPitch=pitch;frameTimeNs=nowNs
     }
 
     /** Advance on display frames, independent of the <=5fps remote page stream. */
@@ -95,6 +125,7 @@ class HeadPointerModel(val settings: Settings = Settings()) {
         advance(nowNs)
         if (!position.available) return false
         reference=latest;x=.5;y=.5;targetX=.5;targetY=.5;frameTimeNs=nowNs
+        yaw=0.0;pitch=0.0;quietYaw=0.0;quietPitch=0.0
         return true
     }
 }

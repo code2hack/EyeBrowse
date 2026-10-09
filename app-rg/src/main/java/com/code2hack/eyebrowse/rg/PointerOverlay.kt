@@ -21,6 +21,12 @@ class PointerOverlay(context: Context, attrs: AttributeSet?=null) : View(context
     private var radius=8*resources.displayMetrics.density
     private var hudAppearance=false
     val position get() = model.position
+    internal val motionBounds get() = model.motionBounds
+    internal val expiresAtNs get() = model.expiresAtNs
+    internal var onPositionChanged: (() -> Unit)? = null
+    internal fun sensitivity(value: Double) {
+        model.sensitivity(value,SystemClock.elapsedRealtimeNanos());publishAvailability();requestFrame()
+    }
     val sourceRegistered get() = source.registered
     val sourceDescription get() = source.description
     internal var onSample: ((RotationSample,Long,Int)->Unit)? = null
@@ -29,6 +35,8 @@ class PointerOverlay(context: Context, attrs: AttributeSet?=null) : View(context
     internal var acceptedSamples=0L
         private set
     internal var lastSampleReceiptNs=0L
+        private set
+    internal var lastDrawPosition=position
         private set
     internal var lastDrawElapsedNs=0L
         private set
@@ -64,6 +72,7 @@ class PointerOverlay(context: Context, attrs: AttributeSet?=null) : View(context
             val before=position
             if (model.sample(sample,receipt)) {
                 acceptedSamples++;lastSampleReceiptNs=receipt
+                publishAvailability()
                 if (position!=before || model.settling) requestFrame()
                 scheduleExpiry()
             }
@@ -97,6 +106,7 @@ class PointerOverlay(context: Context, attrs: AttributeSet?=null) : View(context
     private fun publishAvailability() {
         val available=position.available
         if (publishedAvailable!=available) { publishedAvailable=available;onAvailabilityChanged?.invoke(available) }
+        onPositionChanged?.invoke()
     }
     private fun requestFrame() {
         if (running && !pendingFrame) { pendingFrame=true;postOnAnimation(frame) }
@@ -130,6 +140,7 @@ class PointerOverlay(context: Context, attrs: AttributeSet?=null) : View(context
         canvas.drawCircle(point.x,point.y,radius,paint)
         paint.style=Paint.Style.FILL
         canvas.drawCircle(point.x,point.y,2f,paint)
+        lastDrawPosition=point
         drawCount++;lastDrawElapsedNs=SystemClock.elapsedRealtimeNanos();lastDrawSampleReceiptNs=lastSampleReceiptNs
     }
     override fun onDetachedFromWindow() { stop();super.onDetachedFromWindow() }

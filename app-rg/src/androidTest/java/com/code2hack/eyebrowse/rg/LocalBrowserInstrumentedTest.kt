@@ -507,7 +507,7 @@ class LocalBrowserInstrumentedTest {
         scene.onActivity { assertEquals(LocalBrowserActivity.Utility.QR_PENDING, it.utility); assertFalse(checkNotNull(it.tabs.current.session.page).isShown) }
         tagged(scene, "utility.done")
         control(scene, "more"); tagged(scene, "menu.3")
-        scene.onActivity { assertEquals(LocalBrowserActivity.Utility.SETTINGS_PENDING, it.utility) }
+        scene.onActivity { assertEquals(LocalBrowserActivity.Utility.SETTINGS, it.utility) }
         tagged(scene, "utility.done")
         // Measured cursor bounds and unavailable indication, without a physical head-motion claim.
         control(scene, "close_tab")
