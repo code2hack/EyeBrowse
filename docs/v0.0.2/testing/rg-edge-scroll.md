@@ -1,14 +1,14 @@
 # RG pointer, full-screen edge scrolling and Settings
 
-Worker: Worker-#31 · issue #31 · I31-T01 correction attempt2/failure1 · assignment revision1.
+Worker: Worker-#31 · issue #31 · I31-T02 correction attempt2/failure1 · assignment revision1.
 
 The implementation baseline is accepted integration
 `7b055cbdd848440346e9f873ac44cf2e688af9d8`, under SPEC D2.2, HUD H1.2 and the
 [approved HUD-G1 decision](https://github.com/code2hack/EyeBrowse/issues/30#issuecomment-6075367078).
 The external frozen-candidate manifest identifies the pushed commit, Git tree,
 source hashes, app/test APK bytes, host evidence and proposed native procedure.
-This document records host implementation, the failed original native procedure,
-and **pending corrected-candidate native qualification**.
+This document records host implementation, two retained native runs, and a
+**host-only diagnostic candidate awaiting a fresh native grant**.
 It does not complete I31-T02/T03, independent acceptance, HUD-G2 or a release.
 
 ## Production behavior and consumers
@@ -142,15 +142,67 @@ The correction's `r1-procedure-correction-02` packet records only affected
 evidence, not another execution. The product APK's actual byte reuse and the new
 test APK's hashes/task states/analysis limits are recorded in that packet.
 
-## Proposed exact-candidate native qualification — pending grant
+## I31-R3 native failures and diagnostic candidate
 
-No device operation has run for the correction. RG/port39030 are Manager-held;
-grant13 and all old #30 grants are consumed. The corrected source/test APK needs
-a fresh exclusive exact-candidate grant.
+Candidate `c653682aff84efe5ff5fe736ed980808736edc79` ran once under grant14:
+three methods, one pass and two failures, native113.227 s, host116.174130 s,
+outer exit0/runner code-1. Its three durable method files contain72/2/5 actual
+observations. All72 boundary measurements survived; maximum first inward draw
+was19.005417 ms after sample receipt and34.995729 ms after input. One Slow-rate
+row measured117.316006 px/s against120. These are bounded observations from
+that candidate, not complete qualification of the later diagnostic candidate.
+Five original full480×640 capture pairs and all logs/reports remain immutable in
+`native-rg-grant14`. Cleanup/metadata/trust and RG/39030 return were verified;
+the affected #30 invocation did not start.
 
-The concrete external proposal requests only the frozen app/test APKs, one owned
-unchanged #28 fixture listener, and two bounded instrumentation invocations on
-the newly reserved/verified RG. Proposed fixed fixture routes are keyboard,
+The keyboard journey failed the stop helper's elapsed-observation assertion
+following More→New Tab. The preceding poll observed the callback stopped, but
+its exact failing duration was lost because the observation append followed the
+assertion. The Settings journey failed a composite top-endpoint wait: pointerY
+must equal8, the actual page must not scroll upward, and native scrollY must
+be0. The old report does not identify the failed conjunct or its cause. Required
+240/360 rates, gain/persistence and later keyboard/tab/navigation/endpoint checks
+remain unqualified. The original terminal and negative evidence are retained.
+
+Host tracing finds synchronous ordinary cancellation in tab/cover paths. The
+installed androidx.test:core1.6.1 bytecode also shows that off-main
+`ActivityScenario.onActivity()` waits for main-thread idle before dispatching its
+observer. Neither fact supplies the missing native timing/state or establishes
+the cause of either old failure. No product correction is inferred.
+
+The diagnostic change adds only test observations and this guide. It records the
+actual More/New Tab native dispatch/return times and current callback state;
+stop-observer call, main sample and return times, including failed measurements;
+and first/last actual top-endpoint state with preset, freshness, focus, page and
+lifecycle context. It captures no field text, URL or DOM contents. Partial records
+are appended before the unchanged failing assertions and retained in the same
+three durable method files after ordinary cleanup. The original100 ms stop,
+10 s endpoint wait, rates/gains, native page/editor effects and all other oracles
+remain unchanged. Observation adds execution cost; it is not an independent
+cancellation timestamp or a product probe. Compilation cannot diagnose the
+native failures or establish a pass.
+
+## Proposed exact-candidate native diagnosis and qualification — pending grant
+
+No device operation has run for this diagnostic candidate. RG/port39030 are
+Manager-held; grants13/14 and all old #30 grants are consumed. The frozen
+source/test APK needs a fresh exclusive exact-candidate grant.
+
+The smallest proposed diagnostic invocation selects only the two previously
+failing methods, once, with a300 s outer bound and new persisted invocation/source
+labels. It retains their complete original journeys and strict assertions. Stop
+on any failure, missing/current-binding uncertainty or cleanup problem, preserve
+all reached originals and return resources. The unchanged boundary method still
+requires renewed exact-head qualification if requested for final acceptance.
+Full qualification additionally requires that boundary method and the affected
+#30 methods below; none is automatically replayed or started by this proposal.
+The external manifest gives exact filters and separates diagnostic execution
+from any later explicitly granted qualification.
+
+The external proposal binds the frozen app/test APKs and one owned unchanged
+#28 fixture listener on a newly reserved/verified RG. The app APK is unchanged;
+verify its installed bytes and stop on mismatch rather than reinstall it. Only
+the new test APK needs one explicitly granted install. Proposed fixed fixture routes are keyboard,
 history, author-light and media, with the existing delayed load route; fixture
 source/pages are unchanged. Its imported accepted artifact is separately hashed
 and staged, not rebuilt or started here.
@@ -163,7 +215,7 @@ The three new `EdgeScrollInstrumentedTest` methods are:
 | `settingsPersistAndActualPageUsesEveryDeclaredRateAndGain` | More→Settings native controls, selected rows/reopen/recreation, real page motion at 120/240/360, declared ±12% +4 px/s observation tolerance, native/DOM scroll agreement, real 0.75/1/1.25 gain ratios. |
 | `fullScreenKeyboardEdgesAndOrdinaryCancellationPreserveNativeEditing` | Real field activation/keys, fixed `(0,440,480,200)` keyboard and full-screen edge, no divider trigger, current focus/`ab`/zero submit, departure≤100 ms, freshness, More/Settings isolation, pause/resume, tab/close/navigation, real endpoints/no debt and lateral-only no-scroll. |
 
-A second scoped invocation rechecks the existing production methods
+A separately granted, conditional affected invocation rechecks the existing production methods
 `approvedGeometryAndAddressEditingStayBlackAndRecoverable`,
 `fourLiveTabsAndPadGesturesKeepCurrentNativeEffects`, and
 `nativeDpadAdmissionPreservesScopeAndTabEffects`: exact menu/toolbar geometry,
@@ -184,11 +236,11 @@ tracking-unavailable,settings,keyboard-bottom,scrolling-top}.{png,json}`, plus
 three `edge-scroll-<exact-method-name>-observations.json` files for the methods
 listed above. Existing scoped methods can reach seven named
 `local-browser-*.png`/sidecars and `local-browser-native-editor-observation.json`.
-The proposal enumerates all 30 exact potential names. Harvest the three distinct
-method files after the terminal; do not rely on copying a common file between
+The proposal enumerates all 30 exact potential names. Harvest only the selected methods' distinct
+current files after the terminal; do not rely on copying a common file between
 methods. Verify each method identity, invocation/source labels, PID/UID, current
-monotonic interval, cleanup outcome and actual records, including all 72 boundary
-measurements on a successful boundary run. Only files actually produced in the granted
+monotonic interval, cleanup outcome and actual records, including all72 boundary
+measurements only when that method actually ran successfully under the new grant. Only files actually produced in the granted
 run count; stale/hypothetical files never supply evidence. PNGs are full native
 480×640 window copies following public frame-commit/visual-state waits, with
 unscaled origin/bounds asserted. Settings background regions are predeclared.

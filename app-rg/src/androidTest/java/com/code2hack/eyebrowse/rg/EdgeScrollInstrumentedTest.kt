@@ -97,7 +97,7 @@ class EdgeScrollInstrumentedTest {
                 abs(it.pointer.position.x-240)<.01 && abs(it.pointer.position.y-320)<.01 };ready
         }
     }
-    private fun tap(scene: ActivityScenario<LocalBrowserActivity>, view: (LocalBrowserActivity) -> View) {
+    private fun tap(scene: ActivityScenario<LocalBrowserActivity>, stopTrigger: String?=null, view: (LocalBrowserActivity) -> View) {
         await("current laid-out native target") {
             var ready=false
             scene.onActivity { val child=view(it)
@@ -108,11 +108,17 @@ class EdgeScrollInstrumentedTest {
         scene.onActivity {
             val child=view(it);assertTrue(child.isShown && child.isEnabled && child.isLaidOut && child.width>0 && child.height>0)
             val xy=IntArray(2);val origin=IntArray(2);child.getLocationOnScreen(xy);it.root.getLocationOnScreen(origin)
+            val dispatchNs=if(stopTrigger!=null) SystemClock.elapsedRealtimeNanos() else 0L
             assertTrue(it.input.activate(InputPoint(xy[0]-origin[0]+child.width/2f,xy[1]-origin[1]+child.height/2f)))
+            if(stopTrigger!=null) {
+                val returnedNs=SystemClock.elapsedRealtimeNanos()
+                evidence.put(edgeObservation(it).put("case","native-stop-trigger")
+                    .put("trigger",stopTrigger).put("dispatchNs",dispatchNs).put("dispatchReturnedNs",returnedNs))
+            }
         }
     }
-    private fun control(scene: ActivityScenario<LocalBrowserActivity>, name: String)=tap(scene) { it.controls.getValue("hud.$name") }
-    private fun tagged(scene: ActivityScenario<LocalBrowserActivity>, name: String)=tap(scene) { it.root.findViewWithTag(name) }
+    private fun control(scene: ActivityScenario<LocalBrowserActivity>, name: String, stopTrigger: String?=null)=tap(scene,stopTrigger) { it.controls.getValue("hud.$name") }
+    private fun tagged(scene: ActivityScenario<LocalBrowserActivity>, name: String, stopTrigger: String?=null)=tap(scene,stopTrigger) { it.root.findViewWithTag(name) }
     private fun key(scene: ActivityScenario<LocalBrowserActivity>, key: RgKeyboardKeys.Key) {
         await("current native key layout") { var ready=false;scene.onActivity { ready=it.keyboard.isShown && !it.root.isLayoutRequested };ready }
         var exists=false
@@ -139,11 +145,67 @@ class EdgeScrollInstrumentedTest {
     private fun y(scene: ActivityScenario<LocalBrowserActivity>): Int {
         var value=0;scene.onActivity { value=checkNotNull(it.tabs.current.session.page).scrollY };return value
     }
+    /** Public/current native state only: no field text, DOM mutation or production probe. */
+    private fun edgeObservation(activity: LocalBrowserActivity): JSONObject {
+        val now=SystemClock.elapsedRealtimeNanos();val pointer=activity.pointer;val position=pointer.position
+        val page=activity.tabs.current.session.page
+        return JSONObject().put("sampleNs",now).put("pointerX",position.x).put("pointerY",position.y)
+            .put("available",position.available).put("sampleReceiptNs",pointer.lastSampleReceiptNs)
+            .put("expiresAtNs",pointer.expiresAtNs).put("sourceRegistered",pointer.sourceRegistered)
+            .put("edgeScrollRunning",activity.edgeScrollRunning).put("utility",activity.utility.name)
+            .put("selectedTab",activity.tabs.selectedIndex).put("tabCount",activity.tabs.count)
+            .put("phase",activity.tabs.current.session.state.phase.name).put("pagePresent",page!=null)
+            .put("pageShown",page?.isShown ?: false).put("nativeY",page?.scrollY ?: JSONObject.NULL)
+            .put("canScrollUp",page?.canScrollVertically(-1) ?: JSONObject.NULL)
+            .put("canScrollDown",page?.canScrollVertically(1) ?: JSONObject.NULL)
+            .put("pageWidth",page?.width ?: JSONObject.NULL).put("pageHeight",page?.height ?: JSONObject.NULL)
+            .put("pageFocused",page?.hasFocus() ?: false).put("addressFocused",activity.address.hasFocus())
+            .put("keyboardShown",activity.keyboard.isShown).put("windowFocused",activity.hasWindowFocus())
+            .put("layoutRequested",activity.root.isLayoutRequested).put("finishing",activity.isFinishing)
+            .put("speed",activity.inputSettings.speed.pixelsPerSecond).put("sensitivity",activity.inputSettings.sensitivity.gain)
+    }
     private fun stopped(scene: ActivityScenario<LocalBrowserActivity>) {
+        val scenarioState=scene.state.name
         val start=SystemClock.elapsedRealtimeNanos()
-        await("ordinary callback cancelled",100) { var stopped=false;scene.onActivity { stopped=!it.edgeScrollRunning };stopped }
-        val end=SystemClock.elapsedRealtimeNanos();assertTrue(end-start<=100_000_000)
-        evidence.put(JSONObject().put("case","callback-stop").put("startNs",start).put("observedNs",end))
+        var end=start;var polls=0;var first: JSONObject?=null;var last: JSONObject?=null
+        try {
+            await("ordinary callback cancelled",100) {
+                var stopped=false;val callNs=SystemClock.elapsedRealtimeNanos()
+                scene.onActivity { stopped=!it.edgeScrollRunning;last=edgeObservation(it).put("callNs",callNs) }
+                last?.put("returnedNs",SystemClock.elapsedRealtimeNanos())
+                if(first==null) first=last
+                polls++;stopped
+            }
+        } finally {
+            end=SystemClock.elapsedRealtimeNanos()
+            // Record even a timeout or over-budget observation before the original assertion.
+            evidence.put(JSONObject().put("case","callback-stop").put("startNs",start).put("observedNs",end)
+                .put("elapsedNs",end-start).put("polls",polls).put("scenarioState",scenarioState)
+                .put("first",first ?: JSONObject.NULL).put("last",last ?: JSONObject.NULL))
+        }
+        assertTrue(end-start<=100_000_000)
+    }
+    private fun topEndpoint(scene: ActivityScenario<LocalBrowserActivity>, speed: LocalInputSettings.Speed) {
+        val scenarioState=scene.state.name
+        val start=SystemClock.elapsedRealtimeNanos()
+        var first: JSONObject?=null;var last: JSONObject?=null;var polls=0;var reached=false;var checkedY: Int?=null
+        try {
+            await("top endpoint") {
+                var top=false
+                scene.onActivity {
+                    top=it.pointer.position.y==8f && it.tabs.current.session.page?.canScrollVertically(-1)==false
+                    last=edgeObservation(it)
+                }
+                if(first==null) first=last
+                checkedY=if(top) y(scene) else null
+                reached=top && checkedY==0;polls++;reached
+            }
+        } finally {
+            evidence.put(JSONObject().put("case","top-endpoint").put("speed",speed.pixelsPerSecond)
+                .put("startNs",start).put("finishedNs",SystemClock.elapsedRealtimeNanos()).put("polls",polls)
+                .put("reached",reached).put("checkedY",checkedY ?: JSONObject.NULL).put("scenarioState",scenarioState)
+                .put("first",first ?: JSONObject.NULL).put("last",last ?: JSONObject.NULL))
+        }
     }
     private fun pageOracle(scene: ActivityScenario<LocalBrowserActivity>): JSONObject {
         val dom=JSONArray(js(scene,"[scrollY,innerWidth,innerHeight,document.scrollingElement.scrollHeight]"))
@@ -232,7 +294,7 @@ class EdgeScrollInstrumentedTest {
             tagged(scene,"utility.done")
             // Start at the real top endpoint through raw poses; no DOM scroll assignment.
             reset(scene,source);scene.onActivity {source.orientationDegrees(0.0,-50.0)}
-            await("top endpoint") {var top=false;scene.onActivity {top=it.pointer.position.y==8f && it.tabs.current.session.page?.canScrollVertically(-1)==false};top && y(scene)==0};SystemClock.sleep(80)
+            topEndpoint(scene,speed);SystemClock.sleep(80)
             reset(scene,source);scene.onActivity {source.orientationDegrees(0.0,50.0)}
             await("actual bottom-edge page movement") {y(scene)>10}
             val before=y(scene);val time=SystemClock.elapsedRealtimeNanos();SystemClock.sleep(400)
@@ -295,7 +357,7 @@ class EdgeScrollInstrumentedTest {
         assertEquals(identity,js(scene,"fixtureIdentity"));assertEquals("\"ab\"",js(scene,"document.querySelector('#text').value"))
         // Current tab changes and navigation use ordinary callbacks, with no stale-tick protocol.
         reset(scene,source);scene.onActivity {source.orientationDegrees(0.0,50.0)}
-        control(scene,"more");tagged(scene,"menu.0");stopped(scene)
+        control(scene,"more","More before New Tab");tagged(scene,"menu.0","New Tab");stopped(scene)
         scene.onActivity {it.selectTab(0);assertFalse("tab switch cancels synchronously",it.edgeScrollRunning)}
         control(scene,"close_tab");stopped(scene)
         open(scene)
