@@ -33,8 +33,18 @@ internal class RgInputRouter(
             val accepted = target.activate(InputPoint(point.x, point.y))
             lastDispatchMs = SystemClock.uptimeMillis() - started
             feedback(accepted)
-        } }, {}, { if (usable()) onSwipe(it) },
+        } }, {}, {
+            val eligible = usable()
+            if (eligible) onSwipe(it)
+            diagnostic?.invoke("router swipe direction=$it delivered=$eligible")
+        },
     )
+    /** Installed only by the explicitly opted-in debug Application; remove after diagnosis. */
+    internal var diagnostic: ((String) -> Unit)? = null
+        set(value) { field = value; gestures.diagnostic = value }
+    internal fun diagnosticState() = "active=$active focused=$focused window=${activity.hasWindowFocus()} " +
+        "surface=${surface.isShown} pointerPublished=${pointer.position.available} " +
+        "work=${gestures.hasWork} deadline=${gestures.deadline}"
     private val confirmation = Runnable {
         if (usable()) gestures.confirm(SystemClock.uptimeMillis()) else cancel()
         schedule()
@@ -48,23 +58,25 @@ internal class RgInputRouter(
         pointer.inputPosition().available
 
     fun key(event: KeyEvent): Boolean {
-        if (event.device?.name != "ROKID,PSOC-TP-R" || !event.isFromSource(InputDevice.SOURCE_KEYBOARD)) return false
+        if (event.device?.name != "ROKID,PSOC-TP-R") return false
+        if (!event.isFromSource(InputDevice.SOURCE_KEYBOARD)) { diagnostic?.invoke("router reject-source"); return false }
         val key = when (event.keyCode) {
             KeyEvent.KEYCODE_ENTER -> PadGestureRecognizer.Key.TAP
             291 -> PadGestureRecognizer.Key.DOUBLE
             292 -> PadGestureRecognizer.Key.FORWARD
             293 -> PadGestureRecognizer.Key.BACKWARD
-            else -> return false
+            else -> { diagnostic?.invoke("router unmapped-key code=${event.keyCode}"); return false }
         }
-        if (!usable() || event.metaState != 0) { cancel(); feedback(false); return true }
+        if (!usable() || event.metaState != 0) { cancel(); feedback(false); diagnostic?.invoke("router ineligible ${diagnosticState()} meta=${event.metaState}"); return true }
         val phase = when {
             event.isCanceled || event.isLongPress -> PadGestureRecognizer.Phase.CANCEL
             event.action == KeyEvent.ACTION_DOWN -> PadGestureRecognizer.Phase.DOWN
             event.action == KeyEvent.ACTION_UP -> PadGestureRecognizer.Phase.UP
             else -> PadGestureRecognizer.Phase.CANCEL
         }
-        gestures.accept(PadGestureRecognizer.Event(key, phase, event.eventTime, event.downTime, event.repeatCount),
-            SystemClock.uptimeMillis())
+        val receipt = SystemClock.uptimeMillis()
+        gestures.accept(PadGestureRecognizer.Event(key, phase, event.eventTime, event.downTime, event.repeatCount), receipt)
+        diagnostic?.invoke("router accepted key=$key phase=$phase receipt=$receipt age=${receipt - event.eventTime} ${diagnosticState()}")
         schedule()
         return true // The focused native View must not also consume this pad sequence.
     }
