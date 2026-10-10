@@ -18,6 +18,10 @@ edit, remote controller or additional recognizer is introduced. Native selection
 constraints, Unicode deletion and form/newline behavior remain provider behavior
 that must pass the actual fixture tests.
 
+Local WebView settings disable automatic initial-node focus on native View focus.
+The actual page tap selects its editor or link directly; it does not first focus
+and scroll to the document's first field before the tapped target is processed.
+
 `RgKeyboardKeys.localLayout()` now supplies the actual rendered key meanings and
 rectangles to both `LocalBrowserActivity` and its host controls. The historical
 remote keyboard's `rows()` remains unchanged. Keys are black with light outlines

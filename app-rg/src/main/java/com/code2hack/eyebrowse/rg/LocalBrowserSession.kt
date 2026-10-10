@@ -60,6 +60,7 @@ internal class LocalBrowserSession(context: Context, private val onPageTouchUp: 
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             setSupportMultipleWindows(false)
             javaScriptCanOpenWindowsAutomatically = false
+            setNeedInitialFocus(false) // A native page tap owns focus; do not first focus/scroll to the first DOM node.
             forceDark = WebSettings.FORCE_DARK_OFF
         }
         view.webChromeClient = object : WebChromeClient() {

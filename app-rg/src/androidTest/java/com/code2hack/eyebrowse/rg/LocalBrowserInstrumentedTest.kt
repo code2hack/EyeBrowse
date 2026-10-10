@@ -582,6 +582,8 @@ class LocalBrowserInstrumentedTest {
         assertEquals("lower field still requires reveal after keyboard resize","true",
             js(scene,"(()=>{const r=document.getElementById('lower').getBoundingClientRect();return r.top>innerHeight*392/592 && r.bottom<=innerHeight})()"))
         focusEditor(scene,"lower")
+        assertEquals("native tap focuses the selected editor without first-field focus", "[\"lower\"]",
+            js(scene,"fixtureNativeEvents.filter(e=>e.type==='focusin').map(e=>e.target)"))
         await("native resize reveals selected field within page viewport") {
             js(scene,"(()=>{const e=document.activeElement,r=e.getBoundingClientRect();return e.id==='lower' && r.top>=0 && r.bottom<=innerHeight})()") == "true"
         }
