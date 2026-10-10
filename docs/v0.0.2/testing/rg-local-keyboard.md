@@ -43,9 +43,12 @@ Invalid Open preserves draft and page. Done preserves the draft for correction
 and never deliberately navigates. The star uses the committed current page.
 
 Showing the keyboard changes only the content viewport to `(0,48,480,392)`;
-keys occupy `(0,440,480,200)`. Existing native WebView resize/focus handles field
-reveal. There is no script-driven or repeating field reveal to oppose deliberate
-edge scrolling. The pointer retains the full 480×640 rectangle and full glyph
+keys occupy `(0,440,480,200)`. The custom keyboard does not trigger a system IME
+reveal request. After the resized WebView is ready to draw, one ordinary
+`scrollIntoView({block:'nearest',inline:'nearest'})` call reveals its currently
+focused editor. It does not read field values or change selection/focus. The
+callback requires the current visible, focused page and skips active edge
+scrolling; no repeating reveal runs during editing. The pointer retains the full 480×640 rectangle and full glyph
 clamp. The existing edge callback scrolls only the active page at the physical
 screen top/bottom, including while the keyboard stays fixed. The divider, lateral
 edge and pad swipes do not introduce vertical scroll triggers. Normal tab
@@ -73,7 +76,6 @@ Failure observations/capture are attempted before scene teardown; their own
 failures are retained as suppressed errors. Original failures are not replaced by
 a cleanup exception. The existing scene closes its Activity/raw pose source and
 restores only the prior `local.tabs` key. Wrapper checks verify that restoration. The address method owns only its fixed fixture bookmark key, requires that key absent, and removes it through the existing failure-preserving cleanup helper; unrelated bookmark entries remain in place.
-The host guard must independently verify unrelated preferences and opaque trust.
 
 Password captures are fixture-only early/later native 480×640 window copies after
 frame/visual-state waits. Actual timing is recorded; an early frame may already
@@ -81,17 +83,17 @@ be masked. Independent inspection must establish ordinary subsequent masking.
 Accepted transient final-character echo is not a failure or a new approval gate.
 No password value enters logs, reports or a custom masking layer.
 
-Fresh native permission must bind source/APKs, actual physical RG, software,
-provider/display/access, fixture/listener ownership, opaque canonical trust and
-exact preference/artifact preservation before any device operation. The proposed
-invocations and output names live in the external packet. Existing geometry,
-bookmark, tab/pad/current-focus and keyboard-edge methods are the affected
-regressions; their old source-bound results do not become changed-head evidence.
-Harvest only reached originals; verify source/APK/PID/time independently, settle
-only owned operations, restore exact scoped keys, and return resources to Manager.
+Under the current Owner-directed personal RG development assignment, run normal
+bounded ADB installs and focused instrumentation directly against the configured
+device and owned fixture. Repeated server/process/hash/inventory/trust/observer
+preflight and giant sealed-packet gates are retired for this work. Record the
+actual source/APKs, raw JUnit results, useful original reports/screenshots and
+limitations; preserve failures and clean up owned test/fixture operations.
+Existing geometry, bookmark, tab/pad/current-focus and keyboard-edge methods are
+the affected regressions; old source-bound results do not become changed-head evidence.
 
 Native focus/reveal/selection/Enter/masking, installed APKs, rendered pixels and
-changed-head edge behavior require the separately granted device run. A compiled
+changed-head edge behavior require actual device execution. A compiled
 test APK is preparation. Raw-pose/pad replay and native window copies support
 software effects; physical movement, wearer direction, optics and ergonomics need
 their own evidence when claimed. No Phone, QR, launcher cutover, HUD-G2 or release
@@ -113,3 +115,10 @@ edge-scroll path to admit the whole lower editor, stops by moving inward, and
 requires the editor to remain below the future 392-pixel page viewport. It then
 runs every original reveal/edit/document/focus/Done/re-show assertion. Host checks
 prepare this correction; a fresh separately granted run must verify its effects.
+
+Correction04 retains native27's successful lower-field admission and its actual
+failure after resize: selected CSS top436.89 plus height35.99 exceeded viewport308.
+The one-time reveal above addresses that transition without changing the fixture
+or any strict reveal/edit/document/value/focus/Done/re-show assertion. Its focused
+and affected native results are recorded with the exact candidate in the current
+external handoff; historical failures and review cutoffs remain unchanged.

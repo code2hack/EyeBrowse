@@ -15,12 +15,14 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
+import android.webkit.WebView
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.widget.doAfterTextChanged
+import androidx.core.view.doOnNextLayout
 import com.code2hack.eyebrowse.core.browser.AddressPolicy
 import org.json.JSONArray
 import org.json.JSONObject
@@ -261,9 +263,27 @@ class LocalBrowserActivity : Activity() {
         tabs.current.draft = null; localError = null; dismissKeyboard(); updateHud()
     }
     internal fun showKeyboard() {
+        if (keyboard.isShown) return
         keyboard.visibility = View.VISIBLE
         (content.layoutParams as FrameLayout.LayoutParams).also { it.bottomMargin = 200; content.layoutParams = it }
         renderKeys()
+        content.doOnNextLayout {
+            val page = tabs.current.session.page ?: return@doOnNextLayout
+            // The custom keyboard resizes the page without a system IME reveal request.
+            page.postVisualStateCallback(0, object : WebView.VisualStateCallback() {
+                override fun onComplete(requestId: Long) {
+                    if (resumed && hasWindowFocus() && utility == Utility.BROWSING &&
+                        keyboard.isShown && !addressEditing && !edgeScrollRunning &&
+                        page === tabs.current.session.page && page.isShown && page.hasFocus()) {
+                        page.evaluateJavascript("""(()=>{
+                            const e=document.activeElement;
+                            if(e && (e.matches('input,textarea') || e.isContentEditable))
+                                e.scrollIntoView({block:'nearest',inline:'nearest'});
+                        })()""".trimIndent(), null)
+                    }
+                }
+            })
+        }
     }
     internal fun dismissKeyboard() {
         if (!::keyboard.isInitialized) return
