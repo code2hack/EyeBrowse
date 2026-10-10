@@ -1100,6 +1100,9 @@ class LocalBrowserInstrumentedTest {
             val state = activity.tabs.current.session.state
             httpStates.put(JSONObject().put("stage", stage).put("atNs", SystemClock.elapsedRealtimeNanos())
                 .put("phase", state.phase.name).put("url", state.url).put("error", state.error)
+                .put("callback", JSONArray(Thread.currentThread().stackTrace.filter {
+                    it.className.startsWith(LocalBrowserSession::class.java.name)
+                }.map { it.methodName }))
                 .put("hiddenSubmitPoint", JSONArray(listOf(submit.x, submit.y))))
             activity.openFileOutput("local-browser-http-states.json", 0).use { it.write(httpStates.toString().toByteArray()) }
         }
