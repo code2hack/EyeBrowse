@@ -9,6 +9,7 @@
         <item name="android:windowLightNavigationBar">false</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>
+    <item name="rg_root" type="id" />
     <item name="hud_close_tab" type="id" />
     <item name="hud_back" type="id" />
     <item name="hud_forward" type="id" />

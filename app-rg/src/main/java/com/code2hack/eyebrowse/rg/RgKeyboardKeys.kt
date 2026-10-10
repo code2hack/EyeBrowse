@@ -1,12 +1,10 @@
 package com.code2hack.eyebrowse.rg
 
-import com.code2hack.eyebrowse.core.link.control.EditorLimits
-
 /** Built-in key meanings/layout only: no field values, editor identity or delayed intents. */
 internal class RgKeyboardKeys {
     sealed interface Key {
         data class Character(val text: String) : Key {
-            init { require(text.length == 1 && EditorLimits.printable(text)) }
+            init { require(text.length == 1 && text[0].code >= 32 && text[0] != '\u007f' && !text[0].isSurrogate()) }
             override fun toString() = "Character(redacted)"
         }
         enum class Command : Key { SHIFT, SYMBOLS, SPACE, BACKSPACE, ENTER, DONE, LEFT, RIGHT }
@@ -21,11 +19,10 @@ internal class RgKeyboardKeys {
         Key.Command.SYMBOLS -> { symbols = !symbols; true }
         else -> false
     }
-    fun rows() = rows(uppercase, symbols)
 
     data class PositionedKey(val key: Key, val x: Int, val y: Int, val width: Int, val height: Int)
 
-    /** Actual local 480×200 keyboard; historical remote rows remain separate below. */
+    /** Actual local 480×200 keyboard. */
     fun localLayout(): List<PositionedKey> = buildList {
         val rows = if (symbols) listOf("1234567890", ":-@_?&=#%", "+,;!'\"()")
             else listOf("qwertyuiop", "asdfghjkl", "zxcvbnm")
@@ -47,13 +44,4 @@ internal class RgKeyboardKeys {
         }
     }
 
-    companion object {
-        fun rows(uppercase: Boolean, symbols: Boolean): List<List<Key>> {
-            val characters = if (symbols) listOf("1234567890", ":/?.@-_=&%", "#+\"'()[]{}", "!*,;\\<>$^~|")
-                else listOf("qwertyuiop", "asdfghjkl", "zxcvbnm", ".,/@-_")
-            return characters.map { row -> row.map {
-                Key.Character(if (uppercase && !symbols) it.uppercase() else it.toString())
-            } }
-        }
-    }
 }

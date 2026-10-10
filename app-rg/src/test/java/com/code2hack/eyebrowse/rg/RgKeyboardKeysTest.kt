@@ -52,17 +52,11 @@ class RgKeyboardKeysTest {
         }
     }
 
-    @Test fun localKeyLayoutNeedsNoEditorOrRemoteController() {
-        val keys = RgKeyboardKeys()
-        assertEquals("qwertyuiopasdfghjklzxcvbnm.,/@-_", keys.rows().flatten().joinToString("") {
-            (it as RgKeyboardKeys.Key.Character).text
-        })
-        assertTrue(keys.changeLayer(RgKeyboardKeys.Key.Command.SHIFT))
-        assertEquals("Q", (keys.rows()[0][0] as RgKeyboardKeys.Key.Character).text)
-        assertTrue(keys.changeLayer(RgKeyboardKeys.Key.Command.SYMBOLS))
-        val symbols = keys.rows().flatten().map { (it as RgKeyboardKeys.Key.Character).text }.toSet()
-        "0123456789:/?.@-_=&%#+\"'[]()".forEach { assertTrue(symbols.contains(it.toString())) }
-        assertFalse(keys.changeLayer(RgKeyboardKeys.Key.Command.DONE))
+    @Test fun characterValidationPreservesNativePrintableBoundary() {
+        for (value in listOf("", "ab", "\n", "\u007f", "\ud800", "\udc00")) {
+            assertThrows(IllegalArgumentException::class.java) { RgKeyboardKeys.Key.Character(value) }
+        }
+        assertEquals("é", RgKeyboardKeys.Key.Character("é").text)
         assertFalse(RgKeyboardKeys.Key.Character("x").toString().contains("x"))
     }
 }

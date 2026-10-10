@@ -1,6 +1,8 @@
 package com.code2hack.eyebrowse.rg
 
-import android.app.Activity
+import android.Manifest
+import android.annotation.SuppressLint
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
@@ -23,20 +25,25 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.widget.doAfterTextChanged
 import androidx.core.view.doOnNextLayout
+import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
 import com.code2hack.eyebrowse.core.browser.AddressPolicy
+import com.code2hack.eyebrowse.rg.qr.CameraQrScanner
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-/** RG-local browser. The ordinary launcher stays unchanged until the #33 integration. */
-class LocalBrowserActivity : Activity() {
+/** Standalone RG launcher, local pages and direct native input. */
+class LocalBrowserActivity : ComponentActivity() {
     internal class Tab(val session: LocalBrowserSession) {
         var committedUrl = ""
         var committedTitle = ""
         var draft: String? = null
         var recoveryUrl = ""
     }
-    internal enum class Utility { BROWSING, MORE, TABS, BOOKMARKS, QR_PENDING, SETTINGS }
+    internal enum class Utility { BROWSING, MORE, TABS, BOOKMARKS, QR, SETTINGS }
     internal lateinit var root: FrameLayout
     internal lateinit var toolbar: FrameLayout
     internal lateinit var content: FrameLayout
@@ -59,6 +66,17 @@ class LocalBrowserActivity : Activity() {
     private var localError: String? = null
     private var resumed = false
     private var utilityScroll: ScrollView? = null
+    private var scanner: CameraQrScanner? = null
+    private var qrUrl: String? = null
+    private var qrMessage = ""
+    internal var cameraHasFrame = false
+        private set
+    internal val cameraActive get() = scanner != null
+    private val cameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (utility == Utility.QR) {
+            if (granted) startCamera() else qrError("Camera permission denied. Allow access when trying again.")
+        }
+    }
     private val edgeMotion = EdgeScrollMotion()
     internal var edgeScrollRunning = false
         private set
@@ -176,7 +194,7 @@ class LocalBrowserActivity : Activity() {
         inputSettings=LocalInputSettings({ key -> preferences.getString(key,null) }) { key,value ->
             preferences.edit().putString(key,value).commit()
         }
-        pointer = PointerOverlay(this).apply { useLocalHudAppearance();sensitivity(inputSettings.sensitivity.gain) }
+        pointer = PointerOverlay(this).apply { sensitivity(inputSettings.sensitivity.gain) }
         root.addView(pointer, box(-1, -1))
         input = NativeRgInputTarget(root, pointer, {
             if (utility == Utility.BROWSING) tabs.current.session.page else null
@@ -376,12 +394,15 @@ class LocalBrowserActivity : Activity() {
     }
 
     internal fun showUtility(next: Utility) {
+        stopCamera(); qrUrl = null; qrMessage = ""
         stopEdgeScroll(); dismissKeyboard(); tabs.current.session.surface.clearFocus(); root.requestFocus()
         utility = next; localError = null; overlay.visibility = View.VISIBLE
         showSelected(); renderUtility()
+        if (next == Utility.QR) requestCamera()
     }
     internal fun dismissUtility() {
         if (!::overlay.isInitialized) return
+        stopCamera(); qrUrl = null
         stopEdgeScroll(); utilityScroll=null
         utility = Utility.BROWSING; overlay.visibility = View.GONE; overlay.removeAllViews()
         if (::tabs.isInitialized) showSelected()
@@ -398,17 +419,17 @@ class LocalBrowserActivity : Activity() {
                     when (i) {
                         0 -> addTab()
                         1 -> showUtility(Utility.BOOKMARKS)
-                        2 -> showUtility(Utility.QR_PENDING)
+                        2 -> showUtility(Utility.QR)
                         else -> showUtility(Utility.SETTINGS)
                     }
                 }.apply { tag = "menu.$i" }, box(224, 48, y = i * 48))
             }
             return
         }
+        if (utility == Utility.QR) { renderQr(); return }
         val title = when (utility) {
             Utility.TABS -> "Tabs"
             Utility.BOOKMARKS -> "Bookmarks"
-            Utility.QR_PENDING -> "QR scan"
             else -> "Settings"
         }
         overlay.addView(text(title, 24f), box(340, 44, 16, 14))
@@ -459,8 +480,65 @@ class LocalBrowserActivity : Activity() {
                     }.apply { tag="settings.speed.${value.name.lowercase()}";isSelected=inputSettings.speed==value },48)
                 }
             }
-            else -> row(text("Not implemented here. QR scanning follows in issue #33.",18f),96)
+            else -> Unit
         }
+    }
+
+    private fun requestCamera() {
+        qrUrl = null
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            startCamera()
+        } else {
+            qrMessage = "Allow camera access to scan a webpage address."
+            renderUtility(); cameraPermission.launch(Manifest.permission.CAMERA)
+        }
+    }
+    private fun startCamera() {
+        if (utility != Utility.QR) return
+        stopCamera(); qrMessage = "Starting camera…"; renderUtility()
+        val preview = PreviewView(this).apply {
+            tag = "qr.camera"
+            // TextureView keeps the app's single pointer visible above real camera media.
+            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+        }
+        overlay.addView(preview, box(448, 272, 16, 76))
+        try {
+            scanner = CameraQrScanner(this, this, ::previewQr, {
+                cameraHasFrame = true
+                qrMessage = "Point the camera at a webpage QR code."
+                overlay.findViewWithTag<TextView>("qr.message")?.text = qrMessage
+            }, { qrError("Camera unavailable. Try again or cancel.") }).also { it.start(preview) }
+        } catch (_: Exception) { qrError("Camera unavailable. Try again or cancel.") }
+    }
+    private fun stopCamera() { scanner?.cancel(); scanner = null; cameraHasFrame = false }
+    private fun qrError(message: String) {
+        stopCamera(); qrUrl = null; qrMessage = message
+        if (utility == Utility.QR) renderUtility()
+    }
+    /** Camera and deterministic decoder tests share this ordinary visible preview path. */
+    internal fun previewQr(value: String) {
+        if (utility != Utility.QR) return
+        stopCamera()
+        val result = AddressPolicy.resolve(value)
+        qrUrl = result.url()
+        qrMessage = if (result.accepted()) "Open this address in the current tab?" else "Unsupported QR address. ${result.message()}"
+        renderUtility()
+    }
+    private fun renderQr() {
+        overlay.addView(text("QR scan", 24f), box(340, 44, 16, 14))
+        overlay.addView(text(qrMessage, 18f).apply { tag = "qr.message"; maxLines = 3 }, box(448, 72, 16, 356))
+        qrUrl?.let { url ->
+            overlay.addView(text(url).apply { tag = "qr.url"; maxLines = 4; ellipsize = TextUtils.TruncateAt.END }, box(448, 100, 16, 100))
+            overlay.addView(button("Open") {
+                val result = tabs.current.session.open(url)
+                if (result.accepted()) { tabs.current.draft = null; dismissUtility() }
+                else qrError("Unsupported QR address. ${result.message()}")
+            }.apply { tag = "qr.open" }, box(216, 48, 16, 436))
+        }
+        if (qrUrl == null) {
+            overlay.addView(button("Try again") { requestCamera() }.apply { tag = "qr.retry" }, box(216, 48, 16, 436))
+        }
+        overlay.addView(button("Cancel") { dismissUtility() }.apply { tag = "qr.cancel" }, box(216, 48, 248, 436))
     }
 
     private fun renderKeys() {
@@ -503,11 +581,14 @@ class LocalBrowserActivity : Activity() {
     }
     override fun onSaveInstanceState(outState: Bundle) { outState.putString("local.tabs", metadata()); super.onSaveInstanceState(outState) }
     override fun onStop() {
+        android.webkit.CookieManager.getInstance().flush()
         if (!getPreferences(MODE_PRIVATE).edit().putString("local.tabs", metadata()).commit()) {
             localError = "Tab recovery could not be saved."; updateStatus()
         }
         super.onStop()
     }
+    // Android's public Activity hook; AndroidX core marks its override library-only.
+    @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (::router.isInitialized && router.key(event)) return true
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
@@ -536,8 +617,12 @@ class LocalBrowserActivity : Activity() {
         if (hasWindowFocus()) pointer.start()
         router.resume()
     }
-    override fun onPause() { resumed = false; stopEdgeScroll(); router.pause(); pointer.stop(); dismissKeyboard(); tabs.items.forEach { it.session.pause() }; super.onPause() }
-    override fun onDestroy() { stopEdgeScroll(); router.pause(); pointer.stop(); tabs.destroy(); super.onDestroy() }
+    override fun onPause() {
+        resumed = false
+        if (utility == Utility.QR && cameraActive) qrError("Scanning paused. Try again to restart the camera.")
+        stopEdgeScroll(); router.pause(); pointer.stop(); dismissKeyboard(); tabs.items.forEach { it.session.pause() }; super.onPause()
+    }
+    override fun onDestroy() { stopCamera(); stopEdgeScroll(); router.pause(); pointer.stop(); tabs.destroy(); super.onDestroy() }
 
     companion object {
         private const val LIGHT = 0xfff2f2f2.toInt()
