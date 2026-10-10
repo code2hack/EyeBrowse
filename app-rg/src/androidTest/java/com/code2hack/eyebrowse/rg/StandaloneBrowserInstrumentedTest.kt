@@ -91,6 +91,12 @@ class StandaloneBrowserInstrumentedTest {
         assertTrue(done.await(3, TimeUnit.SECONDS)); return value
     }
     private fun capture(s: ActivityScenario<LocalBrowserActivity>, name: String) {
+        await("focused native state with the bounded cursor already drawn") {
+            var yes = false; s.onActivity {
+                val p = it.pointer.lastDrawPosition
+                yes = it.hasWindowFocus() && it.pointer.drawCount > 0 && p.x in 8f..472f && p.y in 8f..632f
+            }; yes
+        }
         instrumentation.waitForIdleSync()
         val committed = CountDownLatch(1)
         s.onActivity {
