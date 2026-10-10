@@ -332,13 +332,21 @@ class LocalBrowserInstrumentedTest {
     }
 
     private val keyboardEvidence = JSONArray()
+    private fun observeNativeEvents(scene: ActivityScenario<LocalBrowserActivity>) {
+        // Owned fixture observation only: no values, focus, selection or scroll assignments.
+        js(scene,"""(()=>{window.fixtureNativeEvents=[];
+            for(const type of ['pointerdown','pointerup','click','focusin'])
+                document.addEventListener(type,e=>fixtureNativeEvents.push({type,target:e.target.id,
+                    x:e.clientX,y:e.clientY,scrollY,viewport:innerHeight,at:performance.now()}),true);
+        })()""")
+    }
     private fun keyboardObservation(scene: ActivityScenario<LocalBrowserActivity>, stage: String) {
         // Values stay in the owned page. Reports contain geometry, lengths and native selection only.
         val row = JSONObject(js(scene, """(()=>{const e=document.activeElement,r=e.getBoundingClientRect();return {
             field:e.id,type:e.type||'plain',length:(e.value===undefined?e.textContent:e.value).length,
             selectionStart:e.selectionStart,selectionEnd:e.selectionEnd,
             bounds:[r.x,r.y,r.width,r.height],viewport:[innerWidth,innerHeight],
-            inputs:fixtureInputs,submits:fixtureSubmits}})()"""))
+            inputs:fixtureInputs,submits:fixtureSubmits,nativeEvents:window.fixtureNativeEvents||[]}})()"""))
         scene.onActivity {
             row.put("stage",stage).put("observedAtNs",SystemClock.elapsedRealtimeNanos())
                 .put("keyboardShown",it.keyboard.isShown).put("pageFocused",it.tabs.current.session.page?.hasFocus()==true)
@@ -555,6 +563,7 @@ class LocalBrowserInstrumentedTest {
 
     @Test fun nativeFieldRevealSettlesOnceWithoutReloadOrFocusChange() = keyboardScene { scene,source ->
         open(scene,"local-keyboard.html");ready(scene)
+        observeNativeEvents(scene)
         val identity=js(scene,"fixtureIdentity")
         // Admit the unchanged lower editor through ordinary head-edge scrolling before activation.
         scene.onActivity { source.aimRelative(it,InputPoint(240f,it.pointer.motionBounds.bottom)) }
@@ -761,6 +770,7 @@ class LocalBrowserInstrumentedTest {
         }
         capture(scene, "empty").checked { assertEquals(Color.BLACK, it.getPixel(450, 620)) }
         open(scene, "keyboard.html"); ready(scene)
+        observeNativeEvents(scene)
         val document = js(scene, "fixtureIdentity")
         address(scene, "javascript:" + "a".repeat(48))
         key(scene, RgKeyboardKeys.Key.Command.ENTER)
