@@ -21,7 +21,7 @@ fun main(args: Array<String>) {
         (octets.size == 4 && octets[0] == 100 && octets[1] in 64..127))
     val port = args[1].toInt().also { require(it in 1024..65535) }
     val directory = Path.of(args[2]).toRealPath()
-    val routes = listOf("keyboard.html", "history.html", "author-light.html", "media.svg")
+    val routes = listOf("keyboard.html", "local-keyboard.html", "history.html", "author-light.html", "media.svg")
         .associate { name ->
             val file = directory.resolve(name).toRealPath()
             require(file.parent == directory)

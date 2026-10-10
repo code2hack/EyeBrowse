@@ -15,12 +15,14 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
+import android.webkit.WebView
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.widget.doAfterTextChanged
+import androidx.core.view.doOnNextLayout
 import com.code2hack.eyebrowse.core.browser.AddressPolicy
 import org.json.JSONArray
 import org.json.JSONObject
@@ -261,9 +263,30 @@ class LocalBrowserActivity : Activity() {
         tabs.current.draft = null; localError = null; dismissKeyboard(); updateHud()
     }
     internal fun showKeyboard() {
+        if (keyboard.isShown) { renderKeys(); return }
         keyboard.visibility = View.VISIBLE
         (content.layoutParams as FrameLayout.LayoutParams).also { it.bottomMargin = 200; content.layoutParams = it }
         renderKeys()
+        content.doOnNextLayout {
+            val page = tabs.current.session.page ?: return@doOnNextLayout
+            // The custom keyboard resizes the page without a system IME reveal request.
+            page.postVisualStateCallback(0, object : WebView.VisualStateCallback() {
+                override fun onComplete(requestId: Long) {
+                    if (resumed && hasWindowFocus() && utility == Utility.BROWSING &&
+                        keyboard.isShown && !addressEditing && !edgeScrollRunning &&
+                        page === tabs.current.session.page && page.isShown && page.hasFocus()) {
+                        page.evaluateJavascript("""(()=>{
+                            const e=document.activeElement;
+                            if(e && (e.matches('input,textarea') || e.isContentEditable)) {
+                                const r=e.getBoundingClientRect();
+                                if(r.top<0 || r.bottom>innerHeight)
+                                    e.scrollIntoView({block:'center',inline:'nearest'});
+                            }
+                        })()""".trimIndent(), null)
+                    }
+                }
+            })
+        }
     }
     internal fun dismissKeyboard() {
         if (!::keyboard.isInitialized) return
@@ -443,10 +466,8 @@ class LocalBrowserActivity : Activity() {
     private fun renderKeys() {
         if (!::input.isInitialized) return
         keyboard.removeAllViews(); keyButtons.clear()
-        fun chars(value: String) = value.map { RgKeyboardKeys.Key.Character(it.toString()) }
-        val rows: List<List<RgKeyboardKeys.Key>> = if (input.keys.symbols) listOf(chars("1234567890"), chars(":-@_?&=#%"), chars("+,;!'\"()"))
-            else input.keys.rows().take(3)
-        fun key(key: RgKeyboardKeys.Key, x: Int, y: Int, width: Int, height: Int) {
+        input.keys.localLayout().forEach { placed ->
+            val key = placed.key
             val label = when (key) {
                 is RgKeyboardKeys.Key.Character -> key.text
                 RgKeyboardKeys.Key.Command.SHIFT -> "⇧"
@@ -461,19 +482,8 @@ class LocalBrowserActivity : Activity() {
                 input.key(key)
                 if (key == RgKeyboardKeys.Key.Command.SHIFT || key == RgKeyboardKeys.Key.Command.SYMBOLS) renderKeys()
             }
-            keyboard.addView(view, box(width, height, x, y)); keyButtons[key] = view
+            keyboard.addView(view, box(placed.width, placed.height, placed.x, placed.y)); keyButtons[key] = view
         }
-        rows.forEachIndexed { row, letters ->
-            val keys = if (row == 2) listOf(RgKeyboardKeys.Key.Command.SHIFT) + letters + RgKeyboardKeys.Key.Command.BACKSPACE else letters
-            val available = 464 - (keys.size - 1) * 4
-            keys.forEachIndexed { i, value -> key(value, 8 + i * 4 + i * available / keys.size, 4 + row * 48,
-                (i + 1) * available / keys.size - i * available / keys.size, 44) }
-        }
-        val bottom = listOf(RgKeyboardKeys.Key.Command.SYMBOLS, RgKeyboardKeys.Key.Command.SPACE,
-            RgKeyboardKeys.Key.Character("."), RgKeyboardKeys.Key.Character("/"),
-            RgKeyboardKeys.Key.Command.ENTER, RgKeyboardKeys.Key.Command.DONE)
-        val widths = listOf(52, 148, 36, 36, 96, 76); var x = 8
-        bottom.forEachIndexed { i, value -> key(value, x, 148, widths[i], 48); x += widths[i] + 4 }
     }
 
     private fun metadata() = JSONObject().put("selected", tabs.selectedIndex)
