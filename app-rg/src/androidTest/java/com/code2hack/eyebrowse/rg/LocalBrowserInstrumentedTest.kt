@@ -124,7 +124,7 @@ class LocalBrowserInstrumentedTest {
             settled
         }
         val rect = JSONArray(js(scene, "(()=>{const r=document.querySelector(" + JSONObject.quote(selector) +
-            ").getBoundingClientRect();return [r.x,r.y,r.width,r.height,innerWidth]})()"))
+            ").getBoundingClientRect();return [r.x,r.y,r.width,r.height,innerWidth,innerHeight]})()"))
         var point = InputPoint(0f, 0f)
         scene.onActivity {
             val page = checkNotNull(it.tabs.current.session.page)
@@ -133,6 +133,15 @@ class LocalBrowserInstrumentedTest {
             val scale = page.width / rect.getDouble(4)
             val x = (rect.getDouble(0) + rect.getDouble(2) / 2) * scale
             val y = (rect.getDouble(1) + rect.getDouble(3) / 2) * scale
+            // Numeric admission evidence survives a failure without recording field contents.
+            keyboardEvidence.put(JSONObject().put("stage", "native-element-admission")
+                .put("observedAtNs", SystemClock.elapsedRealtimeNanos())
+                .put("cssBounds", JSONArray((0..3).map { rect.getDouble(it) }))
+                .put("cssViewport", JSONArray(listOf(rect.getDouble(4), rect.getDouble(5))))
+                .put("pageBounds", bounds(page)).put("rootBounds", bounds(it.root))
+                .put("scale", scale).put("pagePoint", JSONArray(listOf(x, y)))
+                .put("keyboardShown", it.keyboard.isShown).put("pageFocused", page.hasFocus())
+                .put("layoutRequested", it.root.isLayoutRequested))
             assertTrue("owned element inside current page", x in 0.0..page.width.toDouble() && y in 0.0..page.height.toDouble())
             point = InputPoint(origin[0] - root[0] + x.toFloat(), origin[1] - root[1] + y.toFloat())
         }

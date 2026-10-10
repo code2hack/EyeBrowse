@@ -97,3 +97,11 @@ software effects; physical movement, wearer direction, optics and ergonomics nee
 their own evidence when claimed. No Phone, QR, launcher cutover, HUD-G2 or release
 acceptance is claimed here. Manager owns resource grants, independent review,
 PRs, acceptance, merge and closure.
+
+Correction02 adds field-free numeric admission observations immediately before
+the existing element hit-point assertion: CSS rectangle/viewport, native page/root
+bounds, scale, point, layout and focus flags. These are contemporaneous geometry,
+not a reconstructed grant21 rectangle or evidence that reveal succeeded. Grant21
+failed before activating the lower field; its exact target geometry and cause
+remain unknown. The fixture, native actions and strict reveal assertions are
+unchanged. A fresh granted run must establish the actual geometry and effects.
