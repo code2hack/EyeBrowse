@@ -1,14 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
-    <application android:usesCleartextTraffic="true">
-        <!-- Explicit development access to production browser code; no launcher cutover. -->
-        <activity android:name=".LocalBrowserActivity" android:exported="true" tools:replace="android:exported" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
         <!-- Owned native-input regression fixture; never the product entry point or HUD reference. -->
         <activity android:name=".NativeInputTestActivity" android:exported="false"
             android:screenOrientation="portrait" />
-        <!-- Explicit development entry, no launcher filter and no approved production HUD. -->
-        <activity android:name=".LocalBrowserPreparationActivity" android:exported="true"
-            android:screenOrientation="portrait" android:theme="@style/Theme.LocalBrowserPreparation" />
     </application>
 </manifest>

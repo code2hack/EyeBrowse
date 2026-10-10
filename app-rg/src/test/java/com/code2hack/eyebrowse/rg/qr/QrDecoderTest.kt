@@ -1,26 +1,13 @@
-package com.code2hack.eyebrowse.rg.pairing
+package com.code2hack.eyebrowse.rg.qr
 
-import com.code2hack.eyebrowse.core.link.invitation.InvitationCodec
-import com.code2hack.eyebrowse.core.link.transport.Locator
 import com.google.zxing.common.BitMatrix
-import java.net.InetAddress
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/**
- * T02 predeclared: QrDecoderTest. The Y-plane entry point (camera path) is verified on the JVM
- * against synthetic luminance rasters; the bitmap entry point (instrumentation image-input seam)
- * is exercised on device through the seam instrumentation. Both share the one production decoder.
- */
+/** Synthetic rasters verify the decoder; actual camera acquisition is a separate device gate. */
 class QrDecoderTest {
-
-    private fun payload(sample: Int): String = InvitationCodec.encode(
-        invitationId = "q${sample.toString().padStart(8, '0')}",
-        invitationSecret = ByteArray(32) { (it * 3 + sample).toByte() },
-        phoneSpkiSha256Hex = sample.toString(16).padStart(64, '0'),
-        locators = listOf(Locator(InetAddress.getByName("192.168.0.75"), 39818)),
-    )
+    private fun payload(sample: Int) = "https://fixture.example/qr/$sample?from=camera#preview"
 
     /** Render with the independent writer, then rasterize to a Y plane the scanner would see. */
     private fun matrixToYPlane(matrix: BitMatrix, quietModules: Int = 2): Pair<ByteArray, Pair<Int, Int>> {
@@ -38,7 +25,7 @@ class QrDecoderTest {
     }
 
     @Test
-    fun `decodes a real invitation QR from the camera luminance path`() {
+    fun `decodes a URL QR from the camera luminance path`() {
         val p = payload(1)
         val (luma, dims) = matrixToYPlane(
             com.google.zxing.qrcode.QRCodeWriter()
@@ -70,6 +57,9 @@ class QrDecoderTest {
         val garbage = ByteArray(64 * 64) { if (it % 3 == 0) 0x00 else 0xFF.toByte() }
         assertNull(QrDecoder.decodeYPlane(garbage, 64, 64, 64))
         assertNull(QrDecoder.decodeYPlane(ByteArray(0), 0, 0, 0))
+        assertNull(QrDecoder.decodeYPlane(ByteArray(15), 4, 4, 4))
+        assertNull(QrDecoder.decodeYPlane(ByteArray(16), 3, 4, 4))
+        assertNull(QrDecoder.decodeYPlane(ByteArray(1), Int.MAX_VALUE, 1, Int.MAX_VALUE))
     }
 
     @Test

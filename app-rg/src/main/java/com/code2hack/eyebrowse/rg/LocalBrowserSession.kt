@@ -55,6 +55,7 @@ internal class LocalBrowserSession(context: Context, private val onPageTouchUp: 
         }
         view.settings.apply {
             javaScriptEnabled = true
+            domStorageEnabled = true
             allowFileAccess = false
             allowContentAccess = false
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW

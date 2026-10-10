@@ -2,7 +2,7 @@ package com.code2hack.eyebrowse.rg
 
 import kotlin.math.*
 
-/** Shared normalized rotation and display-axis projection for pointer and Reading input. */
+/** Normalized rotation and display-axis projection for the local pointer. */
 internal data class HeadOrientation(val x: Double,val y: Double,val z: Double,val w: Double) {
     fun inverse() = HeadOrientation(-x,-y,-z,w)
     operator fun times(b: HeadOrientation) = HeadOrientation(

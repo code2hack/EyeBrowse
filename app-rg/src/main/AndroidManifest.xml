@@ -1,14 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!--
-      The paired RG link client needs ordinary outbound network access to the explicitly
-      advertised Phone locator(s). No Wi-Fi/hotspot configuration permission exists: this slice
-      configures no network. CAMERA is added by the T02 scanner slice, not before.
-    -->
+    <!-- Each local WebView uses the device's existing network route. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- T02 scanner: the RG camera reads the Phone-displayed QR. No network onboarding APIs. -->
+    <!-- Requested at runtime only on deliberate local URL scanner entry. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature
         android:name="android.hardware.camera"
@@ -19,23 +15,18 @@
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:theme="@style/Theme.EyeBrowseRg">
-        <!-- RG-local browser foundation. #33 owns the ordinary launcher/default cutover. -->
-        <activity android:name=".LocalBrowserActivity" android:exported="false"
-            android:screenOrientation="portrait" android:theme="@style/Theme.LocalBrowser" />
+        android:usesCleartextTraffic="true"
+        android:theme="@style/Theme.LocalBrowser">
         <activity
-            android:name=".MainActivity"
-            android:exported="true">
+            android:name=".LocalBrowserActivity"
+            android:exported="true"
+            android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".pairing.RgPairingActivity"
-            android:exported="false"
-            android:label="@string/rg_action_scan" />
     </application>
 
 </manifest>

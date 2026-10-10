@@ -18,8 +18,7 @@ class PointerOverlay(context: Context, attrs: AttributeSet?=null) : View(context
     private var pendingFrame=false
     private var publishedAvailable=false
     private val paint=Paint(Paint.ANTI_ALIAS_FLAG)
-    private var radius=8*resources.displayMetrics.density
-    private var hudAppearance=false
+    private val radius=6f
     val position get() = model.position
     internal val motionBounds get() = model.motionBounds
     internal val expiresAtNs get() = model.expiresAtNs
@@ -29,7 +28,6 @@ class PointerOverlay(context: Context, attrs: AttributeSet?=null) : View(context
     }
     val sourceRegistered get() = source.registered
     val sourceDescription get() = source.description
-    internal var onSample: ((RotationSample,Long,Int)->Unit)? = null
     private var displayRotation=0
     var onAvailabilityChanged: ((Boolean)->Unit)?=null
     internal var acceptedSamples=0L
@@ -47,12 +45,9 @@ class PointerOverlay(context: Context, attrs: AttributeSet?=null) : View(context
 
     init { isClickable=false;isFocusable=false;importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO }
 
-    /** H1.2's 16 rendered-pixel footprint and light palette, independent of Android density. */
-    internal fun useLocalHudAppearance() { hudAppearance=true;radius=6f;invalidate() }
-
     fun bounds(left: Float, top: Float, right: Float, bottom: Float, rotation: Int) {
         // Keep the entire ring inside the measured usable root, including its actual insets.
-        val inset=minOf(if(hudAppearance) 8f else radius,
+        val inset=minOf(8f,
             (right-left).coerceAtLeast(0f)/2,(bottom-top).coerceAtLeast(0f)/2)
         displayRotation=rotation
         model.resize(PointerBounds(left+inset,top+inset,right-inset,bottom-inset),rotation)
@@ -68,7 +63,6 @@ class PointerOverlay(context: Context, attrs: AttributeSet?=null) : View(context
             check(Looper.myLooper()==Looper.getMainLooper())
             if (!running || registration!=generation) return@onSample
             val receipt=SystemClock.elapsedRealtimeNanos()
-            onSample?.invoke(sample,receipt,displayRotation)
             val before=position
             if (model.sample(sample,receipt)) {
                 acceptedSamples++;lastSampleReceiptNs=receipt
@@ -85,11 +79,6 @@ class PointerOverlay(context: Context, attrs: AttributeSet?=null) : View(context
         running=false;generation++
         source.stop();removeCallbacks(frame);removeCallbacks(expire);pendingFrame=false
         model.stop();publishAvailability();invalidate()
-    }
-
-    fun recenter() {
-        if (model.recenter(SystemClock.elapsedRealtimeNanos())) requestFrame()
-        publishAvailability()
     }
 
     /** Recheck age at admission even if the stale Handler callback has been delayed. */
@@ -132,11 +121,9 @@ class PointerOverlay(context: Context, attrs: AttributeSet?=null) : View(context
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val point=position
-        paint.style=Paint.Style.STROKE;paint.strokeWidth=if(hudAppearance) 3f else 4f;paint.color=Color.BLACK
+        paint.style=Paint.Style.STROKE;paint.strokeWidth=3f;paint.color=Color.BLACK
         canvas.drawCircle(point.x,point.y,radius,paint)
-        paint.strokeWidth=2f;paint.color=if(hudAppearance) {
-            if(point.available) 0xfff2f2f2.toInt() else 0xff8a8a8a.toInt()
-        } else if(point.available) Color.CYAN else Color.GRAY
+        paint.strokeWidth=2f;paint.color=if(point.available) 0xfff2f2f2.toInt() else 0xff8a8a8a.toInt()
         canvas.drawCircle(point.x,point.y,radius,paint)
         paint.style=Paint.Style.FILL
         canvas.drawCircle(point.x,point.y,2f,paint)

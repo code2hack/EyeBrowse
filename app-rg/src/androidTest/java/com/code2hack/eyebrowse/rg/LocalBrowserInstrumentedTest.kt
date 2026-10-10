@@ -828,8 +828,8 @@ class LocalBrowserInstrumentedTest {
         scene.onActivity { assertEquals(LocalBrowserActivity.Utility.BROWSING, it.utility) }
         assertEquals(inputs, js(scene, "fixtureInputs")); assertEquals(submits, js(scene, "fixtureSubmits"))
         control(scene, "more"); tagged(scene, "menu.2")
-        scene.onActivity { assertEquals(LocalBrowserActivity.Utility.QR_PENDING, it.utility); assertFalse(checkNotNull(it.tabs.current.session.page).isShown) }
-        tagged(scene, "utility.done")
+        scene.onActivity { assertEquals(LocalBrowserActivity.Utility.QR, it.utility); assertFalse(checkNotNull(it.tabs.current.session.page).isShown) }
+        tagged(scene, "qr.cancel")
         control(scene, "more"); tagged(scene, "menu.3")
         scene.onActivity { assertEquals(LocalBrowserActivity.Utility.SETTINGS, it.utility) }
         tagged(scene, "utility.done")

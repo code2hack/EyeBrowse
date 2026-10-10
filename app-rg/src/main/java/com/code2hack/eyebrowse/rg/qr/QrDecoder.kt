@@ -1,4 +1,4 @@
-package com.code2hack.eyebrowse.rg.pairing
+package com.code2hack.eyebrowse.rg.qr
 
 import android.graphics.Bitmap
 import com.google.zxing.BinaryBitmap
@@ -8,12 +8,7 @@ import com.google.zxing.NotFoundException
 import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.qrcode.QRCodeReader
 
-/**
- * THE one production QR decoder (plan §4.4: "one production decoder implementation shared by
- * camera frames and instrumentation image input"). Both entry points produce a payload string that
- * is then handed to the SAME production pairing controller — the image-input seam only differs in
- * where the pixels come from, never in what happens after decoding.
- */
+/** The same QR decoder for real camera luminance and deterministic bitmap verification. */
 object QrDecoder {
 
     /** Decodes a QR payload from a bitmap (instrumentation seam, gallery-free). */
@@ -28,7 +23,8 @@ object QrDecoder {
 
     /** Decodes a QR payload from a camera Y (luminance) plane. */
     fun decodeYPlane(luma: ByteArray, rowStride: Int, width: Int, height: Int): String? {
-        if (width <= 0 || height <= 0) return null
+        if (width <= 0 || height <= 0 || rowStride < width ||
+            (height - 1L) * rowStride + width > luma.size) return null
         val source = if (rowStride == width) {
             com.google.zxing.PlanarYUVLuminanceSource(
                 luma, rowStride, height, 0, 0, width, height, false,
