@@ -11,6 +11,8 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.View
+import android.view.PixelCopy
+import android.view.ViewTreeObserver
 import android.webkit.CookieManager
 import androidx.camera.core.CameraSelector
 import androidx.camera.view.PreviewView
@@ -29,6 +31,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.json.JSONObject
+import org.json.JSONArray
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -88,7 +91,12 @@ class StandaloneBrowserInstrumentedTest {
     }
     private fun capture(s: ActivityScenario<LocalBrowserActivity>, name: String) {
         instrumentation.waitForIdleSync()
-        s.onActivity { assertEquals(480, it.root.width); assertEquals(640, it.root.height); assertEquals(48, it.toolbar.height) }
+        val committed = CountDownLatch(1)
+        s.onActivity {
+            assertEquals(480, it.root.width); assertEquals(640, it.root.height); assertEquals(48, it.toolbar.height)
+            it.root.viewTreeObserver.registerFrameCommitCallback { committed.countDown() }; it.root.invalidate()
+        }
+        assertTrue("current native frame committed before capture", committed.await(3, TimeUnit.SECONDS))
         val image = checkNotNull(instrumentation.uiAutomation.takeScreenshot())
         assertEquals(480, image.width); assertEquals(640, image.height)
         // Predeclared black toolbar interiors; avoid outlines/glyphs and the cursor center.
@@ -159,6 +167,11 @@ class StandaloneBrowserInstrumentedTest {
             repeat(3) { round ->
                 scan(s); allowCamera()
                 await("actual RG camera analyzer frame") { var yes = false; s.onActivity { yes = it.cameraHasFrame }; yes }
+                await("actual preview streaming") {
+                    var yes = false; s.onActivity {
+                        yes = it.root.findViewWithTag<PreviewView>("qr.camera")?.previewStreamState?.value == PreviewView.StreamState.STREAMING
+                    }; yes
+                }
                 await("camera in actual use") { available.values.any { !it } }
                 val owned = available.filterValues { !it }.keys.toList()
                 capture(s, "real-camera-$round")
@@ -227,6 +240,75 @@ class StandaloneBrowserInstrumentedTest {
         assertEquals("true", js(s, "document.cookie.includes('issue33=durable')"))
         assertEquals("0", js(s, "fixtureSubmits"))
         js(s, "localStorage.removeItem('issue33-owned');document.cookie='issue33=; path=/; Max-Age=0'")
+    }
+
+    @Test fun firstPartyTransitionFramesKeepDeclaredBackingsBlack() = scene { s ->
+        val observations = JSONArray()
+        var pending = false
+        var failed = false
+        var stage = "empty"
+        val handler = Handler(Looper.getMainLooper())
+        // These interiors avoid control outlines, webpage content/media and keyboard keys.
+        val points = listOf(4 to 44, 470 to 44, 2 to 52, 2 to 300, 2 to 638)
+        lateinit var listener: ViewTreeObserver.OnDrawListener
+        s.onActivity { activity ->
+            listener = ViewTreeObserver.OnDrawListener {
+                if (!pending) {
+                    pending = true
+                    val label = stage
+                    val image = Bitmap.createBitmap(480, 640, Bitmap.Config.ARGB_8888)
+                    activity.root.post {
+                        PixelCopy.request(activity.window, image, { result ->
+                            val colors = JSONArray()
+                            val pointer = activity.pointer.position
+                            var black = result == PixelCopy.SUCCESS
+                            if (black) for ((x, y) in points) {
+                                if (kotlin.math.abs(pointer.x - x) > 8 || kotlin.math.abs(pointer.y - y) > 8) {
+                                    val color = image.getPixel(x, y)
+                                    colors.put(JSONArray(listOf(x, y, color)))
+                                    if (color != Color.BLACK) black = false
+                                }
+                            }
+                            observations.put(JSONObject().put("stage", label).put("atNs", SystemClock.elapsedRealtimeNanos())
+                                .put("pixelCopy", result).put("samples", colors).put("black", black))
+                            if (!black && !failed) context.openFileOutput("standalone-transition-failure.png", 0).use {
+                                image.compress(Bitmap.CompressFormat.PNG, 100, it)
+                            }
+                            failed = failed || !black
+                            image.recycle(); pending = false
+                        }, handler)
+                    }
+                }
+            }
+            activity.root.viewTreeObserver.addOnDrawListener(listener)
+        }
+        try {
+            fun frame(name: String) {
+                var count = 0
+                s.onActivity { stage = name; count = observations.length(); it.root.invalidate() }
+                await("current transition frame $name", 3_000) {
+                    var sampled = false; s.onActivity { sampled = observations.length() > count }; sampled
+                }
+            }
+            frame("empty")
+            open(s, "$base/author-light.html"); frame("author-light")
+            repeat(3) {
+                hud(s, "address"); frame("address-keyboard")
+                tap(s) { it.keyButtons.getValue(RgKeyboardKeys.Key.Command.SYMBOLS) }; frame("symbols")
+                tap(s) { it.keyButtons.getValue(RgKeyboardKeys.Key.Command.DONE) }; frame("keyboard-dismissed")
+                hud(s, "more"); frame("more")
+                tag(s, "menu.1"); frame("bookmarks"); tag(s, "utility.done")
+                hud(s, "more"); tag(s, "menu.3"); frame("settings"); tag(s, "utility.done")
+                hud(s, "tab_counter"); frame("tabs"); tag(s, "utility.done")
+                hud(s, "refresh"); frame("loading"); ready(s); frame("ready")
+            }
+        } finally {
+            s.onActivity { it.root.viewTreeObserver.removeOnDrawListener(listener) }
+            await("last owned PixelCopy settled", 3_000) { var done = false; s.onActivity { done = !pending }; done }
+            context.openFileOutput("standalone-transition-colors.json", 0).use { it.write(observations.toString().toByteArray()) }
+        }
+        assertTrue("multiple actual transition frames sampled", observations.length() >= 29)
+        assertFalse("predeclared app backing samples stay literal black", failed)
     }
 
     /** Host stops/restarts only its reserved fixture on these two explicit status messages. */

@@ -2,9 +2,8 @@ package com.code2hack.eyebrowse.rg.qr
 
 import android.graphics.Bitmap
 import com.google.zxing.BinaryBitmap
-import com.google.zxing.ChecksumException
-import com.google.zxing.FormatException
-import com.google.zxing.NotFoundException
+import com.google.zxing.DecodeHintType
+import com.google.zxing.ReaderException
 import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.qrcode.QRCodeReader
 
@@ -42,13 +41,13 @@ object QrDecoder {
         return decode(source)
     }
 
-    private fun decode(source: com.google.zxing.LuminanceSource): String? = try {
-        QRCodeReader().decode(BinaryBitmap(HybridBinarizer(source))).text
-    } catch (e: NotFoundException) {
-        null
-    } catch (e: ChecksumException) {
-        null
-    } catch (e: FormatException) {
-        null
+    private fun decode(source: com.google.zxing.LuminanceSource): String? {
+        val image = BinaryBitmap(HybridBinarizer(source))
+        // Perfect screen/printed codes can confuse the detector; try ZXing's pure-code extractor too.
+        for (hints in listOf(emptyMap(), mapOf(DecodeHintType.PURE_BARCODE to true))) {
+            try { return QRCodeReader().decode(image, hints).text }
+            catch (_: ReaderException) { /* No complete QR in this interpretation. */ }
+        }
+        return null
     }
 }

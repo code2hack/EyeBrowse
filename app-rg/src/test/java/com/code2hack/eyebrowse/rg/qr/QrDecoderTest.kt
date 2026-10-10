@@ -9,6 +9,16 @@ import org.junit.Test
 class QrDecoderTest {
     private fun payload(sample: Int) = "https://fixture.example/qr/$sample?from=camera#preview"
 
+    @Test fun `valid codes decode even when their values must later be rejected`() {
+        for (value in listOf("javascript:alert(1)", "intent://example", "file:///sdcard/private", "not a web address")) {
+            val matrix = com.google.zxing.qrcode.QRCodeWriter().encode(value, com.google.zxing.BarcodeFormat.QR_CODE, 256, 256)
+            val bytes = ByteArray(matrix.width * matrix.height) { i ->
+                if (matrix[i % matrix.width, i / matrix.width]) 0 else 0xff.toByte()
+            }
+            assertEquals(value, QrDecoder.decodeYPlane(bytes, matrix.width, matrix.width, matrix.height))
+        }
+    }
+
     /** Render with the independent writer, then rasterize to a Y plane the scanner would see. */
     private fun matrixToYPlane(matrix: BitMatrix, quietModules: Int = 2): Pair<ByteArray, Pair<Int, Int>> {
         val qr = matrix.width
