@@ -263,7 +263,7 @@ class LocalBrowserActivity : Activity() {
         tabs.current.draft = null; localError = null; dismissKeyboard(); updateHud()
     }
     internal fun showKeyboard() {
-        if (keyboard.isShown) return
+        if (keyboard.isShown) { renderKeys(); return }
         keyboard.visibility = View.VISIBLE
         (content.layoutParams as FrameLayout.LayoutParams).also { it.bottomMargin = 200; content.layoutParams = it }
         renderKeys()

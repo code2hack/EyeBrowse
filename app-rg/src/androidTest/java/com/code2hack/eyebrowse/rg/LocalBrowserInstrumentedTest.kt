@@ -504,6 +504,7 @@ class LocalBrowserInstrumentedTest {
             assertFalse("owned fixture bookmark key must be absent; preserve unrelated entries",it.bookmarks.contains(url))
         }
         withOwnedBookmarkCleanup(body = {
+        focusEditor(scene,"text") // Address mode must refresh Open even when the keyboard is already shown.
         control(scene,"address");scene.onActivity { it.address.selectAll() }
         val lower="qwertyuiopasdfghjklzxcvbnm"
         type(scene,"javascript:"+lower)
@@ -721,7 +722,7 @@ class LocalBrowserInstrumentedTest {
         observeEditor("after-tab-return")
     }
 
-    @Test fun approvedGeometryAndAddressEditingStayBlackAndRecoverable() = scene { scene, source ->
+    @Test fun approvedGeometryAndAddressEditingStayBlackAndRecoverable() = keyboardScene { scene, source ->
         fun geometry(editing: Boolean) {
             await("approved measured geometry after keyboard transition") {
                 var settled = false
