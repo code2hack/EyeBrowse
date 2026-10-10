@@ -411,7 +411,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "paseo": "374f85f8-9060-460c-9eaf-b853b2b3f761",
     "model": "gpt-6.1-sol / max",
     "name": "Reviewer-v0.0.2",
-    "status": "active"
+    "status": "retired"
   },
   {
     "role": "Worker",
@@ -488,7 +488,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "paseo": "f4757e21-f5be-46d0-9809-60b40d09e749",
     "model": "gpt-6.1-sol / max",
     "name": "Worker-#33",
-    "status": "active"
+    "status": "retired"
   }
 ]
 ```
