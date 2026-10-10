@@ -398,7 +398,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "runtime": "codex",
     "id": "01a11c79-209e-7ad3-baf1-85df8e6a9b91",
     "paseo": "3e8c03f5-df67-4765-a83a-ab5b2b127053",
-    "model": "gpt-6.1-sol / xhigh",
+    "model": "gpt-6.1-sol / max",
     "name": "Manager-v0.0.2",
     "status": "active"
   },
@@ -475,7 +475,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "runtime": "codex",
     "id": "01a122ba-50eb-79e3-a72e-9430e6c7cd18",
     "paseo": "b7044aab-2e31-49f8-873a-b6c4a06f31c4",
-    "model": "gpt-6.1-sol / xhigh",
+    "model": "gpt-6.1-sol / max",
     "name": "Worker-#32",
     "status": "active"
   }
