@@ -166,7 +166,7 @@ class LocalBrowserInstrumentedTest {
         val xy = IntArray(2); view.getLocationOnScreen(xy)
         return JSONArray(listOf(xy[0], xy[1], view.width, view.height))
     }
-    private fun capture(scene: ActivityScenario<LocalBrowserActivity>, name: String): Bitmap {
+    private fun capture(scene: ActivityScenario<LocalBrowserActivity>, name: String, expectedError: String? = null): Bitmap {
         val visual = CountDownLatch(1)
         scene.onActivity {
             if (it.tabs.current.session.state.phase == LocalBrowserSession.Phase.READY &&
@@ -191,6 +191,14 @@ class LocalBrowserInstrumentedTest {
             .put("frameCommittedAtNs", committed).put("width", 480).put("height", 640)
         scene.onActivity { activity ->
             assertTrue(activity.hasWindowFocus())
+            if (expectedError != null) {
+                assertEquals(LocalBrowserSession.Phase.ERROR, activity.tabs.current.session.state.phase)
+                assertEquals(expectedError, activity.tabs.current.session.state.error)
+                val status = activity.root.findViewWithTag<TextView>("hud.status")
+                assertTrue(status.isShown && status.isLaidOut && !status.isLayoutRequested)
+                assertEquals(expectedError, status.text.toString())
+                observation.put("statusBounds", bounds(status)).put("error", status.text.toString())
+            }
             observation.put("phase", activity.tabs.current.session.state.phase.name)
                 .put("utility", activity.utility.name).put("tabCount", activity.tabs.count)
                 .put("selectedIndex", activity.tabs.selectedIndex).put("keyboardShown", activity.keyboard.isShown)
@@ -216,6 +224,18 @@ class LocalBrowserInstrumentedTest {
         scene.onActivity { activity ->
             activity.openFileOutput("local-browser-" + name + ".png", 0).use { assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
             activity.openFileOutput("local-browser-" + name + "-observation.json", 0).use { it.write(observation.toString().toByteArray()) }
+            if (expectedError != null) {
+                assertEquals(LocalBrowserSession.Phase.ERROR, activity.tabs.current.session.state.phase)
+                assertEquals(expectedError, activity.tabs.current.session.state.error)
+                val area = observation.getJSONArray("statusBounds")
+                var lightPixels = 0
+                for (y in area.getInt(1) + 4 until area.getInt(1) + area.getInt(3) - 4)
+                    for (x in area.getInt(0) + 4 until area.getInt(0) + area.getInt(2) - 4) {
+                        val color = bitmap.getPixel(x, y)
+                        if (Color.red(color) >= 179 && Color.green(color) >= 179 && Color.blue(color) >= 179) lightPixels++
+                    }
+                assertTrue("current error text rendered in the copied buffer", lightPixels > 5)
+            }
         }
         return bitmap
     }
@@ -1075,6 +1095,19 @@ class LocalBrowserInstrumentedTest {
         capture(scene, "loading").checked {
             assertEquals(Color.BLACK, it.getPixel(450,300)); assertEquals(Color.BLACK, it.getPixel(450,620))
         }
+        val httpStates = JSONArray()
+        fun observeHttp(activity: LocalBrowserActivity, stage: String) {
+            val state = activity.tabs.current.session.state
+            httpStates.put(JSONObject().put("stage", stage).put("atNs", SystemClock.elapsedRealtimeNanos())
+                .put("phase", state.phase.name).put("url", state.url).put("error", state.error)
+                .put("hiddenSubmitPoint", JSONArray(listOf(submit.x, submit.y))))
+            activity.openFileOutput("local-browser-http-states.json", 0).use { it.write(httpStates.toString().toByteArray()) }
+        }
+        scene.onActivity { activity ->
+            val session = activity.tabs.current.session
+            val previous = session.onStateChanged
+            session.onStateChanged = { state -> previous(state); observeHttp(activity, "session-callback") }
+        }
         open(scene, "does-not-exist.html")
         await("actual fixed-fixture main-frame HTTP404") {
             var failed = false
@@ -1083,13 +1116,15 @@ class LocalBrowserInstrumentedTest {
             failed
         }
         scene.onActivity {
+            observeHttp(it, "before-hidden-error-input")
             val page = checkNotNull(it.tabs.current.session.page)
             assertFalse(page.isShown); assertFalse(page.hasFocus()); assertFalse(page.requestFocus())
             it.root.requestFocus(); it.input.activate(submit)
             assertFalse(it.input.key(RgKeyboardKeys.Key.Command.ENTER))
             assertTrue(it.address.isShown && it.address.isEnabled && it.controls.getValue("hud.more").isEnabled)
+            observeHttp(it, "after-hidden-error-input")
         }
-        capture(scene, "http-error").checked { assertEquals(Color.BLACK, it.getPixel(450,620)) }
+        capture(scene, "http-error", expectedError = "HTTP error 404").checked { assertEquals(Color.BLACK, it.getPixel(450,620)) }
         open(scene, "keyboard.html")
         await("actual authored replacement blank field") { js(scene, "document.getElementById('text')?.value") == "\"\"" }
         ready(scene); focusText(scene)
@@ -1119,5 +1154,7 @@ class LocalBrowserInstrumentedTest {
         } finally { observeRecovery("after-b") }
         key(scene, RgKeyboardKeys.Key.Command.DONE)
         assertEquals("0", js(scene, "fixtureSubmits"))
+        ready(scene)
+        capture(scene, "http-explicit-recovery").recycle()
     }
 }

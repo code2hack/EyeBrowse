@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Canvas
+import android.graphics.Rect
 import android.hardware.camera2.CameraManager
 import android.os.Handler
 import android.os.Looper
@@ -15,6 +16,8 @@ import android.view.View
 import android.view.PixelCopy
 import android.view.ViewTreeObserver
 import android.webkit.CookieManager
+import android.widget.TextView
+import androidx.core.view.descendants
 import androidx.camera.core.CameraSelector
 import androidx.camera.view.PreviewView
 import androidx.lifecycle.Lifecycle
@@ -90,17 +93,28 @@ class StandaloneBrowserInstrumentedTest {
         s.onActivity { checkNotNull(it.tabs.current.session.page).evaluateJavascript(script) { result -> value = result; done.countDown() } }
         assertTrue(done.await(3, TimeUnit.SECONDS)); return value
     }
-    private fun capture(s: ActivityScenario<LocalBrowserActivity>, name: String) {
+    private fun capture(s: ActivityScenario<LocalBrowserActivity>, name: String, vararg requiredText: String) {
         await("focused native state with the bounded cursor already drawn") {
             var yes = false; s.onActivity {
                 val p = it.pointer.lastDrawPosition
-                yes = it.hasWindowFocus() && it.pointer.drawCount > 0 && p.x in 8f..472f && p.y in 8f..632f
+                yes = it.hasWindowFocus() && !it.root.isLayoutRequested && it.pointer.drawCount > 0 &&
+                    p.x in 8f..472f && p.y in 8f..632f && requiredText.all { label ->
+                        val view = it.root.descendants.filterIsInstance<TextView>().singleOrNull { v -> v.text.toString() == label }
+                        val visible = Rect()
+                        view != null && view.isShown && view.isEnabled && view.isLaidOut && !view.isLayoutRequested &&
+                            view.getGlobalVisibleRect(visible) && visible.width() == view.width && visible.height() == view.height
+                    }
             }; yes
         }
         instrumentation.waitForIdleSync()
         val committed = CountDownLatch(1)
+        val textBounds = linkedMapOf<String, Rect>()
         s.onActivity {
             assertEquals(480, it.root.width); assertEquals(640, it.root.height); assertEquals(48, it.toolbar.height)
+            for (label in requiredText) {
+                val view = it.root.descendants.filterIsInstance<TextView>().single { v -> v.text.toString() == label }
+                textBounds[label] = Rect().also { bounds -> assertTrue(view.getGlobalVisibleRect(bounds)) }
+            }
             it.root.viewTreeObserver.registerFrameCommitCallback { committed.countDown() }; it.root.invalidate()
         }
         assertTrue("current native frame committed before capture", committed.await(3, TimeUnit.SECONDS))
@@ -109,7 +123,20 @@ class StandaloneBrowserInstrumentedTest {
         // Predeclared black toolbar interiors; avoid outlines/glyphs and the cursor center.
         for (x in listOf(4, 52, 100, 148, 324, 436)) assertEquals("toolbar interior $x", Color.BLACK, image.getPixel(x, 44))
         context.openFileOutput("standalone-$name.png", 0).use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        image.recycle()
+        val rendered = JSONObject()
+        for ((label, bounds) in textBounds) {
+            var lightPixels = 0
+            // Inside the native text/control rectangle, excluding its border and the central cursor.
+            for (y in bounds.top + 4 until bounds.bottom - 4) for (x in bounds.left + 4 until bounds.right - 4) {
+                val color = image.getPixel(x, y)
+                if (Color.red(color) >= 179 && Color.green(color) >= 179 && Color.blue(color) >= 179) lightPixels++
+            }
+            rendered.put(label, JSONObject().put("bounds", JSONArray(listOf(bounds.left, bounds.top, bounds.width(), bounds.height())))
+                .put("lightPixels", lightPixels))
+        }
+        context.openFileOutput("standalone-$name-observation.json", 0).use { it.write(rendered.toString().toByteArray()) }
+        try { for (label in requiredText) assertTrue("$label rendered in the current screenshot", rendered.getJSONObject(label).getInt("lightPixels") > 5) }
+        finally { image.recycle() }
     }
     private fun raster(value: String): String {
         val matrix = QRCodeWriter().encode(value, BarcodeFormat.QR_CODE, 256, 256)
@@ -299,7 +326,7 @@ class StandaloneBrowserInstrumentedTest {
         await("permission-denied panel") {
             var yes = false; s.onActivity { yes = it.root.findViewWithTag<android.widget.TextView>("qr.message")?.text?.contains("denied") == true }; yes
         }
-        capture(s, "qr-permission-denied")
+        capture(s, "qr-permission-denied", "QR scan", "Camera permission denied. Allow access when trying again.", "Try again", "Cancel")
         s.onActivity { assertFalse(it.cameraActive); assertNull(it.root.findViewWithTag<View>("qr.open")) }
         tag(s, "qr.retry"); allowCamera()
         await("actual camera frame after permission recovery") { var yes = false; s.onActivity { yes = it.cameraHasFrame }; yes }
@@ -346,7 +373,7 @@ class StandaloneBrowserInstrumentedTest {
             assertFalse(it.cameraActive)
             assertTrue(it.root.findViewWithTag<android.widget.TextView>("qr.message").text.contains("paused"))
         }
-        capture(s, "screen-resumed-camera-paused")
+        capture(s, "screen-resumed-camera-paused", "QR scan", "Scanning paused. Try again to restart the camera.", "Try again", "Cancel")
         tag(s, "qr.retry")
         await("deliberate camera reacquisition after sleep") { var yes = false; s.onActivity { yes = it.cameraHasFrame }; yes }
         tag(s, "qr.cancel")
