@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Canvas
 import android.hardware.camera2.CameraManager
 import android.os.Handler
 import android.os.Looper
@@ -155,6 +156,84 @@ class StandaloneBrowserInstrumentedTest {
         }
     }
 
+    /** Controlled camera-like rasters exercise production decoding and UI, not optical acquisition. */
+    @Test fun transformedQrInputsUseProductionValidationPreviewAndCurrentTabActions() = scene { s ->
+        open(s, "$base/keyboard.html")
+        val first = js(s, "fixtureIdentity")
+        hud(s, "more"); tag(s, "menu.0"); open(s, "$base/history.html")
+        val selected = js(s, "fixtureIdentity")
+        val results = JSONArray()
+        val valid = "$base/author-light.html?issue33=controlled"
+        val cases = listOf(
+            Triple(valid, 0f, 128), Triple(valid, 90f, 256),
+            Triple(valid, 180f, 192), Triple(valid, 270f, 320),
+            Triple(valid, 15f, 256), Triple("https://example.invalid/path?x=1#qr", -15f, 256),
+            Triple("example.invalid/qr", 90f, 192),
+            Triple("javascript:alert(1)", 90f, 256), Triple("intent://example", 180f, 256),
+            Triple("file:///sdcard/private", 270f, 256), Triple("not a web address", 15f, 256),
+            Triple("data:text/html,hello", 0f, 256), Triple("https://example.invalid:70000/", -15f, 256),
+        )
+        try {
+            for ((index, sample) in cases.withIndex()) {
+                val (value, degrees, size) = sample
+                val matrix = QRCodeWriter().encode(value, BarcodeFormat.QR_CODE, size, size)
+                // Reduced contrast, padded field and rotations represent ordinary camera luminance.
+                val dark = Color.rgb(35, 35, 35); val light = Color.rgb(220, 220, 220)
+                val source = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+                source.setPixels(IntArray(size * size) { if (matrix[it % size, it / size]) dark else light }, 0, size, 0, 0, size, size)
+                val width = size * 3 / 2
+                val image = Bitmap.createBitmap(width, width, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(image)
+                canvas.drawColor(light); canvas.translate(width / 2f, width / 2f); canvas.rotate(degrees)
+                canvas.drawBitmap(source, -size / 2f, -size / 2f, null); source.recycle()
+                try {
+                    val decoded = QrDecoder.decode(image)
+                    assertEquals("bitmap QR sample $index", value, decoded)
+                    val pixels = IntArray(width * width); image.getPixels(pixels, 0, width, 0, 0, width, width)
+                    val stride = width + 16
+                    val luma = ByteArray(stride * width) { 220.toByte() }
+                    for (y in 0 until width) for (x in 0 until width) luma[y * stride + x] = Color.red(pixels[y * width + x]).toByte()
+                    assertEquals("padded camera Y-plane sample $index", value, QrDecoder.decodeYPlane(luma, stride, width, width))
+                    context.openFileOutput("standalone-controlled-qr-$index.png", 0).use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    scan(s); allowCamera()
+                    val normalized = when (index) {
+                        in 0..4 -> valid
+                        5 -> value
+                        6 -> "https://$value"
+                        else -> null
+                    }
+                    s.onActivity {
+                        it.previewQr(checkNotNull(decoded))
+                        assertFalse(it.cameraActive)
+                        assertEquals(1, it.tabs.selectedIndex)
+                        val url = it.root.findViewWithTag<android.widget.TextView>("qr.url")
+                        if (normalized == null) {
+                            assertNull(url); assertNull(it.root.findViewWithTag<View>("qr.open"))
+                            assertTrue(it.root.findViewWithTag<android.widget.TextView>("qr.message").text.contains("Unsupported"))
+                        } else {
+                            assertEquals(normalized, checkNotNull(url).text.toString())
+                            assertNotNull(it.root.findViewWithTag<View>("qr.open"))
+                        }
+                        assertTrue(it.tabs.current.session.state.url.endsWith("history.html"))
+                    }
+                    capture(s, if (normalized == null) "controlled-invalid-$index" else "controlled-preview-$index")
+                    tag(s, "qr.cancel"); assertEquals(selected, js(s, "fixtureIdentity"))
+                    results.put(JSONObject().put("sample", index).put("value", value).put("degrees", degrees)
+                        .put("size", size).put("rowStride", stride).put("accepted", normalized != null).put("cancelKeptPage", true))
+                } finally { image.recycle() }
+            }
+            scan(s); s.onActivity { it.previewQr(raster(valid)) }; tag(s, "qr.open"); ready(s)
+            s.onActivity {
+                assertEquals(1, it.tabs.selectedIndex)
+                assertEquals(valid, it.tabs.current.session.state.url)
+                it.selectTab(0)
+            }
+            assertEquals(first, js(s, "fixtureIdentity"))
+        } finally {
+            context.openFileOutput("standalone-controlled-qr-results.json", 0).use { it.write(results.toString().toByteArray()) }
+        }
+    }
+
     @Test fun realCameraFramesReleaseOnCancelPauseAndUtilityExit() = scene { s ->
         val manager = context.getSystemService(CameraManager::class.java)
         val available = ConcurrentHashMap<String, Boolean>()
@@ -240,6 +319,34 @@ class StandaloneBrowserInstrumentedTest {
         assertEquals("true", js(s, "document.cookie.includes('issue33=durable')"))
         assertEquals("0", js(s, "fixtureSubmits"))
         js(s, "localStorage.removeItem('issue33-owned');document.cookie='issue33=; path=/; Max-Age=0'")
+    }
+
+    @Test fun screenOffResumeKeepsLivePageAndRestartsOnlyDeliberateScanning() = scene { s ->
+        open(s, "$base/local-keyboard.html")
+        val identity = js(s, "fixtureIdentity")
+        js(s, "document.getElementById('text').value='owned sleep value'")
+        scan(s); allowCamera()
+        await("camera before screen off") { var yes = false; s.onActivity { yes = it.cameraHasFrame }; yes }
+        try {
+            device.sleep()
+            await("actual device screen off") { !context.getSystemService(android.os.PowerManager::class.java).isInteractive }
+            await("ordinary Activity pause on screen off") { s.state != Lifecycle.State.RESUMED }
+            s.onActivity { assertFalse(it.cameraActive); assertFalse(it.pointer.sourceRegistered) }
+        } finally { device.wakeUp() }
+        await("normal resumed app window") {
+            var yes = false; s.onActivity { yes = it.hasWindowFocus() && it.pointer.sourceRegistered }; yes
+        }
+        s.onActivity {
+            assertFalse(it.cameraActive)
+            assertTrue(it.root.findViewWithTag<android.widget.TextView>("qr.message").text.contains("paused"))
+        }
+        capture(s, "screen-resumed-camera-paused")
+        tag(s, "qr.retry")
+        await("deliberate camera reacquisition after sleep") { var yes = false; s.onActivity { yes = it.cameraHasFrame }; yes }
+        tag(s, "qr.cancel")
+        assertEquals(identity, js(s, "fixtureIdentity"))
+        assertEquals("\"owned sleep value\"", js(s, "document.getElementById('text').value"))
+        assertEquals("0", js(s, "fixtureSubmits"))
     }
 
     @Test fun firstPartyTransitionFramesKeepDeclaredBackingsBlack() = scene { s ->
