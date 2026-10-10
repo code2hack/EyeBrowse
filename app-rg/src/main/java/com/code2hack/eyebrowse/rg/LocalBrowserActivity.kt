@@ -277,8 +277,11 @@ class LocalBrowserActivity : Activity() {
                         page === tabs.current.session.page && page.isShown && page.hasFocus()) {
                         page.evaluateJavascript("""(()=>{
                             const e=document.activeElement;
-                            if(e && (e.matches('input,textarea') || e.isContentEditable))
-                                e.scrollIntoView({block:'nearest',inline:'nearest'});
+                            if(e && (e.matches('input,textarea') || e.isContentEditable)) {
+                                const r=e.getBoundingClientRect();
+                                if(r.top<0 || r.bottom>innerHeight)
+                                    e.scrollIntoView({block:'center',inline:'nearest'});
+                            }
                         })()""".trimIndent(), null)
                     }
                 }

@@ -45,8 +45,9 @@ and never deliberately navigates. The star uses the committed current page.
 Showing the keyboard changes only the content viewport to `(0,48,480,392)`;
 keys occupy `(0,440,480,200)`. The custom keyboard does not trigger a system IME
 reveal request. After the resized WebView is ready to draw, one ordinary
-`scrollIntoView({block:'nearest',inline:'nearest'})` call reveals its currently
-focused editor. It does not read field values or change selection/focus. The
+`scrollIntoView({block:'center',inline:'nearest'})` call reveals its currently
+focused editor if its rectangle is outside the viewport, keeping useful context
+away from the rounded viewport boundary. It does not read field values or change selection/focus. The
 callback requires the current visible, focused page and skips active edge
 scrolling; no repeating reveal runs during editing. The pointer retains the full 480×640 rectangle and full glyph
 clamp. The existing edge callback scrolls only the active page at the physical
