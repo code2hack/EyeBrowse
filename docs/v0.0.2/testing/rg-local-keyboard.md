@@ -57,7 +57,7 @@ Three new methods in `LocalBrowserInstrumentedTest` use the production Activity:
 | --- | --- |
 | `fourNativeEditorsPreserveUnicodeSelectionCaseAndDone` | Native text/password/textarea/plain editable; static dummy `aé中🙂z`; actual Backspace over supplementary Unicode; native selection replacement/caret; one recognized native key tap and zero double-tap constituent edits; built-in case, symbols, Space, Backspace, Enter/newline/form, Done; document/focus/value preservation. |
 | `actualAddressKeysKeepDraftAndFixedToolbarUntilOpen` | Every visible letter/case/digit/required symbol through native key controls; long horizontal draft; separate Open/Done; invalid Open, star saves the committed page during editing, preserved draft on reopening, and valid Open navigation. |
-| `nativeFieldRevealSettlesOnceWithoutReloadOrFocusChange` | Activate a lower field before resize; selected field visible within the smaller viewport; edit, dismiss, reopen and edit the same live native field without reload/submission. |
+| `nativeFieldRevealSettlesOnceWithoutReloadOrFocusChange` | Ordinary head-edge scroll admits the unchanged lower field, then inward movement stops scrolling. Assert the field remains below the future keyboard viewport; activate before resize, verify selected-field visibility, edit, dismiss, reopen and edit the same live native field without reload/submission. |
 
 The fixture adds only a fixed `local-keyboard.html` route with declarative dummy
 seeds, harmless intercepted form submission and counters. Existing routes and
@@ -105,3 +105,11 @@ not a reconstructed grant21 rectangle or evidence that reveal succeeded. Grant21
 failed before activating the lower field; its exact target geometry and cause
 remain unknown. The fixture, native actions and strict reveal assertions are
 unchanged. A fresh granted run must establish the actual geometry and effects.
+
+Correction03 retains the recovered grant24 failure: the lower field's selected
+center was at local page Y614.11 beyond its 592-pixel height before activation.
+The fixture stays unchanged. The journey now uses the existing raw-head/native
+edge-scroll path to admit the whole lower editor, stops by moving inward, and
+requires the editor to remain below the future 392-pixel page viewport. It then
+runs every original reveal/edit/document/focus/Done/re-show assertion. Host checks
+prepare this correction; a fresh separately granted run must verify its effects.

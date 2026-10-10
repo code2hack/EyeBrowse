@@ -552,9 +552,25 @@ class LocalBrowserInstrumentedTest {
         }, deleteBlocker = {})
     }
 
-    @Test fun nativeFieldRevealSettlesOnceWithoutReloadOrFocusChange() = keyboardScene { scene,_ ->
+    @Test fun nativeFieldRevealSettlesOnceWithoutReloadOrFocusChange() = keyboardScene { scene,source ->
         open(scene,"local-keyboard.html");ready(scene)
         val identity=js(scene,"fixtureIdentity")
+        // Admit the unchanged lower editor through ordinary head-edge scrolling before activation.
+        scene.onActivity { source.aimRelative(it,InputPoint(240f,it.pointer.motionBounds.bottom)) }
+        try {
+            await("bottom-edge scroll brings the whole lower field inside the closed-keyboard viewport") {
+                js(scene,"(()=>{const r=document.getElementById('lower').getBoundingClientRect();return r.top>=0 && r.bottom<=innerHeight-8})()") == "true"
+            }
+        } finally {
+            scene.onActivity { source.aimRelative(it,center(it,it.root)) }
+        }
+        await("inward head movement stops the admission scroll") {
+            var stopped=false
+            scene.onActivity { stopped=!it.edgeScrollRunning && abs(it.pointer.inputPosition().y-320f)<8 }
+            stopped
+        }
+        assertEquals("lower field still requires reveal after keyboard resize","true",
+            js(scene,"(()=>{const r=document.getElementById('lower').getBoundingClientRect();return r.top>innerHeight*392/592 && r.bottom<=innerHeight})()"))
         focusEditor(scene,"lower")
         await("native resize reveals selected field within page viewport") {
             js(scene,"(()=>{const e=document.activeElement,r=e.getBoundingClientRect();return e.id==='lower' && r.top>=0 && r.bottom<=innerHeight})()") == "true"
