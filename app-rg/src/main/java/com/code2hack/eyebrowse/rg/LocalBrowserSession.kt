@@ -74,6 +74,8 @@ internal class LocalBrowserSession(context: Context, private val onPageTouchUp: 
         }
         view.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+                // WebView can report the failed document's start after its HTTP error.
+                if (state.phase == Phase.ERROR) return
                 hidePage(view)
                 publish(Phase.LOADING)
             }
@@ -81,12 +83,12 @@ internal class LocalBrowserSession(context: Context, private val onPageTouchUp: 
                 publish(state.phase, state.error)
             }
             override fun onPageFinished(view: WebView, url: String?) {
-                if (state.phase != Phase.LOADING) return
+                if (state.phase != Phase.LOADING || url != view.url) return
                 // The same fixed public styling route qualified in #28, on the live document.
                 view.evaluateJavascript(PRESENTATION_SCRIPT) {
                     view.postVisualStateCallback(0, object : WebView.VisualStateCallback() {
                         override fun onComplete(requestId: Long) {
-                            if (state.phase == Phase.LOADING) {
+                            if (state.phase == Phase.LOADING && url == view.url) {
                                 view.visibility = View.VISIBLE
                                 publish(Phase.READY)
                             }
@@ -141,8 +143,12 @@ internal class LocalBrowserSession(context: Context, private val onPageTouchUp: 
         return result
     }
 
-    fun back() { page?.takeIf { it.canGoBack() }?.goBack() }
-    fun forward() { page?.takeIf { it.canGoForward() }?.goForward() }
+    fun back() { page?.takeIf { it.canGoBack() }?.let {
+        hidePage(it); publish(Phase.LOADING); it.goBack()
+    } }
+    fun forward() { page?.takeIf { it.canGoForward() }?.let {
+        hidePage(it); publish(Phase.LOADING); it.goForward()
+    } }
     fun refresh() {
         page?.takeIf { state.phase != Phase.EMPTY && state.phase != Phase.INTERRUPTED }?.let {
             hidePage(it)

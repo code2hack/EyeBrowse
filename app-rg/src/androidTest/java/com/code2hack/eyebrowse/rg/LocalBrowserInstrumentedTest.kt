@@ -1052,6 +1052,29 @@ class LocalBrowserInstrumentedTest {
         })
     }
 
+    @Test fun httpErrorControlsRecoverThroughNativeHistoryRefreshAndAddress() = scene { scene, _ ->
+        fun error(name: String) {
+            await("current ordinary main-frame HTTP404") {
+                var failed = false; scene.onActivity {
+                    failed = it.tabs.current.session.state.phase == LocalBrowserSession.Phase.ERROR &&
+                        it.tabs.current.session.state.error == "HTTP error 404"
+                }; failed
+            }
+            scene.onActivity { assertFalse(checkNotNull(it.tabs.current.session.page).isShown) }
+            capture(scene, name, expectedError = "HTTP error 404").recycle()
+        }
+        open(scene, "history.html"); ready(scene)
+        open(scene, "does-not-exist.html"); error("http-initial-error")
+        control(scene, "back"); ready(scene)
+        scene.onActivity { assertTrue(it.tabs.current.session.state.url.endsWith("history.html")) }
+        control(scene, "forward"); error("http-forward-error")
+        control(scene, "refresh"); error("http-refresh-error")
+        control(scene, "more"); tagged(scene, "menu.3"); tagged(scene, "utility.done")
+        open(scene, "keyboard.html"); ready(scene)
+        assertEquals("0", js(scene, "fixtureSubmits"))
+        capture(scene, "http-controls-recovered").recycle()
+    }
+
     @Test fun liveBlackAndHiddenRecoveryUseProductionWindow() = scene { scene, _ ->
         open(scene, "author-light.html"); ready(scene)
         await("unchanged media fixture loaded") { js(scene, "document.getElementById('media-image').complete") == "true" }
