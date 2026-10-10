@@ -111,7 +111,7 @@ class StandaloneBrowserInstrumentedTest {
     }
     private fun allowCamera() {
         if (context.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) return
-        val allow = device.wait(Until.findObject(By.res("com.android.permissioncontroller", "permission_allow_foreground_only_button")), 5_000)
+        val allow = device.wait(Until.findObject(By.res("com.android.permissioncontroller", "btn_allow")), 5_000)
         assertNotNull("real Android runtime permission prompt", allow); checkNotNull(allow).click()
     }
 
@@ -209,7 +209,7 @@ class StandaloneBrowserInstrumentedTest {
     @Test fun deniedCameraPermissionOffersRetryAndActualPermissionRecovery() = scene { s ->
         assertEquals(PackageManager.PERMISSION_DENIED, context.checkSelfPermission(Manifest.permission.CAMERA))
         scan(s)
-        val deny = device.wait(Until.findObject(By.res("com.android.permissioncontroller", "permission_deny_button")), 5_000)
+        val deny = device.wait(Until.findObject(By.res("com.android.permissioncontroller", "btn_deny")), 5_000)
         assertNotNull("actual Android permission dialog", deny); checkNotNull(deny).click()
         await("permission-denied panel") {
             var yes = false; s.onActivity { yes = it.root.findViewWithTag<android.widget.TextView>("qr.message")?.text?.contains("denied") == true }; yes
