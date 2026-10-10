@@ -1,12 +1,15 @@
 # Standalone RG integration evidence — issue #33
 
-Worker: Worker-#33 · batch005 · I33-T01…T04 · attempt1/failure0/lastConcluded0.
+Worker: Worker-#33 · batch005 · I33-T03 correction02 attempt2/failure1/lastConcluded1.
+I33-T01/T02/T04 retain attempt1/failure0/lastConcluded0.
 
 The RG launcher now opens the local browser and More contains four working
 utilities. QR uses the real RG camera, previews a validated address, and navigates
-the selected tab only after Open. This is a Worker candidate record. Phone device
-regression/simultaneous browsing and independent whole-candidate HUD-G2 review
-remain outstanding; this record does not accept the version or authorize release.
+the selected tab only after Open. This is a Worker candidate record.
+Phone checks are removed from this mission and ongoing RG development by the
+[Owner RG-only direction](https://github.com/code2hack/EyeBrowse/issues/33#issuecomment-6098004889).
+Historical Phone results retain their original outcomes; removed checks are not
+marked PASS. Renewed exact-candidate independent HUD-G2 review remains required.
 
 ## Authority and source
 
@@ -27,12 +30,15 @@ remain outstanding; this record does not accept the version or authorize release
   their original source; this candidate reruns the unchanged native admission
   and tab effects using replay, without relabeling replay as a new human swipe.
 
-Product source checkpoint: `9570384e2a822f47a5165da629367381605aa2bb`.
-Final executable/test source checkpoint: `14a878dc2d759c9d773c89c25232328ac9e59c4a`.
-Navigation/edge/native tests at08986992 are unchanged at this checkpoint.
-The intervening commits change instrumentation only. The ledger/images commit
-adds no compiled source; the published branch SHA is supplied in CANDIDATE_READY.
-Every earlier log/image keeps its original source binding.
+Current product and executable/test checkpoint:
+`e1c675695a9a200e1dca526502b48298e4882d78`. Correction02 changes only the
+RG page-session callback handling and focused native tests. The final ledger/image
+commit adds no compiled source; its exact pushed SHA is supplied in CANDIDATE_READY.
+
+The original reviewed candidate is `fbf8e0f56c0f3f052925e38bbc9b840ee1802168`
+(tree `6a1035e64698e363b8bffe59dbc812f419f805af`), product9570384 and
+executable/test14a878dc. Earlier logs/images retain those original bindings.
+NativeInput at08986992 and its unchanged fixture remain historical evidence.
 
 ## Runtime and build binding
 
@@ -44,15 +50,17 @@ Every earlier log/image keeps its original source binding.
 | OS/provider | Android12/API32, SKQ1.240613.001; com.android.webview95.0.4638.74 |
 | Display | Native480×640 portrait, rotation0; density240/override204; actual root480×640, toolbar480×48 |
 | Identity | com.code2hack.eyebrowse.rg; existing signing/versionCode1/versionName0.0.1 retained; install-r only |
-| Product APK | 10,330,180 bytes; SHA256 `eb5620c0653220908026d6e15761c8378de56e26a0bd6e8eccb33b4e541009d4` |
-| Final test APK | 1,731,322 bytes; SHA256 `f55a1f17ac0ebcae87b84375b31f29c1493b876dbd7873b97dac62ae197f9afa` |
+| Current product APK | 10,330,536 bytes; SHA256 `3c908bced99e7c0bad14d22af4f9e8b114800a9fa03346573859ba444ec7ff27` |
+| Current test APK | 1,745,738 bytes; SHA256 `5092f8bf5fc47fc05cbd843a23066ba109688fd1b164613b12b5feaf10131574` |
 | Own fixture | `http://100.92.81.33:39030`, existing rg-local-probe JVM fixture, dummy pages only |
-| Phone | Unavailable and unreserved; no Phone install, authentication or device operation |
+| Phone | Removed from scope by Owner; historical results retained, no new host/device checks |
 
 Ordinary local evidence root on spark:
 `/home/code2hack/.local/state/eyebrowse/v0.0.2/runs/run-001/issue-33/evidence`.
-`build-binding-01…05.json`, normal install receipts, original instrumentation
-logs, PNGs and observations bind the runs. Camera room imagery remains in this
+`build-binding-01…05.json` bind the original round. Correction02 uses the
+`correction02-rg-state-evidence` subdirectory, `build-binding03.json`, normal
+install-r receipts, JUnit logs, original PNGs and current-state observations.
+The original APKs (product `eb5620c0`, test `f55a1f17`) are retained unchanged. Camera room imagery remains in this
 private evidence directory; public images below contain dummy app/fixture UI.
 
 ## What changed and what was retained
@@ -93,6 +101,10 @@ injection/test framework was introduced.
 
 ## Executed checks
 
+Correction02 current RG results appear below. The following original-round
+results, including Phone host checks performed before the scope change, remain
+historical. No Phone check was run for correction02.
+
 | Evidence | Source / result | Scope |
 | --- | --- | --- |
 | host-build-05.log; host-test-summary.json | Product9570384; RG63 and Phone194 JVM tests; browser14 executed in build02 on unchanged shared source; zero failures/errors/skips | RG unit tests, real decoder malformed/unsupported payloads, Phone/shared host regression |
@@ -106,7 +118,8 @@ injection/test framework was introduced.
 | device-edge05.log | 14a878dc;3 passed,120.745s | All three existing overshoot/rate/gain/keyboard/lifecycle/Refresh tests |
 | device-native-input-03.log | 08986992;2 passed,18.419s; these classes unchanged at14a878dc | Native one-tap/double suppression, direct keys/current focus/Done/scroll and native password captures |
 
-RG lint reports 0 errors/6 warnings; Phone lint 0 errors/10 warnings. The installed
+Original-round RG lint reports 0 errors/6 warnings; historical Phone lint
+0 errors/10 warnings. Current RG lint reports 0 errors/7 warnings. The installed
 lint Kotlin frontend emits2.2.0-versus2.0.0 metadata diagnostics while Gradle tasks
 succeed. This limits Kotlin semantic lint coverage; successful task status is not
 claimed to repair that toolchain mismatch. No toolchain/provider upgrade was made.
@@ -141,6 +154,58 @@ The shared standalone capture helper now waits for actual window focus and a
 bounded pointer draw before its frame-commit capture. Affected screenshots and
 cold recovery are rerun; production pointer behavior is unchanged.
 No product rejection, field, pixel, deadline or cleanup assertion was relaxed.
+
+## Correction02: current error and recovery evidence
+
+[Review1](https://github.com/code2hack/EyeBrowse/pull/39#pullrequestreview-5479026632)
+concluded I33-T03 attempt1 once for R1/R2. Manager assigned correction02 as
+attempt2/failure1/lastConcluded1; the other todos retain their original history.
+The original denial and screen-resume PNGs both contain the heading, message,
+Try again and Cancel. Manager independently confirmed their immutable pixels;
+the contrary visual subclaims are review mistakes, not extra Worker failures.
+Those PNGs are unchanged. New QR assertions require fully visible, enabled,
+laid-out native labels plus actual light text pixels inside each copied control.
+The original/current QR pixels and native observations agree; no QR product
+layout fix was required.
+
+R2's original `local-browser-http-error.png` is a LOADING frame, not rendered
+HTTP404 proof. Its original PNG/sidecar remain in `reviewed-originals` and the
+original integration evidence. Current tests first reproduced the error overwrite
+on the unchanged product: HTTP01/02 retain two failed strict HTTP404 awaits.
+The HTTP02 callback trace identifies `onReceivedHttpError → ERROR`, then
+`onPageStarted → LOADING`, then visual completion `→ READY`, before the hidden
+input check starts. This establishes the current reproduction; it does not
+establish the exact callback sequence behind the old LOADING capture or
+retroactively diagnose other historical navigation timeouts or Binder failures.
+
+The small ordinary page-session correction keeps ERROR until deliberate navigation.
+Back/Forward explicitly hide the page and start LOADING, as Open/Refresh already
+do. Document completion checks the existing callback URL against the WebView URL
+before showing it. There is no new request identity, generation or input framework.
+The new current-state oracles retain hidden-page input rejection and verify
+ERROR/HTTP404 before and after PixelCopy, visible native error text, black backing,
+and explicit native Back/Forward/Refresh/address/Settings recovery with zero submits.
+
+| Current evidence in correction02-rg-state-evidence | Actual source/result |
+| --- | --- |
+| host-build03.log; host-check-summary.json | e1c6756; SUCCESS39s,78 tasks19 executed/59 up-to-date; fresh RG63 JVM pass, no failures/errors/skips; RG lint0 reported errors/7 warnings, metadata semantic limit retained |
+| device-correction02-http03.log; http03-originals | e1c6756;2 passed19.337s; current 404 and history/Refresh/address recovery |
+| device-correction02-browser04.log; browser04-originals | e1c6756;9 passed73.725s; all original strict browser/keyboard/tab/bookmark/palette checks plus error recovery |
+| device-correction02-edge01.log; edge01-originals | e1c6756;1 passed21.112s; existing full-screen keyboard/edge cancellation and Refresh-identity recovery, unchanged strict deadline |
+| device-correction02-qr02.log; qr02-originals | e1c6756;4 passed25.626s; actual OEM Deny/Retry/Allow/frame/Cancel, screen-resume deliberate camera reacquisition,13 controlled decoder/preview/Open/Cancel cases, launcher/four utilities |
+| device-correction02-network01.log; network01-originals | e1c6756;1 passed3.983s; actual own-fixture interruption, other live tab/JS and utilities preserved, explicit Refresh/zero submissions |
+
+These are17 successful method executions covering15 distinct methods at e1c6756;
+the focused HTTP pair is also included in the browser class. The earlier QR01
+pair passed17.628s at test4026a67 on the unchanged original product; it is not
+relabeled as execution on e1c6756. HTTP01/02 remain failed diagnostic runs.
+
+The correction simplification pass retained one existing page phase and ordinary
+URL comparison, without a second navigation state store or generalized callback
+framework. Current label/pixel assertions extend the existing capture helpers;
+callback tracing is test-only. Phone/shared sources and protected articles are
+unchanged. Only this ledger and the HTTP404/recovery images follow the tested
+executable checkpoint, so no additional build is needed for the final commit.
 
 ## QR and visual evidence boundaries
 
@@ -177,14 +242,15 @@ media tests additionally inspect supported website output without inverting medi
 ## Original ownership → current SPEC evidence
 
 “RG pass” means the stated available device/software evidence passed. The final
-Manager/Reviewer acceptance, and requirements with missing Phone evidence, remain
-open. Earlier accepted feature evidence retains its source and outcome.
+Manager/Reviewer acceptance remains open. Phone portions of V2-A02/V2-A13 are
+removed from scope under the Owner direction above. Earlier accepted feature
+evidence retains its source and outcome.
 
 | Requirement | Primary owner | Current evidence / disposition |
 | --- | --- | --- |
 | V2-A01 | #28/#30 | Build/APK/provider/display binding above; normal launcher and native root/toolbar; RG pass with stated lint limit |
-| V2-A02 | #30; final#33 | RG works locally without a Phone link/remote runtime; no Phone package is installed on the RG; actual Phone-stopped and simultaneous different-page checks pending actual Phone |
-| V2-A03 | #30 | approvedGeometryAndAddressEditingStayBlackAndRecoverable, actualAddressKeysKeepDraftAndFixedToolbarUntilOpen, fourLiveTabsAndPadGesturesKeepCurrentNativeEffects; unchanged strict AddressPolicy host tests |
+| V2-A02 | #30; final#33 | RG works locally without a Phone link/remote runtime; no Phone package is installed on the RG; Phone-stopped and simultaneous different-page checks removed from scope by Owner, not PASS |
+| V2-A03 | #30 | approvedGeometryAndAddressEditingStayBlackAndRecoverable, actualAddressKeysKeepDraftAndFixedToolbarUntilOpen, fourLiveTabsAndPadGesturesKeepCurrentNativeEffects; current HTTP404/hidden-input and native error history/Refresh/address recovery; strict AddressPolicy host tests |
 | V2-A04 | #30/#31 | Existing single full-screen pointer in native captures, real listener lifecycle and all reachable controls; no remaining mode/recenter UI |
 | V2-A05 | #31 | allBoundariesDiscardOvershootWithPromptSlowInwardDraw: four edges/corners, three amounts, multiple holds; current source replay/device-draw observations |
 | V2-A06 | #31 | settingsPersistAndActualPageUsesEveryDeclaredRateAndGain, fullScreenKeyboardEdgesAndOrdinaryCancellationPreserveNativeEditing: actual page endpoints/rates/literal full-screen edge |
@@ -194,7 +260,7 @@ open. Earlier accepted feature evidence retains its source and outcome.
 | V2-A10 | #32 | Native keyboard/password/reveal captures and strict viewport assertions; fixed toolbar/star; accepted native transient echo retained |
 | V2-A11 | #32 | Four editor test + nativeFieldRevealSettlesOnceWithoutReloadOrFocusChange + edge/native input tests; live tab switches/dismissal keep current native editing |
 | V2-A12 | #33 | Recreation, real sleep/resume, separate force-stop/install-r durable recovery, own-server interruption; honest EMPTY cold state and zero submissions |
-| V2-A13 | #33 | Same signed identity/install-r; retained bookmark hash/data and inert obsolete RG records; Phone host194 pass, actual Phone data/browser regression pending |
+| V2-A13 | #33 | Same signed identity/install-r; retained bookmark hash/data and inert obsolete RG records; historical Phone host194 pass retained; Phone data/browser checks removed from scope by Owner, not PASS |
 | V2-A14 | #33/Manager | This ledger, source-bound originals, own cleanup/handoff; independent exact-head review/merge/integration/retirement pending Manager |
 | V2-A15 | #30…#33 | G1 approved; native480×640/eight-target one row, keyboard/menu/QR/state evidence; G2 independent verdict pending |
 | V2-A16 | #30 | Four live tabs/counter/history/add/select/close/last-tab + native DPAD admission current replay pass; accepted #30 physical direction observations retained separately |
@@ -217,8 +283,8 @@ open. Earlier accepted feature evidence retains its source and outcome.
 | HUD-C08 Palette | Uncropped original PNGs plus90 PixelCopy transition samples; literal black first-party backings/light controls; no global flash guarantee |
 | HUD-C09 Website | Actual author-light/dark/dynamic/form/media fixtures and strict existing pixel/DOM assertions; current WebView95 capability boundary |
 | HUD-C10 Cursor/edge | Single accepted local pointer style unchanged; four-edge/corner/rate/gain/keyboard/cover/pause tests and bounded captures |
-| HUD-C11 Utilities | Real persisted Bookmarks, camera/controlled QR preview+confirmation/Cancel/denial, working Settings choices/exits; no placeholders |
-| HUD-C12 State/lifecycle | H12 mapping below; actual sleep/recreation/cold/network and camera cleanup; no stale-input/ABA framework |
+| HUD-C11 Utilities | Real persisted Bookmarks, camera/controlled QR preview+confirmation/Cancel/denial, working Settings choices/exits; complete QR recovery controls and current rendered-state assertions; no placeholders |
+| HUD-C12 State/lifecycle | H12 mapping below; actual sleep/recreation/cold/network and camera cleanup; current ERROR/HTTP404 and deliberate recovery source/captures; no stale-input/ABA framework |
 
 | H12 states/events | Native images / exercised behavior |
 | --- | --- |
@@ -230,7 +296,7 @@ open. Earlier accepted feature evidence retains its source and outcome.
 | QR scan/preview/Open/Cancel/denial | standalone-real-camera-0…2 (private actual media); controlled-preview-4/controlled-invalid-8/qr-permission-denied; no auto-navigation |
 | Settings | edge-scroll-settings + standalone-settings; all declared presets and persisted cold choice |
 | Edge/tracking unavailable | edge-scroll-pointer-top/pointer-corner/keyboard-bottom/tracking-unavailable; observed current draw/scroll and lifecycle stops |
-| Loading/local network error | local-browser-loading/http-error + standalone-network-error/network-explicit-recovery; controls remain usable |
+| Loading/local network error | Current browser04 local-browser-loading/http-error/http-explicit-recovery and initial/forward/refresh-error buffers; actual ERROR/HTTP404 confirmed around copy. Original LOADING image retained as a limitation; separate network-error/explicit-recovery remain bound to their stated runs |
 | Pause/sleep/resume/recreation/cold restart | standalone-screen-resumed-camera-paused/interrupted-recreation/cold-recovery-no-replay/durable-restored-explicit-open; live state versus cold locations distinguished |
 
 Selected uncropped native device captures:
@@ -242,16 +308,20 @@ Selected uncropped native device captures:
 | Real camera permission denial / screen resume | [permission error](images/standalone-qr-permission-denied.png), [paused scanner](images/standalone-screen-resumed-camera-paused.png) |
 | Cold recovery with bounded cursor | [explicit recovery prompt](images/standalone-cold-recovery-no-replay.png) |
 | Native masked password / Settings | [native feedback](images/local-browser-keyboard-password-later.png), [presets](images/edge-scroll-settings.png) |
-| Author-light document and preserved SVG / HTTP error | [live page](images/local-browser-author-light.png), [error](images/local-browser-http-error.png) |
+| Author-light document and preserved SVG / current HTTP error | [live page](images/local-browser-author-light.png), [HTTP404](images/local-browser-http-error.png) |
+| Explicit address recovery after HTTP404 / native field still usable | [recovered page](images/local-browser-http-explicit-recovery.png) |
 
-All eleven PNGs are original 480×640 captures from the stated current product APK.
-`standalone04-originals` retains 46 normal scanner/recovery reports/images, including
-13 labeled QR source rasters and private actual camera media. `integration-final-originals`
-retains 84 navigation/edge/native originals. NativeInput originals are from08986992;
-that test fixture/class is unchanged at14a878dc. Other selected current captures
-are from14a878dc. Useful older failures and early/previous source images remain
-in their original directories; they are not relabeled current production proof.
-G1 simulated reference pictures are not used as device evidence.
+The twelve PNGs are original, uncropped480×640 device captures. HTTP404 and
+explicit recovery are current e1c6756 product captures from browser04. The two QR
+recovery PNGs retain their exact complete original bytes; current stronger native
+capture observations confirm their controls. Other selected images keep their
+original14a878dc binding. They are not relabeled as fresh execution on the new APK.
+`standalone04-originals` retains46 original scanner/recovery reports/images,
+including13 QR source rasters and private actual camera media;
+`integration-final-originals` retains84 original navigation/edge/native artifacts.
+NativeInput originals remain from08986992 with unchanged fixture/class. All useful
+older failures and images remain in their original directories. G1 simulated
+reference pictures are not used as device evidence.
 
 ## Reproduction and handoff
 
@@ -260,7 +330,6 @@ Build under the existing lock with the toolchain/limits above:
 ```sh
 ./gradlew :app-rg:testDebugUnitTest :app-rg:assembleDebug \
   :app-rg:assembleDebugAndroidTest :app-rg:lintDebug \
-  :app-phone:testDebugUnitTest :app-phone:assembleDebug :app-phone:lintDebug \
   :core:browser:test --no-daemon --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx2g'
 ```
 
@@ -281,7 +350,7 @@ for the host to stop/restart only its owned fixture. Do not run these special me
 blindly as one unconfigured whole-class suite. Original methods and scratch commands
 are retained for exact reproduction.
 
-Own cleanup at2026-10-10T12:27:20Z is recorded in `own-cleanup.json` and
+Original-round own cleanup at2026-10-10T12:27:20Z is recorded in `own-cleanup.json` and
 `own-cleanup.log`: prior tab/settings metadata restored by the tests, the owned
 cold backup removed, temporary device output files removed, the RG app process
 absent, screen observed `mWakefulness=Asleep`, and own port39030 listener stopped.
@@ -289,7 +358,18 @@ Camera/sensor release is supported by the actual test results and normal app sto
 no global camera/sensor/trust attestation is claimed. No reverses were created.
 Source, exact candidate APKs, JVM/lint reports, useful failures and original
 captures are retained. No shared cache, worktree, branch, user data or unrelated
-operation is deleted. Manager retains
-independent review, PR/merge, acceptance accounting and archival. Required Phone
-and simultaneous evidence remains pending until an actual authorized device is
-available. No human QR target-presentation gate remains.
+operation is deleted.
+
+Correction02 own cleanup at2026-10-10T14:11:08.472660+00:00 is separately recorded
+in `correction02-rg-state-evidence/own-cleanup.json` and `own-cleanup.log`.
+The completed scenes restored their tab/settings metadata. The RG app process
+was absent, the display was observed `mWakefulness=Asleep`, seven exact own
+temporary result files were removed, and the recorded own fixture was stopped
+with port39030 listener absent. No reverse mapping or Phone operation occurred.
+RG1906092617103125/100.87.122.122:5555 and own100.92.81.33:39030 are returned to
+Manager; these are timestamped observations, not a continuous state guarantee.
+
+Manager retains independent review, PR/merge, acceptance accounting and archival.
+Phone and simultaneous checks are removed from scope by Owner, not pending and
+not PASS.
+No human QR target-presentation gate remains.
