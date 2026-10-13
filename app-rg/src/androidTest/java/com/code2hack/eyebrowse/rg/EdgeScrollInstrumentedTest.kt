@@ -278,7 +278,10 @@ class EdgeScrollInstrumentedTest {
         }
         assertTrue(visual.await(3,TimeUnit.SECONDS))
         val frame=CountDownLatch(1);val copy=CountDownLatch(1);val bitmap=Bitmap.createBitmap(480,640,Bitmap.Config.ARGB_8888)
+        val arguments=InstrumentationRegistry.getArguments()
         var commit=0L;var result=-1;val data=JSONObject().put("name",name)
+            .put("invocationId",arguments.getString("evidenceRunId"))
+            .put("candidateHead",arguments.getString("candidateHead")).put("processPid",android.os.Process.myPid())
         try {
             scene.onActivity {
                 val xy=IntArray(2);it.root.getLocationOnScreen(xy)
@@ -373,7 +376,8 @@ class EdgeScrollInstrumentedTest {
             val inwardY=y(scene);SystemClock.sleep(120)
             assertTrue("small inward movement continues actual page effect",direction*(y(scene)-inwardY)>10)
             capture(scene,if(direction<0) "strip-top-hidden" else "strip-bottom-hidden")
-            stopped(scene,"visible re-entry",effect={it.pointer.cursorVisible}) {source.orientationDegrees(0.0,direction*48.5)}
+            // Use enough return travel to clear the strip with the retained smoothing and interior deadband.
+            stopped(scene,"visible re-entry",effect={it.pointer.cursorVisible}) {source.orientationDegrees(0.0,direction*48.0)}
             val returned=y(scene);SystemClock.sleep(120);assertEquals(returned,y(scene))
             capture(scene,if(direction<0) "strip-top-return" else "strip-bottom-return")
             evidence.put(JSONObject().put("case","strip-continuation").put("direction",direction)
@@ -503,7 +507,12 @@ class EdgeScrollInstrumentedTest {
         scene.onActivity {source.orientationDegrees(0.0,dividerPitch)};SystemClock.sleep(500);stopped(scene)
         val dividerY=y(scene);SystemClock.sleep(150);assertEquals(dividerY,y(scene))
         reset(scene,source);scene.onActivity {source.orientationDegrees(0.0,50.0)}
-        await("bottom screen edge scrolls page under fixed keyboard") {y(scene)>dividerY+20}
+        await("bottom screen edge scrolls page under fixed keyboard") {
+            var ready=false;scene.onActivity {
+                ready=it.pointer.position.y==664f && it.edgeScrollRunning &&
+                    (it.tabs.current.session.page?.scrollY ?: 0)>dividerY+20
+            };ready
+        }
         scene.onActivity {
             val xy=IntArray(2);it.keyboard.getLocationOnScreen(xy)
             assertEquals(440,xy[1]);assertEquals(200,it.keyboard.height);assertTrue(it.tabs.current.session.page?.hasFocus()==true)
