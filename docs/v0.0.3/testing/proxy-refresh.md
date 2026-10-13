@@ -130,6 +130,35 @@ replaced only its test APK. Package data was preserved throughout.
 | `native06`, `native07` | New lifecycle-count observer failed because Android `ps` exposed a basename rather than the assumed absolute executable path. External observation qualified one actual core/socket/listener; the observer now resolves `/proc/PID/exe`. Restoration passed. |
 | `native08` | Fourteen routing/update/failure cases completed, then form retention failed. The test had not verified that its initial field assignment reached the committed controlled document; setup now requires native READY, exact URL and a verified initial value. Restoration passed. |
 | `native09` | Verified initial and retained form value/sentinel, with one page request before and after all refreshes. Later native input setup failed because it assigned an address before requesting focus; normal focus entry restored the committed URL. The test now requests focus before assigning its dummy draft. Restoration passed. |
+| `native10` | Full named test passed in 59.996 seconds, all 16 controlled cases. Actual ON/OFF updates, last-good failures, DIRECT fallback, regional activation, delayed Delete and retained page/form passed. Actual jobs and launch/recreate/background/resume counts were recorded; starting state restored. |
+| `native11` | Named exception-guard test passed in 0.531 seconds, retaining the injected primary/report-closure failures while restoring affected state. |
+| `native12` | Named fresh-process Owner-cache test passed in 0.316 seconds. Final comparison matched the original cache/tabs hashes, one source/six enabled nodes, without starting a core or logging private source data. |
+
+The successful native executions retain their original source binding
+`36e8c4dca1fedf0439a6e5348cffa72b1b89a2d3`, tree
+`20a933e00cb7f18780e6019db43ecce72d08a9dd`. Subsequent documentation and the
+Manager-authorized unpublished message-attribution correction do not change
+compiled inputs. The handoff records equivalent old/new commits without
+relabelling these executions.
+
+`native10` observed one genuine core process, one kernel control socket and one
+mixed listener at launch, recreation and resume; background had zero of each.
+Only jobs 4501/4502 were present, persisted and nonperiodic, with required network
+and policy extras 1,800/86,400 seconds. Their observed minimum latencies were
+1,800,000/84,600,000 ms; the regional remainder reflects the test-only 30-minute
+clock advance. `cmd jobscheduler run -f` invoked the real subscription JobService.
+The health interval remained 300 seconds. These observations qualify configuration
+and exercised execution, not autonomous elapsed-time scheduling during Doze.
+
+Real destination peers changed from `127.0.0.2` to `127.0.0.3` after a valid
+subscription update; failed updates kept the latter route, and all-down selected
+DIRECT at `127.0.0.1`. The controlled regional pair changed actual core matching
+from `IPCIDR` (`127.0.0.0/8`) to `RuleSet` (`CN-DOMAIN`). The verified initial form
+value and script sentinel survived every refresh with exactly one page GET
+before/after. Native settings/input/eight toolbar controls also passed. The
+retained 480×640 PNG shows the later recreated Activity's expected interrupted
+controlled page; form retention is established by the earlier live value and
+request observations.
 
 The successful full host gate used explicit JDK 17.0.19 and SDK 35, shared flock,
 two Gradle workers, 2 GiB heap and `GOMAXPROCS=2`, with fresh available-memory
@@ -146,6 +175,28 @@ The official Linux ARM64 v1.19.32 reference executable was qualified at SHA-256
 The installed Android ARM64 core was executed with `-v` and independently hashed:
 `bb9afbd48717f92d59e07da35fb694b83d40d6edb63eb9033c2ee4174137d195`.
 Bundled domain/IP data retain their original pinned hashes and provenance.
+
+Final retained and installed APK SHA-256 values:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Debug app | `ce7d100ce53d0e54c87a169e7092745c081ec7b137c1b648e1725630d9357a52` |
+| Debug Android test | `b31129312f7ded69492f0463a7207d2d11819ef038448146cc5970a77e38eec6` |
+
+The provider was `com.android.webview` 95.0.4638.74. The final test-install/readback
+record completed 0.616 seconds after instrumentation started; pre-start hash
+readback is not claimed. During the successful run, `/proc` maps identified the
+exact newly installed test APK and its matching SHA-256. Original timing,
+installation and loaded-APK records remain separate.
+
+At **2026-10-13T18:32:25.716366Z**, RG identity was reverified and returned
+Awake/StayOn/display ON. Owned app/test/core processes and kernel control sockets
+were absent; restored starting job state had neither job 4501 nor 4502. Camera
+clients were empty. The owned fixture process was gone and port 39030 had no
+listener. The first handoff observation retained an idle test-package process;
+after confirming no active instrumentation, teardown stopped only that package
+and repeated the scoped observation. Source/evidence/workspace retention continues
+until version end. Independent review and acceptance remain pending.
 
 The simplification pass shares the ordinary profile apply/save/rollback path
 with automatic refresh, uses two stable ordinary jobs and the existing runtime
