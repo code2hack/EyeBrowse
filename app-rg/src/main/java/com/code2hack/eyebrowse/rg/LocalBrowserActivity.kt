@@ -84,10 +84,10 @@ class LocalBrowserActivity : ComponentActivity() {
         override fun run() {
             val surface = scrollSurface()
             val now = SystemClock.elapsedRealtimeNanos()
-            val direction = edgeMotion.direction(pointer.inputPosition(),pointer.motionBounds,pointer.expiresAtNs,now)
+            val direction = edgeMotion.direction(pointer.inputPosition(),pointer.visibleBounds,pointer.expiresAtNs,now)
             if (surface == null || direction == 0) { stopEdgeScroll(); return }
-            val pixels = edgeMotion.step(pointer.position,pointer.motionBounds,pointer.expiresAtNs,now,
-                inputSettings.speed.pixelsPerSecond)
+            val pixels = edgeMotion.step(pointer.position,pointer.visibleBounds,pointer.expiresAtNs,now,
+                inputSettings.scrollSpeed)
             if (surface.canScrollVertically(direction)) {
                 if (utility==Utility.BROWSING) input.scroll(pixels) else surface.scrollBy(0,pixels)
             }
@@ -107,12 +107,12 @@ class LocalBrowserActivity : ComponentActivity() {
     }
     private fun updateEdgeScroll() {
         val now=SystemClock.elapsedRealtimeNanos()
-        if (scrollSurface()==null || edgeMotion.direction(pointer.position,pointer.motionBounds,pointer.expiresAtNs,now)==0) {
+        if (scrollSurface()==null || edgeMotion.direction(pointer.position,pointer.visibleBounds,pointer.expiresAtNs,now)==0) {
             stopEdgeScroll();return
         }
         if (!edgeScrollRunning) {
             edgeScrollRunning=true
-            edgeMotion.step(pointer.position,pointer.motionBounds,pointer.expiresAtNs,now,inputSettings.speed.pixelsPerSecond)
+            edgeMotion.step(pointer.position,pointer.visibleBounds,pointer.expiresAtNs,now,inputSettings.scrollSpeed)
             root.postDelayed(edgeScroll,16)
         }
     }
@@ -194,7 +194,7 @@ class LocalBrowserActivity : ComponentActivity() {
         inputSettings=LocalInputSettings({ key -> preferences.getString(key,null) }) { key,value ->
             preferences.edit().putString(key,value).commit()
         }
-        pointer = PointerOverlay(this).apply { sensitivity(inputSettings.sensitivity.gain) }
+        pointer = PointerOverlay(this).apply { sensitivity(inputSettings.pointerGain) }
         root.addView(pointer, box(-1, -1))
         input = NativeRgInputTarget(root, pointer, {
             if (utility == Utility.BROWSING) tabs.current.session.page else null
@@ -432,11 +432,11 @@ class LocalBrowserActivity : ComponentActivity() {
             Utility.BOOKMARKS -> "Bookmarks"
             else -> "Settings"
         }
-        overlay.addView(text(title, 24f), box(340, 44, 16, 14))
-        overlay.addView(button("Done") { dismissUtility() }.apply { tag = "utility.done" }, box(96, 44, 368, 14))
+        overlay.addView(text(title, 24f), box(340, 32, 16, 16))
+        overlay.addView(button("Done") { dismissUtility() }.apply { tag = "utility.done" }, box(80, 48, 384, 8))
         val scroll = ScrollView(this).apply { setBackgroundColor(Color.BLACK); isFillViewport = true }
         val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.BLACK) }
-        scroll.addView(rows); overlay.addView(scroll, box(-1, -1, y = 76));utilityScroll=scroll
+        scroll.addView(rows); overlay.addView(scroll, box(-1, -1, y = 64));utilityScroll=scroll
         fun row(view: View, height: Int) { rows.addView(view, LinearLayout.LayoutParams(-1, height).apply { setMargins(16, 0, 16, 8) }) }
         when (utility) {
             Utility.TABS -> tabs.items.forEachIndexed { index, tab ->
@@ -465,20 +465,29 @@ class LocalBrowserActivity : ComponentActivity() {
                 }
             }
             Utility.SETTINGS -> {
+                fun numericRow(label: String, name: String, value: String, decrease: Boolean, increase: Boolean,
+                               change: (Int) -> Unit) {
+                    val group=FrameLayout(this)
+                    group.addView(text(label).apply { gravity=Gravity.CENTER_VERTICAL },box(184,56))
+                    group.addView(button("←","Decrease $label") { change(-1) }.apply {
+                        tag="settings.$name.decrease";isEnabled=decrease
+                    },box(48,56,192))
+                    group.addView(text(value).apply { tag="settings.$name.value";gravity=Gravity.CENTER },box(112,56,248))
+                    group.addView(button("→","Increase $label") { change(1) }.apply {
+                        tag="settings.$name.increase";isEnabled=increase
+                    },box(48,56,368))
+                    row(group,56)
+                }
+                numericRow("Pointer speed","pointer","${inputSettings.pointerGain}×",
+                    inputSettings.pointerTenths>1,inputSettings.pointerTenths<60) {
+                    if(inputSettings.stepPointer(it)) pointer.sensitivity(inputSettings.pointerGain)
+                    renderUtility()
+                }
+                numericRow("Scroll speed","scroll","${inputSettings.scrollSpeed} px/s",
+                    inputSettings.scrollSpeed>10,inputSettings.scrollSpeed<1200) {
+                    inputSettings.stepScroll(it);renderUtility()
+                }
                 inputSettings.error?.let { row(text(it,18f),52) }
-                row(text("Pointer sensitivity"),40)
-                LocalInputSettings.Sensitivity.entries.forEach { value ->
-                    row(button("${value.label} (${value.gain}×)") {
-                        if (inputSettings.select(value)) pointer.sensitivity(value.gain)
-                        renderUtility()
-                    }.apply { tag="settings.sensitivity.${value.name.lowercase()}";isSelected=inputSettings.sensitivity==value },48)
-                }
-                row(text("Edge-scroll speed"),40)
-                LocalInputSettings.Speed.entries.forEach { value ->
-                    row(button("${value.label} (${value.pixelsPerSecond} px/s)") {
-                        inputSettings.select(value);renderUtility()
-                    }.apply { tag="settings.speed.${value.name.lowercase()}";isSelected=inputSettings.speed==value },48)
-                }
             }
             else -> Unit
         }

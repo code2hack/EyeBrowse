@@ -488,6 +488,8 @@ class StandaloneBrowserInstrumentedTest {
         val before = JSONObject().put("tabs", metadata.getString("local.tabs", null))
             .put("pointer.sensitivity", settings.getString("pointer.sensitivity", null))
             .put("edge.speed", settings.getString("edge.speed", null))
+            .put("pointer.tenths", settings.getString("pointer.tenths", null))
+            .put("edge.pixels-per-second", settings.getString("edge.pixels-per-second", null))
         val record = java.io.File(context.filesDir, "issue33-owned-cold-before.json")
         check(!record.exists()) { "Resolve existing owned cold-recovery run before writing" }
         record.writeText(before.toString())
@@ -497,7 +499,11 @@ class StandaloneBrowserInstrumentedTest {
             assertEquals("true", js(s, "(()=>{localStorage.setItem('issue33-upgrade','durable');document.cookie='issue33upgrade=durable; path=/; Max-Age=3600';return true})()"))
             hud(s, "bookmark")
             hud(s, "more"); tag(s, "menu.3")
-            tag(s, "settings.sensitivity.high"); tag(s, "settings.speed.fast"); tag(s, "utility.done")
+            var pointer=0;var scroll=0
+            s.onActivity { pointer=it.inputSettings.pointerTenths;scroll=it.inputSettings.scrollSpeed }
+            repeat(kotlin.math.abs(25-pointer)) { tag(s,"settings.pointer.${if(pointer<25) "increase" else "decrease"}") }
+            repeat(kotlin.math.abs(360-scroll)/10) { tag(s,"settings.scroll.${if(scroll<360) "increase" else "decrease"}") }
+            tag(s, "utility.done")
             s.onActivity { CookieManager.getInstance().flush(); assertTrue(it.bookmarks.contains("$base/local-keyboard.html?issue33=upgrade")) }
             capture(s, "before-cold-restart")
         }
@@ -515,8 +521,8 @@ class StandaloneBrowserInstrumentedTest {
                     assertEquals(LocalBrowserSession.Phase.EMPTY, it.tabs.current.session.state.phase)
                     assertEquals("$base/local-keyboard.html?issue33=upgrade", it.tabs.current.recoveryUrl)
                     assertTrue(it.bookmarks.contains(it.tabs.current.recoveryUrl))
-                    assertEquals(LocalInputSettings.Sensitivity.HIGH, it.inputSettings.sensitivity)
-                    assertEquals(LocalInputSettings.Speed.FAST, it.inputSettings.speed)
+                    assertEquals(2.5, it.inputSettings.pointerGain,0.0)
+                    assertEquals(360, it.inputSettings.scrollSpeed)
                 }
                 capture(s, "cold-recovery-no-replay")
                 open(s, "$base/local-keyboard.html?issue33=upgrade")
@@ -532,7 +538,7 @@ class StandaloneBrowserInstrumentedTest {
                 if (before.has("tabs")) putString("local.tabs", before.getString("tabs")) else remove("local.tabs")
             }.commit())
             assertTrue(settings.edit().apply {
-                for (key in listOf("pointer.sensitivity", "edge.speed")) {
+                for (key in listOf("pointer.sensitivity", "edge.speed", "pointer.tenths", "edge.pixels-per-second")) {
                     if (before.has(key)) putString(key, before.getString(key)) else remove(key)
                 }
             }.commit())

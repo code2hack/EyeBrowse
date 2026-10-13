@@ -11,11 +11,11 @@ class NativePageScrollTest {
         assertEquals(0, nativePageScrollDelta(0, -18))
     }
 
-    @Test fun realIntegratorReachesZeroAtEveryPresetAndLeavesImmediatelyWithoutDebt() {
-        val bounds=PointerBounds(8f,8f,472f,632f)
-        val top=PointerPosition(240f,8f,true)
-        val bottom=PointerPosition(240f,632f,true)
-        for(speed in listOf(120,240,360)) {
+    @Test fun realIntegratorReachesZeroAtEveryRateAndLeavesImmediatelyWithoutDebt() {
+        val bounds=PointerBounds(0f,0f,480f,640f)
+        val top=PointerPosition(240f,-24f,true)
+        val bottom=PointerPosition(240f,664f,true)
+        for(speed in listOf(120,240,360,1200)) {
             val motion=EdgeScrollMotion()
             var y=60
             // Same eligibility check, integrator and writer delta as the Activity's callback.

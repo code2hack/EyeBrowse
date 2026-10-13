@@ -8,6 +8,10 @@ import android.os.Looper
 import android.os.SystemClock
 import android.view.PixelCopy
 import android.view.View
+import android.view.InputDevice
+import android.view.KeyEvent
+import android.widget.ScrollView
+import android.widget.TextView
 import android.webkit.WebView
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
@@ -34,12 +38,12 @@ class EdgeScrollInstrumentedTest {
         do { if(condition()) return;SystemClock.sleep(5) } while(SystemClock.elapsedRealtime()<end)
         fail(label)
     }
-    private fun scene(body: (ActivityScenario<LocalBrowserActivity>,RawPoseReplay) -> Unit) {
+    private fun scene(legacyPointer: String?=null, legacyScroll: String?=null, body: (ActivityScenario<LocalBrowserActivity>,RawPoseReplay) -> Unit) {
         val context=InstrumentationRegistry.getInstrumentation().targetContext
         val metadata=context.getSharedPreferences("LocalBrowserActivity",Context.MODE_PRIVATE)
         val previousMetadata=metadata.getString("local.tabs",null)
         val preferences=context.getSharedPreferences("local-input-settings",Context.MODE_PRIVATE)
-        val keys=listOf("pointer.sensitivity","edge.speed")
+        val keys=listOf("pointer.sensitivity","edge.speed","pointer.tenths","edge.pixels-per-second")
         val previous=keys.associateWith { preferences.getString(it,null) }
         val source=RawPoseReplay()
         val arguments=InstrumentationRegistry.getArguments()
@@ -53,6 +57,8 @@ class EdgeScrollInstrumentedTest {
         try {
             assertFalse("fresh invocation evidence binding",invocationId.isNullOrBlank())
             assertTrue("exact source evidence binding",candidateHead?.matches(Regex("[0-9a-f]{40}"))==true)
+            if(legacyPointer!=null) assertTrue(preferences.edit().remove("pointer.tenths").remove("edge.pixels-per-second")
+                .putString("pointer.sensitivity",legacyPointer).putString("edge.speed",legacyScroll).commit())
             val active=ActivityScenario.launch(LocalBrowserActivity::class.java)
             scene=active
             active.onActivity { while(it.tabs.count>1) it.closeTab();it.closeTab();it.pointer.stop();it.pointer.replaceSourceForTest(source) }
@@ -145,7 +151,7 @@ class EdgeScrollInstrumentedTest {
         val now=SystemClock.elapsedRealtimeNanos();val pointer=activity.pointer;val position=pointer.position
         val page=activity.tabs.current.session.page
         return JSONObject().put("sampleNs",now).put("pointerX",position.x).put("pointerY",position.y)
-            .put("available",position.available).put("sampleReceiptNs",pointer.lastSampleReceiptNs)
+            .put("available",position.available).put("cursorVisible",pointer.cursorVisible).put("sampleReceiptNs",pointer.lastSampleReceiptNs)
             .put("expiresAtNs",pointer.expiresAtNs).put("sourceRegistered",pointer.sourceRegistered)
             .put("edgeScrollRunning",activity.edgeScrollRunning).put("utility",activity.utility.name)
             .put("selectedTab",activity.tabs.selectedIndex).put("tabCount",activity.tabs.count)
@@ -157,7 +163,7 @@ class EdgeScrollInstrumentedTest {
             .put("pageFocused",page?.hasFocus() ?: false).put("addressFocused",activity.address.hasFocus())
             .put("keyboardShown",activity.keyboard.isShown).put("windowFocused",activity.hasWindowFocus())
             .put("layoutRequested",activity.root.isLayoutRequested).put("finishing",activity.isFinishing)
-            .put("speed",activity.inputSettings.speed.pixelsPerSecond).put("sensitivity",activity.inputSettings.sensitivity.gain)
+            .put("speed",activity.inputSettings.scrollSpeed).put("sensitivity",activity.inputSettings.pointerGain)
     }
     private fun startScrolling(scene: ActivityScenario<LocalBrowserActivity>, source: RawPoseReplay) {
         reset(scene,source)
@@ -165,7 +171,7 @@ class EdgeScrollInstrumentedTest {
         scene.onActivity { source.orientationDegrees(0.0,50.0) }
         await("fresh literal bottom edge is actually scrolling before cancellation") {
             var running=false
-            scene.onActivity { running=it.edgeScrollRunning && it.pointer.position.y==632f &&
+            scene.onActivity { running=it.edgeScrollRunning && it.pointer.position.y==664f &&
                 it.tabs.current.session.page?.let { page -> page.scrollY>before+5 && page.canScrollVertically(1) }==true }
             running
         }
@@ -186,7 +192,7 @@ class EdgeScrollInstrumentedTest {
                 activity=it;observation.put("before",edgeObservation(it))
                 if(requireRunning) {
                     assertTrue("running callback before $triggerName",it.edgeScrollRunning)
-                    assertEquals(632f,it.pointer.position.y,.001f)
+                    assertEquals(664f,it.pointer.position.y,.001f)
                     assertTrue(it.pointer.position.available && SystemClock.elapsedRealtimeNanos()<it.pointer.expiresAtNs)
                     assertEquals(LocalBrowserActivity.Utility.BROWSING,it.utility)
                     assertEquals(LocalBrowserSession.Phase.READY,it.tabs.current.session.state.phase)
@@ -216,18 +222,18 @@ class EdgeScrollInstrumentedTest {
         }
         assertTrue(end-start<=100_000_000)
     }
-    private fun topEndpoint(scene: ActivityScenario<LocalBrowserActivity>, speed: LocalInputSettings.Speed) {
+    private fun topEndpoint(scene: ActivityScenario<LocalBrowserActivity>, speed: Int) {
         val scenarioState=scene.state.name
         val start=SystemClock.elapsedRealtimeNanos()
         var first: JSONObject?=null;var last: JSONObject?=null;var polls=0;var reached=false;var checkedY: Int?=null
-        val observation=JSONObject().put("case","top-endpoint").put("speed",speed.pixelsPerSecond)
+        val observation=JSONObject().put("case","top-endpoint").put("speed",speed)
             .put("startNs",start).put("scenarioState",scenarioState)
         evidence.put(observation)
         try {
             await("top endpoint") {
                 scene.onActivity {
                     val page=it.tabs.current.session.page
-                    val top=it.pointer.position.y==8f && page?.canScrollVertically(-1)==false
+                    val top=it.pointer.position.y== -24f && page?.canScrollVertically(-1)==false
                     checkedY=if(top) page?.scrollY else null
                     reached=top && checkedY==0
                     last=edgeObservation(it)
@@ -252,8 +258,16 @@ class EdgeScrollInstrumentedTest {
         assertEquals("independent actual DOM/native scroll agreement",dom.getDouble(0)*scale,nativeY.toDouble(),8.0)
         return JSONObject().put("nativeY",nativeY).put("dom",dom).put("nativePxPerCssPx",scale)
     }
-    private fun settings(scene: ActivityScenario<LocalBrowserActivity>, tag: String) {
-        control(scene,"more");tagged(scene,"menu.3");tagged(scene,tag);tagged(scene,"utility.done")
+    private fun settings(scene: ActivityScenario<LocalBrowserActivity>, gain: Double?=null, speed: Int?=null) {
+        control(scene,"more");tagged(scene,"menu.3")
+        for((name,target) in listOf("pointer" to gain?.let { (it*10).toInt() },"scroll" to speed)) {
+            if(target==null) continue
+            var current=0
+            scene.onActivity { current=if(name=="pointer") it.inputSettings.pointerTenths else it.inputSettings.scrollSpeed }
+            val step=if(name=="pointer") 1 else 10
+            repeat(abs(target-current)/step) { tagged(scene,"settings.$name.${if(target>current) "increase" else "decrease"}") }
+        }
+        tagged(scene,"utility.done")
     }
     private fun capture(scene: ActivityScenario<LocalBrowserActivity>, name: String) {
         val visual=CountDownLatch(1)
@@ -264,7 +278,10 @@ class EdgeScrollInstrumentedTest {
         }
         assertTrue(visual.await(3,TimeUnit.SECONDS))
         val frame=CountDownLatch(1);val copy=CountDownLatch(1);val bitmap=Bitmap.createBitmap(480,640,Bitmap.Config.ARGB_8888)
+        val arguments=InstrumentationRegistry.getArguments()
         var commit=0L;var result=-1;val data=JSONObject().put("name",name)
+            .put("invocationId",arguments.getString("evidenceRunId"))
+            .put("candidateHead",arguments.getString("candidateHead")).put("processPid",android.os.Process.myPid())
         try {
             scene.onActivity {
                 val xy=IntArray(2);it.root.getLocationOnScreen(xy)
@@ -287,8 +304,126 @@ class EdgeScrollInstrumentedTest {
         } finally { bitmap.recycle() }
     }
 
+    @Test fun numericRowsMigrateEveryPresetOnceAndPersistStepsAndLimits() {
+        for((legacyPointer,tenths) in mapOf("LOW" to 15,"STANDARD" to 20,"HIGH" to 25))
+            for((legacyScroll,speed) in mapOf("SLOW" to 120,"STANDARD" to 240,"FAST" to 360))
+                scene(legacyPointer,legacyScroll) { scene,source ->
+                    fun checkRows(pointer: Int, scroll: Int) {
+                        await("numeric rows laid out") {var ready=false;scene.onActivity {
+                            val value=it.root.findViewWithTag<TextView>("settings.pointer.value")
+                            ready=!it.root.isLayoutRequested && value.isLaidOut && value.width>0
+                        };ready}
+                        scene.onActivity {
+                        assertEquals(pointer,it.inputSettings.pointerTenths);assertEquals(pointer/10.0,it.pointer.gain,0.0)
+                        assertEquals(scroll,it.inputSettings.scrollSpeed)
+                        assertEquals("${pointer/10.0}×",it.root.findViewWithTag<TextView>("settings.pointer.value").text.toString())
+                        assertEquals("$scroll px/s",it.root.findViewWithTag<TextView>("settings.scroll.value").text.toString())
+                        for((name,values) in listOf("pointer" to intArrayOf(pointer,1,60,112),
+                            "scroll" to intArrayOf(scroll,10,1200,176))) {
+                            val (value,minimum,maximum,y)=values
+                            for((suffix,x) in listOf("decrease" to 208,"increase" to 384)) {
+                                val arrow=it.root.findViewWithTag<TextView>("settings.$name.$suffix")
+                                val xy=IntArray(2);arrow.getLocationOnScreen(xy)
+                                assertEquals(x,xy[0]);assertEquals(y,xy[1]);assertEquals(48,arrow.width);assertEquals(56,arrow.height)
+                                val enabled=if(suffix=="decrease") value!=minimum else value!=maximum
+                                assertEquals(enabled,arrow.isEnabled)
+                                assertEquals(if(enabled) 0xfff2f2f2.toInt() else 0xff8a8a8a.toInt(),arrow.currentTextColor)
+                            }
+                        }
+                    }
+                    }
+                    control(scene,"more");tagged(scene,"menu.3");checkRows(tenths,speed)
+                    if(tenths==20 && speed==240) capture(scene,"settings-default")
+                    tagged(scene,"settings.pointer.increase");tagged(scene,"settings.scroll.decrease")
+                    checkRows(tenths+1,speed-10)
+                    scene.recreate();scene.onActivity {it.pointer.stop();it.pointer.replaceSourceForTest(source)};reset(scene,source)
+                    control(scene,"more");tagged(scene,"menu.3");checkRows(tenths+1,speed-10)
+                    evidence.put(JSONObject().put("case","migration").put("legacyPointer",legacyPointer)
+                        .put("legacyScroll",legacyScroll).put("migratedTenths",tenths).put("migratedScroll",speed)
+                        .put("recreatedTenths",tenths+1).put("recreatedScroll",speed-10))
+                    tagged(scene,"utility.done")
+                    if(tenths==20 && speed==240) {
+                        settings(scene,gain=.1,speed=10);control(scene,"more");tagged(scene,"menu.3");checkRows(1,10)
+                        capture(scene,"settings-minimum");tagged(scene,"utility.done")
+                        settings(scene,gain=6.0,speed=1200);control(scene,"more");tagged(scene,"menu.3");checkRows(60,1200)
+                        capture(scene,"settings-maximum");tagged(scene,"utility.done")
+                    }
+                }
+    }
+
+    @Test fun bothHiddenStripsContinueInwardThenStopAtVisibleReturnAndRejectTaps()=scene { scene,source ->
+        settings(scene,gain=2.0,speed=240);open(scene)
+        for(direction in listOf(1,-1)) {
+            reset(scene,source);scene.onActivity {source.orientationDegrees(0.0,direction*50.0)}
+            await("hidden outer strip") { var ready=false;scene.onActivity {
+                ready=it.pointer.position.y==if(direction<0) -24f else 664f
+                ready=ready && it.edgeScrollRunning && it.pointer.position.available && !it.pointer.cursorVisible
+            };ready }
+            val before=y(scene);SystemClock.sleep(180)
+            assertTrue("actual active page scrolls in strip",direction*(y(scene)-before)>10)
+            scene.onActivity {
+                val page=it.tabs.current.session.page;val count=it.tabs.count
+                assertFalse(it.input.activate(InputPoint(24f,it.pointer.position.y)))
+                assertFalse(it.input.activate(InputPoint(408f,it.pointer.position.y)))
+                assertEquals(count,it.tabs.count);assertSame(page,it.tabs.current.session.page)
+                source.orientationDegrees(0.0,direction*49.95)
+            }
+            await("small inward movement remains outside and available") {var inward=false;scene.onActivity {
+                val p=it.pointer.position
+                inward=direction*(p.y-if(direction<0) -24f else 664f)<0 && it.edgeScrollRunning &&
+                    p.available && !it.pointer.cursorVisible
+            };inward}
+            val inwardY=y(scene);SystemClock.sleep(120)
+            assertTrue("small inward movement continues actual page effect",direction*(y(scene)-inwardY)>10)
+            capture(scene,if(direction<0) "strip-top-hidden" else "strip-bottom-hidden")
+            // Use enough return travel to clear the strip with the retained smoothing and interior deadband.
+            stopped(scene,"visible re-entry",effect={it.pointer.cursorVisible}) {source.orientationDegrees(0.0,direction*48.0)}
+            val returned=y(scene);SystemClock.sleep(120);assertEquals(returned,y(scene))
+            capture(scene,if(direction<0) "strip-top-return" else "strip-bottom-return")
+            evidence.put(JSONObject().put("case","strip-continuation").put("direction",direction)
+                .put("beforeY",before).put("smallInwardY",inwardY).put("visibleReturnY",returned).put("pageOracle",pageOracle(scene)))
+        }
+        // Existing native pad admission still switches tabs while the pointer is deliberately hidden.
+        scene.onActivity {it.addTab();it.selectTab(0)}
+        reset(scene,source);scene.onActivity {source.orientationDegrees(0.0,50.0)}
+        await("offscreen before native swipe") {var hidden=false;scene.onActivity {hidden=!it.pointer.cursorVisible};hidden}
+        val device=InputDevice.getDeviceIds().toList().mapNotNull(InputDevice::getDevice).single {it.name=="ROKID,PSOC-TP-R"}
+        for(code in listOf(KeyEvent.KEYCODE_DPAD_RIGHT,KeyEvent.KEYCODE_DPAD_LEFT)) {
+            val down=SystemClock.uptimeMillis()
+            for(action in listOf(KeyEvent.ACTION_DOWN,KeyEvent.ACTION_UP)) {
+                scene.onActivity {assertTrue(it.dispatchKeyEvent(KeyEvent(down,SystemClock.uptimeMillis(),action,code,0,0,
+                    device.id,0,0,InputDevice.SOURCE_KEYBOARD)))}
+                SystemClock.sleep(20)
+            }
+            scene.onActivity {assertEquals(if(code==KeyEvent.KEYCODE_DPAD_RIGHT) 1 else 0,it.tabs.selectedIndex)}
+        }
+    }
+
+    @Test fun longVisibleTabListOwnsStripScrollingWithoutMovingCoveredPage()=scene { scene,source ->
+        settings(scene,gain=2.0,speed=240);open(scene)
+        scene.onActivity {repeat(14) { _ -> it.addTab() };it.selectTab(0)}
+        val pageY=y(scene);control(scene,"tab_counter")
+        var list: ScrollView?=null
+        scene.onActivity {list=it.root.findViewById<android.view.ViewGroup>(R.id.rg_root).let { root ->
+            fun find(view: View): ScrollView? = if(view is ScrollView) view else
+                (view as? android.view.ViewGroup)?.let { group -> (0 until group.childCount).firstNotNullOfOrNull { find(group.getChildAt(it)) } }
+            find(root)
+        }}
+        reset(scene,source);scene.onActivity {source.orientationDegrees(0.0,50.0)}
+        await("actual visible utility list scrolls") {var moved=false;scene.onActivity {moved=checkNotNull(list).scrollY>20};moved}
+        assertEquals("covered page did not scroll",pageY,y(scene))
+        scene.onActivity {source.orientationDegrees(0.0,49.95)};SystemClock.sleep(120)
+        var before=0;scene.onActivity {before=checkNotNull(list).scrollY;assertTrue(it.edgeScrollRunning)}
+        scene.onActivity {source.orientationDegrees(0.0,48.5)}
+        await("visible return cancels list scroll") {var stopped=false;scene.onActivity {stopped=!it.edgeScrollRunning && it.pointer.cursorVisible};stopped}
+        var after=0;scene.onActivity {after=checkNotNull(list).scrollY};SystemClock.sleep(120)
+        scene.onActivity {assertEquals(after,checkNotNull(list).scrollY)}
+        assertEquals(pageY,y(scene));capture(scene,"long-list-return")
+        evidence.put(JSONObject().put("case","visible-list").put("listBeforeReturn",before).put("listAfterReturn",after).put("coveredPageY",pageY))
+    }
+
     @Test fun allBoundariesDiscardOvershootWithPromptSlowInwardDraw()=scene { scene,source ->
-        settings(scene,"settings.sensitivity.standard")
+        settings(scene,gain=2.0)
         for(h in -1..1) for(v in -1..1) {
             if(h==0 && v==0) continue
             for(extra in listOf(5.0,20.0,45.0)) for(hold in listOf(100L,500L,1000L)) {
@@ -296,18 +431,18 @@ class EdgeScrollInstrumentedTest {
                 val yaw=h*(30.3+extra);val pitch=v*(22.3+extra/2)
                 scene.onActivity { source.orientationDegrees(yaw,pitch) }
                 await("clamped edge h=$h v=$v excess=$extra") { var edge=false;scene.onActivity {
-                    val p=it.pointer.position;assertTrue(p.x in 8f..472f && p.y in 8f..632f)
-                    edge=(h==0 || abs(p.x-if(h<0) 8f else 472f)<.001) && (v==0 || abs(p.y-if(v<0) 8f else 632f)<.001)
+                    val p=it.pointer.position;assertTrue(p.x in 8f..472f && p.y in -24f..664f)
+                    edge=(h==0 || abs(p.x-if(h<0) 8f else 472f)<.001) && (v==0 || abs(p.y-if(v<0) -24f else 664f)<.001)
                 };edge }
                 SystemClock.sleep(hold)
                 if(h==0 && v == -1 && extra==5.0 && hold==100L) capture(scene,"pointer-top")
                 if(h==1 && v==1 && extra==45.0 && hold==1000L) capture(scene,"pointer-corner")
                 var receiptBefore=0L;var start=0L;var visible=0L;var receipt=0L
                 scene.onActivity { receiptBefore=it.pointer.lastSampleReceiptNs;start=SystemClock.elapsedRealtimeNanos();source.orientationDegrees(yaw-h*.05,pitch-v*.05) }
-                await("first slow inward draw within 100ms",100) { var inward=false;scene.onActivity {
+                await("first slow inward movement within 100ms",100) { var inward=false;scene.onActivity {
                     val p=it.pointer.lastDrawPosition
                     inward=it.pointer.lastDrawSampleReceiptNs>receiptBefore &&
-                        (h==0 || if(h<0) p.x>8 else p.x<472) && (v==0 || if(v<0) p.y>8 else p.y<632)
+                        (h==0 || if(h<0) p.x>8 else p.x<472) && (v==0 || if(v<0) p.y> -24 else p.y<664)
                     if(inward) {visible=it.pointer.lastDrawElapsedNs;receipt=it.pointer.lastDrawSampleReceiptNs}
                 };inward }
                 assertTrue(visible-receipt in 0..100_000_000);assertTrue(visible-start in 0..100_000_000)
@@ -321,13 +456,13 @@ class EdgeScrollInstrumentedTest {
     }
 
     @Test fun settingsPersistAndActualPageUsesEveryDeclaredRateAndGain()=scene { scene,source ->
-        settings(scene,"settings.sensitivity.standard");open(scene)
+        settings(scene,gain=2.0);open(scene)
         val identity=js(scene,"fixtureIdentity")
-        for(speed in LocalInputSettings.Speed.entries) {
-            settings(scene,"settings.speed.${speed.name.lowercase()}")
+        for(speed in listOf(120,240,360)) {
+            settings(scene,speed=speed)
             control(scene,"more");tagged(scene,"menu.3")
-            scene.onActivity { assertEquals(speed,it.inputSettings.speed);assertTrue(it.root.findViewWithTag<View>("settings.speed.${speed.name.lowercase()}").isSelected) }
-            if(speed==LocalInputSettings.Speed.STANDARD) capture(scene,"settings")
+            scene.onActivity { assertEquals(speed,it.inputSettings.scrollSpeed);assertEquals("$speed px/s",it.root.findViewWithTag<android.widget.TextView>("settings.scroll.value").text.toString()) }
+            if(speed==240) capture(scene,"settings")
             tagged(scene,"utility.done")
             // Start at the real top endpoint through raw poses; no DOM scroll assignment.
             reset(scene,source);scene.onActivity {source.orientationDegrees(0.0,-50.0)}
@@ -337,27 +472,27 @@ class EdgeScrollInstrumentedTest {
             val before=y(scene);val time=SystemClock.elapsedRealtimeNanos();SystemClock.sleep(400)
             val after=y(scene);val elapsed=SystemClock.elapsedRealtimeNanos()-time
             val observed=(after-before)*1e9/elapsed
-            assertTrue("native rate ${speed.pixelsPerSecond}: $observed",abs(observed-speed.pixelsPerSecond)<=speed.pixelsPerSecond*.12+4)
-            stopped(scene,"edge departure",requireRunning=true) { source.orientationDegrees(0.0,49.95) }
+            assertTrue("native rate ${speed}: $observed",abs(observed-speed)<=speed*.12+4)
+            stopped(scene,"edge departure",requireRunning=true) { source.orientationDegrees(0.0,48.5) }
             val dom=pageOracle(scene)
-            evidence.put(JSONObject().put("case","rate").put("speed",speed.pixelsPerSecond).put("beforeY",before).put("afterY",after).put("elapsedNs",elapsed).put("observedNativePxPerSecond",observed).put("domObservation",dom))
+            evidence.put(JSONObject().put("case","rate").put("speed",speed).put("beforeY",before).put("afterY",after).put("elapsedNs",elapsed).put("observedNativePxPerSecond",observed).put("domObservation",dom))
         }
         val distances=mutableListOf<Float>()
-        for(gain in LocalInputSettings.Sensitivity.entries) {
-            settings(scene,"settings.sensitivity.${gain.name.lowercase()}");reset(scene,source)
+        for(gain in listOf(1.5,2.0,2.5)) {
+            settings(scene,gain=gain);reset(scene,source)
             scene.onActivity {source.orientationDegrees(10.0,0.0)}
             SystemClock.sleep(500)
-            scene.onActivity {distances+=it.pointer.position.x-240;assertEquals(gain,it.inputSettings.sensitivity)}
+            scene.onActivity {distances+=it.pointer.position.x-240;assertEquals(gain,it.inputSettings.pointerGain,0.0)}
         }
         assertEquals(.75,distances[0]/distances[1].toDouble(),.015);assertEquals(1.25,distances[2]/distances[1].toDouble(),.015)
         // Actual Activity recreation rereads durable settings; metadata recovery never auto-navigates.
-        scene.recreate();scene.onActivity {assertEquals(LocalInputSettings.Sensitivity.HIGH,it.inputSettings.sensitivity);assertEquals(LocalInputSettings.Speed.FAST,it.inputSettings.speed);it.pointer.stop()}
+        scene.recreate();scene.onActivity {assertEquals(2.5,it.inputSettings.pointerGain,0.0);assertEquals(360,it.inputSettings.scrollSpeed);it.pointer.stop()}
         assertTrue(identity.isNotEmpty())
         evidence.put(JSONObject().put("case","gains").put("distances",JSONArray(distances)).put("durableRecreation",true))
     }
 
     @Test fun fullScreenKeyboardEdgesAndOrdinaryCancellationPreserveNativeEditing()=scene { scene,source ->
-        settings(scene,"settings.speed.standard");settings(scene,"settings.sensitivity.standard");open(scene)
+        settings(scene,speed=240);settings(scene,gain=2.0);open(scene)
         val rect=JSONArray(js(scene,"(()=>{const r=document.querySelector('#text').getBoundingClientRect();return [r.x,r.y,r.width,r.height,innerWidth]})()"))
         scene.onActivity {
             val page=checkNotNull(it.tabs.current.session.page);val scale=page.width/rect.getDouble(4)
@@ -368,18 +503,23 @@ class EdgeScrollInstrumentedTest {
         val identity=js(scene,"fixtureIdentity")
         reset(scene,source)
         // Physical screen divider at y440 is an interior point, so it cannot start page scrolling.
-        val dividerPitch=.3+(440.0-320)*44/624
+        val dividerPitch=.3+(440.0-320)*44/624/2
         scene.onActivity {source.orientationDegrees(0.0,dividerPitch)};SystemClock.sleep(500);stopped(scene)
         val dividerY=y(scene);SystemClock.sleep(150);assertEquals(dividerY,y(scene))
         reset(scene,source);scene.onActivity {source.orientationDegrees(0.0,50.0)}
-        await("bottom screen edge scrolls page under fixed keyboard") {y(scene)>dividerY+20}
+        await("bottom screen edge scrolls page under fixed keyboard") {
+            var ready=false;scene.onActivity {
+                ready=it.pointer.position.y==664f && it.edgeScrollRunning &&
+                    (it.tabs.current.session.page?.scrollY ?: 0)>dividerY+20
+            };ready
+        }
         scene.onActivity {
             val xy=IntArray(2);it.keyboard.getLocationOnScreen(xy)
             assertEquals(440,xy[1]);assertEquals(200,it.keyboard.height);assertTrue(it.tabs.current.session.page?.hasFocus()==true)
-            assertEquals(632f,it.pointer.position.y,.001f)
+            assertEquals(664f,it.pointer.position.y,.001f)
         }
         capture(scene,"keyboard-bottom")
-        stopped(scene,"edge departure",requireRunning=true) { source.orientationDegrees(0.0,49.95) }
+        stopped(scene,"edge departure",requireRunning=true) { source.orientationDegrees(0.0,48.5) }
         val departure=y(scene);SystemClock.sleep(150);assertEquals(departure,y(scene))
         key(scene,RgKeyboardKeys.Key.Character("b"));assertEquals("\"ab\"",js(scene,"document.querySelector('#text').value"));assertEquals("0",js(scene,"fixtureSubmits"))
         reset(scene,source);scene.onActivity {source.orientationDegrees(0.0,50.0)};await("scroll resumes") {y(scene)>departure+5}
@@ -421,11 +561,11 @@ class EdgeScrollInstrumentedTest {
         stopped(scene,"Refresh",requireRunning=true) {nativeTap(it,it.controls.getValue("hud.refresh"))}
         await("new document after actual Refresh") {js(scene,"fixtureIdentity")!=beforeRefresh}
         reset(scene,source);scene.onActivity {source.orientationDegrees(0.0,50.0)}
-        await("actual bottom endpoint") {var bottom=false;scene.onActivity {bottom=it.pointer.position.y==632f && it.tabs.current.session.page?.canScrollVertically(1)==false};bottom}
+        await("actual bottom endpoint") {var bottom=false;scene.onActivity {bottom=it.pointer.position.y==664f && it.tabs.current.session.page?.canScrollVertically(1)==false};bottom}
         val endpoint=pageOracle(scene);val endpointY=y(scene)
         scene.onActivity {source.orientationDegrees(0.0,65.0)};SystemClock.sleep(500)
         assertEquals("endpoint/outward hold has no scroll debt",endpointY,y(scene))
-        scene.onActivity {source.orientationDegrees(0.0,64.95)};stopped(scene)
+        scene.onActivity {source.orientationDegrees(0.0,63.5)};stopped(scene)
         assertEquals(endpointY,y(scene))
         scene.onActivity {source.orientationDegrees(0.0,-50.0)}
         await("opposite edge scrolls away from endpoint") {y(scene)<endpointY-10}

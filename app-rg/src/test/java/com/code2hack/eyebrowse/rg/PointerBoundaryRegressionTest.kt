@@ -17,7 +17,7 @@ class PointerBoundaryRegressionTest {
         for (horizontal in -1..1) for (vertical in -1..1) {
             if (horizontal == 0 && vertical == 0) continue
             for (extra in listOf(5.0, 20.0, 45.0)) for (hold in listOf(100L, 1000L, 3000L)) {
-                val m = HeadPointerModel().apply { resize(PointerBounds(8f,8f,472f,632f),0); start() }
+                val m = HeadPointerModel().apply { resize(PointerBounds(8f,8f,472f,632f),0,32f); start() }
                 var t = 1L
                 fun emit(yaw: Double, pitch: Double) { assertTrue(m.sample(pose(t,yaw,pitch),t*1_000_000)); m.advance(t*1_000_000); t += 20 }
                 emit(0.0,0.0)
@@ -26,7 +26,7 @@ class PointerBoundaryRegressionTest {
                 val edge=m.position
                 val label="h=$horizontal v=$vertical excess=$extra hold=$hold"
                 if(horizontal != 0) assertEquals(label, if(horizontal<0) 8f else 472f,edge.x,.001f)
-                if(vertical != 0) assertEquals(label, if(vertical<0) 8f else 632f,edge.y,.001f)
+                if(vertical != 0) assertEquals(label, if(vertical<0) -24f else 664f,edge.y,.001f)
                 emit(yaw-horizontal*.05,pitch-vertical*.05)
                 if(horizontal != 0) assertTrue("first slow inward x $label",horizontal*(m.position.x-edge.x)<0)
                 if(vertical != 0) assertTrue("first slow inward y $label",vertical*(m.position.y-edge.y)<0)
@@ -34,7 +34,7 @@ class PointerBoundaryRegressionTest {
                 val first=returns.getOrPut(horizontal to vertical) { movement }
                 assertEquals("equal inward x $label",first.first,movement.first,.002f)
                 assertEquals("equal inward y $label",first.second,movement.second,.002f)
-                assertTrue(m.position.x in 8f..472f && m.position.y in 8f..632f)
+                assertTrue(m.position.x in 8f..472f && m.position.y in -24f..664f)
             }
         }
     }

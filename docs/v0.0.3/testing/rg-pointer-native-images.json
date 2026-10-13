@@ -1,0 +1,76 @@
+{
+  "sourceHead": "4db534720d467c5a5a23135bc7cb43057f60c5c8",
+  "sourceTree": "641465ff7a360a676aa00ade047539ac92a99a13",
+  "appSrcTree": "8bb7846bbb3d8b6df766105c2a92cdf99ab2f502",
+  "appSha256": "84ec41c4a0efbbcc55f32930991cf7e2fe0a3d030e3b86598c07ad822ba5a691",
+  "testApkSha256": "a6175e9fa5a1e93bea346754bed45d65edaeea7a9e293206f096104943fa1f81",
+  "physicalSerial": "1906092617103125",
+  "model": "RG-glasses",
+  "mechanism": "Owned-window PixelCopy after native frame commit; original unscaled 480x640 PNG bytes",
+  "scope": "Application rendering evidence; not optical/compositor timing or physical head-motion comfort",
+  "images": [
+    {
+      "file": "images/issue-41-settings-default.png",
+      "width": 480,
+      "height": 640,
+      "length": 19248,
+      "sha256": "b6918759682a9d6b0d43bbba5fbae282ef551e90a7be7970c8cbf0e75c1fea58",
+      "metadata": {
+        "name": "settings-default",
+        "invocationId": "w41-window01-edge-4db5347-02",
+        "candidateHead": "4db534720d467c5a5a23135bc7cb43057f60c5c8",
+        "processPid": 11664,
+        "utility": "SETTINGS",
+        "pointerX": 240,
+        "pointerY": 320,
+        "available": true,
+        "sourceReceiptNs": 342934047186853,
+        "frameCommitNs": 342934048839666,
+        "copyRequestNs": 342934049723312,
+        "copyCompleteNs": 342934067515343
+      }
+    },
+    {
+      "file": "images/issue-41-settings-minimum.png",
+      "width": 480,
+      "height": 640,
+      "length": 18659,
+      "sha256": "cbffd070c37bd65844295a5f29b60a40b6034f4b1d58a2edfa3f912649f5f71d",
+      "metadata": {
+        "name": "settings-minimum",
+        "invocationId": "w41-window01-edge-4db5347-02",
+        "candidateHead": "4db534720d467c5a5a23135bc7cb43057f60c5c8",
+        "processPid": 11664,
+        "utility": "SETTINGS",
+        "pointerX": 240,
+        "pointerY": 320,
+        "available": true,
+        "sourceReceiptNs": 342936128428207,
+        "frameCommitNs": 342936137617582,
+        "copyRequestNs": 342936138263884,
+        "copyCompleteNs": 342936142725290
+      }
+    },
+    {
+      "file": "images/issue-41-settings-maximum.png",
+      "width": 480,
+      "height": 640,
+      "length": 19222,
+      "sha256": "88a97037b553335276d40c6d628ba0ac3f1c3a53d1857350d235de2735388075",
+      "metadata": {
+        "name": "settings-maximum",
+        "invocationId": "w41-window01-edge-4db5347-02",
+        "candidateHead": "4db534720d467c5a5a23135bc7cb43057f60c5c8",
+        "processPid": 11664,
+        "utility": "SETTINGS",
+        "pointerX": 240,
+        "pointerY": 320,
+        "available": true,
+        "sourceReceiptNs": 342942471075913,
+        "frameCommitNs": 342942485277215,
+        "copyRequestNs": 342942485982111,
+        "copyCompleteNs": 342942490427111
+      }
+    }
+  ]
+}

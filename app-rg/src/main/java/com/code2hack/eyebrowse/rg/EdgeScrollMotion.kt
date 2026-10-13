@@ -8,7 +8,7 @@ internal class EdgeScrollMotion {
 
     fun direction(point: PointerPosition, bounds: PointerBounds, expiresAtNs: Long, nowNs: Long): Int = when {
         !point.available || nowNs >= expiresAtNs || bounds.height <= 0 -> 0
-        point.y <= bounds.top -> -1
+        point.y < bounds.top -> -1
         point.y >= bounds.bottom -> 1
         else -> 0
     }
@@ -16,7 +16,7 @@ internal class EdgeScrollMotion {
     fun stop() { lastNs = 0; direction = 0; fraction = 0 }
 
     fun step(point: PointerPosition, bounds: PointerBounds, expiresAtNs: Long, nowNs: Long, speed: Int): Int {
-        require(speed in listOf(120,240,360))
+        require(speed in 10..1200 && speed%10==0)
         val next = direction(point,bounds,expiresAtNs,nowNs)
         if (next == 0) { stop(); return 0 }
         if (next != direction) { stop(); direction=next; lastNs=nowNs; return 0 }
