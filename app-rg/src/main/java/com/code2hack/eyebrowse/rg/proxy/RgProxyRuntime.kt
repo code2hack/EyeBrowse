@@ -9,6 +9,7 @@ import androidx.webkit.ProxyConfig
 import androidx.webkit.ProxyController
 import androidx.webkit.WebViewFeature
 import org.json.JSONObject
+import org.json.JSONArray
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.InetAddress
@@ -70,9 +71,10 @@ internal class RgProxyRuntime private constructor(private val context: Context) 
         worker.execute {
             try {
                 val port = proxyPort
+                directory.mkdirs()
+                val file = File(directory, "candidate.json")
+                writeConfiguration(file, candidate, port ?: 1)
                 if (port != null && process?.isAlive == true) {
-                    val file = File(directory, "candidate.json")
-                    writeConfiguration(file, candidate, port)
                     control!!.request("PUT", "/configs", JSONObject().put("path", file.absolutePath))
                 }
                 nodes = candidate
@@ -85,6 +87,28 @@ internal class RgProxyRuntime private constructor(private val context: Context) 
             }
         }
         return result
+    }
+
+    /** Validate an imported source even when OFF, without loading its globals or opening listeners. */
+    fun validateSource(source: ProxySource): CompletableFuture<Boolean> = CompletableFuture<Boolean>().also { result ->
+        worker.execute {
+            var child: Process? = null
+            var file: File? = null
+            try {
+                val candidates = ProxyPolicy.nodes(listOf(ProxySource(source.id, true, source.nodes)))
+                directory.mkdirs()
+                file = File.createTempFile("validate-", ".json", directory)
+                val config = JSONObject().put("proxies", JSONArray(candidates)).put("mode", "rule")
+                    .put("rules", JSONArray(listOf("MATCH,DIRECT"))).put("log-level", "silent")
+                file.writeText(ProxyPolicy.configurationText(config.toString()))
+                child = ProcessBuilder(File(context.applicationInfo.nativeLibraryDir, "libmihomo.so").absolutePath,
+                    "-t", "-d", directory.absolutePath, "-f", file.absolutePath)
+                    .redirectErrorStream(true).redirectOutput(File("/dev/null"))
+                    .apply { environment()["GOMAXPROCS"] = "2" }.start()
+                result.complete(child.waitFor(10, TimeUnit.SECONDS) && child.exitValue() == 0)
+            } catch (_: Exception) { result.complete(false) }
+            finally { child?.destroyForcibly(); file?.delete() }
+        }
     }
 
     /** Explicit route for subscription and regional-data HTTP clients; never the global ProxySelector. */
