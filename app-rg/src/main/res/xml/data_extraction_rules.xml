@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The unconnected RG launcher stores no data; nothing is extracted. -->
+<!-- Local browser data stays app-private and is excluded from backup/transfer. -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="sharedpref" path="." />
