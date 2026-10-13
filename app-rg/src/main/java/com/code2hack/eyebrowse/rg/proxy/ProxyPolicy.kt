@@ -51,13 +51,13 @@ internal object ProxyPolicy {
     }
 
     fun configuration(nodes: List<JSONObject>, port: Int, controller: String,
-        dnsServers: List<String>, testUrl: String = TEST_URL): JSONObject {
+        dnsServers: List<String>, testUrl: String = TEST_URL, regionalDirectory: String = "."): JSONObject {
         require(port in 1..65535)
         val regional = JSONObject()
             .put("CN-DOMAIN", JSONObject().put("type", "file").put("behavior", "domain")
-                .put("format", "mrs").put("path", "cn-domain.mrs"))
+                .put("format", "mrs").put("path", "$regionalDirectory/cn-domain.mrs"))
             .put("CN-IP", JSONObject().put("type", "file").put("behavior", "ipcidr")
-                .put("format", "mrs").put("path", "cn-ip.mrs"))
+                .put("format", "mrs").put("path", "$regionalDirectory/cn-ip.mrs"))
         val rules = mutableListOf(
             "DOMAIN,localhost,DIRECT", "DOMAIN-SUFFIX,local,DIRECT", "DOMAIN-SUFFIX,lan,DIRECT",
             "DOMAIN-SUFFIX,home.arpa,DIRECT", "DOMAIN-SUFFIX,ts.net,DIRECT",

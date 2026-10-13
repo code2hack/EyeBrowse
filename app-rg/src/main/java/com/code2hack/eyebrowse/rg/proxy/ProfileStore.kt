@@ -50,6 +50,9 @@ internal class ProfileStore(private val read: () -> String?, private val write: 
         return if (old == null) profiles + next else profiles.map { if (it.source == source) next else it }
     }
 
+    fun refreshed(source: String, nodes: List<Map<String, Any?>>): List<SavedProfile> =
+        profiles.map { if (it.source == source) SavedProfile(it.source, it.name, it.enabled, nodes) else it }
+
     fun canSave(next: List<SavedProfile>): Boolean = encoded(next) != null
 
     private fun numberAfter(next: List<SavedProfile>) =

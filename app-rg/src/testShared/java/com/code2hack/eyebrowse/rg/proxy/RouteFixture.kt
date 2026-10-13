@@ -23,6 +23,8 @@ internal class RouteFixture(keyStore: InputStream) : Closeable {
     val observations = CopyOnWriteArrayList<Pair<String, String>>()
     val proxyRequests = CopyOnWriteArrayList<Pair<String, String>>()
     val subscriptions = ConcurrentHashMap<String, Pair<Int, String>>()
+    val binaryResponses = ConcurrentHashMap<String, Pair<Int, ByteArray>>()
+    val responseDelay = ConcurrentHashMap<String, Long>()
     @Volatile var subscriptionAgent: String? = null
     @Volatile var slowHealthy = true
     @Volatile var fastHealthy = true
@@ -83,7 +85,14 @@ internal class RouteFixture(keyStore: InputStream) : Closeable {
         val path = request.substringBefore("\r\n").split(' ')[1]
         val peer = checkNotNull(socket.inetAddress.hostAddress)
         observations += path to peer
+        responseDelay[path.substringBefore('?')]?.let { Thread.sleep(it) }
+        binaryResponses[path.substringBefore('?')]?.let { (status, bytes) ->
+            socket.outputStream.write("HTTP/1.1 $status Fixture\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray())
+            socket.outputStream.write(bytes)
+            return
+        }
         subscriptions[path.substringBefore('?')]?.let { (status, body) ->
+            if (status == 0) return // Owned endpoint becomes unavailable without changing device networking.
             val agent = request.lineSequence().firstOrNull { it.startsWith("User-Agent:", true) }?.substringAfter(':')?.trim()
             val bytes = (if (subscriptionAgent != null && agent != subscriptionAgent) "cHJveGllczogW10=" else body).toByteArray(Charsets.UTF_8)
             socket.outputStream.write("HTTP/1.1 $status Fixture\r\nContent-Type: application/yaml\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray())
