@@ -29,7 +29,10 @@ The website scanner keeps preview/Open and does not import.
   fixed, credential-free text.
 - [SnakeYAML SafeConstructor](https://github.com/snakeyaml/snakeyaml/blob/master/src/main/java/org/yaml/snakeyaml/constructor/SafeConstructor.java)
   is pinned at 2.5, with duplicate keys rejected, collection aliases disabled
-  and bounded size/depth. Only a usable `proxies` list is extracted. Full
+  and bounded size/depth. A cumulative 2 MiB conservative UTF-8 JSON budget
+  counts scalar occurrences, nested data, escapes and framing before pool
+  copies/core configuration. Bounded scalar reuse remains supported.
+  Only a usable `proxies` list is extracted. Full
   profiles cannot supply routing, mode, DNS, listeners, controllers or scripts.
 - The importer supports the existing core's HTTP/SOCKS5, SS/SSR, VMess/VLESS,
   Trojan, Snell, Hysteria/Hysteria2, TUIC and AnyTLS node types with explicitly
@@ -49,7 +52,12 @@ The website scanner keeps preview/Open and does not import.
   data; a failed save rolls back the pool. Source/node credentials and parser
   exception text are excluded from ordinary UI/logs. A failed preference commit
   also restores the prior in-memory preference view, which Android changes
-  before reporting disk-write success or failure.
+  before reporting disk-write success or failure. The aggregate store remains
+  capped at 8 MiB. Save preflight bounds node data before serialization, then
+  validates the exact serialized candidate through a fresh store reader.
+  The import owner requires preflight before runtime replacement, and save
+  repeats it before writing. Accepted saves use the same restart schema and
+  representation budgets.
 - All ON sources enter #43's collision-safe union. OFF retains its saved cache;
   Delete removes just that source. The genuine core owns health/lowest-delay
   choice and all-unhealthy DIRECT fallback. These operations never reload a tab
@@ -142,7 +150,11 @@ claim that unsaved form memory survives process loss. Phone, unrestricted
 public proxy nodes, arbitrary subscription formats, and #45 scheduling are
 outside these checks.
 
-## Candidate verification
+## Reviewed round 1 verification
+
+These results belong to `bada97793f14413d9dca84126354655772b684c3`.
+Independent whole review requested the corrections below; all earlier positive
+and negative evidence retains its original source/APK attribution.
 
 RG: physical serial `1906092617103125`, model `RG-glasses`, Android 12/API32,
 WebView 95.0.4638.74, native portrait 480×640. Every mutation used the physically
@@ -260,3 +272,67 @@ Owner's deliberately successful real import, if any, is retained. Necessary
 scenario/core/camera/fixture teardown and current controlled-state restoration
 are immediate. Other file/state cleanup and exact workspace archival remain
 queued until version end. Independent review and acceptance remain pending.
+
+## Correction02: expanded data and reload compatibility
+
+The [round 1 review](https://github.com/code2hack/EyeBrowse/pull/50#pullrequestreview-5506778748)
+identified R44-01 scalar reuse bypassing collection alias limits, and R44-02
+escape-heavy cache JSON exceeding its cold-reload limit after a successful save.
+The original findings were static source/pinned-dependency observations.
+Together they conclude one T01 round: attempt2/failure1/lastConcluded1 now.
+T02/T03 retain attempt1/failure0/lastConcluded0. Manager owns further conclusions.
+
+Against the reviewed product, seven selected JVM cases genuinely ran with two
+regression failures in 20 s / 24 executed tasks. The bounded scalar probe is
+roughly 38 KiB on wire, reusing 32 KiB across 80 nodes (about 2.5 MiB conceptually
+expanded); it checks rejection before pool copying/core validation. Nested
+header reuse also exercises the cumulative budget. No exhaustion run or
+materialization of the review's roughly 2 GiB example was performed.
+The save-to-fresh-store regression covers bounded escaped data and 1,100 KiB
+of backslashes: successful saves must reload exactly; rejection preserves
+preceding source/name/OFF/cache/disk data. Direct-store preflight additionally
+proves non-reloadable candidates cannot write or replace last-good.
+
+Simplification keeps one budget in the existing data walker, reused before
+store serialization, and the existing fresh-reader path for compatibility
+validation. The conservative estimate covers Android/JVM JSON escaping and
+UTF-8. Existing raw input, node count, schema/depth, aggregate store and runtime
+limits remain bounded. No new dependency/provider/framework/cache schema/core
+selection policy was introduced. No blanket limit enlargement or OOM catch.
+
+Fresh correction evidence is in `issue-44/correction02-state-evidence`, logs in
+`correction02-state-scratch`. Original round 1 and intermediate red evidence
+remain separately retained.
+
+| Corrected-source evidence | Actual result |
+| --- | --- |
+| Host green01 | Assigned JVM/debug APK/test APK/lint gates succeeded in 1m12s with `--rerun-tasks`: all 78 tasks executed. All 90 JVM cases passed, zero failures/errors/skips. Genuine qualified Linux core test 17.509 s, using the short owned Unix-socket path. |
+| Native01 controlled | Combined OK3 / 38.247 s, invocation `ec3db153-a4df-482d-acb3-7ddb50398780`. Twenty production import/storage/route cases include both new limits with exact last-good cache and actual native/fresh-WebView routes retained. Existing geometry/strip/native input and exceptional restoration oracles remain. Three starting-key restorations true; 15 fresh native artifacts retained. |
+| Native01 real-cache cold read | Separate fresh-process OK1 / 0.354 s, invocation `6abb7098-1387-4714-8989-d245e3dc28e8`, PID16569. Original real profile/six enabled nodes reload with canonical identity/name/ON/cache equality; private cache/tabs unchanged. No Activity/core/fetch/import/refresh/rescan. |
+
+Corrected app APK SHA-256:
+`2fa64ace3031ff3cfb5f049e446c183424b2e33c8bc1bf1ecce08ead0bda00f2`
+(35,432,594 bytes). Corrected test APK SHA-256:
+`6a0d4a89f9b99ec12395f3db51c95627b1893f8d99817c376b0f86eedfc5443b`
+(1,709,379 bytes). Both ordinary `install -r` operations succeeded; installed
+hash/size readbacks match retained artifacts and 85 compiled module input pins.
+Earlier real optical/public-route and retained-toolbar results still belong
+to their earlier APKs; they were not replayed or relabeled. The corrected
+real-cache check is non-destructive; no new Owner QR presentation was needed.
+
+Lint retains eight warnings/zero errors and the Kotlin metadata analysis limit.
+Reexecuting tasks is not a clean-cache/rebuild claim. Original negatives,
+native07's undiagnosed rejection, optical timing limits, injected rather than
+physical disk-failure checks, Phone removal, #42 deferrals and #43 losses stay
+unchanged. Independent whole review and Manager acceptance remain pending.
+
+Window02 was explicitly returned at **2026-10-13T16:51:13.297504Z**: exact
+app/test UIDs10067/10068 had no process, active instrumentation, camera client
+or core control socket; RG was Awake/stay-on with display ON. No new host39030
+fixture was started; no listener remained and bounded bind without listening
+succeeded. The owned Linux binary had no active process. These are timestamped
+scoped observations. Controlled restoration preceded return; the successful
+Owner profile remains saved. Evidence: `resource-return-window02.json` and
+`native01/` bindings, install readbacks, named terminals and results. Further
+device/service access needs a new coordinated grant. Other file/state cleanup
+and exact workspace archival remain queued until version end.

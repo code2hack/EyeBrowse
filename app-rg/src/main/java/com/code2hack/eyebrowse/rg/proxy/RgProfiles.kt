@@ -83,6 +83,8 @@ internal class RgProfiles private constructor(context: Context) {
             try {
                 val previous = store.profiles
                 val candidate = next()
+                if (!store.canSave(candidate))
+                    error("Profile change could not be saved. Existing data kept.")
                 // Core operations already have bounds. Health work scales with pool size; a
                 // shorter outer wait could abandon an applied pool before saving its cache.
                 if (!runtime.replaceSources(candidate.map { it.asSource() }).get())

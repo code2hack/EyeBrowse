@@ -50,14 +50,30 @@ internal class ProfileStore(private val read: () -> String?, private val write: 
         return if (old == null) profiles + next else profiles.map { if (it.source == source) next else it }
     }
 
+    fun canSave(next: List<SavedProfile>): Boolean = encoded(next) != null
+
+    private fun numberAfter(next: List<SavedProfile>) =
+        if (next.any { candidate -> profiles.none { it.source == candidate.source } }) nextNumber + 1 else nextNumber
+
+    private fun encoded(next: List<SavedProfile>): String? {
+        if (!readable) return null // Never replace an unreadable store with an empty success.
+        return try {
+            next.forEach { ProfileImport.checkNodeData(it.nodes) }
+            val text = JSONObject().put("nextNumber", numberAfter(next)).put("profiles", JSONArray(next.map {
+                JSONObject().put("source", it.source).put("name", it.name).put("enabled", it.enabled)
+                    .put("nodes", JSONArray(it.nodes))
+            })).toString()
+            require(text.toByteArray().size <= 4 * ProfileImport.MAX_BYTES)
+            // Exercise the same representation/schema/budgets a fresh process will read.
+            require(ProfileStore({ text }) { false }.readable)
+            text
+        } catch (_: Exception) { null }
+    }
+
     fun save(next: List<SavedProfile>): Boolean {
-        if (!readable) return false // Never replace an unreadable existing store with an empty success.
-        val number = if (next.any { candidate -> profiles.none { it.source == candidate.source } }) nextNumber + 1 else nextNumber
-        val text = JSONObject().put("nextNumber", number).put("profiles", JSONArray(next.map {
-            JSONObject().put("source", it.source).put("name", it.name).put("enabled", it.enabled)
-                .put("nodes", JSONArray(it.nodes))
-        })).toString()
-        if (text.toByteArray().size > 4 * ProfileImport.MAX_BYTES || !write(text)) return false
+        val text = encoded(next) ?: return false
+        val number = numberAfter(next)
+        if (!write(text)) return false
         profiles = next; nextNumber = number
         return true
     }

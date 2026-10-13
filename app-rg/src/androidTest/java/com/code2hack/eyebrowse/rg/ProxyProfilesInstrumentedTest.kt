@@ -284,8 +284,13 @@ class ProxyProfilesInstrumentedTest {
                         cases.put(JSONObject().put("case", "same-source-update-preserves-identity-name-off").put("rows", profiles.profiles.size))
                         val preferences = context.getSharedPreferences("proxy-profiles", Context.MODE_PRIVATE)
                         val lastGood = preferences.getString("profiles", null)
+                        val scalarReuse = "shared: &secret '" + "x".repeat(32 * 1024) + "'\nproxies:\n" +
+                            "  - {type: http, server: proxy.test, port: 80, password: *secret}\n".repeat(80)
+                        val escapeHeavy = "proxies:\n  - {type: http, server: proxy.test, port: 80, password: '" +
+                            "\\".repeat(1100 * 1024) + "'}"
                         for ((label, bad) in listOf("http" to (503 to "owned dummy error"), "malformed" to (200 to "proxies: ["),
                             "provider-only" to (200 to "proxy-providers: {owned: {type: http}}"),
+                            "scalar-reuse-limit" to (200 to scalarReuse), "cache-escape-limit" to (200 to escapeHeavy),
                             "core-schema" to (200 to "proxies: [{type: ss, server: 127.0.0.1, port: 12345, cipher: invalid-owned-cipher, password: dummy}]"))) {
                             fixture.subscriptions["/source-two"] = bad
                             scan(scene, second)

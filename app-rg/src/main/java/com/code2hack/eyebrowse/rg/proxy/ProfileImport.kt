@@ -71,6 +71,8 @@ internal object ProfileImport {
         val root = parsed as? Map<*, *> ?: throw Rejected("UNSUPPORTED_ROOT")
         val nodes = root["proxies"] as? List<*> ?: throw Rejected("MISSING_PROXIES")
         if (nodes.size !in 1..2000) throw Rejected("NODE_COUNT")
+        val budget = NodeBudget()
+        var accepted = 0
         return nodes.mapNotNull { raw ->
             val node = raw as? Map<*, *> ?: throw Rejected("NODE_SHAPE")
             if (node["type"] !in types) return@mapNotNull null
@@ -93,21 +95,62 @@ internal object ProfileImport {
                 }
             }
             @Suppress("UNCHECKED_CAST")
-            val clean = try { jsonData(node) as Map<String, Any?> }
+            val clean = try {
+                if (accepted++ > 0) budget.take(1)
+                // Discard imported labels before counting/copying accepted data.
+                jsonData(node.filterKeys { it != "name" } + ("name" to "node"), budget) as Map<String, Any?>
+            }
+            catch (failure: Rejected) { throw failure }
             catch (_: Exception) { throw Rejected("NODE_DATA_TYPE_OR_DEPTH", protocol = protocol) }
-            clean + ("name" to "node") // Imported labels are unnecessary and may contain credentials.
+            clean
         }.also { if (it.isEmpty()) throw Rejected("NO_SUPPORTED_NODES") }
     }
 
-    private fun jsonData(value: Any?, depth: Int = 0): Any? {
+    /** Also protects callers saving maps directly, before constructing their serialized cache. */
+    fun checkNodeData(nodes: List<Map<String, Any?>>) {
+        val budget = NodeBudget()
+        nodes.forEachIndexed { index, node ->
+            if (index > 0) budget.take(1)
+            jsonData(node, budget)
+        }
+    }
+
+    private class NodeBudget {
+        private var remaining = MAX_BYTES - 14 // {"proxies":[]} framing.
+        fun take(bytes: Int) {
+            if (bytes > remaining) throw Rejected("NODE_DATA_LIMIT")
+            remaining -= bytes
+        }
+        fun string(value: String) {
+            take(2)
+            // Conservative UTF-8 JSON cost covers Android/JVM escaping without allocating JSON.
+            for (char in value) take(when {
+                char == '"' || char == '\\' || char == '/' -> 2
+                char < ' ' || char in '\u0080'..'\u009f' || char in '\u2000'..'\u20ff' -> 6
+                char.code < 0x80 -> 1
+                char.code < 0x800 -> 2
+                else -> 3
+            })
+        }
+    }
+
+    private fun jsonData(value: Any?, budget: NodeBudget, depth: Int = 0): Any? {
         require(depth <= 8)
         return when (value) {
-            null, is String, is Boolean -> value
-            is Number -> value.also { require(it.toDouble().isFinite()) }
-            is List<*> -> value.map { jsonData(it, depth + 1) }
-            is Map<*, *> -> value.entries.associate { (key, item) ->
-                require(key is String)
-                key to jsonData(item, depth + 1)
+            null -> null.also { budget.take(4) }
+            is String -> value.also { budget.string(it) }
+            is Boolean -> value.also { budget.take(if (it) 4 else 5) }
+            is Number -> value.also { require(it.toDouble().isFinite()); budget.take(it.toString().length) }
+            is List<*> -> {
+                budget.take(2 + (value.size - 1).coerceAtLeast(0))
+                value.map { jsonData(it, budget, depth + 1) }
+            }
+            is Map<*, *> -> {
+                budget.take(2 + value.size + (value.size - 1).coerceAtLeast(0))
+                value.entries.associate { (key, item) ->
+                    require(key is String); budget.string(key)
+                    key to jsonData(item, budget, depth + 1)
+                }
             }
             else -> error("Unsupported YAML value")
         }
