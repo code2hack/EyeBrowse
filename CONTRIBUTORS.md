@@ -555,6 +555,17 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "model": "gpt-6.1-sol / max; Fast default",
     "name": "Reviewer-#43",
     "status": "active"
+  },
+  {
+    "role": "Worker",
+    "scope": "v0.0.3; issue #44; isolated branch work/v0.0.3-issue-44; run-001 batch002",
+    "host": "spark",
+    "runtime": "codex",
+    "id": "01a1359a-86bd-73d3-8859-7da052ab9154",
+    "paseo": "e358548a-69c2-4ab6-9beb-e66a51d42bf7",
+    "model": "gpt-6.1-sol / max; Fast default",
+    "name": "Worker-#44",
+    "status": "active"
   }
 ]
 ```
