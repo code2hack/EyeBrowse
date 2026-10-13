@@ -17,6 +17,7 @@ import org.junit.Test
 import org.junit.runner.JUnitCore
 import org.junit.runner.Request
 import org.junit.runner.RunWith
+import java.io.Closeable
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -43,15 +44,20 @@ class VersionIntegrationInstrumentedTest {
         val observations = JSONArray()
         for (method in methods) {
             val result = JUnitCore().run(Request.method(type, method))
-            observations.put(JSONObject().put("class", type.name).put("method", method).put("runs", result.runCount)
-                .put("failures", result.failureCount).put("ignored", result.ignoreCount).put("timeMs", result.runTime))
-            File(context.filesDir, "issue46-$name-methods.json").writeText(observations.toString(2))
-            assertEquals("Exactly the declared existing check executed", 1, result.runCount)
-            assertEquals(0, result.ignoreCount)
-            if (!result.wasSuccessful()) {
-                val failure = result.failures.first().exception
-                result.failures.drop(1).forEach { failure.addSuppressed(it.exception) }
-                throw failure
+            Closeable {
+                observations.put(JSONObject().put("class", type.name).put("method", method).put("runs", result.runCount)
+                    .put("failures", result.failureCount).put("ignored", result.ignoreCount).put("timeMs", result.runTime))
+                File(context.filesDir, "issue46-$name-methods.json").writeText(observations.toString(2))
+                if (name == "refresh") File(context.filesDir, "issue45-refresh-results.json")
+                    .copyTo(File(context.filesDir, "issue46-refresh-$method-results.json"), overwrite = true)
+            }.use {
+                assertEquals("Exactly the declared existing check executed", 1, result.runCount)
+                assertEquals(0, result.ignoreCount)
+                if (!result.wasSuccessful()) {
+                    val failure = result.failures.first().exception
+                    result.failures.drop(1).forEach { failure.addSuppressed(it.exception) }
+                    throw failure
+                }
             }
         }
     }
@@ -108,6 +114,8 @@ class VersionIntegrationInstrumentedTest {
                 .put("corePort", runtime.proxyPort ?: JSONObject.NULL).put("webViewPort", runtime.webViewPort ?: JSONObject.NULL))
             File(context.filesDir, "issue46-resources.json").writeText(JSONObject().put("samples", samples)
                 .put("method", "Instrumented app PSS/CPU; controlled page and foreground idle, then background; no battery endurance claim")
+                .put("savedProfileCount", RgProfiles.get(context).profiles.size)
+                .put("enabledNodeCount", RgProfiles.get(context).profiles.filter { it.enabled }.sumOf { it.nodes.size })
                 .put("coreBytes", File(context.applicationInfo.nativeLibraryDir, "libmihomo.so").length()).toString(2))
         }
         val start = SystemClock.elapsedRealtime()
@@ -116,7 +124,16 @@ class VersionIntegrationInstrumentedTest {
             while (runtime.webViewPort == null && SystemClock.elapsedRealtime() < end) SystemClock.sleep(20)
             assertNotNull(runtime.webViewPort)
             samples.put(JSONObject().put("startupToProviderReadyMs", SystemClock.elapsedRealtime() - start))
-            scene.onActivity { it.tabs.current.session.open("http://100.92.81.33:39030/local-keyboard.html") }
+            val page = "http://100.92.81.33:39030/local-keyboard.html"
+            scene.onActivity { assertTrue(it.tabs.current.session.open(page).accepted()) }
+            val pageDeadline = SystemClock.elapsedRealtime() + 15_000
+            var pageReady = false
+            while (!pageReady && SystemClock.elapsedRealtime() < pageDeadline) {
+                scene.onActivity { pageReady = it.tabs.current.session.state.phase == LocalBrowserSession.Phase.READY &&
+                    it.tabs.current.session.state.url == page }
+                SystemClock.sleep(20)
+            }
+            assertTrue("Owned workload page committed", pageReady)
             sample("active-start")
             repeat(30) {
                 scene.onActivity { activity ->
@@ -131,8 +148,10 @@ class VersionIntegrationInstrumentedTest {
             sample("foreground-idle-end")
             scene.moveToState(Lifecycle.State.CREATED)
             val stop = SystemClock.elapsedRealtime() + 15_000
-            while (runtime.proxyPort != null && SystemClock.elapsedRealtime() < stop) SystemClock.sleep(20)
-            assertNull(runtime.proxyPort); assertNull(runtime.webViewPort)
+            while ((runtime.proxyPort != null || runtime.webViewPort != null) &&
+                SystemClock.elapsedRealtime() < stop) SystemClock.sleep(20)
+            assertNull("Background core port released", runtime.proxyPort)
+            assertNull("Background provider callback completed", runtime.webViewPort)
             SystemClock.sleep(10_000)
             sample("background-idle-end")
         }
