@@ -8,8 +8,8 @@ Operational procedures for EyeBrowse. `AGENTS.md` is the authority for roles, ap
 - Paseo project: **EyeBrowse**. Manager checkout: `/home/code2hack/Projects/EyeBrowse`.
 - Every local agent is owned and lifecycle-managed by Paseo. A native provider session is not an independent local controller.
 - Local Workers, Experts and helpers use their exact assigned isolated worktree cwds within that Paseo project. A common project does not mean a shared `main` cwd. Keep each mission's branch, source checkout and unique scratch directory explicit.
-- Runtime root: `/home/code2hack/.local/state/eyebrowse`.
-- Per-version settings: `<runtime-root>/<version>/runtime.json`.
+- Live registry/settings: Git-ignored `/home/code2hack/Projects/EyeBrowse/runtime.json`; read `agents` and `settings` from this exact file. There is no separate live `CONTRIBUTORS.md` or expected-agent manifest.
+- Private runtime/evidence root: `/home/code2hack/.local/state/eyebrowse`. Existing per-version runtime snapshots are historical references, not independently maintained live settings.
 - Per-run record: `<runtime-root>/<version>/runs/<run-id>/run.json`; ticket evidence and assignments remain under that run.
 - Private credentials belong in an owner-only secret store, not repository files or runtime/evidence records. Runtime may contain a private reference consumed internally by a trusted helper. Do not read the referenced secret into model context.
 
@@ -22,10 +22,10 @@ Refresh remote refs and identify the actual baseline before planning, dispatch o
 | Governance and canonical agent-message semantics | `AGENTS.md`; agents and operational procedures follow its current revision |
 | Verified operational recipes | This file and the installed skills/scripts; agents load the relevant skill before use |
 | Provider catalog and executable model settings | Provider-specific catalogs and approved runtime configuration; verify the effective settings through Paseo for each local agent |
-| Participant identity/lifecycle | `CONTRIBUTORS.md` under `AGENTS.md` §15.1; retain native session identity and resolve the actual registration before routing |
+| Participant identity, declared status and current project settings | Root local `runtime.json` under `AGENTS.md` §15.1; mission reporting tools and `manager-watchdog` read this file, not Git history |
 | Local process, project/workspace and archive state | Paseo daemon and its registry; inspect the actual agent rather than inferring state from its title |
 | Native provider session/history | Provider-native session/history; Paseo owns the local process/controller |
-| Paseo transport binding | Existing runtime records map the native tuple to the verified Paseo host/server, agent ID, project/workspace, cwd and model/effort; Manager procedures resolve the binding before operations |
+| Paseo transport binding | `runtime.json.agents` maps the native tuple to verified agent ID, workspace, cwd and model/effort/mode; current mission records qualify the host/server and assigned authority before operations |
 | Run approvals, resources, canonical todo metadata and pending requests | Existing run/mission/runtime records; **Manager procedures consume these explicitly** |
 | Message dispatch evidence | Paseo intent/receipt for local-agent messages; exact ChatGPT conversation URL, submitted-turn identity and verified reply for browser messages |
 | Local todo checklist | Installed `todo` extension's tool-result details in the selected native Pi session branch; its `session_start`/`session_tree` handlers reconstruct the checklist |
@@ -33,9 +33,11 @@ Refresh remote refs and identify the actual baseline before planning, dispatch o
 | Device-screen policy and credential reference | Runtime `screenAccessPolicy`, read by the configured `pi-phone-use` helper |
 | Feishu connection/configuration/routes/outbox | pi-feishu-link's own files, consumed by its daemon; not the project's run records or contributor registry |
 
-General project runtime JSON is **not automatically loaded or executed by any local runtime**. Naming a field does not implement dispatch, deduplication, approval admission or migration. Record the actual procedure/adapter that reads and writes each field. Keep configuration, declared intent, executed results and unqualified capability distinct.
+Root `runtime.json` has schema version, revision/timestamp, project, settings, current-run reference and agents. Each agent has the identity fields in `AGENTS.md` §15.1; local entries include workspace/cwd/profile and assignment reference. `status` is the expected `running`, `idle` or `waiting` state; no lifecycle field is stored. Actual Paseo/CDP status is observed separately and MUST NOT overwrite the expectation. Store verified model ID, effort and configured service tier separately. Retain historical identities and retirement/cleanup outcomes in run/history records after removing archived participants from the live file.
 
-The Manager is the coordinated writer for shared dispatch, ownership, failure-history and pending-request decisions. Workers, Experts and helpers report changes through the canonical communication path rather than concurrently overwriting those decisions. For a record update, verify the expected prior revision, write a same-filesystem temporary file, validate it, and atomically replace the destination; preserve the preceding evidence/history. Re-read and reconcile after interruption before making another decision. This is a record-update procedure, not a new distributed todo engine or a guarantee about untested adapters.
+Project runtime JSON is **not automatically loaded or executed by the native model runtime**. The qualified reporting adapter explicitly parses `runtime.json.agents`, checks registered sender/recipient plus the current mission and actual SDK bindings/gates, and uses the existing stable-ID explicit-steer route. `manager-watchdog` explicitly reads each configured runtime file. Other procedures must identify the field they consume; naming a field does not implement dispatch, approval admission or migration. Keep declared intent, observed state and executed results distinct.
+
+The Manager is the coordinated writer for shared dispatch, ownership, failure-history and pending-request decisions. Planner and Manager coordinate live registry edits; Workers, Experts and helpers report changes instead of overwriting shared decisions. Serialize edits, verify the expected prior revision, write and validate a same-filesystem temporary file, then atomically replace the destination with its incremented revision. Keep the live file owner-readable and preserve required prior evidence/history. Re-read and reconcile after interruption before another decision. This procedure is not a distributed todo engine or a guarantee about untested adapters.
 
 ## Runtime and capability preflight
 
@@ -161,8 +163,8 @@ await client.sendAgentMessage(recipient.paseoAgentId, canonicalEnvelope, {
 
 For each logical send:
 
-1. Resolve the current registered role/native tuple and its exact Paseo host/server/agent binding, assignment and candidate. Inspect actual provider/native persistence identity and project/workspace/cwd. Stop on disagreement; names, prefixes or labels are not substitutes.
-2. Check canonical lifecycle/assignment and actual Paseo archive/permission state. Do not send to retiring, retired, archived or otherwise ineligible actors as a way to wake them. Explicit reactivation is a separate assignment. Serialize send/retirement changes and reconcile manual changes. Defer routine delivery across pending Owner permission/authentication UI rather than clearing or denying it incidentally.
+1. Read the mission's exact `runtime.json` path and resolve the registered role/native tuple, Paseo binding, current assignment and candidate. Inspect actual provider/native persistence identity and project/workspace/cwd/profile. Stop on disagreement; names, prefixes or expected statuses are not substitutes.
+2. Check current mission eligibility and actual Paseo archive/permission state. An absent registration blocks routine routing; `idle`/`waiting` membership does not authorize new work. Do not send to retiring, retired, archived or otherwise ineligible actors as a way to wake them. Explicit reactivation is a separate assignment. Serialize send/retirement changes and reconcile manual changes. Defer routine delivery across pending Owner permission/authentication UI rather than clearing or denying it incidentally.
 3. Persist the canonical Request-ID, recipient, exact message body and stable transport `messageId` before submission. Keep that same ID/body if reconciling the same logical send. Record API acceptance separately from a recipient acknowledgment, final report and acceptance.
 4. Use explicit steering only on the qualified Paseo path. It enters at a supported boundary, not necessarily after the entire task settles. Non-steerable/slash-command inputs can fall back to interruption; ordinary peer messages are envelopes, not slash commands. If safe busy delivery is not established, defer it to a verified settled state/event. Cancellation/replacement is an explicit separate operation, not the default for a routine report.
 5. On rejection, connection loss or unknown outcome, inspect the correlated receipt/history before another action. The SDK request journal can deduplicate an identical completed send, reject a conflicting body, or report an unknown crash-window outcome. Unknown is not permission to mint a new ID or replay the request.
@@ -198,17 +200,42 @@ The Manager coordinates product findings; Worker/Expert owns diagnosis and corre
 
 Verify the Expert's exact pushed candidate, todo-specific evidence, required local-helper result and continuation notes. Resolve required review findings under `AGENTS.md` §13. Reconcile workspace state without discarding uncommitted work, relinquish Expert write ownership, and explicitly return the later todos to the recorded Worker. Confirm receipt before resuming it. Complete necessary teardown/resource handoff immediately and queue ended assignments' file/state cleanup and workspace archival for version end under §9.4. A ticket Worker returning from helper duty is not retired. This handback is not ticket closure or an extra whole-ticket review ceremony.
 
-### Manager heartbeat and wake protocol (qualified 2026-09-28, Owner directive)
+### Manager watchdog and wake protocol
 
-The Manager wake mechanism is the executable script `~/bin/eyebrowse-manager-heartbeat.sh` with classifier `~/bin/heartbeat-classify.py`, scheduled by the user systemd timer `eyebrowse-manager-heartbeat.timer` at a **10-minute default interval**. The script is the single executable source of truth; this section records the qualified policy, not a duplicate rule.
+The generic executable `~/bin/manager-watchdog` loads `~/.local/lib/manager-watchdog/main.mjs`. Its user systemd units are `manager-watchdog.timer` and `manager-watchdog.service`. `~/.config/manager-watchdog/config.json` holds the interval and independent Manager targets:
 
-- The heartbeat wakes the Manager session **when and only when** the Manager is not running (its own Paseo status is the busy signal); a running Manager defers the tick.
-- Every wake payload carries the **full genuine-status table** — all non-archived Paseo agents with turn-status plus all registered ChatGPT conversations' live turn-states via the read-only CDP probe — and the anomalies: manifest entries with `expected=running` whose genuine status is not running, including missing-from-roster and probe-failure/UNKNOWN cases.
-- `~/.local/state/eyebrowse/expected-agents.json` is the Manager-maintained manifest of agents supposed to be running. The Manager updates it on every dispatch, assignment, state change and post-wake adjudication; an entry returns to `expected=idle` only by Manager adjudication.
-- On wake the Manager **adjudicates each anomaly**: (a) finished its job — harvest the delivered report, update the manifest, proceed; or (b) incorrectly stopped — diagnose, restart/reassign per `AGENTS.md` §14/§15.1, and report genuine Owner gates per §7. Finished and incorrectly stopped are never conflated.
-- Every sent wake payload is archived under `~/.local/state/eyebrowse/heartbeat-wakes/`; quiet ticks log one journal line.
+```json
+{
+  "intervalSeconds": 600,
+  "managers": [
+    {
+      "paseoId": "replace-with-verified-manager-id",
+      "runtimeFile": "/absolute/project/runtime.json"
+    }
+  ]
+}
+```
 
-Any change to the script, classifier, timer interval, manifest schema, or ChatGPT probe requires re-qualification before reliance (labeled setup cases; no product-state fabrication).
+Replace the example ID/path with the actual verified binding. To monitor another project, add its Manager Paseo ID and exact runtime-file path to `managers`. Each file must follow the registry schema and identify exactly that Manager and project. Absolute paths and `~/` expansion are supported; relative paths and duplicate targets/files are rejected. Only participants registered in that runtime file enter that Manager's report. A failed runtime/probe for one project is recorded without preventing checks of other configured projects.
+
+The config interval is the scheduling source. After changing it or installing the watchdog, render and reload the units:
+
+```sh
+manager-watchdog --write-units
+systemctl --user daemon-reload
+systemctl --user enable --now manager-watchdog.timer
+systemctl --user restart manager-watchdog.timer
+```
+
+`manager-watchdog --check` performs read-only qualification and never sends. `systemctl --user start manager-watchdog.service` performs one ordinary guarded tick; inspect `journalctl --user -u manager-watchdog.service` and `systemctl --user list-timers manager-watchdog.timer`. A `flock` lease serializes live ticks, including manual invocations.
+
+- Read the exact runtime file, validate project/Manager and participant uniqueness, then observe registered local agents through the installed Paseo SDK. Verify native identity, project/workspace/cwd/profile and archive state. For registered ChatGPT conversations, use the read-only existing-tab CDP probe; never open/navigate a conversation or infer running from a failed probe.
+- Compare declared expectations with observations. Notify only for non-Manager participants with `status: running` whose observed state is stopped, missing, mismatched or unknown. Expected-idle/waiting entries are excluded. Probe failures remain explicit unknowns. Do not rewrite expected statuses, restart/reassign agents or change attempts.
+- Send only to the configured, verified idle Manager without pending permission/error or archive state and without an explicit `waiting` expectation. A busy Manager defers. Re-read runtime and recheck target bindings/gates immediately before submission; no tick cancels work, clears a prompt or unarchives an actor.
+- Every wake carries that project's full registered expected/observed table and anomalies. Persist one unique event/message ID and exact body before the existing explicit-steer SDK send. Store records under `~/.local/state/manager-watchdog/wakes/<manager-paseo-id>/`. API acceptance is distinct from recipient receipt. A prepared/unknown outcome blocks automatic replay until the correlated journal/history is reconciled; elapsed time is not a resend allowance.
+- The Manager adjudicates each anomaly: harvest an existing completion report, or diagnose an unexpected stop within current authority. Update the declared expectation only after adjudication and retain the report/decision. Existing Owner holds, assignments, source ownership and acceptance gates remain in force.
+
+Migration retires the old `eyebrowse-manager-heartbeat` units/scripts and separate `expected-agents.json` after preserving their history and verifying no old shot is active. There is one live registry and one watchdog schedule. Re-qualify affected routing, guards and probes after changes using labeled setup cases; do not fabricate product registrations or mutate active product agents for a smoke test. Passing setup mocks does not prove every real delivery/archive race.
 
 ### Restart, migration and retirement
 
@@ -216,18 +243,18 @@ Keep exactly one live local process/controller per native session and one active
 
 Before Manager restart/handoff/archive, reconcile active child assignments and remote conversations. Browser-harness shutdown can close its owned tabs; preserve exact ChatGPT URLs and in-flight request state, and use an authorized, qualified ownership handoff or settled/recoverable continuation before closing them. Reopen the same conversation when needed, not a replacement conversation. Never acquire unrelated tabs, profiles or credentials by bypassing ownership checks. A prior one-off browser preservation exercise is not a universal restart guarantee.
 
-When a mission ends, record its result and necessary teardown/resource handoff immediately. Keep completed participants idle, block routine new work routing, and record their deferred cleanup assignment in the existing run records. Retain their workspaces and registry lifecycle until verified version-end retirement. Accepted issues may close and later batches may proceed under `AGENTS.md` §§6.3 and 13.2 while cleanup remains queued.
+When a mission ends, record its result and necessary teardown/resource handoff immediately. Keep completed participants as `idle` in `runtime.json`, block routine new work routing, and record deferred cleanup in the run. Retain workspaces and live registrations until verified version-end archival. Accepted issues may close and later batches may proceed under `AGENTS.md` §§6.3 and 13.2 while cleanup remains queued.
 
 Version-end cleanup starts when all planned implementation and version acceptance checks are complete, as recorded by the Manager under `AGENTS.md` §9.4. Release/tag publication is not required. Until then, defer temporary-file removal, separate post-mission app/device-state cleanup, and workspace archival. Preserve required source/evidence and carry the cleanup queue through Manager handoff; do not launch a separate post-merge cleanup mission for each ticket.
 
 At version end, complete these coordinated steps:
 
-1. Reconcile the deferred cleanup queue and explicitly assign any remaining cleanup to the original participant or a scoped replacement. Preserve required source/evidence, perform only authorized cleanup, and record verified outcomes or unresolved losses. Safely settle or hand off remaining operations; block new dispatch and mark retiring before archival.
+1. Reconcile the deferred cleanup queue and explicitly assign remaining cleanup to the original participant or a scoped replacement. Preserve required source/evidence, perform authorized cleanup, and record verified outcomes or unresolved losses. Safely settle or hand off operations; block new dispatch and record retiring in the run/mission before archival, with registry expectation `idle`.
 2. Preserve recoverable final source through the pushed candidate or another retained copy; retain required uncommitted work and evidence outside the workspace's removable worktree. Verify cleanup and resource-handoff records. Where further device work is necessary, reserve the device and verify its current Owner-directed end state; earlier return records are timestamped evidence, not current observations. An idle UI does not prove that owned background/device operations ended.
 3. Resolve the exact Paseo workspace ID, project, CWD and contained agents/terminals/services. Check parent/child relationships and other active use of the backing worktree. Hand off still-assigned participants and operations before archival; otherwise keep workspace archival pending. For a Manager handoff, verify the successor's receipt/bindings and continued assignments first. Keep one active coordinator.
 4. Archive the **exact Paseo workspace** through the supported workspace-archive operation (`archiveWorkspace(workspaceId)` in the installed SDK). This archives its agents, closes its terminals and can remove its unreferenced Paseo-managed Git worktree. Required files must already be retained elsewhere; the operation is not a backup. Archiving only the agent does not complete workspace retirement.
 5. Verify that the workspace and its agents are archived, the workspace is absent from the active workspace list, and its owned runtimes/terminals/services have ended. Record the actual worktree-removal outcome; unexpected retained files or failed teardown leave cleanup pending. Check that handed-off assignments remain active.
-6. Complete contributor retirement and closeout records while retaining native identity, workspace/transport/history references and required artifacts. An archive failure leaves retirement/cleanup unresolved. A paused/HOLD actor is not automatically retired.
+6. Remove the verified retired/archived participants from `runtime.json.agents`, increment its revision, and complete closeout records retaining native identity, workspace/transport/history references and required artifacts. An archive failure leaves the live entries and closeout unresolved. A waiting/HOLD actor is not automatically retired.
 
 Apply the same version-end timing and procedure to completed mission workspaces left active after earlier agent-only archival, without relaunching the retired agents. Archival is not acceptance, a counter reset or a source handback; removal authority is limited to Section 15.1's completed mission worktree. Do not send a routine message to an archived actor: reactivation requires its own explicit authority/assignment. Preserve conversation history and unrelated data. Legacy unmanaged instances require an explicit safe migration/retirement disposition, not continued project work in tmux. An empty agent list alone does not establish that a workspace or worktree is unused.
 

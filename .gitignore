@@ -31,3 +31,6 @@ Thumbs.db
 # Python test tooling
 __pycache__/
 *.pyc
+
+# Local live agent registry and runtime settings
+/runtime.json
