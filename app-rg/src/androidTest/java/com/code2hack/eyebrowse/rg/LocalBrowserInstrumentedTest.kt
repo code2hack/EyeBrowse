@@ -108,15 +108,34 @@ class LocalBrowserInstrumentedTest {
     private fun open(scene: ActivityScenario<LocalBrowserActivity>, route: String) {
         address(scene, fixtureBase + "/" + route); key(scene, RgKeyboardKeys.Key.Command.ENTER)
     }
-    private fun ready(scene: ActivityScenario<LocalBrowserActivity>, bound: Long = 10_000) =
-        await("current live page presented", bound) {
+    private fun ready(scene: ActivityScenario<LocalBrowserActivity>, bound: Long = 10_000) {
+        try { await("current live page presented", bound) {
             var result = false
             scene.onActivity {
                 result = it.tabs.current.session.state.phase == LocalBrowserSession.Phase.READY &&
                     it.tabs.current.session.page?.isShown == true && !it.keyboard.isShown
             }
             result
+        } } catch (failure: Throwable) {
+            try {
+                val state = JSONObject().put("method", testName.methodName)
+                scene.onActivity {
+                    val session = it.tabs.current.session
+                    val proxy = com.code2hack.eyebrowse.rg.proxy.RgProxyRuntime.get(it)
+                    val route = session.state.url.takeIf { url -> url.startsWith("$fixtureBase/") }
+                        ?.substringAfterLast('/')?.takeIf { name -> name in listOf("author-light.html", "keyboard.html", "history.html", "local-keyboard.html", "loading.html") }
+                    state.put("phase", session.state.phase.name).put("ownedRoute", route ?: "OTHER_OR_ABSENT")
+                        .put("pageShown", session.page?.isShown).put("keyboardShown", it.keyboard.isShown)
+                        .put("windowFocused", it.hasWindowFocus()).put("draftLength", it.address.text.length)
+                        .put("errorPresent", session.state.error != null).put("coreStatus", proxy.status)
+                        .put("corePort", proxy.proxyPort ?: JSONObject.NULL).put("webViewPort", proxy.webViewPort ?: JSONObject.NULL)
+                }
+                File(InstrumentationRegistry.getInstrumentation().targetContext.filesDir,
+                    "local-browser-ready-failure.json").writeText(state.toString(2))
+            } catch (diagnostic: Throwable) { failure.addSuppressed(diagnostic) }
+            throw failure
         }
+    }
     private fun elementPoint(scene: ActivityScenario<LocalBrowserActivity>, selector: String): InputPoint {
         await("current page layout settled before native geometry observation") {
             var settled = false
