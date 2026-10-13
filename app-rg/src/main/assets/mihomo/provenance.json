@@ -1,0 +1,66 @@
+{
+  "core": {
+    "project": "MetaCubeX/mihomo",
+    "version": "v1.19.32",
+    "commit": "88dcbf7f1614a67c3b36b848ee3592dfa92ada36",
+    "abi": "arm64-v8a",
+    "integration": "Unmodified official Android CLI, installer-extracted executable and private filesystem Unix REST socket; no JNI/custom native bridge",
+    "asset": "mihomo-android-arm64-v8-v1.19.32.gz",
+    "assetSha256": "42b1f2be8702484d3ae6238daab392622f54bd0d264966700f1f28f52596e326",
+    "binarySha256": "bb9afbd48717f92d59e07da35fb694b83d40d6edb63eb9033c2ee4174137d195",
+    "release": "https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.32",
+    "source": "https://github.com/MetaCubeX/mihomo/tree/88dcbf7f1614a67c3b36b848ee3592dfa92ada36",
+    "build": "upstream .github/workflows/build.yml at pinned source, CGO_ENABLED=1, GOOS=android, GOARCH=arm64, NDK r29-beta1, aarch64-linux-android34-clang, with_gvisor",
+    "license": "GNU GPL version 3; full upstream LICENSE included",
+    "buildInfo": {
+      "goVersion": "go1.26.8",
+      "tags": "with_gvisor",
+      "vcsRevision": "88dcbf7f1614a67c3b36b848ee3592dfa92ada36",
+      "vcsModified": true,
+      "note": "Official workflow updates embedded CA file before compiling; no local binary modifications."
+    },
+    "correspondingSource": "https://github.com/MetaCubeX/mihomo/archive/88dcbf7f1614a67c3b36b848ee3592dfa92ada36.tar.gz",
+    "buildWorkflow": "https://github.com/MetaCubeX/mihomo/blob/88dcbf7f1614a67c3b36b848ee3592dfa92ada36/.github/workflows/build.yml",
+    "toolchainSourceObserved": {
+      "version": "go1.26.8",
+      "tagCommit": "c293dd49cbe25e1fe8d97d94a5cb618e7b6d831e",
+      "source": "https://github.com/MetaCubeX/go/tree/c293dd49cbe25e1fe8d97d94a5cb618e7b6d831e",
+      "note": "Tag resolved during qualification; binary does not embed a separate compiler source-tree commit."
+    },
+    "linkedModules": {
+      "count": 122,
+      "manifest": "linked-modules.json",
+      "notices": "licenses/Mihomo-linked-modules.txt",
+      "verification": "Each source archive content hash verified against h1 sum embedded in official Android binary; module replacements resolved."
+    }
+  },
+  "data": {
+    "project": "MetaCubeX/meta-rules-dat",
+    "commit": "bf52d18cf9f047308cf3b1844e5e9211989d2e03",
+    "date": "2026-10-13T03:09:24Z",
+    "releaseMessage": "Released on 2026-10-13 11:05",
+    "license": "MetaCubeX/meta-rules-dat GPL3; ChinaMax domain source GPL2; Loyalsoldier/geoip CC-BY-SA-4.0. Included unchanged compiled data; original license texts included. Lists are classifications, not universal geography guarantees. CN IPv4/IPv6 input credited by Loyalsoldier to gaoyifan/china-operator-ip (MIT); original MIT notice included.",
+    "generator": "https://github.com/MetaCubeX/meta-rules-dat/blob/4178770badecb1b349fbcd62c737e0d7a2079729/.github/workflows/run.yml",
+    "inputs": [
+      "https://github.com/blackmatrix7/ios_rule_script/tree/master/rule/Clash/ChinaMax",
+      "https://github.com/Loyalsoldier/geoip",
+      "https://github.com/gaoyifan/china-operator-ip"
+    ],
+    "files": [
+      {
+        "file": "cn-domain.mrs",
+        "upstreamPath": "geo/geosite/cn.mrs",
+        "sha256": "e92bda4f0b9f05623663a882331a320ab4e266cada2046d3828a94572cdded46",
+        "bytes": 540748,
+        "source": "https://github.com/MetaCubeX/meta-rules-dat/blob/bf52d18cf9f047308cf3b1844e5e9211989d2e03/geo/geosite/cn.mrs"
+      },
+      {
+        "file": "cn-ip.mrs",
+        "upstreamPath": "geo/geoip/cn.mrs",
+        "sha256": "d95b3d125f6c74ce3c15e19ef794f142de91e21c3b8fb7767e76aebfabff5149",
+        "bytes": 37538,
+        "source": "https://github.com/MetaCubeX/meta-rules-dat/blob/bf52d18cf9f047308cf3b1844e5e9211989d2e03/geo/geoip/cn.mrs"
+      }
+    ]
+  }
+}
