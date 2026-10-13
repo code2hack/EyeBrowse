@@ -181,7 +181,7 @@ class ProxyRefreshInstrumentedTest {
                     }
                     var matched: JSONObject? = null
                     await("Live regional connection observed") {
-                        val connections = api.request("GET", "/connections").getJSONArray("connections")
+                        val connections = api.request("GET", "/connections").optJSONArray("connections") ?: JSONArray()
                         matched = (0 until connections.length()).map { connections.getJSONObject(it) }
                             .firstOrNull { it.getJSONObject("metadata").optString("host") == "regional-refresh.test" }
                         matched != null
