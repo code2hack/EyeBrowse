@@ -58,7 +58,8 @@ class ProxyRefreshInstrumentedTest {
         var pids = emptyList<String>(); var sockets = 0; var listeners = 0
         await("Owned core/socket/listener counts: $phase") {
             pids = shell("ps -A -n -w -o UID,PID,ARGS").lineSequence().map { it.trim().split(Regex("\\s+"), limit = 3) }
-                .filter { it.size == 3 && it[0] == android.os.Process.myUid().toString() && it[2].startsWith("$binary ") }
+                .filter { it.size == 3 && it[0] == android.os.Process.myUid().toString() &&
+                    runCatching { File("/proc/${it[1]}/exe").canonicalPath == binary }.getOrDefault(false) }
                 .map { it[1] }.toList()
             sockets = shell("cat /proc/net/unix").lineSequence().count { it.endsWith("/files/mihomo/control.sock") }
             listeners = shell("ss -ltn").lineSequence().map { it.trim().split(Regex("\\s+")) }
