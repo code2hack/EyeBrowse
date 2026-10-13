@@ -57,12 +57,14 @@ class ProxyRefreshInstrumentedTest {
         val binary = File(context.applicationInfo.nativeLibraryDir, "libmihomo.so").absolutePath
         var pids = emptyList<String>(); var sockets = 0; var listeners = 0
         await("Owned core/socket/listener counts: $phase") {
-            pids = shell("ps -A -n -o UID,PID,ARGS").lineSequence().map { it.trim().split(Regex("\\s+"), limit = 3) }
+            pids = shell("ps -A -n -w -o UID,PID,ARGS").lineSequence().map { it.trim().split(Regex("\\s+"), limit = 3) }
                 .filter { it.size == 3 && it[0] == android.os.Process.myUid().toString() && it[2].startsWith("$binary ") }
                 .map { it[1] }.toList()
             sockets = shell("cat /proc/net/unix").lineSequence().count { it.endsWith("/files/mihomo/control.sock") }
             listeners = shell("ss -ltn").lineSequence().map { it.trim().split(Regex("\\s+")) }
                 .count { it.size >= 4 && it[0] == "LISTEN" && it[3].substringAfterLast(':') == port.toString() }
+            report.put("lastRuntimeCountObservation", JSONObject().put("phase", phase).put("coreCount", pids.size)
+                .put("controlSockets", sockets).put("mixedListeners", listeners))
             val expected = if (active) 1 else 0
             pids.size == expected && sockets == expected && listeners == expected
         }
