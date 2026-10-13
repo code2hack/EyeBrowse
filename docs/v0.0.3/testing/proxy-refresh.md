@@ -109,3 +109,43 @@ Execution results, source/APK/install/provider/core/data bindings and original
 limitations are retained in the assigned mission evidence and candidate handoff.
 Phone is REMOVED_FROM_SCOPE_NOT_PASSED; #42 optical repeats remain
 DEFERRED_BY_OWNER_NOT_PASSED; historical #43 losses are not reconstructed.
+
+## Execution record
+
+Worker: Worker-#45 used the reserved RG (physical serial `1906092617103125`, model
+`RG-glasses`, Android 12/API 32, native 480×640) and owned controlled endpoints.
+The installed app was updated with `install -r`; subsequent observer corrections
+replaced only its test APK. Package data was preserved throughout.
+
+| Retained run | Actual outcome |
+| --- | --- |
+| `host01` | One genuine Linux test failed because the generated Unix-socket path exceeded the platform limit; the three new policy/MRS tests passed. |
+| `host02` | All 93 JVM tests passed with the short owned temp path; Android test compilation exposed an incorrect test API name. |
+| `host03`, `host04` | All 93 JVM tests passed, zero skips; genuine Linux routing/MRS checks, debug app/test compilation and lint task completed. |
+| `host05`–`host10` | Affected Android test compilation and lint task completed after test-only corrections; production APK bytes stayed unchanged. |
+| `native01`, `native03` | Fresh-process private Owner-cache checks passed, one source/six enabled nodes, unchanged cache/tabs hashes, no core or subscription request. |
+| `native02` | Nine completed destination/failure cases, then the observer rejected a legitimate `connections: null` snapshot before its request appeared. Full test failed; restoration passed. |
+| `native04` | Initial fixture-control connection hit its three-second test bound. Full test failed; restoration passed. Subsequent RG HTTP 200/tailnet ping qualified recovery without restarting ADB/network services. |
+| `native05` | Reached genuine regional matching; failed on the observer's `IP-CIDR` expectation versus core API spelling `IPCIDR`. Restoration passed. |
+| `native06`, `native07` | New lifecycle-count observer failed because Android `ps` exposed a basename rather than the assumed absolute executable path. External observation qualified one actual core/socket/listener; the observer now resolves `/proc/PID/exe`. Restoration passed. |
+| `native08` | Fourteen routing/update/failure cases completed, then form retention failed. The test had not verified that its initial field assignment reached the committed controlled document; setup now requires native READY, exact URL and a verified initial value. Restoration passed. |
+
+The successful full host gate used explicit JDK 17.0.19 and SDK 35, shared flock,
+two Gradle workers, 2 GiB heap and `GOMAXPROCS=2`, with fresh available-memory
+checks. `host04` took 62 seconds: 19 tasks executed and 59 were up-to-date.
+Later test-only builds each executed seven tasks with 48 up-to-date. These are
+incremental results, not clean-cache claims. Lint returned success and its XML
+contains zero errors/eight warnings, while its analyzer also printed Kotlin
+metadata 2.2.0/expected 2.0.0 incompatibility diagnostics. Its semantic coverage
+has that retained limitation; compilation and the executed JVM/native tests
+provide separate evidence.
+
+The official Linux ARM64 v1.19.32 reference executable was qualified at SHA-256
+`c80df2ca5159567804da883401e0118908fc1155e05df2baf3dbd4d3ecfc3754`.
+The installed Android ARM64 core was executed with `-v` and independently hashed:
+`bb9afbd48717f92d59e07da35fb694b83d40d6edb63eb9033c2ee4174137d195`.
+Bundled domain/IP data retain their original pinned hashes and provenance.
+
+The simplification pass shares the ordinary profile apply/save/rollback path
+with automatic refresh, uses two stable ordinary jobs and the existing runtime
+worker/health owner, and adds no dependency, recovery framework or manual UI.

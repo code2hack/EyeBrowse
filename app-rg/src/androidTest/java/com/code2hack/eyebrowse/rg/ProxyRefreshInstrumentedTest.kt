@@ -240,9 +240,16 @@ class ProxyRefreshInstrumentedTest {
                     scene.onActivity { it.tabs.current.session.page!!.evaluateJavascript(code) { value -> answer.complete(value) } }
                     return answer.get(5, TimeUnit.SECONDS)
                 }
-                await("Actual WebView page ready") { js("document.readyState") == "\"complete\"" }
-                js("document.querySelector('#note').value='owned-retained-form';window.refreshSentinel=123;true")
+                await("Controlled WebView document committed") {
+                    var ready = false
+                    scene.onActivity { ready = it.tabs.current.session.state.phase == LocalBrowserSession.Phase.READY &&
+                        it.tabs.current.session.state.url == page && it.tabs.current.session.page!!.isShown }
+                    ready && js("location.href === ${JSONObject.quote(page)} && document.readyState === 'complete' && !!document.querySelector('#note')") == "true"
+                }
+                assertEquals("true", js("document.querySelector('#note').value='owned-retained-form';window.refreshSentinel=123;true"))
+                assertEquals("\"owned-retained-form\"", js("document.querySelector('#note').value"))
                 val pageRequests = fixture.observations.count { it.first == "/page" }
+                report.put("pageRequestsBeforeRefresh", pageRequests).put("initialFormValueVerified", true)
                 fixture.subscriptions["/subscription"] = 200 to yaml(fixture.fast)
                 control("valid-two")
                 now += 1_800_000 // TEST ONLY: production constants and real JobService/network path unchanged.
@@ -305,7 +312,9 @@ class ProxyRefreshInstrumentedTest {
                 assertEquals(hashes, RegionalRules.sources.keys.associateWith { digest(File(activated, it).readBytes()) })
                     cases.put(JSONObject().put("case", mode).put("lastGoodRulesKept", true))
                 }
-                assertEquals("\"owned-retained-form\"", js("document.querySelector('#note').value"))
+                val retainedValue = js("document.querySelector('#note').value")
+                report.put("formValueAfterRefresh", retainedValue).put("pageRequestsAfterRefresh", fixture.observations.count { it.first == "/page" })
+                assertEquals("\"owned-retained-form\"", retainedValue)
                 assertEquals("123", js("window.refreshSentinel"))
                 assertEquals(pageRequests, fixture.observations.count { it.first == "/page" })
                 assertEquals("rule", api.request("GET", "/configs").getString("mode"))
