@@ -173,7 +173,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Expert",
-    "scope": "issue #5; I5-T01 replacement Expert; rounds 8-10 corrections, IME-evocation diagnosis and dda3d2cc handback; \u00a714.4 sign-off delivered; retired at #5 closeout",
+    "scope": "issue #5; I5-T01 replacement Expert; rounds 8-10 corrections, IME-evocation diagnosis and dda3d2cc handback; §14.4 sign-off delivered; retired at #5 closeout",
     "host": "chatgpt.com",
     "runtime": "chatgpt",
     "id": "https://chatgpt.com/g/g-p-6a9eb2d5a3a881918c52ebcba6ff7e70-eyebrowse/c/6aaa3ed7-f170-83e9-b793-000f0e2065f2",
@@ -393,12 +393,12 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
   },
   {
     "role": "Manager",
-    "scope": "v0.0.2; project-wide coordinator",
+    "scope": "project-wide coordinator; v0.0.3 run-001",
     "host": "spark",
     "runtime": "codex",
     "id": "01a11c79-209e-7ad3-baf1-85df8e6a9b91",
     "paseo": "3e8c03f5-df67-4765-a83a-ab5b2b127053",
-    "model": "gpt-6.1-sol / max",
+    "model": "gpt-6.1-sol / max; Fast default",
     "name": "Manager-v0.0.2",
     "status": "active"
   },
@@ -489,6 +489,39 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "model": "gpt-6.1-sol / max",
     "name": "Worker-#33",
     "status": "retired"
+  },
+  {
+    "role": "Worker",
+    "scope": "v0.0.3; issue #41; isolated branch work/v0.0.3-issue-41; run-001 batch001",
+    "host": "spark",
+    "runtime": "codex",
+    "id": "01a13451-9563-7270-b2aa-7c0c1e9291eb",
+    "paseo": "27ed7dc8-0437-4a3c-b3e0-17e23e90bcdf",
+    "model": "gpt-6.1-sol / max; Fast default",
+    "name": "Worker-#41",
+    "status": "active"
+  },
+  {
+    "role": "Worker",
+    "scope": "v0.0.3; issue #42; isolated branch work/v0.0.3-issue-42; run-001 batch001",
+    "host": "spark",
+    "runtime": "codex",
+    "id": "01a13451-9645-77b1-ba1d-7fb969aa39ab",
+    "paseo": "85f37dcf-25dc-44d1-9b57-41e072922759",
+    "model": "gpt-6.1-sol / max; Fast default",
+    "name": "Worker-#42",
+    "status": "active"
+  },
+  {
+    "role": "Worker",
+    "scope": "v0.0.3; issue #43; isolated branch work/v0.0.3-issue-43; run-001 batch001",
+    "host": "spark",
+    "runtime": "codex",
+    "id": "01a13451-972b-7e50-aeae-f9a3ccd513fd",
+    "paseo": "71ebabc3-5a5f-48fa-97e7-b4304c082e89",
+    "model": "gpt-6.1-sol / max; Fast default",
+    "name": "Worker-#43",
+    "status": "active"
   }
 ]
 ```
