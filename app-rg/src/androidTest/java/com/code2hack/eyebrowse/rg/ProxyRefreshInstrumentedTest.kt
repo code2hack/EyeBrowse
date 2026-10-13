@@ -50,6 +50,26 @@ class ProxyRefreshInstrumentedTest {
             .getInputStream().use { it.readBytes() }
     }
     private fun digest(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+    private fun shell(command: String): String = android.os.ParcelFileDescriptor.AutoCloseInputStream(
+        instrumentation.uiAutomation.executeShellCommand(command)).bufferedReader().use { it.readText() }
+
+    private fun runtimeCounts(phase: String, active: Boolean, port: Int) {
+        val binary = File(context.applicationInfo.nativeLibraryDir, "libmihomo.so").absolutePath
+        var pids = emptyList<String>(); var sockets = 0; var listeners = 0
+        await("Owned core/socket/listener counts: $phase") {
+            pids = shell("ps -A -n -o UID,PID,ARGS").lineSequence().map { it.trim().split(Regex("\\s+"), limit = 3) }
+                .filter { it.size == 3 && it[0] == android.os.Process.myUid().toString() && it[2].startsWith("$binary ") }
+                .map { it[1] }.toList()
+            sockets = shell("cat /proc/net/unix").lineSequence().count { it.endsWith("/files/mihomo/control.sock") }
+            listeners = shell("ss -ltn").lineSequence().map { it.trim().split(Regex("\\s+")) }
+                .count { it.size >= 4 && it[0] == "LISTEN" && it[3].substringAfterLast(':') == port.toString() }
+            val expected = if (active) 1 else 0
+            pids.size == expected && sockets == expected && listeners == expected
+        }
+        val samples = report.optJSONArray("runtimeCounts") ?: JSONArray().also { report.put("runtimeCounts", it) }
+        samples.put(JSONObject().put("phase", phase).put("corePids", JSONArray(pids)).put("controlSockets", sockets)
+            .put("mixedPort", port).put("mixedListeners", listeners).put("elapsedRealtimeMs", SystemClock.elapsedRealtime()))
+    }
 
     /** Restoration is outside scenario/runtime/fixture/report closures; original failures stay primary. */
     private fun preserving(afterReport: () -> Unit = {}, body: () -> Unit) {
@@ -167,6 +187,7 @@ class ProxyRefreshInstrumentedTest {
             ActivityScenario.launch(LocalBrowserActivity::class.java).use { scene ->
                 val profiles = RgProfiles.get(context)
                 await("Genuine runtime ready") { runtime.proxyPort != null && runtime.webViewPort == runtime.proxyPort && profiles.profiles.size == 2 }
+                runtimeCounts("launch", true, runtime.proxyPort!!)
                 val api = CoreControl(File(context.filesDir, "mihomo/control.sock").absolutePath)
                 fun regionalProbe(expectedRule: String) {
                     val config = ProxyPolicy.configuration(ProxyPolicy.nodes(profiles.profiles.map { it.asSource() }), runtime.proxyPort!!,
@@ -267,7 +288,7 @@ class ProxyRefreshInstrumentedTest {
                 cases.put(JSONObject().put("case", "test-only-offline-and-connectivity-return").put("lastGoodAndOverdueKept", true))
                 val home = File(context.filesDir, "mihomo")
                 val before = RegionalRules.current(home)
-                regionalProbe("IP-CIDR")
+                regionalProbe("IPCIDR")
                 control("valid-two")
                 now += 86_400_000; runDue()
                 val activated = RegionalRules.current(home)
@@ -314,10 +335,14 @@ class ProxyRefreshInstrumentedTest {
                 val process = processField.get(runtime)
                 scene.recreate()
                 await("Recreated foreground runtime ready") { runtime.proxyPort != null && runtime.webViewPort == runtime.proxyPort }
+                runtimeCounts("recreate", true, runtime.proxyPort!!)
+                val previousPort = runtime.proxyPort!!
                 scene.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
                 await("Background runtime stopped") { runtime.proxyPort == null && runtime.webViewPort == null }
+                runtimeCounts("background", false, previousPort)
                 scene.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
                 await("Resumed runtime ready") { runtime.proxyPort != null && runtime.webViewPort == runtime.proxyPort }
+                runtimeCounts("resume", true, runtime.proxyPort!!)
                 main { owner.scheduleJobs() }
                 val jobs = scheduler.allPendingJobs.filter { it.id in listOf(4501, 4502) }
                 assertEquals(2, jobs.size)
