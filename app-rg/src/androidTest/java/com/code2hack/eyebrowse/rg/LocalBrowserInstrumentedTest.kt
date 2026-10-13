@@ -1065,6 +1065,10 @@ class LocalBrowserInstrumentedTest {
         }
         open(scene, "history.html"); ready(scene)
         open(scene, "does-not-exist.html"); error("http-initial-error")
+        // The HTTP error can arrive before WebView commits the failed history entry.
+        await("native Back enabled after failed document commits") {
+            var enabled = false; scene.onActivity { enabled = it.controls.getValue("hud.back").isEnabled }; enabled
+        }
         control(scene, "back"); ready(scene)
         scene.onActivity { assertTrue(it.tabs.current.session.state.url.endsWith("history.html")) }
         control(scene, "forward"); error("http-forward-error")
