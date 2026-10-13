@@ -224,6 +224,7 @@ class ProxyRefreshInstrumentedTest {
             assertTrue(store.save(listOf(SavedProfile("$local/subscription", "Owned regional", true, ProfileImport.nodes(yaml)))))
             runtime.useTestEndpoint("$local/health")
             main { owner.ruleUrls = urls }
+            RgProfiles.get(context).activate().get(45, TimeUnit.SECONDS)
             ActivityScenario.launch(LocalBrowserActivity::class.java).use { scene ->
                 await("Controlled genuine core ready") { runtime.proxyPort != null && runtime.webViewPort == runtime.proxyPort }
                 val api = CoreControl(File(home, "control.sock").absolutePath)
@@ -344,6 +345,7 @@ class ProxyRefreshInstrumentedTest {
                 SavedProfile(second, "Owned OFF", false, ProfileImport.nodes(yaml(fixture.fast))))))
             runtime.useTestEndpoint("http://127.0.0.1:${fixture.http}/health")
             main { owner.ruleUrls = RegionalRules.sources.mapValues { (name, _) -> "$origin/$name" } }
+            RgProfiles.get(context).activate().get(45, TimeUnit.SECONDS)
             ActivityScenario.launch(LocalBrowserActivity::class.java).use { scene ->
                 val profiles = RgProfiles.get(context)
                 await("Genuine runtime ready") { runtime.proxyPort != null && runtime.webViewPort == runtime.proxyPort && profiles.profiles.size == 2 }
