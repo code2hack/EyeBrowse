@@ -303,7 +303,7 @@ class LocalBrowserInstrumentedTest {
         return JSONObject().put("sampleNs",SystemClock.elapsedRealtimeNanos())
             .put("x",point.x).put("y",point.y).put("available",point.available)
             .put("bounds",JSONArray(listOf(bounds.left,bounds.top,bounds.right,bounds.bottom)))
-            .put("gain",activity.inputSettings.sensitivity.gain).put("sourceRegistered",activity.pointer.sourceRegistered)
+            .put("gain",activity.inputSettings.pointerGain).put("sourceRegistered",activity.pointer.sourceRegistered)
             .put("sourceReceiptNs",activity.pointer.lastSampleReceiptNs).put("expiresAtNs",activity.pointer.expiresAtNs)
             .put("windowFocused",activity.hasWindowFocus()).put("layoutRequested",activity.root.isLayoutRequested)
             .put("utility",activity.utility.name).put("selectedTab",activity.tabs.selectedIndex).put("tabCount",activity.tabs.count)

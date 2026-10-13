@@ -64,7 +64,7 @@ class HeadPointerModelTest {
     }
     @Test fun speedAndRootClippingAreBounded() {
         val m=model();m.sample(pose(21,yDegrees=-90.0),21*ms);m.advance(21*ms)
-        assertTrue(m.position.x-240 <= 460*3*.020+.01)
+        assertTrue(m.position.x-240 <= 460*3*m.sensitivity*.020+.01)
         val edge=settle(m,y=-90.0);assertEquals(470f,edge.x,.1f)
         m.resize(PointerBounds(5f,7f,105f,207f),0)
         assertTrue(m.position.x in 5f..105f && m.position.y in 7f..207f)

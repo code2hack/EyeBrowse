@@ -28,7 +28,11 @@ class HeadPointerModel(val settings: Settings = Settings()) {
         }
     }
     private var bounds = PointerBounds(0f,0f,0f,0f)
-    val motionBounds get() = bounds
+    val gainBounds get() = bounds
+    private var verticalPadding = 0f
+    val motionBounds get() = bounds.copy(top=bounds.top-verticalPadding,bottom=bounds.bottom+verticalPadding)
+    private val minY get() = if (bounds.height>0) -verticalPadding.toDouble()/bounds.height else 0.0
+    private val maxY get() = 1.0-minY
     private var rotation = 0
     private var running = false
     private var reference: HeadOrientation? = null
@@ -44,7 +48,7 @@ class HeadPointerModel(val settings: Settings = Settings()) {
     private var pitch = 0.0
     private var quietYaw = 0.0
     private var quietPitch = 0.0
-    var sensitivity = 1.0
+    var sensitivity = 2.0
         private set
     val position get() = PointerPosition((bounds.left+x*bounds.width).toFloat(),
         (bounds.top+y*bounds.height).toFloat(),running && fresh && bounds.width>0 && bounds.height>0)
@@ -56,10 +60,12 @@ class HeadPointerModel(val settings: Settings = Settings()) {
         running=false;fresh=false;reference=null;latest=null;sourceTimeNs=0;frameTimeNs=0
         targetX=x;targetY=y
     }
-    fun resize(value: PointerBounds, displayRotation: Int) {
+    fun resize(value: PointerBounds, displayRotation: Int, verticalPadding: Float = 0f) {
         require(displayRotation in 0..3)
+        require(verticalPadding.isFinite() && verticalPadding>=0)
         if (displayRotation!=rotation) { reference=null;fresh=false;x=.5;y=.5;targetX=.5;targetY=.5 }
-        rotation=displayRotation;bounds=value
+        rotation=displayRotation;bounds=value;this.verticalPadding=verticalPadding
+        y=y.coerceIn(minY,maxY);targetY=targetY.coerceIn(minY,maxY)
     }
 
     /** nowNs and sample.timestampNs both use elapsed realtime, including sleep. */
@@ -80,28 +86,28 @@ class HeadPointerModel(val settings: Settings = Settings()) {
         val (nextYaw,nextPitch)=q.angles(rotation)
         fun delta(next: Double, previous: Double) = (next-previous+540.0)%360.0-180.0
         fun axis(next: Double, previous: Double, quiet: Double, current: Double,
-                 target: Double, halfRange: Double): Pair<Double,Double> {
+                 target: Double, halfRange: Double, minimum: Double, maximum: Double): Pair<Double,Double> {
             val movement=delta(next,previous)
             // Discard angular excess at saturation and filtered travel against the new direction.
             // Even a slow first inward sample moves immediately, independent of the old overshoot.
             val reversing=movement*(target-current)<0
-            if (target==0.0 || target==1.0 || reversing) {
+            if (target==minimum || target==maximum || reversing) {
                 val origin=if (reversing) current else target
-                return (origin+movement*sensitivity/(2*halfRange)).coerceIn(0.0,1.0) to next
+                return (origin+movement*sensitivity/(2*halfRange)).coerceIn(minimum,maximum) to next
             }
             val travel=delta(next,quiet)
             val accepted=sign(travel)*max(0.0,abs(travel)-settings.deadbandDegrees)
-            return (target+accepted*sensitivity/(2*halfRange)).coerceIn(0.0,1.0) to (quiet+accepted)
+            return (target+accepted*sensitivity/(2*halfRange)).coerceIn(minimum,maximum) to (quiet+accepted)
         }
-        val horizontal=axis(nextYaw,yaw,quietYaw,x,targetX,settings.horizontalHalfRangeDegrees)
-        val vertical=axis(nextPitch,pitch,quietPitch,y,targetY,settings.verticalHalfRangeDegrees)
+        val horizontal=axis(nextYaw,yaw,quietYaw,x,targetX,settings.horizontalHalfRangeDegrees,0.0,1.0)
+        val vertical=axis(nextPitch,pitch,quietPitch,y,targetY,settings.verticalHalfRangeDegrees,minY,maxY)
         targetX=horizontal.first;quietYaw=horizontal.second;yaw=nextYaw
         targetY=vertical.first;quietPitch=vertical.second;pitch=nextPitch
     }
 
     /** Change future gain without moving the cursor or retaining an old filtered destination. */
     fun sensitivity(value: Double, nowNs: Long) {
-        require(value in listOf(.75,1.0,1.25))
+        require(value in .1..6.0)
         sensitivity=value;targetX=x;targetY=y;quietYaw=yaw;quietPitch=pitch;frameTimeNs=nowNs
     }
 
@@ -111,12 +117,12 @@ class HeadPointerModel(val settings: Settings = Settings()) {
             fresh=false;return position // Freeze; the next good sample establishes a new reference.
         }
         if (nowNs<=frameTimeNs) return position
-        val dt=nowNs-frameTimeNs;frameTimeNs=nowNs
+        val dt=(nowNs-frameTimeNs).coerceAtMost(50_000_000L);frameTimeNs=nowNs
         val alpha=1-exp(-dt.toDouble()/settings.smoothingNs)
         var dx=(targetX-x)*alpha;var dy=(targetY-y)*alpha
-        val distance=hypot(dx,dy);val limit=settings.maxSpanPerSecond*dt/1e9
+        val distance=hypot(dx,dy);val limit=settings.maxSpanPerSecond*sensitivity*dt/1e9
         if (distance>limit) { dx*=limit/distance;dy*=limit/distance }
-        x=(x+dx).coerceIn(0.0,1.0);y=(y+dy).coerceIn(0.0,1.0)
+        x=(x+dx).coerceIn(0.0,1.0);y=(y+dy).coerceIn(minY,maxY)
         if (!settling) { x=targetX;y=targetY }
         return position
     }
