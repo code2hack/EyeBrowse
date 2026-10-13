@@ -56,6 +56,7 @@ class ProxyRefreshInstrumentedTest {
         val prefs = listOf("proxy-profiles", "proxy-refresh", "LocalBrowserActivity").associateWith {
             context.getSharedPreferences(it, Context.MODE_PRIVATE).all.toMap()
         }
+        val startingProfileCount = ProfileStore({ profilesPrefs.getString("profiles", null) }) { false }.profiles.size
         val jobs = scheduler.allPendingJobs.filter { it.id in listOf(4501, 4502) }
         val home = File(context.filesDir, "mihomo")
         val names = listOf("cn-domain.mrs", "cn-ip.mrs", "regional-current", "regional-next", "config.json", "candidate.json", "regional-config.json", "issue45-route.json")
@@ -95,7 +96,7 @@ class ProxyRefreshInstrumentedTest {
                     is Boolean -> putBoolean(key, value)
                     else -> error("Unexpected controlled preference type")
                 } } }.commit())
-                assertEquals(snapshot, preferences.all)
+                assertTrue("Starting private state restored", snapshot == preferences.all)
             }
             restore { RgProfiles.get(context).activate().get(45, TimeUnit.SECONDS) }
             restore { // activate restores in-memory nodes; then preserve the exact starting private files.
@@ -105,8 +106,7 @@ class ProxyRefreshInstrumentedTest {
                 }
             }
             restore { for (job in jobs) assertEquals(JobScheduler.RESULT_SUCCESS, scheduler.schedule(job)) }
-            report.put("startingStateRestored", failure == null).put("startingProfileCount", prefs.getValue("proxy-profiles")["profiles"]
-                ?.let { JSONObject(it as String).getJSONArray("profiles").length() } ?: 0)
+            report.put("startingStateRestored", failure == null).put("startingProfileCount", startingProfileCount)
             restore { File(context.filesDir, "issue45-refresh-restoration.json").writeText(JSONObject()
                 .put("startingStateRestored", failure == null).put("privateProfileDataLogged", false).toString()) }
             failure?.let { throw it }
@@ -128,7 +128,7 @@ class ProxyRefreshInstrumentedTest {
         assertEquals("owned primary failure", failure.message)
         assertTrue(failure.suppressed.any { it.message == "owned report closure failure" })
         assertEquals(before, due.all)
-        assertEquals(privateBefore, profilesPrefs.getString("profiles", null))
+        assertTrue("Private profile state unchanged", privateBefore == profilesPrefs.getString("profiles", null))
     }
 
     @Test fun savedOwnerProfileRemainsPrivateInFreshProcess() {
@@ -139,8 +139,8 @@ class ProxyRefreshInstrumentedTest {
         assertEquals(1, store.profiles.size)
         assertEquals(6, store.profiles.single().nodes.size)
         assertTrue(store.profiles.single().enabled)
-        assertEquals(raw, profilesPrefs.getString("profiles", null))
-        assertEquals(tabs, context.getSharedPreferences("LocalBrowserActivity", Context.MODE_PRIVATE).getString("local.tabs", null))
+        assertTrue("Private cache unchanged", raw == profilesPrefs.getString("profiles", null))
+        assertTrue("Private tabs unchanged", tabs == context.getSharedPreferences("LocalBrowserActivity", Context.MODE_PRIVATE).getString("local.tabs", null))
         assertNull(runtime.proxyPort)
         File(context.filesDir, "issue45-owner-preservation.json").writeText(JSONObject().put("profiles", 1).put("nodes", 6)
             .put("enabled", true).put("cacheSha256", digest(raw.toByteArray())).put("tabsSha256", tabs?.let { digest(it.toByteArray()) })
@@ -302,7 +302,7 @@ class ProxyRefreshInstrumentedTest {
                 val beforeDelete = fixture.observations.count { it.first == "/subscription" }
                 val delayed = profiles.refreshSaved()
                 await("Delayed response started") { fixture.observations.count { it.first == "/subscription" } > beforeDelete }
-                main { profiles.delete(first) }
+                scene.onActivity { assertTrue(it.root.findViewWithTag<View>("profile.delete.0").performClick()) }
                 delayed.get(60, TimeUnit.SECONDS)
                 await("Deletion queued during refresh persisted") { !profiles.busy && profiles.profiles.none { it.source == first } }
                 fixture.responseDelay.clear()
