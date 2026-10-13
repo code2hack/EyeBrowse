@@ -219,6 +219,75 @@ Mihomo's pinned [reload handler](https://github.com/MetaCubeX/mihomo/blob/88dcbf
 applies the configuration before returning its response, so client response
 failure cannot establish refusal.
 
+Correction02 uses separate `correction02-state-evidence` records; names below
+do not replace similarly named first-candidate runs.
+
+| Correction02 run | Actual outcome |
+| --- | --- |
+| `host01-full` | All 94 JVM cases freshly executed, zero failures/errors/skips; genuine Linux checks, debug app/test compilation and lint task passed in 63.690 seconds. Nineteen tasks executed, 59 were up-to-date. |
+| `install-attempt01` | Streaming app install reached its 120-second command bound. Package hash reconciliation confirmed neither expected APK was installed. Bounded non-streaming `install -r` succeeded; the 35.6 MB app push took 114.379 seconds. No ADB/server/listener restart or data reset. |
+| `native01-owner-before` | Fresh-process saved Owner check passed in 0.320 seconds, one source/six enabled nodes, no core or private source request. |
+| `native02-regional` | Setup failed before fault injection because it assumed the live provider count was already populated. Starting state was restored. The observer now records the initial count and boundedly waits for the complete controlled provider load. |
+| `host02-observer` | Affected test compilation/lint task passed in 16.792 seconds, seven tasks executed/48 up-to-date. The app APK stayed byte-identical; copied JVM XML belongs to `host01-full` and is not another 94-case execution. |
+| `native03-regional` | Regional fault test passed in 8.767 seconds, six named cases plus stopped-core retry/recreation. Starting state restored. |
+| `native04-refresh` | All 16 existing controlled refresh cases passed in 60.917 seconds, with actual jobs/routes/lifecycle counts and retained form/native controls. Starting state restored. |
+| `native05-exception` | Primary/report-closure exception and restoration check passed in 0.554 seconds. |
+| `native06-owner-after` | Fresh-process saved Owner check passed in 0.314 seconds; exact cache/tabs comparison matched `native01-owner-before`, one source/six enabled nodes, no core or private source request. |
+
+`native03-regional` exercised a real unreadable pointer and real pointer-write
+failure. Both the regional future and shared due future settled after read
+failure; subsequent due subscription and regional work progressed. Genuine
+candidate activation loaded two domain rules before the injected response-loss
+exception. Successful rollback after response loss or pointer-write failure
+confirmed the original 111,595-rule provider, selected pointer and files before
+discarding the unreferenced candidate. A real invalid-config rollback rejection
+cleared the WebView override and stopped the owned core: actual process/socket/
+listener counts changed from 1/1/1 to 0/0/0, with candidate files retained.
+Native HTTP destination checks still returned DIRECT. Later due work selected
+a complete pair while stopped, without acquiring a foreground core; explicit
+Activity recreation loaded it with counts 1/1/1. Form value, script sentinel and
+the single controlled page GET survived the faults.
+
+Executed inputs were commit `4e30e242cf75e80aa72e146db69484a434017fbf`, tree
+`69fe85b37ca6351e8f562ab5a10bf8cef8d1f16a`. Production inputs and the app APK
+match the full host gate at `c83b3f3fbebc0f394ec2c70ec5fc43fb31443060`; the
+later change only corrected observer readiness. Final installed artifacts:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Debug app | `b661561a6b44463d3886dc245061d7f047331480675c440cbe6ea2cc978014ae` |
+| Debug Android test | `1356be79976b57a8e6469ee3e78afae2e5d77ba649bdf9f30b015a63dc557b7d` |
+
+Installed hashes were read back before instrumentation; actual
+`native04-refresh` process maps also contained both matching installed APK
+paths. Android core digest/version and WebView 95.0.4638.74 were requalified.
+Host checks retained the explicit JDK17/SDK35/shared flock/two-worker/2 GiB/
+`GOMAXPROCS=2` limits and fresh memory observations. Lint task success retains
+the same Kotlin metadata incompatibility and cached XML semantic limitation
+(zero errors/eight warnings); no clean-cache or complete analyzer claim.
+The inspected 480×640 native PNG shows the expected recreated interrupted
+controlled page. Live form retention is established by earlier value/sentinel
+and request observations, rather than that later screenshot.
+
+At **2026-10-13T19:49:00.909524Z**, window02 resources were explicitly returned:
+RG serial `1906092617103125`/model `RG-glasses`, Awake/StayOn/display ON; no
+owned app/test/core process, kernel control socket or active camera session;
+starting jobs 4501/4502 absent. An idle owned test-package process was stopped
+after confirming no active instrumentation, without clearing data. The exact
+owned fixture PID was stopped and port 39030 had no listener. Saved profile/
+tabs/cache state matched the before check. Source and evidence remain retained
+for version-end cleanup; further device use requires a coordinated grant.
+
+The simplification pass keeps the existing regional executor, completion,
+rollback and stop owners. The two state flags distinguish a selected pair from
+a pair the live core may still reference; no new transaction/recovery layer,
+timer, provider policy or dependency was added. Removing the completion boundary
+would strand the due owner; removing the uncertain-load flag would permit the
+original unsafe deletion. Original failures remain negative evidence, and
+renewed independent whole review is required. Accelerated clocks and injected
+connectivity remain test-only; elapsed-time, Doze/full-OS-offline scheduling,
+Phone, deferred optical repeats and historical-loss limits remain unchanged.
+
 `RefreshPolicyTest.pointerIoFailuresKeepTheSelectedPairAndAllowRetry` exercises
 real unreadable-pointer and blocked-pointer-write I/O errors plus a later retry.
 `regionalReadAndUncertainApplyFailuresSettleAndKeepLastGood` exercises the actual
