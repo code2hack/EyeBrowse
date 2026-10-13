@@ -543,7 +543,7 @@ The single JSON array below is the canonical registry. `(host, runtime, id)` ide
     "paseo": "203b394e-2897-4c86-92c9-6305e55ace85",
     "model": "gpt-6.1-sol / max; Fast default",
     "name": "Reviewer-#41",
-    "status": "active"
+    "status": "retired"
   }
 ]
 ```
