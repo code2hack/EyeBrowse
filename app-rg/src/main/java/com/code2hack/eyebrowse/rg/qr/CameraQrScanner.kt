@@ -22,12 +22,15 @@ internal class CameraQrScanner(
     private val onFirstFrame: () -> Unit,
     private val onError: () -> Unit,
     private val selector: CameraSelector = CameraSelector.DEFAULT_BACK_CAMERA,
+    private val frameObserver: ((ImageProxy) -> Unit)? = null,
 ) {
     private val providerFuture = ProcessCameraProvider.getInstance(context)
     private val main = ContextCompat.getMainExecutor(context)
     private val worker = Executors.newSingleThreadExecutor()
     private var provider: ProcessCameraProvider? = null
     private var info: CameraInfo? = null
+    internal val cameraInfo get() = info
+    internal val executorTerminated get() = worker.isTerminated
     private val preview = Preview.Builder().build()
     private val analysis = ImageAnalysis.Builder()
         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
@@ -54,12 +57,13 @@ internal class CameraQrScanner(
         var failed = false
         try {
             if (cancelled) return
+            frameObserver?.invoke(image) // Optional owned-fixture diagnostics; never retained by the scanner.
             if (firstFrame) {
                 firstFrame = false
                 main.execute { if (!cancelled) onFirstFrame() }
             }
             image.planes.firstOrNull()?.let { plane ->
-                val buffer = plane.buffer
+                val buffer = plane.buffer.duplicate()
                 val bytes = ByteArray(buffer.remaining())
                 buffer.get(bytes)
                 payload = QrDecoder.decodeYPlane(bytes, plane.rowStride, image.width, image.height)

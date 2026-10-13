@@ -178,14 +178,53 @@ internal class LocalBrowserSession(context: Context, private val onPageTouchUp: 
 
     companion object {
         // Presentation only. No field values, DOM replacement, media inversion or native bridge.
-        private const val CSS = "html,body,p,div,span,section,article,header,footer,main,nav,form,label," +
-            "input,textarea,select,button,table,td,th,ul,ol,li,a,[contenteditable]" +
-            "{background-color:#000!important;color:#fff!important}"
+        private const val COLOR_TARGETS = "html,body,p,div,span,section,article,header,footer,main,nav,form,label," +
+            "input,textarea,select,button,table,td,th,ul,ol,li,a,[contenteditable]"
+        private const val CSS = COLOR_TARGETS +
+            "{background-color:var(--eyebrowse-local-background,transparent)!important;color:#fff!important}" +
+            "html,body{background-color:#000!important}"
         private val PRESENTATION_SCRIPT = """(()=>{
-            let style=document.getElementById('eyebrowse-local-colors');
-            if(!style){style=document.createElement('style');style.id='eyebrowse-local-colors';
-                (document.head||document.documentElement).appendChild(style)}
+            if(document.getElementById('eyebrowse-local-colors'))return;
+            const targets=${JSONObject.quote(COLOR_TARGETS)};
+            const style=document.createElement('style');style.id='eyebrowse-local-colors';
             style.textContent=${JSONObject.quote(CSS)};
+            (document.head||document.documentElement).appendChild(style);
+            const options={subtree:true,childList:true,attributes:true,attributeFilter:['class','style'],characterData:true};
+            const collect=(root,set)=>{
+                if(root.nodeType!==1)return;
+                if(root.matches(targets))set.add(root);
+                root.querySelectorAll(targets).forEach(e=>set.add(e));
+            };
+            const paint=elements=>{
+                // Read authored alpha without our override. Transparent overlay hosts must stay transparent.
+                style.sheet.disabled=true;
+                const backgrounds=Array.from(elements,e=>{
+                    const color=getComputedStyle(e).backgroundColor;
+                    const alpha=color==='transparent'?'0':color.startsWith('rgba(')?color.slice(color.lastIndexOf(',')+1,-1).trim():'1';
+                    return [e,'rgba(0,0,0,'+alpha+')'];
+                });
+                style.sheet.disabled=false;
+                backgrounds.forEach(([e,color])=>{
+                    if(e.style.getPropertyValue('--eyebrowse-local-background')!==color)
+                        e.style.setProperty('--eyebrowse-local-background',color);
+                });
+            };
+            const observer=new MutationObserver(records=>{
+                observer.disconnect();
+                const changed=new Set();
+                records.forEach(record=>{
+                    if(record.target===style)return;
+                    if(record.type==='attributes')collect(record.target,changed);
+                    if(record.type==='childList')record.addedNodes.forEach(node=>{
+                        collect(node,changed);
+                        if(node.nodeName==='STYLE'||node.nodeName==='LINK')collect(document.documentElement,changed);
+                    });
+                    if(record.target.nodeName==='STYLE'||record.target.parentElement?.nodeName==='STYLE')
+                        collect(document.documentElement,changed);
+                });
+                paint(changed);observer.observe(document.documentElement,options);
+            });
+            paint(document.querySelectorAll(targets));observer.observe(document.documentElement,options);
         })()""".trimIndent()
     }
 }

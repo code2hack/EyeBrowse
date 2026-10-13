@@ -44,6 +44,7 @@ class LocalBrowserActivity : ComponentActivity() {
         var recoveryUrl = ""
     }
     internal enum class Utility { BROWSING, MORE, TABS, BOOKMARKS, QR, SETTINGS }
+    internal enum class QrPurpose { WEBPAGE, PROFILE }
     internal lateinit var root: FrameLayout
     internal lateinit var toolbar: FrameLayout
     internal lateinit var content: FrameLayout
@@ -69,6 +70,8 @@ class LocalBrowserActivity : ComponentActivity() {
     private var scanner: CameraQrScanner? = null
     private var qrUrl: String? = null
     private var qrMessage = ""
+    private var qrPurpose = QrPurpose.WEBPAGE
+    private var profileQrResult: ((String?) -> Unit)? = null
     internal var cameraHasFrame = false
         private set
     internal val cameraActive get() = scanner != null
@@ -393,19 +396,31 @@ class LocalBrowserActivity : ComponentActivity() {
         if (utility == Utility.BOOKMARKS) renderUtility()
     }
 
-    internal fun showUtility(next: Utility) {
+    internal fun showUtility(next: Utility) = showUtility(next, QrPurpose.WEBPAGE, null)
+
+    /** #44 supplies the importer/list. Null reports cancellation; a payload never opens a tab. */
+    internal fun scanProfileQr(onResult: (String?) -> Unit) = showUtility(Utility.QR, QrPurpose.PROFILE, onResult)
+
+    private fun showUtility(next: Utility, purpose: QrPurpose, profileResult: ((String?) -> Unit)?) {
+        val cancelledProfile = profileQrResult
+        profileQrResult = null
         stopCamera(); qrUrl = null; qrMessage = ""
         stopEdgeScroll(); dismissKeyboard(); tabs.current.session.surface.clearFocus(); root.requestFocus()
+        qrPurpose = purpose; profileQrResult = profileResult
         utility = next; localError = null; overlay.visibility = View.VISIBLE
         showSelected(); renderUtility()
         if (next == Utility.QR) requestCamera()
+        cancelledProfile?.invoke(null)
     }
     internal fun dismissUtility() {
         if (!::overlay.isInitialized) return
+        val cancelledProfile = profileQrResult
+        profileQrResult = null
         stopCamera(); qrUrl = null
         stopEdgeScroll(); utilityScroll=null
         utility = Utility.BROWSING; overlay.visibility = View.GONE; overlay.removeAllViews()
         if (::tabs.isInitialized) showSelected()
+        cancelledProfile?.invoke(null)
     }
     private fun renderUtility() {
         stopEdgeScroll(); utilityScroll=null
@@ -489,7 +504,7 @@ class LocalBrowserActivity : ComponentActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             startCamera()
         } else {
-            qrMessage = "Allow camera access to scan a webpage address."
+            qrMessage = "Allow camera access to scan a QR code."
             renderUtility(); cameraPermission.launch(Manifest.permission.CAMERA)
         }
     }
@@ -500,12 +515,16 @@ class LocalBrowserActivity : ComponentActivity() {
             tag = "qr.camera"
             // TextureView keeps the app's single pointer visible above real camera media.
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+            // Show the full camera field rather than hiding its edges in this wide preview slot.
+            scaleType = PreviewView.ScaleType.FIT_CENTER
+            setBackgroundColor(Color.BLACK)
         }
         overlay.addView(preview, box(448, 272, 16, 76))
         try {
             scanner = CameraQrScanner(this, this, ::previewQr, {
                 cameraHasFrame = true
-                qrMessage = "Point the camera at a webpage QR code."
+                qrMessage = if (qrPurpose == QrPurpose.WEBPAGE) "Point the camera at a webpage QR code."
+                    else "Point the camera at a profile QR code."
                 overlay.findViewWithTag<TextView>("qr.message")?.text = qrMessage
             }, { qrError("Camera unavailable. Try again or cancel.") }).also { it.start(preview) }
         } catch (_: Exception) { qrError("Camera unavailable. Try again or cancel.") }
@@ -519,13 +538,21 @@ class LocalBrowserActivity : ComponentActivity() {
     internal fun previewQr(value: String) {
         if (utility != Utility.QR) return
         stopCamera()
+        if (qrPurpose == QrPurpose.PROFILE) {
+            val receive = profileQrResult
+            profileQrResult = null
+            dismissUtility()
+            receive?.invoke(value)
+            return
+        }
         val result = AddressPolicy.resolve(value)
         qrUrl = result.url()
         qrMessage = if (result.accepted()) "Open this address in the current tab?" else "Unsupported QR address. ${result.message()}"
         renderUtility()
     }
     private fun renderQr() {
-        overlay.addView(text("QR scan", 24f), box(340, 44, 16, 14))
+        overlay.addView(text(if (qrPurpose == QrPurpose.WEBPAGE) "QR scan" else "Add a new profile", 24f)
+            .apply { tag = "qr.title" }, box(340, 44, 16, 14))
         overlay.addView(text(qrMessage, 18f).apply { tag = "qr.message"; maxLines = 3 }, box(448, 72, 16, 356))
         qrUrl?.let { url ->
             overlay.addView(text(url).apply { tag = "qr.url"; maxLines = 4; ellipsize = TextUtils.TruncateAt.END }, box(448, 100, 16, 100))

@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
 import com.google.zxing.ReaderException
+import com.google.zxing.common.GlobalHistogramBinarizer
 import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.qrcode.QRCodeReader
 
@@ -42,11 +43,18 @@ object QrDecoder {
     }
 
     private fun decode(source: com.google.zxing.LuminanceSource): String? {
-        val image = BinaryBitmap(HybridBinarizer(source))
-        // Perfect screen/printed codes can confuse the detector; try ZXing's pure-code extractor too.
-        for (hints in listOf(emptyMap(), mapOf(DecodeHintType.PURE_BARCODE to true))) {
-            try { return QRCodeReader().decode(image, hints).text }
-            catch (_: ReaderException) { /* No complete QR in this interpretation. */ }
+        // A dark display can present light modules. Keep normal detection first; invert only on a miss.
+        for (luma in listOf(source, source.invert())) {
+            val image = BinaryBitmap(HybridBinarizer(luma))
+            // Keep the existing pure-code fallback for perfect screen/printed codes.
+            for (hints in listOf(emptyMap(), mapOf(DecodeHintType.PURE_BARCODE to true))) {
+                try { return QRCodeReader().decode(image, hints).text }
+                catch (_: ReaderException) { /* No complete QR in this interpretation. */ }
+            }
+            // A small low-contrast code can be lost by local block thresholds in a dark frame.
+            // The same standard reader can recover it using the frame's global histogram.
+            try { return QRCodeReader().decode(BinaryBitmap(GlobalHistogramBinarizer(luma))).text }
+            catch (_: ReaderException) { /* Try the other polarity, then await another real frame. */ }
         }
         return null
     }
