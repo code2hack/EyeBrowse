@@ -25,6 +25,7 @@ class MihomoHostTest {
         val home = Files.createTempDirectory("mihomo-host-").toFile()
         val journal = JSONArray()
         val healthJournal = JSONArray()
+        val cnIp = JSONObject()
         RouteFixture(checkNotNull(javaClass.getResourceAsStream("/proxy-fixture.p12"))).use { fixture ->
             try {
                 for (name in listOf("cn-domain.mrs", "cn-ip.mrs")) File("src/main/assets/mihomo/$name").copyTo(File(home, name))
@@ -54,7 +55,7 @@ class MihomoHostTest {
                     while (!socket.exists() && process.isAlive && System.nanoTime() < deadline) Thread.sleep(25)
                     assertTrue(File(home, "core.log").readText(), process.isAlive && socket.exists())
                     fun api(method: String, path: String, body: JSONObject?, timeout: Int): JSONObject {
-                        val args = mutableListOf("curl", "-sS", "--raw", "--max-time", (timeout / 1000 + 1).toString(),
+                        val args = mutableListOf("curl", "-sS", "--noproxy", "*", "--raw", "--max-time", (timeout / 1000 + 1).toString(),
                             "--unix-socket", socket.absolutePath, "-i", "-X", method)
                         if (body != null) args.addAll(listOf("-H", "Content-Type: application/json", "--data-binary", body.toString()))
                         args += "http://localhost$path"
@@ -96,6 +97,17 @@ class MihomoHostTest {
                     recordHealth("both-healthy")
                     assertEquals("127.0.0.3", observe("second-source-fastest"))
                     assertEquals("127.0.0.3", observe("https", "https"))
+                    val receiptsBefore = fixture.proxyRequests.size
+                    assertEquals("127.0.0.3", observe("cn-ip-control-before"))
+                    val probe = JSONObject().also { cnIp.put("probe", it) }
+                    CnIpProbe.observe(port, probe) { api("GET", "/connections", null, 3000).optJSONArray("connections") ?: JSONArray() }
+                    assertEquals("AUTO", api("GET", "/proxies/EGRESS", null, 3000).getString("now"))
+                    assertEquals("127.0.0.3", observe("cn-ip-control-after"))
+                    val receipts = fixture.proxyRequests.drop(receiptsBefore)
+                    assertEquals(2, receipts.count { it.first == "127.0.0.3" && it.second == "127.0.0.1:${fixture.http}" })
+                    assertFalse(receipts.any { it.second == "${CnIpProbe.IP}:443" })
+                    cnIp.put("healthyControlPeerBeforeAndAfter", "127.0.0.3").put("dummyNodeReceipts", fixture.proxyReceipts(receiptsBefore))
+                    recordHealth("after-cn-ip-with-healthy-auto")
                     assertEquals("127.0.0.1", observe("private-direct", host = "127.0.0.1"))
                     for ((host, rule, payload) in listOf(Triple("baidu.com", "RuleSet", "CN-DOMAIN"),
                         Triple("fixture.ts.net", "DomainSuffix", "ts.net"))) {
@@ -108,7 +120,7 @@ class MihomoHostTest {
                         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
                         var matched: JSONObject? = null
                         while (matched == null && System.nanoTime() < deadline) {
-                            val active = api("GET", "/connections", null, 3000).getJSONArray("connections")
+                            val active = api("GET", "/connections", null, 3000).optJSONArray("connections") ?: JSONArray()
                             matched = (0 until active.length()).map { active.getJSONObject(it) }
                                 .firstOrNull { it.getJSONObject("metadata").optString("host") == host }
                             if (matched == null) Thread.sleep(25)
@@ -159,6 +171,8 @@ class MihomoHostTest {
             } finally {
                 evidence?.let { File(it, "destination-observations.json").writeText(journal.toString(2)) }
                 evidence?.let { File(it, "core-health-observations.json").writeText(healthJournal.toString(2)) }
+                evidence?.let { File(it, "cn-ip-observations.json").writeText(cnIp.toString(2)) }
+                evidence?.let { File(it, "dummy-node-receipts.json").writeText(fixture.proxyReceipts().toString(2)) }
                 home.deleteRecursively()
             }
         }

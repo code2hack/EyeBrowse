@@ -14,11 +14,14 @@ import java.util.concurrent.CopyOnWriteArrayList
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManagerFactory
+import org.json.JSONArray
+import org.json.JSONObject
 
 /** Real TCP/TLS destinations record peer IP: .1=DIRECT, .2=slow source, .3=fast source. */
 internal class RouteFixture(keyStore: InputStream) : Closeable {
     val tls: SSLContext
     val observations = CopyOnWriteArrayList<Pair<String, String>>()
+    val proxyRequests = CopyOnWriteArrayList<Pair<String, String>>()
     @Volatile var slowHealthy = true
     @Volatile var fastHealthy = true
     private val sockets = Collections.newSetFromMap(ConcurrentHashMap<Closeable, Boolean>())
@@ -40,6 +43,9 @@ internal class RouteFixture(keyStore: InputStream) : Closeable {
         fast = listen(ServerSocket(0, 16, loopback)) { node(it, "127.0.0.3", 15, fastHealthy) }
     }
     fun sources() = listOf(ProxySource("source-one", true, listOf(node(slow))), ProxySource("source-two", true, listOf(node(fast))))
+    fun proxyReceipts(fromIndex: Int = 0) = JSONArray(proxyRequests.drop(fromIndex).map {
+        JSONObject().put("nodePeer", it.first).put("authority", it.second)
+    })
     private fun node(port: Int) = mapOf<String, Any?>("name" to "same", "type" to "http", "server" to "127.0.0.1", "port" to port)
     private fun listen(server: ServerSocket, handler: (Socket) -> Unit): Int {
         sockets.add(server)
@@ -55,9 +61,11 @@ internal class RouteFixture(keyStore: InputStream) : Closeable {
     private fun node(client: Socket, source: String, delay: Long, healthy: Boolean) {
         val request = header(client.inputStream)
         require(request.startsWith("CONNECT "))
+        val authority = request.substringBefore("\r\n").split(' ')[1]
+        proxyRequests += source to authority
         if (!healthy) return
         Thread.sleep(delay)
-        val port = request.substringBefore("\r\n").split(' ')[1].substringAfterLast(':').toInt()
+        val port = authority.substringAfterLast(':').toInt()
         require(port == http || port == https)
         val destination = Socket().apply { bind(InetSocketAddress(source, 0)); connect(InetSocketAddress(loopback, port), 2000) }
         sockets.add(destination)

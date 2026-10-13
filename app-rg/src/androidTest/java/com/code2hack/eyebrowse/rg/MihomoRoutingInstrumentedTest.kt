@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.webkit.WebViewFeature
 import com.code2hack.eyebrowse.rg.proxy.CoreControl
+import com.code2hack.eyebrowse.rg.proxy.CnIpProbe
 import com.code2hack.eyebrowse.rg.proxy.ProxyPolicy
 import com.code2hack.eyebrowse.rg.proxy.ProxySource
 import com.code2hack.eyebrowse.rg.proxy.RgProxyRuntime
@@ -85,6 +86,20 @@ class MihomoRoutingInstrumentedTest {
                     recordHealth("both-healthy")
                     native("second-source-fastest", "127.0.0.3")
                     native("native-https", "127.0.0.3", "https")
+                    val receiptsBefore = fixture.proxyRequests.size
+                    native("cn-ip-control-before", "127.0.0.3")
+                    val probe = JSONObject().also { results.put("cnIp", it) }
+                    CnIpProbe.observe(checkNotNull(runtime.proxyPort), probe) {
+                        api.request("GET", "/connections").optJSONArray("connections") ?: JSONArray()
+                    }
+                    assertEquals("AUTO", api.request("GET", "/proxies/EGRESS").getString("now"))
+                    native("cn-ip-control-after", "127.0.0.3")
+                    val receipts = fixture.proxyRequests.drop(receiptsBefore)
+                    assertEquals(2, receipts.count { it.first == "127.0.0.3" && it.second == "127.0.0.1:${fixture.http}" })
+                    assertFalse(receipts.any { it.second == "${CnIpProbe.IP}:443" })
+                    results.getJSONObject("cnIp").put("healthyControlPeerBeforeAndAfter", "127.0.0.3")
+                        .put("dummyNodeReceipts", fixture.proxyReceipts(receiptsBefore))
+                    recordHealth("after-cn-ip-with-healthy-auto")
                     native("private-ip-direct", "127.0.0.1", host = "127.0.0.1")
                     for ((host, rule, payload) in listOf(Triple("baidu.com", "RuleSet", "CN-DOMAIN"),
                         Triple("fixture.ts.net", "DomainSuffix", "ts.net"))) {
@@ -95,7 +110,7 @@ class MihomoRoutingInstrumentedTest {
                         }
                         var matched: JSONObject? = null
                         await("live matched rule for $host") {
-                            val active = api.request("GET", "/connections").getJSONArray("connections")
+                            val active = api.request("GET", "/connections").optJSONArray("connections") ?: JSONArray()
                             matched = (0 until active.length()).map { active.getJSONObject(it) }
                                 .firstOrNull { it.getJSONObject("metadata").optString("host") == host }
                             matched != null
@@ -155,7 +170,8 @@ class MihomoRoutingInstrumentedTest {
                 results.put("cases", cases).put("coreHealth", health).put("destinationObservations", JSONArray(fixture.observations.map {
                     JSONObject().put("path", it.first).put("peer", it.second)
                 }))
-                results.put("limits", "Loopback fixture with explicit test route and dummy .test-only TLS trust; real external tailnet and China-IP destination proof remain separate. No Phone checks.")
+                results.put("dummyNodeReceipts", fixture.proxyReceipts())
+                results.put("limits", "Owned loopback fixture with explicit test route and dummy .test-only TLS trust. Public China-IP probe uses system TLS, live core rule and dummy-node receipts, without owned public server logs. Real external tailnet proof remains separate. No Phone checks.")
                 File(context.filesDir, "mihomo-test-results.json").writeText(results.toString(2))
             }
         }
