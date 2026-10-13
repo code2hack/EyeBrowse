@@ -154,10 +154,15 @@ internal class RgProxyRuntime private constructor(private val context: Context) 
             while (users > 0 && child.isAlive && System.nanoTime() < deadline) {
                 try {
                     check(api.request("GET", "/version", timeoutMs = 1000).getString("version") == "v1.19.32")
+                    check(api.request("GET", "/configs", timeoutMs = 1000).getInt("mixed-port") == port)
                     ready = true; break
                 } catch (_: Exception) { Thread.sleep(50) }
             }
             check(ready && users > 0 && child.isAlive) { "Core startup unavailable" }
+            // /version is served before the core finishes loading providers and starts forwarding.
+            // Once its listener exists, this synchronous command serializes behind that load.
+            api.request("PUT", "/configs", JSONObject().put("path", file.absolutePath), timeoutMs = 10_000)
+            check(api.request("GET", "/configs").getInt("mixed-port") == port && users > 0 && child.isAlive)
             proxyPort = port
             syncWebView()
             checkHealth()
@@ -175,8 +180,8 @@ internal class RgProxyRuntime private constructor(private val context: Context) 
     private fun writeConfiguration(file: File, candidates: List<JSONObject>, port: Int) {
         val cm = context.getSystemService(ConnectivityManager::class.java)
         val dns = cm.getLinkProperties(cm.activeNetwork)?.dnsServers.orEmpty().mapNotNull { it.hostAddress }
-        val config = ProxyPolicy.configuration(candidates, port, File(directory, "control.sock").absolutePath, dns, testUrl)
-            .toString().toByteArray(Charsets.UTF_8)
+        val config = ProxyPolicy.configurationText(ProxyPolicy.configuration(candidates, port,
+            File(directory, "control.sock").absolutePath, dns, testUrl).toString()).toByteArray(Charsets.UTF_8)
         check(config.size <= 4 * 1024 * 1024) { "Proxy configuration too large" }
         file.writeBytes(config)
     }

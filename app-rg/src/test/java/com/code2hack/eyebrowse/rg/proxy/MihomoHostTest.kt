@@ -47,7 +47,7 @@ class MihomoHostTest {
                     }
                     return config
                 }
-                File(home, "config.json").writeText(config(emptyList()).toString())
+                File(home, "config.json").writeText(ProxyPolicy.configurationText(config(emptyList()).toString()))
                 val process = ProcessBuilder(binary!!.absolutePath, "-d", home.absolutePath, "-f", File(home, "config.json").absolutePath)
                     .redirectErrorStream(true).redirectOutput(File(home, "core.log")).start()
                 try {
@@ -78,7 +78,7 @@ class MihomoHostTest {
                         } finally { connection.disconnect() }
                     }
                     fun apply(sources: List<ProxySource>): String {
-                        val next = File(home, "next.json").apply { writeText(config(sources).toString()) }
+                        val next = File(home, "next.json").apply { writeText(ProxyPolicy.configurationText(config(sources).toString())) }
                         api("PUT", "/configs", JSONObject().put("path", next.absolutePath), 4000)
                         val count = ProxyPolicy.nodes(sources).size
                         return if (count == 0) "DIRECT" else ProxyPolicy.applyHealth(count, healthUrl, ::api)

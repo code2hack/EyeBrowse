@@ -10,6 +10,19 @@ internal class ProxySource(val id: String, val enabled: Boolean, val nodes: List
 }
 
 internal object ProxyPolicy {
+    /** Android JSON escapes '/', which the core's YAML file loader refuses. Preserve other escapes. */
+    fun configurationText(json: String): String = buildString(json.length) {
+        var at = 0
+        while (at < json.length) {
+            val current = json[at++]
+            if (current == '\\' && at < json.length) {
+                val escaped = json[at++]
+                if (escaped != '/') append(current)
+                append(escaped)
+            } else append(current)
+        }
+    }
+
     const val HEALTH_SECONDS = 300L
     const val TEST_URL = "https://www.gstatic.com/generate_204"
     const val PROVIDER = "ENABLED"

@@ -10,7 +10,7 @@
     "binarySha256": "bb9afbd48717f92d59e07da35fb694b83d40d6edb63eb9033c2ee4174137d195",
     "release": "https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.32",
     "source": "https://github.com/MetaCubeX/mihomo/tree/88dcbf7f1614a67c3b36b848ee3592dfa92ada36",
-    "build": "upstream .github/workflows/build.yml at pinned source, CGO_ENABLED=1, GOOS=android, GOARCH=arm64, NDK r29-beta1, aarch64-linux-android34-clang, with_gvisor; actual API32 load pending",
+    "build": "upstream .github/workflows/build.yml at pinned source, CGO_ENABLED=1, GOOS=android, GOARCH=arm64, NDK r29-beta1, aarch64-linux-android34-clang, with_gvisor",
     "license": "GNU GPL version 3; full upstream LICENSE included",
     "buildInfo": {
       "goVersion": "go1.26.8",

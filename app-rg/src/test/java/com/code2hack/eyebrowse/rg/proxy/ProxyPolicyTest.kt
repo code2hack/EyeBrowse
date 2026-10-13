@@ -6,6 +6,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ProxyPolicyTest {
+    @Test fun androidSlashEscapesBecomeYamlCompatibleWithoutChangingJsonValues() {
+        val inputs = listOf(
+            """{"url":"http:\/\/example.test\/a","path":"\/private\/core.sock"}""",
+            """{"node":{"password":"back\\\/slash","path":"\/a\\\/b","quoted":"say \"\/\"","unicode":"\u002f"}}""",
+            """{"path":"back\\/slash"}""",
+        )
+        for (input in inputs) {
+            val text = ProxyPolicy.configurationText(input)
+            assertEquals(JSONObject(input).toString(), JSONObject(text).toString())
+            assertEquals(text, ProxyPolicy.configurationText(text))
+        }
+        assertTrue(ProxyPolicy.configurationText(inputs.first()).contains("http://example.test/a"))
+        assertTrue(ProxyPolicy.configurationText(inputs.first()).contains("/private/core.sock"))
+    }
+
     private fun source(id: String, enabled: Boolean = true, nodes: List<Map<String, Any?>> = listOf(
         mapOf("name" to "same name with secret", "type" to "http", "server" to "127.0.0.1", "port" to 8001),
     )) = ProxySource(id, enabled, nodes)
