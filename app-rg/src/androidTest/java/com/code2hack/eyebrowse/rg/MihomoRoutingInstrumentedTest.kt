@@ -108,51 +108,7 @@ class MihomoRoutingInstrumentedTest {
                                 val peer = try {
                                     val code = connection.responseCode
                                     observation.put("httpStatus", code)
-                                    if (code != 200) {
-                                        observation.put("errorBody", connection.errorStream?.bufferedReader()?.use { it.readText().take(1024) })
-                                            .put("fixturePort", port).put("nativePort", runtime.proxyPort)
-                                            .put("webViewPort", runtime.webViewPort).put("runtimeStatus", runtime.status)
-                                        // This is the owned origin, not a personal page or production subscription.
-                                        val direct = URL("http://127.0.0.1:${fixture.http}/observe-failure-control")
-                                            .openConnection(java.net.Proxy.NO_PROXY) as java.net.HttpURLConnection
-                                        try {
-                                            direct.connectTimeout = 3000; direct.readTimeout = 3000
-                                            observation.put("directControlStatus", direct.responseCode)
-                                            observation.put("directControlPeer", direct.inputStream.bufferedReader().use { it.readText() })
-                                        } catch (diagnostic: Exception) {
-                                            observation.put("directControlErrorType", diagnostic.javaClass.name)
-                                        } finally { direct.disconnect() }
-                                        observation.put("coreVersion", runCatching { api.request("GET", "/version") }.getOrNull())
-                                        // Keep the failed assertion. A second owned request is diagnostic only;
-                                        // retain only log lines naming this loopback fixture destination.
-                                        try {
-                                            api.request("PATCH", "/configs", JSONObject().put("log-level", "debug"))
-                                            android.net.LocalSocket().use { logs ->
-                                                logs.connect(android.net.LocalSocketAddress(File(context.filesDir, "mihomo/control.sock").absolutePath,
-                                                    android.net.LocalSocketAddress.Namespace.FILESYSTEM))
-                                                logs.soTimeout = 1000
-                                                logs.outputStream.write("GET /logs?level=debug HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".toByteArray())
-                                                logs.outputStream.flush()
-                                                Thread.sleep(50)
-                                                val probe = runtime.openConnection(URL("http://127.0.0.1:${fixture.http}/observe-failure-core-control"))
-                                                try { observation.put("secondCoreControlStatus", probe.responseCode) }
-                                                finally { probe.disconnect() }
-                                                val recorded = java.io.ByteArrayOutputStream()
-                                                val buffer = ByteArray(4096)
-                                                try {
-                                                    while (recorded.size() < 65536) {
-                                                        val size = logs.inputStream.read(buffer)
-                                                        if (size < 0) break
-                                                        recorded.write(buffer, 0, size)
-                                                    }
-                                                } catch (_: java.io.IOException) { /* Bounded stream observation. */ }
-                                                observation.put("ownedDestinationCoreLogs", JSONArray(recorded.toString("UTF-8").lineSequence()
-                                                    .filter { it.contains("127.0.0.1:${fixture.http}") }.map { it.take(2048) }.toList()))
-                                            }
-                                        } catch (diagnostic: Exception) {
-                                            observation.put("coreLogDiagnosticErrorType", diagnostic.javaClass.name)
-                                        } finally { runCatching { api.request("PATCH", "/configs", JSONObject().put("log-level", "silent")) } }
-                                    }
+                                    if (code != 200) observation.put("errorBody", connection.errorStream?.bufferedReader()?.use { it.readText().take(1024) })
                                     assertEquals(label, 200, code)
                                     connection.inputStream.bufferedReader().use { it.readText() }
                                 }
