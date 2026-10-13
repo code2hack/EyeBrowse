@@ -57,12 +57,20 @@ class ProxyRefreshInstrumentedTest {
         val binary = File(context.applicationInfo.nativeLibraryDir, "libmihomo.so").absolutePath
         var pids = emptyList<String>(); var sockets = 0; var listeners = 0
         await("Owned core/socket/listener counts: $phase") {
-            pids = shell("ps -A -n -w -o UID,PID,ARGS").lineSequence().map { it.trim().split(Regex("\\s+"), limit = 3) }
+            val processes = shell("ps -A -n -w -o UID,PID,ARGS")
+            val unix = shell("cat /proc/net/unix")
+            val tcp = shell("ss -ltn")
+            report.put("countCommandBytes", JSONObject().put("phase", phase).put("ps", processes.length)
+                .put("unix", unix.length).put("tcp", tcp.length))
+            assertTrue("Process observation channel valid", processes.lineSequence().first().trim().startsWith("UID"))
+            assertTrue("Unix observation channel valid", unix.startsWith("Num"))
+            assertTrue("TCP observation channel valid", tcp.startsWith("State"))
+            pids = processes.lineSequence().map { it.trim().split(Regex("\\s+"), limit = 3) }
                 .filter { it.size == 3 && it[0] == android.os.Process.myUid().toString() &&
                     runCatching { File("/proc/${it[1]}/exe").canonicalPath == binary }.getOrDefault(false) }
                 .map { it[1] }.toList()
-            sockets = shell("cat /proc/net/unix").lineSequence().count { it.endsWith("/files/mihomo/control.sock") }
-            listeners = shell("ss -ltn").lineSequence().map { it.trim().split(Regex("\\s+")) }
+            sockets = unix.lineSequence().count { it.endsWith("/files/mihomo/control.sock") }
+            listeners = tcp.lineSequence().map { it.trim().split(Regex("\\s+")) }
                 .count { it.size >= 4 && it[0] == "LISTEN" && it[3].substringAfterLast(':') == port.toString() }
             report.put("lastRuntimeCountObservation", JSONObject().put("phase", phase).put("coreCount", pids.size)
                 .put("controlSockets", sockets).put("mixedListeners", listeners))
