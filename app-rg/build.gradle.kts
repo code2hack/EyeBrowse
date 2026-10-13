@@ -51,6 +51,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.webkit:webkit:1.12.1")
     implementation("com.google.zxing:core:3.5.3")
+    implementation("org.yaml:snakeyaml:2.5")
     implementation("androidx.camera:camera-core:1.4.2")
     implementation("androidx.camera:camera-camera2:1.4.2")
     implementation("androidx.camera:camera-lifecycle:1.4.2")

@@ -31,6 +31,7 @@ import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import com.code2hack.eyebrowse.core.browser.AddressPolicy
 import com.code2hack.eyebrowse.rg.qr.CameraQrScanner
+import com.code2hack.eyebrowse.rg.proxy.RgProfiles
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -43,7 +44,7 @@ class LocalBrowserActivity : ComponentActivity() {
         var draft: String? = null
         var recoveryUrl = ""
     }
-    internal enum class Utility { BROWSING, MORE, TABS, BOOKMARKS, QR, SETTINGS }
+    internal enum class Utility { BROWSING, MORE, TABS, BOOKMARKS, QR, SETTINGS, PROXY }
     internal enum class QrPurpose { WEBPAGE, PROFILE }
     internal lateinit var root: FrameLayout
     internal lateinit var toolbar: FrameLayout
@@ -56,6 +57,14 @@ class LocalBrowserActivity : ComponentActivity() {
     internal lateinit var tabs: LocalTabs<Tab>
     internal lateinit var bookmarks: LocalBookmarks
     internal lateinit var inputSettings: LocalInputSettings
+    internal lateinit var profiles: RgProfiles
+    private val profileChanged: () -> Unit = {
+        if (utility == Utility.PROXY) {
+            val position = utilityScroll?.scrollY ?: 0
+            renderUtility()
+            utilityScroll?.let { scroll -> scroll.post { scroll.scrollTo(0, position) } }
+        }
+    }
     internal val controls = linkedMapOf<String, TextView>()
     internal val keyButtons = linkedMapOf<RgKeyboardKeys.Key, TextView>()
     internal var utility = Utility.BROWSING
@@ -104,7 +113,7 @@ class LocalBrowserActivity : ComponentActivity() {
             Utility.BROWSING -> tabs.current.session.page?.takeIf {
                 it.isShown && tabs.current.session.state.phase == LocalBrowserSession.Phase.READY
             }
-            Utility.TABS, Utility.BOOKMARKS, Utility.SETTINGS -> utilityScroll?.takeIf { it.isShown }
+            Utility.TABS, Utility.BOOKMARKS, Utility.SETTINGS, Utility.PROXY -> utilityScroll?.takeIf { it.isShown }
             else -> null
         }
     }
@@ -191,6 +200,7 @@ class LocalBrowserActivity : ComponentActivity() {
         keyboard = FrameLayout(this).apply { setBackgroundColor(Color.BLACK); visibility = View.GONE }
         root.addView(keyboard, box(-1, 200).apply { gravity = Gravity.BOTTOM })
         bookmarks = LocalBookmarks(File(filesDir, "local-browser/bookmarks.properties"))
+        profiles = RgProfiles.get(this)
         tabs = LocalTabs(::createTab) { tab -> pages.removeView(tab.session.surface); tab.session.destroy() }
         restoreMetadata(savedInstanceState?.getString("local.tabs") ?: getPreferences(MODE_PRIVATE).getString("local.tabs", null))
         val preferences=getSharedPreferences("local-input-settings",MODE_PRIVATE)
@@ -445,10 +455,13 @@ class LocalBrowserActivity : ComponentActivity() {
         val title = when (utility) {
             Utility.TABS -> "Tabs"
             Utility.BOOKMARKS -> "Bookmarks"
+            Utility.PROXY -> "Proxy"
             else -> "Settings"
         }
         overlay.addView(text(title, 24f), box(340, 32, 16, 16))
-        overlay.addView(button("Done") { dismissUtility() }.apply { tag = "utility.done" }, box(80, 48, 384, 8))
+        overlay.addView(button(if (utility == Utility.PROXY) "Back" else "Done") {
+            if (utility == Utility.PROXY) showUtility(Utility.SETTINGS) else dismissUtility()
+        }.apply { tag = "utility.done" }, box(80, 48, 384, 8))
         val scroll = ScrollView(this).apply { setBackgroundColor(Color.BLACK); isFillViewport = true }
         val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.BLACK) }
         scroll.addView(rows); overlay.addView(scroll, box(-1, -1, y = 64));utilityScroll=scroll
@@ -502,7 +515,33 @@ class LocalBrowserActivity : ComponentActivity() {
                     inputSettings.scrollSpeed>10,inputSettings.scrollSpeed<1200) {
                     inputSettings.stepScroll(it);renderUtility()
                 }
+                row(button("Proxy  ›") { showUtility(Utility.PROXY) }.apply {
+                    tag = "settings.proxy"
+                }, 48)
+                (rows.getChildAt(2).layoutParams as LinearLayout.LayoutParams).topMargin = 8
                 inputSettings.error?.let { row(text(it,18f),52) }
+            }
+            Utility.PROXY -> {
+                profiles.profiles.forEachIndexed { index, profile ->
+                    val group = FrameLayout(this)
+                    group.addView(text(profile.name).apply {
+                        tag = "profile.name.$index"; gravity = Gravity.CENTER_VERTICAL
+                        setSingleLine(); ellipsize = TextUtils.TruncateAt.END
+                    }, box(264, 56))
+                    group.addView(button(if (profile.enabled) "ON" else "OFF", "Toggle ${profile.name}") {
+                        profiles.toggle(profile.source)
+                    }.apply { tag = "profile.toggle.$index"; isEnabled = !profiles.busy }, box(64, 56, 272))
+                    group.addView(button("Delete", "Delete ${profile.name}") { profiles.delete(profile.source) }
+                        .apply { tag = "profile.delete.$index"; isEnabled = !profiles.busy }, box(104, 56, 344))
+                    row(group, 56)
+                }
+                row(button("Add a new profile") {
+                    scanProfileQr { payload ->
+                        // A cancelled scanner must not reopen utilities over a toolbar action.
+                        if (payload != null) { showUtility(Utility.PROXY); profiles.import(payload) }
+                    }
+                }.apply { tag = "profile.add"; isEnabled = !profiles.busy }, 48)
+                profiles.message?.let { row(text(it, 18f).apply { tag = "profile.message"; maxLines = 3 }, 72) }
             }
             else -> Unit
         }
@@ -619,8 +658,11 @@ class LocalBrowserActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         com.code2hack.eyebrowse.rg.proxy.RgProxyRuntime.get(this).acquire()
+        profiles.observe(profileChanged)
+        profiles.activate()
     }
     override fun onStop() {
+        profiles.unobserve(profileChanged)
         android.webkit.CookieManager.getInstance().flush()
         if (!getPreferences(MODE_PRIVATE).edit().putString("local.tabs", metadata()).commit()) {
             localError = "Tab recovery could not be saved."; updateStatus()
@@ -635,6 +677,7 @@ class LocalBrowserActivity : ComponentActivity() {
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
             if (event.action == KeyEvent.ACTION_UP) when {
                 keyboard.isShown -> dismissKeyboard()
+                utility == Utility.PROXY -> showUtility(Utility.SETTINGS)
                 utility != Utility.BROWSING -> dismissUtility()
                 tabs.current.session.state.canGoBack -> tabs.current.session.back()
                 else -> finish()

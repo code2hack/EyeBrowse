@@ -1,0 +1,7 @@
+SnakeYAML 2.5
+Maven: org.yaml:snakeyaml:2.5
+Upstream: https://bitbucket.org/snakeyaml/snakeyaml/src/snakeyaml-2.5/
+License: Apache License 2.0; see licenses/SnakeYAML-Apache-2.0.txt
+Unmodified dependency JAR SHA-256: e6682acf1ace77508ef13649cbf4f8d09d2cf5457bdb61d25ffb6ac0233d78dd
+
+Mihomo and its linked modules/data: see mihomo/NOTICE.txt and mihomo/licenses/.

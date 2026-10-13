@@ -22,6 +22,8 @@ internal class RouteFixture(keyStore: InputStream) : Closeable {
     val tls: SSLContext
     val observations = CopyOnWriteArrayList<Pair<String, String>>()
     val proxyRequests = CopyOnWriteArrayList<Pair<String, String>>()
+    val subscriptions = ConcurrentHashMap<String, Pair<Int, String>>()
+    @Volatile var subscriptionAgent: String? = null
     @Volatile var slowHealthy = true
     @Volatile var fastHealthy = true
     private val sockets = Collections.newSetFromMap(ConcurrentHashMap<Closeable, Boolean>())
@@ -81,6 +83,13 @@ internal class RouteFixture(keyStore: InputStream) : Closeable {
         val path = request.substringBefore("\r\n").split(' ')[1]
         val peer = checkNotNull(socket.inetAddress.hostAddress)
         observations += path to peer
+        subscriptions[path.substringBefore('?')]?.let { (status, body) ->
+            val agent = request.lineSequence().firstOrNull { it.startsWith("User-Agent:", true) }?.substringAfter(':')?.trim()
+            val bytes = (if (subscriptionAgent != null && agent != subscriptionAgent) "cHJveGllczogW10=" else body).toByteArray(Charsets.UTF_8)
+            socket.outputStream.write("HTTP/1.1 $status Fixture\r\nContent-Type: application/yaml\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray())
+            socket.outputStream.write(bytes)
+            return
+        }
         if (path.startsWith("/hold")) Thread.sleep(2000) // Observe the core's matched rule while the connection is live.
         if (path.startsWith("/health")) {
             socket.outputStream.write("HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n".toByteArray()); return
