@@ -209,8 +209,10 @@ class ProxyRefreshInstrumentedTest {
                 await("Controlled genuine core ready") { runtime.proxyPort != null && runtime.webViewPort == runtime.proxyPort }
                 val api = CoreControl(File(home, "control.sock").absolutePath)
                 fun count() = api.request("GET", "/providers/rules").getJSONObject("providers").getJSONObject("CN-DOMAIN").getInt("ruleCount")
+                report.put("initialLoadedRuleCount", count())
+                await("Controlled last-good provider fully loaded") { count() > 2 }
                 val oldCount = count()
-                assertTrue(oldCount > 2)
+                report.put("lastGoodRuleCount", oldCount)
                 fun direct(label: String) {
                     val connection = runtime.openConnection(URL("$local/observe-$label"))
                     try { assertEquals("127.0.0.1", connection.inputStream.bufferedReader().use { it.readText() }) }
