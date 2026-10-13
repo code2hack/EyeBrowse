@@ -122,13 +122,14 @@ replaced only its test APK. Package data was preserved throughout.
 | `host01` | One genuine Linux test failed because the generated Unix-socket path exceeded the platform limit; the three new policy/MRS tests passed. |
 | `host02` | All 93 JVM tests passed with the short owned temp path; Android test compilation exposed an incorrect test API name. |
 | `host03`, `host04` | All 93 JVM tests passed, zero skips; genuine Linux routing/MRS checks, debug app/test compilation and lint task completed. |
-| `host05`–`host10` | Affected Android test compilation and lint task completed after test-only corrections; production APK bytes stayed unchanged. |
+| `host05`–`host11` | Affected Android test compilation and lint task completed after test-only corrections; production APK bytes stayed unchanged. |
 | `native01`, `native03` | Fresh-process private Owner-cache checks passed, one source/six enabled nodes, unchanged cache/tabs hashes, no core or subscription request. |
 | `native02` | Nine completed destination/failure cases, then the observer rejected a legitimate `connections: null` snapshot before its request appeared. Full test failed; restoration passed. |
 | `native04` | Initial fixture-control connection hit its three-second test bound. Full test failed; restoration passed. Subsequent RG HTTP 200/tailnet ping qualified recovery without restarting ADB/network services. |
 | `native05` | Reached genuine regional matching; failed on the observer's `IP-CIDR` expectation versus core API spelling `IPCIDR`. Restoration passed. |
 | `native06`, `native07` | New lifecycle-count observer failed because Android `ps` exposed a basename rather than the assumed absolute executable path. External observation qualified one actual core/socket/listener; the observer now resolves `/proc/PID/exe`. Restoration passed. |
 | `native08` | Fourteen routing/update/failure cases completed, then form retention failed. The test had not verified that its initial field assignment reached the committed controlled document; setup now requires native READY, exact URL and a verified initial value. Restoration passed. |
+| `native09` | Verified initial and retained form value/sentinel, with one page request before and after all refreshes. Later native input setup failed because it assigned an address before requesting focus; normal focus entry restored the committed URL. The test now requests focus before assigning its dummy draft. Restoration passed. |
 
 The successful full host gate used explicit JDK 17.0.19 and SDK 35, shared flock,
 two Gradle workers, 2 GiB heap and `GOMAXPROCS=2`, with fresh available-memory
