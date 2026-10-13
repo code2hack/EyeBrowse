@@ -108,7 +108,22 @@ class MihomoRoutingInstrumentedTest {
                                 val peer = try {
                                     val code = connection.responseCode
                                     observation.put("httpStatus", code)
-                                    if (code != 200) observation.put("errorBody", connection.errorStream?.bufferedReader()?.use { it.readText().take(1024) })
+                                    if (code != 200) {
+                                        observation.put("errorBody", connection.errorStream?.bufferedReader()?.use { it.readText().take(1024) })
+                                            .put("fixturePort", port).put("nativePort", runtime.proxyPort)
+                                            .put("webViewPort", runtime.webViewPort).put("runtimeStatus", runtime.status)
+                                        // This is the owned origin, not a personal page or production subscription.
+                                        val direct = URL("http://127.0.0.1:${fixture.http}/observe-failure-control")
+                                            .openConnection(java.net.Proxy.NO_PROXY) as java.net.HttpURLConnection
+                                        try {
+                                            direct.connectTimeout = 3000; direct.readTimeout = 3000
+                                            observation.put("directControlStatus", direct.responseCode)
+                                            observation.put("directControlPeer", direct.inputStream.bufferedReader().use { it.readText() })
+                                        } catch (diagnostic: Exception) {
+                                            observation.put("directControlErrorType", diagnostic.javaClass.name)
+                                        } finally { direct.disconnect() }
+                                        observation.put("coreVersion", runCatching { api.request("GET", "/version") }.getOrNull())
+                                    }
                                     assertEquals(label, 200, code)
                                     connection.inputStream.bufferedReader().use { it.readText() }
                                 }
