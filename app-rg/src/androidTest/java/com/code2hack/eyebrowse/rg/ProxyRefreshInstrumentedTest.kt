@@ -86,6 +86,7 @@ class ProxyRefreshInstrumentedTest {
         val files = names.associateWith { File(home, it).takeIf(File::isFile)?.readBytes() }
         val previousDirectories = home.listFiles().orEmpty().filter { it.isDirectory }.map { it.name }.toSet()
         val clock = owner.clock; val urls = owner.ruleUrls; val testUrl = runtime.testUrl; val network = owner.testConnectivity
+        val regionalInspection = runtime.inspectRegional
         Closeable {
             var failure: Throwable? = null
             fun restore(action: () -> Unit) { try { action() } catch (caught: Throwable) {
@@ -98,9 +99,14 @@ class ProxyRefreshInstrumentedTest {
                 RgProfiles.get(context).idle().get(90, TimeUnit.SECONDS)
                 await("Profile mutation completed") { !RgProfiles.get(context).busy }
             }
-            restore { main { owner.inspectJob = null; owner.clock = clock; owner.ruleUrls = urls; owner.testConnectivity = network } }
+            restore { main { owner.inspectJob = null; owner.clock = clock; owner.ruleUrls = urls; owner.testConnectivity = network
+                runtime.inspectRegional = regionalInspection } }
             restore { scheduler.cancel(4501); scheduler.cancel(4502) }
-            restore { await("Owned runtime released before state restoration") { runtime.proxyPort == null && runtime.webViewPort == null } }
+            restore {
+                await("Owned runtime released before state restoration") { runtime.proxyPort == null && runtime.webViewPort == null }
+                val stopped = RgProxyRuntime::class.java.getDeclaredField("stopping").apply { isAccessible = true }.get(runtime) as Process?
+                if (stopped != null) assertTrue("Owned child exited before restoring rule files", stopped.waitFor(5, TimeUnit.SECONDS))
+            }
             restore { runtime.useTestEndpoint(testUrl) }
             restore {
                 for ((name, bytes) in files) {
@@ -168,6 +174,136 @@ class ProxyRefreshInstrumentedTest {
         File(context.filesDir, "issue45-owner-preservation.json").writeText(JSONObject().put("profiles", 1).put("nodes", 6)
             .put("enabled", true).put("cacheSha256", digest(raw.toByteArray())).put("tabsSha256", tabs?.let { digest(it.toByteArray()) })
             .put("rawCacheAndTabsUnchanged", true).put("privateDataLogged", false).put("coreStarted", false).toString(2))
+    }
+
+    @Test(timeout = 300000) fun regionalReadAndUncertainApplyFailuresSettleAndKeepLastGood() = preserving {
+        report.put("suite", "correction02-regional-faults")
+        var now = System.currentTimeMillis()
+        main { owner.clock = { now }; owner.testConnectivity = { true } }
+        assertTrue(due.edit().putLong("subscriptions", now).putLong("regional", now).commit())
+        scheduler.cancel(4501); scheduler.cancel(4502)
+        val home = File(context.filesDir, "mihomo").apply { mkdirs() }
+        val lastGood = File(home, "regional-owned-last-good").apply { assertTrue(mkdir()) }
+        val download = File(home, "regional-owned-download").apply { assertTrue(mkdir()) }
+        for (name in RegionalRules.sources.keys) File(lastGood, name).writeBytes(context.assets.open("mihomo/$name").use { it.readBytes() })
+        RegionalRules.select(home, lastGood)
+        val input = File(download, "domain.txt").apply { writeText("owned-regional.test\nregional-refresh.test\n") }
+        val binary = File(context.applicationInfo.nativeLibraryDir, "libmihomo.so")
+        val child = ProcessBuilder(binary.absolutePath, "convert-ruleset", "domain", "text", input.absolutePath,
+            File(download, "cn-domain.mrs").absolutePath).redirectErrorStream(true).redirectOutput(File("/dev/null"))
+            .apply { environment()["GOMAXPROCS"] = "2" }.start()
+        try { assertTrue(child.waitFor(10, TimeUnit.SECONDS)); assertEquals(0, child.exitValue()) }
+        finally { child.destroyForcibly(); child.waitFor(2, TimeUnit.SECONDS) }
+        RouteFixture(instrumentation.context.assets.open("proxy-fixture.p12")).use { fixture ->
+            val local = "http://127.0.0.1:${fixture.http}"
+            val yaml = "proxies: [{type: http, server: 127.0.0.1, port: ${fixture.fast}}]"
+            fixture.subscriptions["/subscription"] = 200 to yaml
+            fixture.binaryResponses["/cn-domain.mrs"] = 200 to File(download, "cn-domain.mrs").readBytes()
+            fixture.binaryResponses["/cn-ip.mrs"] = 200 to File(lastGood, "cn-ip.mrs").readBytes()
+            val urls = RegionalRules.sources.mapValues { (name, _) -> "$local/$name" }
+            val store = ProfileStore({ profilesPrefs.getString("profiles", null) }) { profilesPrefs.edit().putString("profiles", it).commit() }
+            assertTrue(store.save(listOf(SavedProfile("$local/subscription", "Owned regional", true, ProfileImport.nodes(yaml)))))
+            runtime.useTestEndpoint("$local/health")
+            main { owner.ruleUrls = urls }
+            ActivityScenario.launch(LocalBrowserActivity::class.java).use { scene ->
+                await("Controlled genuine core ready") { runtime.proxyPort != null && runtime.webViewPort == runtime.proxyPort }
+                val api = CoreControl(File(home, "control.sock").absolutePath)
+                fun count() = api.request("GET", "/providers/rules").getJSONObject("providers").getJSONObject("CN-DOMAIN").getInt("ruleCount")
+                val oldCount = count()
+                assertTrue(oldCount > 2)
+                fun direct(label: String) {
+                    val connection = runtime.openConnection(URL("$local/observe-$label"))
+                    try { assertEquals("127.0.0.1", connection.inputStream.bufferedReader().use { it.readText() }) }
+                    finally { connection.disconnect() }
+                }
+                fun resetLastGood() {
+                    RegionalRules.select(home, lastGood)
+                    val config = ProxyPolicy.configuration(ProxyPolicy.nodes(store.profiles.map { it.asSource() }), runtime.proxyPort!!,
+                        File(home, "control.sock").absolutePath, listOf("system"), runtime.testUrl, lastGood.absolutePath)
+                    val file = File(home, "issue45-route.json").apply { writeText(ProxyPolicy.configurationText(config.toString())) }
+                    api.request("PUT", "/configs", JSONObject().put("path", file.absolutePath), 10000)
+                    assertEquals(oldCount, count())
+                }
+                val page = "$local/page"
+                scene.onActivity { assertTrue(it.tabs.current.session.open(page).accepted()) }
+                fun js(code: String): String {
+                    val result = CompletableFuture<String>()
+                    scene.onActivity { it.tabs.current.session.page!!.evaluateJavascript(code) { value -> result.complete(value) } }
+                    return result.get(5, TimeUnit.SECONDS)
+                }
+                await("Controlled fault-test document ready") { js("location.href === ${JSONObject.quote(page)} && document.readyState === 'complete' && !!document.querySelector('#note')") == "true" }
+                assertEquals("true", js("document.querySelector('#note').value='regional-retained-form';window.regionalSentinel=456;true"))
+                val pageRequests = fixture.observations.count { it.first == "/page" }
+                val launchPort = runtime.proxyPort!!
+                runtimeCounts("regional-launch", true, launchPort)
+
+                val pointer = File(home, "regional-current")
+                val mode = android.system.Os.stat(pointer.absolutePath).st_mode and 0x1ff
+                val requests = fixture.observations.count { it.first.endsWith(".mrs") }
+                android.system.Os.chmod(pointer.absolutePath, 0)
+                try {
+                    assertThrows(java.io.IOException::class.java) { RegionalRules.current(home) }
+                    assertFalse(runtime.refreshRegional(urls).get(5, TimeUnit.SECONDS))
+                    assertTrue(due.edit().putLong("regional", 0).commit())
+                    lateinit var completed: CompletableFuture<Unit>
+                    main { completed = owner.runDue() }
+                    completed.get(10, TimeUnit.SECONDS)
+                    assertEquals(now, due.getLong("regional", 0))
+                    main { assertTrue(owner.idle().isDone) }
+                } finally { android.system.Os.chmod(pointer.absolutePath, mode) }
+                assertEquals(requests, fixture.observations.count { it.first.endsWith(".mrs") })
+                assertEquals(lastGood, RegionalRules.current(home)); assertEquals(oldCount, count()); direct("read-failure")
+                cases.put(JSONObject().put("case", "real-pointer-read-failure").put("regionalAndDueFuturesSettled", true).put("loadedRuleCount", oldCount))
+                val subscriptions = fixture.observations.count { it.first == "/subscription" }
+                now += 86_400_000; runDue()
+                assertNotEquals(lastGood, RegionalRules.current(home)); assertEquals(2, count())
+                assertTrue(fixture.observations.count { it.first == "/subscription" } > subscriptions)
+                cases.put(JSONObject().put("case", "later-due-retry").put("subscriptionAndRegionalProgress", true).put("loadedRuleCount", 2))
+
+                for (fault in listOf("apply-response", "pointer-write", "rollback-refused")) {
+                    resetLastGood()
+                    var staged: File? = null
+                    var appliedCount = 0; var rollback = false
+                    val blocker = File(home, "regional-next")
+                    if (fault != "apply-response") assertTrue(blocker.mkdir()) // A real pointer-write I/O failure.
+                    runtime.inspectRegional = { phase, file ->
+                        if (phase == "applied") {
+                            staged = file; appliedCount = count()
+                            check(appliedCount == 2 && RegionalRules.current(home) == lastGood)
+                            check(RegionalRules.sources.keys.all { File(file, it).isFile })
+                            if (fault == "apply-response") throw java.io.IOException("Owned response loss after genuine apply")
+                        } else if (phase == "rollback") {
+                            rollback = true
+                            check(RegionalRules.sources.keys.all { File(checkNotNull(staged), it).isFile })
+                            if (fault == "rollback-refused") file.writeText("invalid: [") // Genuine core refuses this rollback.
+                        }
+                    }
+                    try { assertFalse(runtime.refreshRegional(urls).get(30, TimeUnit.SECONDS)) }
+                    finally { runtime.inspectRegional = null; if (fault != "apply-response") assertTrue(blocker.delete()) }
+                    assertEquals(2, appliedCount); assertTrue(rollback); assertEquals(lastGood, RegionalRules.current(home))
+                    assertTrue(RegionalRules.sources.keys.all { File(lastGood, it).isFile })
+                    if (fault == "rollback-refused") {
+                        await("Unconfirmed rollback stops owned core and clears WebView proxy") { runtime.proxyPort == null && runtime.webViewPort == null }
+                        assertTrue(RegionalRules.sources.keys.all { File(checkNotNull(staged), it).isFile })
+                        runtimeCounts("rollback-direct", false, launchPort)
+                    } else { assertEquals(oldCount, count()); assertFalse(checkNotNull(staged).exists()) }
+                    direct(fault)
+                    cases.put(JSONObject().put("case", fault).put("candidateLoadedRuleCount", appliedCount)
+                        .put("pointerLastGood", true).put("coreStoppedForDirect", runtime.proxyPort == null)
+                        .put("candidateFilesRetained", checkNotNull(staged).exists()))
+                }
+                assertEquals("\"regional-retained-form\"", js("document.querySelector('#note').value"))
+                assertEquals("456", js("window.regionalSentinel"))
+                assertEquals(pageRequests, fixture.observations.count { it.first == "/page" })
+                cases.put(JSONObject().put("case", "regional-fault-form-retained").put("pageRequests", pageRequests))
+                now += 86_400_000; runDue()
+                assertNotEquals(lastGood, RegionalRules.current(home)); assertNull(runtime.proxyPort); direct("stopped-core-retry")
+                scene.recreate()
+                await("Recreated runtime loads selected retry pair") { runtime.proxyPort != null && runtime.webViewPort == runtime.proxyPort }
+                assertEquals(2, count()); runtimeCounts("regional-recreate", true, runtime.proxyPort!!)
+                report.put("provider", WebView.getCurrentWebViewPackage()?.versionName).put("result", "PASS_REGIONAL_FAULT_CASES")
+            }
+        }
     }
 
     @Test(timeout = 300000) fun actualJobsRefreshOnAndOffKeepLastGoodAndPreserveLiveForm() = preserving {

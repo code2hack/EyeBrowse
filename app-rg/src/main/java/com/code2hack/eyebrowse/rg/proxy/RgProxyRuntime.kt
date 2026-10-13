@@ -47,6 +47,7 @@ internal class RgProxyRuntime private constructor(private val context: Context) 
     private val checkingConnection = AtomicBoolean(false)
     internal var testUrl: String = ProxyPolicy.TEST_URL
         private set
+    @Volatile internal var inspectRegional: ((String, File) -> Unit)? = null // Opt-in controlled fault inspection only.
 
     @Synchronized fun acquire() {
         users++
@@ -139,8 +140,10 @@ internal class RgProxyRuntime private constructor(private val context: Context) 
             worker.execute {
                 var staging: File? = null
                 var kept = false
-                val previous = RegionalRules.current(directory)
+                var possiblyLoaded = false
+                var succeeded = false
                 try {
+                    val previous = RegionalRules.current(directory)
                     directory.mkdirs()
                     staging = java.nio.file.Files.createTempDirectory(directory.toPath(), "regional-").toFile()
                     require(urls.keys == RegionalRules.sources.keys)
@@ -167,25 +170,43 @@ internal class RgProxyRuntime private constructor(private val context: Context) 
                         .put("files", JSONArray(urls.map { (name, address) -> JSONObject().put("file", name)
                             .put("source", address).put("sha256", sha256(File(staging, name).readBytes())) })).toString())
                     val port = proxyPort
-                    if (port != null && process?.isAlive == true) {
-                        val candidate = File(directory, "regional-config.json")
-                        writeConfiguration(candidate, nodes, port, staging)
-                        control!!.request("PUT", "/configs", JSONObject().put("path", candidate.absolutePath), timeoutMs = 10_000)
+                    val active = process
+                    try {
+                        if (port != null && active?.isAlive == true) {
+                            val candidate = File(directory, "regional-config.json")
+                            writeConfiguration(candidate, nodes, port, staging)
+                            possiblyLoaded = true // A failed response does not prove that the core refused this pair.
+                            control!!.request("PUT", "/configs", JSONObject().put("path", candidate.absolutePath), timeoutMs = 10_000)
+                            inspectRegional?.invoke("applied", staging)
+                        }
+                        RegionalRules.select(directory, staging)
                     }
-                    try { RegionalRules.select(directory, staging) }
                     catch (failure: Exception) {
-                        if (port != null && process?.isAlive == true) {
-                            val rollback = File(directory, "regional-config.json")
-                            writeConfiguration(rollback, nodes, port, previous)
-                            control!!.request("PUT", "/configs", JSONObject().put("path", rollback.absolutePath), timeoutMs = 10_000)
+                        if (possiblyLoaded) {
+                            try {
+                                check(process === active && active?.isAlive == true && proxyPort == port)
+                                val rollback = File(directory, "regional-config.json")
+                                writeConfiguration(rollback, nodes, port!!, previous)
+                                inspectRegional?.invoke("rollback", rollback)
+                                control!!.request("PUT", "/configs", JSONObject().put("path", rollback.absolutePath), timeoutMs = 10_000)
+                                check(process === active && active.isAlive && proxyPort == port)
+                                possiblyLoaded = false
+                            } catch (rollback: Exception) {
+                                failure.addSuppressed(rollback)
+                                status = "Core unavailable; browsing directly"
+                                stopProcess() // Keep the pair until the possibly referencing child has actually exited.
+                            }
                         }
                         throw failure
                     }
                     kept = true
                     if (port != null && process?.isAlive == true) checkHealth()
-                    result.complete(true)
-                } catch (_: Exception) { result.complete(false) }
-                finally { if (!kept) staging?.deleteRecursively() }
+                    succeeded = true
+                } catch (_: Exception) { /* Last-good pointer/files remain selected. */ }
+                finally {
+                    try { if (!kept && !possiblyLoaded) staging?.deleteRecursively() }
+                    finally { result.complete(succeeded) }
+                }
             }
         }
 

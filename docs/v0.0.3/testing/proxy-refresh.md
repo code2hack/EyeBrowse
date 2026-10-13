@@ -62,7 +62,12 @@ activation. Converter children have a ten-second bound and no listeners.
 
 The active core loads the complete validated staged pair, then one atomic
 `regional-current` file selects that directory for subsequent starts. A failed
-pointer commit rolls the live configuration back. HTTP, partial/corrupt or parser
+pointer commit or uncertain apply response rolls the live configuration back.
+If rollback cannot be confirmed, the existing owned-core stop path clears its
+proxy override for DIRECT browsing. The candidate pair remains on disk while
+the stopped child could still reference it. Pointer lookup and cleanup are
+inside the regional operation's completion boundary, so a read failure settles
+the future and releases the shared due owner for a later attempt. HTTP, partial/corrupt or parser
 failure leaves the previous pointer/files intact. Each accepted pair retains
 source URLs, retrieval time and file SHA-256 values in private provenance.
 These hashes identify the downloaded bytes; a mutable upstream branch is not
@@ -134,11 +139,11 @@ replaced only its test APK. Package data was preserved throughout.
 | `native11` | Named exception-guard test passed in 0.531 seconds, retaining the injected primary/report-closure failures while restoring affected state. |
 | `native12` | Named fresh-process Owner-cache test passed in 0.316 seconds. Final comparison matched the original cache/tabs hashes, one source/six enabled nodes, without starting a core or logging private source data. |
 
-The successful native executions retain their original source binding
+The first candidate's successful native executions retain their original source binding
 `36e8c4dca1fedf0439a6e5348cffa72b1b89a2d3`, tree
-`20a933e00cb7f18780e6019db43ecce72d08a9dd`. Subsequent documentation and the
-Manager-authorized unpublished message-attribution correction do not change
-compiled inputs. The handoff records equivalent old/new commits without
+`20a933e00cb7f18780e6019db43ecce72d08a9dd`. That candidate's subsequent documentation and the
+Manager-authorized unpublished message-attribution correction did not change
+compiled inputs. Its handoff records equivalent old/new commits without
 relabelling these executions.
 
 `native10` observed one genuine core process, one kernel control socket and one
@@ -176,14 +181,14 @@ The installed Android ARM64 core was executed with `-v` and independently hashed
 `bb9afbd48717f92d59e07da35fb694b83d40d6edb63eb9033c2ee4174137d195`.
 Bundled domain/IP data retain their original pinned hashes and provenance.
 
-Final retained and installed APK SHA-256 values:
+First-candidate retained and installed APK SHA-256 values:
 
 | Artifact | SHA-256 |
 | --- | --- |
 | Debug app | `ce7d100ce53d0e54c87a169e7092745c081ec7b137c1b648e1725630d9357a52` |
 | Debug Android test | `b31129312f7ded69492f0463a7207d2d11819ef038448146cc5970a77e38eec6` |
 
-The provider was `com.android.webview` 95.0.4638.74. The final test-install/readback
+The provider was `com.android.webview` 95.0.4638.74. The `native10` test-install/readback
 record completed 0.616 seconds after instrumentation started; pre-start hash
 readback is not claimed. During the successful run, `/proc` maps identified the
 exact newly installed test APK and its matching SHA-256. Original timing,
@@ -201,3 +206,26 @@ until version end. Independent review and acceptance remain pending.
 The simplification pass shares the ordinary profile apply/save/rollback path
 with automatic refresh, uses two stable ordinary jobs and the existing runtime
 worker/health owner, and adds no dependency, recovery framework or manual UI.
+
+## Correction02: regional exception boundaries
+
+Whole review1 found R45-01 (pointer lookup outside the completion boundary) and
+R45-02 (uncertain apply/failed rollback followed by staged-file deletion) in
+the first candidate. Their original review and execution records remain intact.
+The correction keeps pointer lookup, live apply and pointer selection under the
+existing completion/rollback owners. A successful rollback confirms the previous
+pair; an unconfirmed rollback stops the owned core and retains the candidate.
+Mihomo's pinned [reload handler](https://github.com/MetaCubeX/mihomo/blob/88dcbf7f1614a67c3b36b848ee3592dfa92ada36/hub/route/configs.go#L401-L450)
+applies the configuration before returning its response, so client response
+failure cannot establish refusal.
+
+`RefreshPolicyTest.pointerIoFailuresKeepTheSelectedPairAndAllowRetry` exercises
+real unreadable-pointer and blocked-pointer-write I/O errors plus a later retry.
+`regionalReadAndUncertainApplyFailuresSettleAndKeepLastGood` exercises the actual
+Android regional/due futures, a chmod-induced read error, genuine controlled
+MRS activation followed by injected response loss, a blocked pointer write and
+a genuine core refusal of an invalid rollback. It checks selected and loaded
+generations, actual DIRECT destinations, retained files, form/request state and
+restart. The narrow inspection callback is unset in ordinary use; injected
+response loss is explicitly a test fault. The existing outer guard also waits
+for the stopped child to exit before restoring rule files.

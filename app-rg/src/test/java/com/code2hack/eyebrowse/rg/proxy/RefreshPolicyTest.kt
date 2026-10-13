@@ -1,6 +1,7 @@
 package com.code2hack.eyebrowse.rg.proxy
 
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
@@ -64,6 +65,32 @@ class RefreshPolicyTest {
             File(bad, "cn-ip.mrs").delete()
             assertFalse(RegionalRules.validate(binary, bad))
             assertEquals(candidate, RegionalRules.current(home))
+        } finally { home.deleteRecursively() }
+    }
+
+    @Test fun pointerIoFailuresKeepTheSelectedPairAndAllowRetry() {
+        val home = Files.createTempDirectory("regional-pointer-").toFile()
+        try {
+            val first = File(home, "regional-first").apply { mkdir() }
+            val next = File(home, "regional-next-pair").apply { mkdir() }
+            for (name in RegionalRules.sources.keys) {
+                File("src/main/assets/mihomo/$name").copyTo(File(first, name))
+                File(first, name).copyTo(File(next, name))
+            }
+            RegionalRules.select(home, first)
+            val pointer = File(home, "regional-current").toPath()
+            val permissions = Files.getPosixFilePermissions(pointer)
+            Files.setPosixFilePermissions(pointer, emptySet())
+            try { assertThrows(IOException::class.java) { RegionalRules.current(home) } }
+            finally { Files.setPosixFilePermissions(pointer, permissions) }
+            assertEquals(first, RegionalRules.current(home))
+            val blocker = File(home, "regional-next").apply { assertTrue(mkdir()) }
+            assertThrows(IOException::class.java) { RegionalRules.select(home, next) }
+            assertEquals(first, RegionalRules.current(home))
+            assertTrue(RegionalRules.sources.keys.all { File(first, it).isFile && File(next, it).isFile })
+            assertTrue(blocker.delete())
+            RegionalRules.select(home, next)
+            assertEquals(next, RegionalRules.current(home))
         } finally { home.deleteRecursively() }
     }
 }
