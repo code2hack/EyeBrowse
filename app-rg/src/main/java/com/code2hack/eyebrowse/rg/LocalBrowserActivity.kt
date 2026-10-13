@@ -660,8 +660,10 @@ class LocalBrowserActivity : ComponentActivity() {
         com.code2hack.eyebrowse.rg.proxy.RgProxyRuntime.get(this).acquire()
         profiles.observe(profileChanged)
         profiles.activate()
+        com.code2hack.eyebrowse.rg.proxy.RgRefresh.get(this).start()
     }
     override fun onStop() {
+        com.code2hack.eyebrowse.rg.proxy.RgRefresh.get(this).stop()
         profiles.unobserve(profileChanged)
         android.webkit.CookieManager.getInstance().flush()
         if (!getPreferences(MODE_PRIVATE).edit().putString("local.tabs", metadata()).commit()) {

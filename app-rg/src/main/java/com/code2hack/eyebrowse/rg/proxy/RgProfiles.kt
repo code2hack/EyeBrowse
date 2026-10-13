@@ -8,6 +8,7 @@ import java.net.URL
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.CompletableFuture
 
 /** One serialized owner survives Activity recreation; its IO thread expires after each operation. */
 internal class RgProfiles private constructor(context: Context) {
@@ -29,6 +30,7 @@ internal class RgProfiles private constructor(context: Context) {
     }
     private val main = Handler(Looper.getMainLooper())
     private val listeners = mutableSetOf<() -> Unit>() // Main-thread Activity observers only.
+    private var refresh: CompletableFuture<Int>? = null
     // Opt-in in-process instrumentation inspection. It never receives the source URL, persists
     // a document, or changes import behavior. The ordinary app leaves this unset.
     @Volatile internal var inspectDownload: ((Int, String?, String) -> Unit)? = null
@@ -43,7 +45,7 @@ internal class RgProfiles private constructor(context: Context) {
     fun unobserve(listener: () -> Unit) { listeners.remove(listener) }
     private fun notifyChanged() { main.post { listeners.toList().forEach { it() } } }
 
-    fun activate() {
+    fun activate(): CompletableFuture<Unit> = CompletableFuture<Unit>().also { result ->
         worker.execute {
             try {
                 store.reload()
@@ -53,6 +55,7 @@ internal class RgProfiles private constructor(context: Context) {
                     message = "Saved profiles could not be applied. Existing data kept."
             } catch (_: Exception) { message = "Saved profiles could not be applied. Existing data kept." }
             notifyChanged()
+            result.complete(Unit)
         }
     }
 
@@ -75,25 +78,43 @@ internal class RgProfiles private constructor(context: Context) {
         store.profiles.map { if (it.source == source) it.enabled(!it.enabled) else it }
     }
     fun delete(source: String) = change("Saving…") { store.profiles.filter { it.source != source } }
+    @Synchronized internal fun idle(): CompletableFuture<Int> = refresh ?: CompletableFuture.completedFuture(0)
+
+    /** Jobs, launch and connectivity share the same writer; no core subscription loop exists. */
+    @Synchronized fun refreshSaved(): CompletableFuture<Int> {
+        refresh?.let { return it }
+        val result = CompletableFuture<Int>()
+        refresh = result
+        worker.execute {
+            var updated = 0
+            try {
+                store.reload()
+                check(store.readable)
+                runtime.checkHealthNow().get() // Refresh stale all-down selection before a bootstrap download.
+                for (source in store.profiles.map { it.source }) {
+                    try {
+                        val nodes = ProfileImport.nodes(fetch(source))
+                        if (!runtime.validateSource(ProxySource(source, true, nodes)).get()) continue
+                        val candidate = store.refreshed(source, nodes) // Never adds a deleted source.
+                        if (candidate.none { it.source == source }) continue
+                        applyAndSave(candidate)
+                        updated++
+                    } catch (_: Exception) { /* One failed source keeps its cache; other sources still run. */ }
+                }
+                profiles = store.profiles
+                result.complete(updated)
+            } catch (_: Exception) { result.completeExceptionally(IllegalStateException("Saved data kept")) }
+            finally { synchronized(this) { refresh = null }; notifyChanged() }
+        }
+        return result
+    }
 
     @Synchronized private fun change(progress: String, next: () -> List<SavedProfile>) {
         if (busy || !store.readable) return
         busy = true; message = progress; notifyChanged()
         worker.execute {
             try {
-                val previous = store.profiles
-                val candidate = next()
-                if (!store.canSave(candidate))
-                    error("Profile change could not be saved. Existing data kept.")
-                // Core operations already have bounds. Health work scales with pool size; a
-                // shorter outer wait could abandon an applied pool before saving its cache.
-                if (!runtime.replaceSources(candidate.map { it.asSource() }).get())
-                    error("Profile change could not be applied. Existing data kept.")
-                if (!runCatching { store.save(candidate) }.getOrDefault(false)) {
-                    check(runtime.replaceSources(previous.map { it.asSource() }).get())
-                    error("Profile change could not be saved. Existing data kept.")
-                }
-                profiles = store.profiles
+                applyAndSave(next())
                 message = "Profile saved."
             } catch (failure: IllegalStateException) {
                 // Only our fixed public messages are allowed out of this boundary.
@@ -101,6 +122,19 @@ internal class RgProfiles private constructor(context: Context) {
             } catch (_: Exception) { message = "Profile change failed. Existing data kept." }
             finally { busy = false; notifyChanged() }
         }
+    }
+
+    private fun applyAndSave(candidate: List<SavedProfile>) {
+        val previous = store.profiles
+        if (!store.canSave(candidate)) error("Profile change could not be saved. Existing data kept.")
+        // Core/health calls already have bounds; an outer timeout could abandon an applied pool.
+        if (!runtime.replaceSources(candidate.map { it.asSource() }).get())
+            error("Profile change could not be applied. Existing data kept.")
+        if (!runCatching { store.save(candidate) }.getOrDefault(false)) {
+            check(runtime.replaceSources(previous.map { it.asSource() }).get())
+            error("Profile change could not be saved. Existing data kept.")
+        }
+        profiles = store.profiles
     }
 
     private fun fetch(source: String): String {

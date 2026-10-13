@@ -134,6 +134,61 @@ internal class RgProxyRuntime private constructor(private val context: Context) 
         worker.execute { checkHealth(); result.complete(process?.isAlive == true) }
     }
 
+    internal fun refreshRegional(urls: Map<String, String> = RegionalRules.sources): CompletableFuture<Boolean> =
+        CompletableFuture<Boolean>().also { result ->
+            worker.execute {
+                var staging: File? = null
+                var kept = false
+                val previous = RegionalRules.current(directory)
+                try {
+                    directory.mkdirs()
+                    staging = java.nio.file.Files.createTempDirectory(directory.toPath(), "regional-").toFile()
+                    require(urls.keys == RegionalRules.sources.keys)
+                    for ((name, address) in urls) {
+                        val connection = openConnection(URL(address))
+                        try {
+                            check(connection.responseCode == HttpURLConnection.HTTP_OK)
+                            require(connection.contentLengthLong <= RegionalRules.MAX_BYTES)
+                            connection.inputStream.use { input -> File(staging, name).outputStream().use { output ->
+                                val buffer = ByteArray(8192)
+                                var total = 0
+                                while (true) {
+                                    val count = input.read(buffer)
+                                    if (count < 0) break
+                                    total += count; require(total <= RegionalRules.MAX_BYTES)
+                                    output.write(buffer, 0, count)
+                                }
+                                output.fd.sync()
+                            } }
+                        } finally { connection.disconnect() }
+                    }
+                    check(RegionalRules.validate(File(context.applicationInfo.nativeLibraryDir, "libmihomo.so"), staging))
+                    File(staging, "provenance.json").writeText(JSONObject().put("retrievedAtMillis", System.currentTimeMillis())
+                        .put("files", JSONArray(urls.map { (name, address) -> JSONObject().put("file", name)
+                            .put("source", address).put("sha256", sha256(File(staging, name).readBytes())) })).toString())
+                    val port = proxyPort
+                    if (port != null && process?.isAlive == true) {
+                        val candidate = File(directory, "regional-config.json")
+                        writeConfiguration(candidate, nodes, port, staging)
+                        control!!.request("PUT", "/configs", JSONObject().put("path", candidate.absolutePath), timeoutMs = 10_000)
+                    }
+                    try { RegionalRules.select(directory, staging) }
+                    catch (failure: Exception) {
+                        if (port != null && process?.isAlive == true) {
+                            val rollback = File(directory, "regional-config.json")
+                            writeConfiguration(rollback, nodes, port, previous)
+                            control!!.request("PUT", "/configs", JSONObject().put("path", rollback.absolutePath), timeoutMs = 10_000)
+                        }
+                        throw failure
+                    }
+                    kept = true
+                    if (port != null && process?.isAlive == true) checkHealth()
+                    result.complete(true)
+                } catch (_: Exception) { result.complete(false) }
+                finally { if (!kept) staging?.deleteRecursively() }
+            }
+        }
+
     private fun start() {
         try {
             status = "Starting"
@@ -201,11 +256,12 @@ internal class RgProxyRuntime private constructor(private val context: Context) 
         }
     }
 
-    private fun writeConfiguration(file: File, candidates: List<JSONObject>, port: Int) {
+    private fun writeConfiguration(file: File, candidates: List<JSONObject>, port: Int,
+        regional: File = RegionalRules.current(directory)) {
         val cm = context.getSystemService(ConnectivityManager::class.java)
         val dns = cm.getLinkProperties(cm.activeNetwork)?.dnsServers.orEmpty().mapNotNull { it.hostAddress }
         val config = ProxyPolicy.configurationText(ProxyPolicy.configuration(candidates, port,
-            File(directory, "control.sock").absolutePath, dns, testUrl).toString()).toByteArray(Charsets.UTF_8)
+            File(directory, "control.sock").absolutePath, dns, testUrl, regional.absolutePath).toString()).toByteArray(Charsets.UTF_8)
         check(config.size <= 4 * 1024 * 1024) { "Proxy configuration too large" }
         file.writeBytes(config)
     }
