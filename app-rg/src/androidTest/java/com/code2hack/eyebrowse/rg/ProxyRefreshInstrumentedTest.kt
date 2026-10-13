@@ -75,10 +75,12 @@ class ProxyRefreshInstrumentedTest {
     }
 
     /** Restoration is outside scenario/runtime/fixture/report closures; original failures stay primary. */
-    private fun preserving(afterReport: () -> Unit = {}, body: () -> Unit) {
-        val prefs = listOf("proxy-profiles", "proxy-refresh", "LocalBrowserActivity").associateWith {
+    internal fun preserving(reportPrefix: String = "issue45-refresh", afterReport: () -> Unit = {}, body: () -> Unit) {
+        val prefs = listOf("proxy-profiles", "proxy-refresh", "LocalBrowserActivity", "local-input-settings").associateWith {
             context.getSharedPreferences(it, Context.MODE_PRIVATE).all.toMap()
         }
+        val bookmarks = File(context.filesDir, "local-browser/bookmarks.properties")
+        val previousBookmarks = bookmarks.takeIf(File::isFile)?.readBytes()
         val startingProfileCount = ProfileStore({ profilesPrefs.getString("profiles", null) }) { false }.profiles.size
         val jobs = scheduler.allPendingJobs.filter { it.id in listOf(4501, 4502) }
         val home = File(context.filesDir, "mihomo")
@@ -127,6 +129,15 @@ class ProxyRefreshInstrumentedTest {
                 } } }.commit())
                 assertTrue("Starting private state restored", snapshot == preferences.all)
             }
+            restore {
+                if (previousBookmarks == null) {
+                    if (bookmarks.exists()) assertTrue(bookmarks.delete())
+                } else {
+                    bookmarks.parentFile!!.mkdirs()
+                    bookmarks.writeBytes(previousBookmarks)
+                    assertTrue("Starting bookmarks restored", previousBookmarks.contentEquals(bookmarks.readBytes()))
+                }
+            }
             restore { RgProfiles.get(context).activate().get(45, TimeUnit.SECONDS) }
             restore { // activate restores in-memory nodes; then preserve the exact starting private files.
                 for ((name, bytes) in files) {
@@ -136,13 +147,13 @@ class ProxyRefreshInstrumentedTest {
             }
             restore { for (job in jobs) assertEquals(JobScheduler.RESULT_SUCCESS, scheduler.schedule(job)) }
             report.put("startingStateRestored", failure == null).put("startingProfileCount", startingProfileCount)
-            restore { File(context.filesDir, "issue45-refresh-restoration.json").writeText(JSONObject()
+            restore { File(context.filesDir, "$reportPrefix-restoration.json").writeText(JSONObject()
                 .put("startingStateRestored", failure == null).put("privateProfileDataLogged", false).toString()) }
             failure?.let { throw it }
         }.use {
-            Closeable { File(context.filesDir, "issue45-refresh-results.json").writeText(report.toString(2)); afterReport() }.use { body() }
+            Closeable { File(context.filesDir, "$reportPrefix-results.json").writeText(report.toString(2)); afterReport() }.use { body() }
         }
-        File(context.filesDir, "issue45-refresh-results.json").writeText(report.toString(2))
+        File(context.filesDir, "$reportPrefix-results.json").writeText(report.toString(2))
     }
 
     @Test fun exceptionalReportStillRestoresDueAndPrivateProfileState() {
