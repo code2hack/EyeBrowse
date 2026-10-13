@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Each local WebView uses the device's existing network route. -->
+    <!-- App-local HTTP proxy; no VPN, TUN or system proxy setting. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- Requested at runtime only on deliberate local URL scanner entry. -->
     <uses-permission android:name="android.permission.CAMERA" />

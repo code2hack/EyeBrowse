@@ -102,6 +102,7 @@ internal class LocalBrowserSession(context: Context, private val onPageTouchUp: 
                 return !allowed
             }
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                com.code2hack.eyebrowse.rg.proxy.RgProxyRuntime.get(view.context).onNetworkError()
                 if (request.isForMainFrame) {
                     hidePage(view)
                     publish(Phase.ERROR, "Page unavailable (${error.errorCode})")

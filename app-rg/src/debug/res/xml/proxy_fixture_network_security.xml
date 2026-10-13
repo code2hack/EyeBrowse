@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors><certificates src="system" /></trust-anchors>
+    </base-config>
+    <!-- Dummy certificate and private key are public test fixtures, scoped to reserved .test names. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">route.test</domain>
+        <domain includeSubdomains="false">health.test</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/proxy_fixture_ca" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

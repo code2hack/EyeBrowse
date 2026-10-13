@@ -580,11 +580,16 @@ class LocalBrowserActivity : ComponentActivity() {
         } catch (_: Exception) { localError = "Some previous tab locations could not be recovered." }
     }
     override fun onSaveInstanceState(outState: Bundle) { outState.putString("local.tabs", metadata()); super.onSaveInstanceState(outState) }
+    override fun onStart() {
+        super.onStart()
+        com.code2hack.eyebrowse.rg.proxy.RgProxyRuntime.get(this).acquire()
+    }
     override fun onStop() {
         android.webkit.CookieManager.getInstance().flush()
         if (!getPreferences(MODE_PRIVATE).edit().putString("local.tabs", metadata()).commit()) {
             localError = "Tab recovery could not be saved."; updateStatus()
         }
+        com.code2hack.eyebrowse.rg.proxy.RgProxyRuntime.get(this).release()
         super.onStop()
     }
     // Android's public Activity hook; AndroidX core marks its override library-only.
