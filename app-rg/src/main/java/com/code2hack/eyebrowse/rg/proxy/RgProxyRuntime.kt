@@ -72,6 +72,13 @@ internal class RgProxyRuntime private constructor(private val context: Context) 
         worker.execute {
             try {
                 val port = proxyPort
+                // Activity startup activates the saved pool again after start(). Reapplying an
+                // identical pool reloads the live core while its first request may be forwarding.
+                if (port != null && process?.isAlive == true &&
+                    JSONArray(candidate).toString() == JSONArray(nodes).toString()) {
+                    result.complete(true)
+                    return@execute
+                }
                 directory.mkdirs()
                 val file = File(directory, "candidate.json")
                 writeConfiguration(file, candidate, port ?: 1)

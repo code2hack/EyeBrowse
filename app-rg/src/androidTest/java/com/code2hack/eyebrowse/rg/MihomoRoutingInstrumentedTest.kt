@@ -130,10 +130,13 @@ class MihomoRoutingInstrumentedTest {
                                     }
                                 } catch (failure: AssertionError) {
                                     observation.put("nativePort", runtime.proxyPort).put("webViewPort", runtime.webViewPort)
-                                        .put("runtimeStatus", runtime.status)
-                                    scenario.onActivity {
+                                        .put("runtimeStatus", runtime.status).put("activityState", scenario.state.name)
+                                    try { scenario.onActivity {
                                         observation.put("phase", it.tabs.current.session.state.phase)
                                             .put("pageError", it.tabs.current.session.state.error)
+                                    } } catch (diagnostic: Throwable) {
+                                        observation.put("nativeObservationFailureClass", diagnostic.javaClass.name)
+                                        failure.addSuppressed(diagnostic)
                                     }
                                     observation.put("core", runCatching { api.request("GET", "/version") }.getOrNull())
                                     throw failure

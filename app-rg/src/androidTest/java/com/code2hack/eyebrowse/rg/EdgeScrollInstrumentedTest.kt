@@ -134,9 +134,39 @@ class EdgeScrollInstrumentedTest {
         control(scene,"address");scene.onActivity { it.address.selectAll() }
         for(c in base.trimEnd('/')+"/"+route) key(scene,RgKeyboardKeys.Key.Character(c.toString()))
         key(scene,RgKeyboardKeys.Key.Command.ENTER)
-        await("actual visible local fixture") { var ready=false;scene.onActivity {
+        try { await("actual visible local fixture") { var ready=false;scene.onActivity {
             ready=it.tabs.current.session.state.phase==LocalBrowserSession.Phase.READY && it.tabs.current.session.page?.isShown==true
-        };ready }
+        };ready } } catch(failure: Throwable) {
+            try { scene.onActivity {
+                val expected=base.trimEnd('/')+"/"+route
+                val runtime=com.code2hack.eyebrowse.rg.proxy.RgProxyRuntime.get(it)
+                evidence.put(edgeObservation(it).put("kind","owned-page-ready-failure")
+                    .put("committedOwnedDestination",it.tabs.current.committedUrl==expected)
+                    .put("sessionOwnedDestination",it.tabs.current.session.state.url==expected)
+                    .put("pageError",it.tabs.current.session.state.error ?: JSONObject.NULL)
+                    .put("coreStatus",runtime.status).put("corePort",runtime.proxyPort ?: JSONObject.NULL)
+                    .put("webViewPort",runtime.webViewPort ?: JSONObject.NULL))
+            } } catch(observation: Throwable) { failure.addSuppressed(observation) }
+            // Read status only from the same owned destination after failure; never replay the page.
+            val expected=base.trimEnd('/')+"/"+route
+            val runtime=com.code2hack.eyebrowse.rg.proxy.RgProxyRuntime.get(
+                InstrumentationRegistry.getInstrumentation().targetContext)
+            for(direct in listOf(false,true)) {
+                val probe=JSONObject().put("kind","owned-page-failure-http-probe").put("direct",direct)
+                    .put("corePortBefore",runtime.proxyPort ?: JSONObject.NULL)
+                evidence.put(probe)
+                try {
+                    val url=java.net.URL(expected)
+                    val connection=if(direct) url.openConnection(java.net.Proxy.NO_PROXY) as java.net.HttpURLConnection
+                        else runtime.openConnection(url)
+                    try { connection.connectTimeout=2000;connection.readTimeout=2000
+                        probe.put("httpStatus",connection.responseCode)
+                    } finally { connection.disconnect() }
+                } catch(diagnostic: Exception) { probe.put("exceptionClass",diagnostic.javaClass.name) }
+                probe.put("corePortAfter",runtime.proxyPort ?: JSONObject.NULL)
+            }
+            throw failure
+        }
     }
     private fun js(scene: ActivityScenario<LocalBrowserActivity>, expression: String): String {
         val done=CountDownLatch(1);var value=""
