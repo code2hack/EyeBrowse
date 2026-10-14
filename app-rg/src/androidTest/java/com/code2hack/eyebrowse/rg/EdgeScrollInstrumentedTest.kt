@@ -147,6 +147,24 @@ class EdgeScrollInstrumentedTest {
                     .put("coreStatus",runtime.status).put("corePort",runtime.proxyPort ?: JSONObject.NULL)
                     .put("webViewPort",runtime.webViewPort ?: JSONObject.NULL))
             } } catch(observation: Throwable) { failure.addSuppressed(observation) }
+            // Read status only from the same owned destination after failure; never replay the page.
+            val expected=base.trimEnd('/')+"/"+route
+            val runtime=com.code2hack.eyebrowse.rg.proxy.RgProxyRuntime.get(
+                InstrumentationRegistry.getInstrumentation().targetContext)
+            for(direct in listOf(false,true)) {
+                val probe=JSONObject().put("kind","owned-page-failure-http-probe").put("direct",direct)
+                    .put("corePortBefore",runtime.proxyPort ?: JSONObject.NULL)
+                evidence.put(probe)
+                try {
+                    val url=java.net.URL(expected)
+                    val connection=if(direct) url.openConnection(java.net.Proxy.NO_PROXY) as java.net.HttpURLConnection
+                        else runtime.openConnection(url)
+                    try { connection.connectTimeout=2000;connection.readTimeout=2000
+                        probe.put("httpStatus",connection.responseCode)
+                    } finally { connection.disconnect() }
+                } catch(diagnostic: Exception) { probe.put("exceptionClass",diagnostic.javaClass.name) }
+                probe.put("corePortAfter",runtime.proxyPort ?: JSONObject.NULL)
+            }
             throw failure
         }
     }
