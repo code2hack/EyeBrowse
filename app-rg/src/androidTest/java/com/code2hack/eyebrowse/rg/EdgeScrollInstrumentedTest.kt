@@ -134,9 +134,21 @@ class EdgeScrollInstrumentedTest {
         control(scene,"address");scene.onActivity { it.address.selectAll() }
         for(c in base.trimEnd('/')+"/"+route) key(scene,RgKeyboardKeys.Key.Character(c.toString()))
         key(scene,RgKeyboardKeys.Key.Command.ENTER)
-        await("actual visible local fixture") { var ready=false;scene.onActivity {
+        try { await("actual visible local fixture") { var ready=false;scene.onActivity {
             ready=it.tabs.current.session.state.phase==LocalBrowserSession.Phase.READY && it.tabs.current.session.page?.isShown==true
-        };ready }
+        };ready } } catch(failure: Throwable) {
+            try { scene.onActivity {
+                val expected=base.trimEnd('/')+"/"+route
+                val runtime=com.code2hack.eyebrowse.rg.proxy.RgProxyRuntime.get(it)
+                evidence.put(edgeObservation(it).put("kind","owned-page-ready-failure")
+                    .put("committedOwnedDestination",it.tabs.current.committedUrl==expected)
+                    .put("sessionOwnedDestination",it.tabs.current.session.state.url==expected)
+                    .put("pageError",it.tabs.current.session.state.error ?: JSONObject.NULL)
+                    .put("coreStatus",runtime.status).put("corePort",runtime.proxyPort ?: JSONObject.NULL)
+                    .put("webViewPort",runtime.webViewPort ?: JSONObject.NULL))
+            } } catch(observation: Throwable) { failure.addSuppressed(observation) }
+            throw failure
+        }
     }
     private fun js(scene: ActivityScenario<LocalBrowserActivity>, expression: String): String {
         val done=CountDownLatch(1);var value=""
