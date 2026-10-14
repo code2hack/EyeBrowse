@@ -2,12 +2,16 @@ package com.code2hack.eyebrowse.rg
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.os.SystemClock
 import android.webkit.CookieManager
+import android.webkit.WebStorage
+import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.code2hack.eyebrowse.rg.proxy.ProfileStore
+import com.code2hack.eyebrowse.rg.proxy.RgRefresh
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -48,6 +52,17 @@ class VersionUpgradeInstrumentedTest {
         return JSONObject().put("applicationId", context.packageName).put("versionName", info.versionName)
             .put("versionCode", info.longVersionCode).put("firstInstallTime", info.firstInstallTime)
             .put("signer", digest(info.signingInfo!!.apkContentsSigners.single().toByteArray()))
+    }
+    private fun assertEmptyWebsiteState() {
+        val done = CountDownLatch(1)
+        var cookies = true; var origins = -1
+        instrumentation.runOnMainSync {
+            cookies = CookieManager.getInstance().hasCookies()
+            WebStorage.getInstance().getOrigins { origins = it.size; done.countDown() }
+        }
+        assertTrue("Website storage observed", done.await(5, TimeUnit.SECONDS))
+        assertFalse("Fresh baseline has no cookies", cookies)
+        assertEquals("Fresh baseline has no website origins", 0, origins)
     }
     private fun js(scene: ActivityScenario<NativeInputTestActivity>, script: String): String {
         val done = CountDownLatch(1); var value = ""
@@ -121,5 +136,74 @@ class VersionUpgradeInstrumentedTest {
             .put("isolatedProductionStoreInitialization", true).put("physicalFreshInstall", false)
             .put("defaultTenths", 20).put("defaultScroll", 240).put("repeatedChoiceTenths", 21)
             .put("repeatedChoiceScroll", 230).toString(2))
+    }
+
+    /** Run first after the externally verified uninstall/absence/install, before owned fixtures. */
+    @Test fun newlyInstalledProductionStateUsesDefaultsAndKeepsRepeatedChoices() {
+        val freshBaseline = File(context.filesDir, "issue46-physical-fresh-baseline.json")
+        assertFalse("Do not overwrite the observed fresh baseline", freshBaseline.exists())
+        assertFalse("Former upgrade marker was discarded", baseline.exists())
+        for (name in listOf("LocalBrowserActivity", "local-input-settings", "proxy-profiles", "proxy-refresh"))
+            assertTrue("Fresh production preferences: $name", context.getSharedPreferences(name, Context.MODE_PRIVATE).all.isEmpty())
+        assertFalse(File(context.filesDir, "local-browser/bookmarks.properties").exists())
+        assertFalse(File(context.filesDir, "pairing/peer_trust.json").exists())
+        val before = privateState()
+        assertEquals(0, before.getInt("profileCount")); assertEquals(0, before.getInt("nodeCount"))
+        val pkg = packageState()
+        assertEquals("com.code2hack.eyebrowse.rg", pkg.getString("applicationId"))
+        assertEquals("0.0.3", pkg.getString("versionName")); assertEquals(3L, pkg.getLong("versionCode"))
+        assertEmptyWebsiteState()
+        ProxyRefreshInstrumentedTest().preserving("issue46-physical-fresh") {
+            instrumentation.runOnMainSync { RgRefresh.get(context).testConnectivity = { false } }
+            ActivityScenario.launch(LocalBrowserActivity::class.java).use { scene ->
+                val deadline = SystemClock.elapsedRealtime() + 5_000
+                var laidOut = false
+                while (!laidOut && SystemClock.elapsedRealtime() < deadline) {
+                    scene.onActivity { laidOut = it.root.width == 480 && it.root.height == 640 }
+                    SystemClock.sleep(20)
+                }
+                assertTrue("Native fresh screen laid out", laidOut)
+                scene.onActivity {
+                    assertEquals(480, it.root.width); assertEquals(640, it.root.height)
+                    assertEquals(1, it.tabs.count); assertEquals("", it.tabs.current.committedUrl)
+                    assertEquals("", it.tabs.current.recoveryUrl); assertTrue(it.bookmarks.entries.isEmpty())
+                    assertTrue(it.profiles.profiles.isEmpty())
+                    assertEquals(20, it.inputSettings.pointerTenths); assertEquals(240, it.inputSettings.scrollSpeed)
+                    it.showUtility(LocalBrowserActivity.Utility.SETTINGS)
+                    assertEquals("2.0×", it.root.findViewWithTag<TextView>("settings.pointer.value").text.toString())
+                    assertEquals("240 px/s", it.root.findViewWithTag<TextView>("settings.scroll.value").text.toString())
+                }
+                instrumentation.waitForIdleSync()
+                val image = checkNotNull(instrumentation.uiAutomation.takeScreenshot())
+                try {
+                    assertEquals(480, image.width); assertEquals(640, image.height)
+                    File(context.filesDir, "issue46-physical-fresh-settings.png").outputStream().use {
+                        assertTrue(image.compress(Bitmap.CompressFormat.PNG, 100, it))
+                    }
+                } finally { image.recycle() }
+                scene.onActivity { assertTrue(it.inputSettings.stepPointer(1)); assertTrue(it.inputSettings.stepScroll(-1)) }
+                repeat(3) {
+                    scene.recreate()
+                    scene.onActivity { assertEquals(21, it.inputSettings.pointerTenths); assertEquals(230, it.inputSettings.scrollSpeed) }
+                }
+            }
+        }
+        assertEquals("New fresh baseline restored after all closures", before.toString(), privateState().toString())
+        assertEmptyWebsiteState()
+        freshBaseline.writeText(JSONObject().put("package", pkg).put("privateState", before)
+            .put("productionDefaultTenths", 20).put("productionDefaultScroll", 240)
+            .put("repeatedChoiceTenths", 21).put("repeatedChoiceScroll", 230).put("activityRecreations", 3)
+            .put("cookieCount", 0).put("websiteOriginCount", 0)
+            .put("startingFreshStateRestored", true).put("formerRealProfileRestored", false).toString(2))
+    }
+
+    @Test fun controlledChecksKeepTheObservedNewFreshBaseline() {
+        val before = JSONObject(File(context.filesDir, "issue46-physical-fresh-baseline.json").readText())
+        assertEquals(before.getJSONObject("package").toString(), packageState().toString())
+        assertEquals(before.getJSONObject("privateState").toString(), privateState().toString())
+        assertEmptyWebsiteState()
+        File(context.filesDir, "issue46-physical-fresh-integrity.json").writeText(JSONObject()
+            .put("newFreshBaselineUnchanged", true).put("profiles", 0).put("nodes", 0)
+            .put("formerRealProfileRestored", false).toString(2))
     }
 }
