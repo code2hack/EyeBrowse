@@ -216,7 +216,7 @@ class VersionUpgradeInstrumentedTest {
                     ?.let { digest(it.toByteArray()) } ?: "ABSENT")
             WebStorage.getInstance().getOrigins { origins ->
                 result.put("originCount", origins.size)
-                    .put("originSetSHA256", digest(origins.keys.sorted().joinToString("\n").toByteArray()))
+                    .put("originSetSHA256", digest(origins.keys.map { it as String }.sorted().joinToString("\n").toByteArray()))
                 done.countDown()
             }
         }
