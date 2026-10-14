@@ -224,8 +224,14 @@ class VersionUpgradeInstrumentedTest {
         return result
     }
 
+    private fun ownerStateFile(kind: String): File {
+        val name = InstrumentationRegistry.getArguments().getString("ownerStateSnapshot", "current-owner")!!
+        require(name.matches(Regex("current-owner(?:-[a-z0-9-]+)?")))
+        return File(context.filesDir, "issue46-$name-$kind.json")
+    }
+
     @Test fun recordCurrentOwnerStateForControlledChecks() {
-        val file = File(context.filesDir, "issue46-current-owner-baseline.json")
+        val file = ownerStateFile("baseline")
         assertFalse("Do not overwrite the current Owner baseline", file.exists())
         val fresh = JSONObject(File(context.filesDir, "issue46-physical-fresh-baseline.json").readText())
         val pkg = packageState()
@@ -235,11 +241,11 @@ class VersionUpgradeInstrumentedTest {
     }
 
     @Test fun controlledChecksKeepCurrentOwnerState() {
-        val before = JSONObject(File(context.filesDir, "issue46-current-owner-baseline.json").readText())
+        val before = JSONObject(ownerStateFile("baseline").readText())
         assertEquals(before.getJSONObject("package").toString(), packageState().toString())
         assertEquals(before.getJSONObject("privateState").toString(), privateState().toString())
         assertEquals(before.getJSONObject("websiteState").toString(), websiteState().toString())
-        File(context.filesDir, "issue46-current-owner-integrity.json").writeText(JSONObject()
+        ownerStateFile("integrity").writeText(JSONObject()
             .put("currentOwnerStateUnchanged", true).put("privateValuesLogged", false).toString(2))
     }
 }
