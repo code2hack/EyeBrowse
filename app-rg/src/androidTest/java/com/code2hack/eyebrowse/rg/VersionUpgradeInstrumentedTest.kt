@@ -206,4 +206,40 @@ class VersionUpgradeInstrumentedTest {
             .put("newFreshBaselineUnchanged", true).put("profiles", 0).put("nodes", 0)
             .put("formerRealProfileRestored", false).toString(2))
     }
+
+    private fun websiteState(): JSONObject {
+        val done = CountDownLatch(1)
+        val result = JSONObject()
+        instrumentation.runOnMainSync {
+            result.put("hasCookies", CookieManager.getInstance().hasCookies())
+                .put("ownedOriginCookieSHA256", CookieManager.getInstance().getCookie(origin)
+                    ?.let { digest(it.toByteArray()) } ?: "ABSENT")
+            WebStorage.getInstance().getOrigins { origins ->
+                result.put("originCount", origins.size)
+                    .put("originSetSHA256", digest(origins.keys.sorted().joinToString("\n").toByteArray()))
+                done.countDown()
+            }
+        }
+        assertTrue("Opaque website state observed", done.await(5, TimeUnit.SECONDS))
+        return result
+    }
+
+    @Test fun recordCurrentOwnerStateForControlledChecks() {
+        val file = File(context.filesDir, "issue46-current-owner-baseline.json")
+        assertFalse("Do not overwrite the current Owner baseline", file.exists())
+        val fresh = JSONObject(File(context.filesDir, "issue46-physical-fresh-baseline.json").readText())
+        val pkg = packageState()
+        assertEquals("Same installation after Owner use", fresh.getJSONObject("package").toString(), pkg.toString())
+        file.writeText(JSONObject().put("package", pkg).put("privateState", privateState())
+            .put("websiteState", websiteState()).put("privateValuesLogged", false).toString(2))
+    }
+
+    @Test fun controlledChecksKeepCurrentOwnerState() {
+        val before = JSONObject(File(context.filesDir, "issue46-current-owner-baseline.json").readText())
+        assertEquals(before.getJSONObject("package").toString(), packageState().toString())
+        assertEquals(before.getJSONObject("privateState").toString(), privateState().toString())
+        assertEquals(before.getJSONObject("websiteState").toString(), websiteState().toString())
+        File(context.filesDir, "issue46-current-owner-integrity.json").writeText(JSONObject()
+            .put("currentOwnerStateUnchanged", true).put("privateValuesLogged", false).toString(2))
+    }
 }
