@@ -43,5 +43,21 @@
     "physicalSerial": "1906092617103125",
     "model": "RG-glasses",
     "visualInspection": "Uncropped native 480x640; actual black native Views and controlled fixture content; no optical PASS"
+  },
+  {
+    "path": "images/physical-fresh-settings.png",
+    "evidencePath": "/home/code2hack/.local/state/eyebrowse/v0.0.3/runs/run-001/issue-46/evidence/native59-actual-fresh-defaults/issue46-physical-fresh-settings.png",
+    "sha256": "774d1fbbc06e77e3b788f1a315655050e4e490ce189d692497aa16a1058932bd",
+    "bytes": 17829,
+    "width": 480,
+    "height": 640,
+    "invocation": "native59-actual-fresh-defaults",
+    "source": "8b688d9b288d6de11188855d3a712ab9e8ac7de3",
+    "compiledSource": "dd010aa75a8ceeea03edfa318a43197d14408c54",
+    "appSha256": "d6a9145be20a2e671381d06b60ba8318db6bf1ae6089fab76c7c29a27a6a9952",
+    "testSha256": "d59eabdcd93e6c7161553892f354f812807f0fc5a24051c9fba4220eebe823eb",
+    "physicalSerial": "1906092617103125",
+    "model": "RG-glasses",
+    "visualInspection": "Uncropped native 480x640; actual fresh production Settings2.0x/240px/s and one empty tab; no former profile restored; no optical PASS"
   }
 ]
