@@ -42,6 +42,8 @@ internal class RgProxyRuntime private constructor(private val context: Context) 
     @Volatile var status = "Stopped"
         private set
     private var webConfiguring = false // Main-thread only; coalesce normal start/stop callbacks.
+    private var webUnsupported = false
+    private val browserActions = linkedSetOf<Runnable>() // Configuration listeners, not input events.
     private var nodes = emptyList<JSONObject>() // Owned deep copies, not profile storage.
     private var health: ScheduledFuture<*>? = null
     private val checkingConnection = AtomicBoolean(false)
@@ -51,7 +53,10 @@ internal class RgProxyRuntime private constructor(private val context: Context) 
 
     @Synchronized fun acquire() {
         users++
-        if (users == 1) worker.execute { if (users > 0 && process == null) start() }
+        if (users == 1) {
+            if (process == null) status = "Starting"
+            worker.execute { if (users > 0 && process == null) start() }
+        }
     }
 
     @Synchronized fun release() {
@@ -136,6 +141,27 @@ internal class RgProxyRuntime private constructor(private val context: Context) 
             catch (_: Exception) { status = "Core unavailable; browsing directly"; stopProcess() }
             finally { checkingConnection.set(false) }
         }
+    }
+
+    /** Address loads must not race a disappearing old override or a not-yet-applied new one. */
+    internal fun afterBrowserConfigured(action: Runnable) = onMain {
+        browserActions += action
+        flushBrowserActions()
+    }
+
+    internal fun cancelBrowserAction(action: Runnable) = onMain { browserActions.remove(action); Unit }
+
+    private fun onMain(action: () -> Unit) {
+        if (Looper.myLooper() == main.looper) action() else main.post(action)
+    }
+
+    private fun flushBrowserActions() {
+        val ready = webUnsupported || (!webConfiguring && webViewPort == proxyPort &&
+            (proxyPort != null || status != "Starting"))
+        if (!ready) return
+        val actions = browserActions.toList()
+        browserActions.clear()
+        actions.forEach { it.run() }
     }
 
     internal fun checkHealthNow(): CompletableFuture<Boolean> = CompletableFuture<Boolean>().also { result ->
@@ -322,16 +348,19 @@ internal class RgProxyRuntime private constructor(private val context: Context) 
             if (webConfiguring) return@post
             val supported = WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)
             if (!supported) {
+                webUnsupported = true
                 status = "WebView proxy API unavailable; browser uses direct routing"
                 webViewPort = null
+                flushBrowserActions()
                 return@post
             }
+            webUnsupported = false
             val desired = proxyPort
             webConfiguring = true
             val complete = Runnable {
                 webConfiguring = false
                 webViewPort = desired
-                if (desired != proxyPort) syncWebView()
+                if (desired != proxyPort) syncWebView() else flushBrowserActions()
             }
             try {
                 @SuppressLint("RequiresFeature") // Checked above; lint does not follow return@post.

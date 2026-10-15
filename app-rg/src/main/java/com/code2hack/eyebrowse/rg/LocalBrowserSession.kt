@@ -40,6 +40,16 @@ internal class LocalBrowserSession(context: Context, private val onPageTouchUp: 
     var state = State()
         private set
     var onStateChanged: (State) -> Unit = {}
+    private val runtime = com.code2hack.eyebrowse.rg.proxy.RgProxyRuntime.get(context)
+    private var pendingAddress: String? = null
+    private var pendingHttpError: Pair<String, String>? = null
+    private val startPendingAddress = Runnable {
+        val address = pendingAddress
+        pendingAddress = null
+        if (address != null) page?.loadUrl(address)
+    }
+    private var resumed = false
+    private val resumeConfiguredPage = Runnable { if (resumed) page?.onResume() }
 
     init { createPage() }
 
@@ -104,7 +114,9 @@ internal class LocalBrowserSession(context: Context, private val onPageTouchUp: 
             override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
                 if (request.isForMainFrame) {
                     hidePage(view)
-                    publish(Phase.ERROR, "HTTP error ${response.statusCode}")
+                    // The response can precede the history commit. Do not advertise a settled
+                    // error document while Refresh would still reload the previous entry.
+                    pendingHttpError = request.url.toString() to "HTTP error ${response.statusCode}"
                 }
             }
             override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
@@ -124,33 +136,48 @@ internal class LocalBrowserSession(context: Context, private val onPageTouchUp: 
     fun open(draft: String): AddressPolicy.Result {
         val result = AddressPolicy.resolve(draft)
         if (result.accepted()) {
+            pendingHttpError = null
             val view = page ?: createPage() // Deliberate recovery only; never replay a failed form.
             hidePage(view)
             publish(Phase.LOADING)
-            view.loadUrl(checkNotNull(result.url()))
+            pendingAddress = checkNotNull(result.url())
+            runtime.afterBrowserConfigured(startPendingAddress)
         }
         return result
     }
 
     fun back() { page?.takeIf { it.canGoBack() }?.let {
+        pendingHttpError = null
+        cancelPendingAddress()
         hidePage(it); publish(Phase.LOADING); it.goBack()
     } }
     fun forward() { page?.takeIf { it.canGoForward() }?.let {
+        pendingHttpError = null
+        cancelPendingAddress()
         hidePage(it); publish(Phase.LOADING); it.goForward()
     } }
     fun refresh() {
         page?.takeIf { state.phase != Phase.EMPTY && state.phase != Phase.INTERRUPTED }?.let {
+            pendingHttpError = null
+            cancelPendingAddress()
             hidePage(it)
             publish(Phase.LOADING)
             it.reload()
         }
     }
-    fun resume() { page?.onResume() }
-    fun pause() { page?.onPause() }
+    fun resume() { resumed = true; runtime.afterBrowserConfigured(resumeConfiguredPage) }
+    fun pause() { resumed = false; runtime.cancelBrowserAction(resumeConfiguredPage); page?.onPause() }
     fun destroy() {
+        cancelPendingAddress()
+        runtime.cancelBrowserAction(resumeConfiguredPage)
         onStateChanged = {}
         page?.let { surface.removeView(it); it.stopLoading(); it.destroy() }
         page = null
+    }
+
+    private fun cancelPendingAddress() {
+        pendingAddress = null
+        runtime.cancelBrowserAction(startPendingAddress)
     }
 
     private fun hidePage(view: WebView) {
@@ -161,6 +188,11 @@ internal class LocalBrowserSession(context: Context, private val onPageTouchUp: 
 
     private fun presentCommittedPage(view: WebView, url: String?, finished: Boolean) {
         if (state.phase != Phase.LOADING || url != view.url) return
+        pendingHttpError?.takeIf { it.first == url }?.let { failure ->
+            hidePage(view)
+            if (finished) publish(Phase.ERROR, failure.second)
+            return
+        }
         // A committed frame can be usable while a site's remaining resources are still loading.
         // Keep the same live styling and visual-state barrier before admitting page input.
         view.evaluateJavascript(PRESENTATION_SCRIPT) {
