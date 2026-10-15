@@ -115,6 +115,10 @@ be observed without account commands/submissions. A welcome or pairing page is
 not session/conversation success. EyeBrowse's existing forced-black styling
 still erases Paseo's background-colored menu bars; engine success does not fix
 that defect. ChatGPT's prior stylesheet problem was not isolated.
+`ChromiumAnonymousSiteInstrumentedTest` accepts only `anonymousSite=paseo` or
+`anonymousSite=chatgpt`, plus the actual `candidateHead`. Run each in a fresh
+invocation. It uses the native address/Open controls and records presentation,
+public-page booleans and callbacks, without sign-in or conversation inspection.
 
 Preserve original failures, incomplete streams and the exact source/input/APK
 bindings. Return only owned test processes/listeners and the reserved RG in its
