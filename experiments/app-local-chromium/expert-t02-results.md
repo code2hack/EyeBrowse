@@ -61,17 +61,27 @@ behavior through this amended observer, not reliable single-callback delivery.
 ## Bound inputs and current evidence
 
 Compiled APP source is `cb39bf49bcbed32fe90dc2fe534926619073937e`;
-Actual compiled TEST source including the observer and optional diagnostics is
+The TEST used for the complete browser/routing/focused acceptance groups was compiled at
 original `9c6ab28ce13d2d32e74d9aba8924de2d92cfcc04`, tree
 `09b91e0908dc3515e10f764ea65bc0c183d10fa5`. Its corrected metadata identity is
 `019b31fb497292b8bfc3f8bcbc81d850040201cf`; this is an equivalent tree, not a new
 compilation or execution. The [exact metadata map](expert-attribution-correction.md)
 preserves all original invocation/source SHAs.
 
+The separate document/cause-chain diagnostics use TEST compiled at
+`2c309f68543f39b479681663ea2d68b961da4eef`, tree
+`f6ec2e69e93036338774afd9f4357521c0c786a1`. The original anonymous, LocalBrowser
+and Standalone acceptance files are byte-identical to compiled9c6; production,
+loader, T01 and protected inputs are unchanged. APP output remains byte-identical.
+The new TEST was separately staged and installed with equal source/remote/device
+hashes and the same signer/UID. Its execution is supplemental measurement;
+earlier full groups retain their actuald359 TEST bindings.
+
 | Artifact | SHA256 |
 | --- | --- |
 | APP | `5eb93e460987b9279c13770777058bd9a2bd96c22dc29e71888b91ca849f4720` |
-| TEST | `d359cc0e07dccf27306dbbb4dc92f94eec177ac1fc08fc455d0089ef907c741f` |
+| TEST, original complete groups | `d359cc0e07dccf27306dbbb4dc92f94eec177ac1fc08fc455d0089ef907c741f` |
+| TEST, supplemental2c diagnostics | `956bf84b8e06fd005aedfa4d0edbb0a587091cdd273ae73006d046244f72e148` |
 | Original-upstream158 APK | `8daa731574cf1d0e7f24996dd18c8d51554dc7f27806f2619528021674b78710` |
 | Upstream158 ARM64 executable | `4a2cd075e018ef3827d21f5e721ee1b4a28ed03429ce19b03bea3ff8931cfad2` |
 
@@ -111,6 +121,13 @@ Original153 archive/native/source and every result remain separate.
 | usb-anonymous-chatgpt-001 at f8091cb | Original1test/1failure47.532s; actual ERROR `Page unavailable (-6)` and Chromium handshake `net_error -100` |
 | usb-native-network-chatgpt-001 at f8091cb | Diagnostic completion only,17.511s; app-proxy SSLHandshakeException and DIRECT SocketTimeoutException, no successful native root response |
 | usb-anonymous-paseo-trace-001 at f8091cb | Original presentation assertion passes,16.124s; passive metrics confirm22,147,384-byte script downloaded/status200, but delivered DOM samples still have zero text/buttons |
+| Supplemental2c build/lint | Corrected chromium selector passes19s,97tasks/8executed89upToDate; initial wrong variant selector fails before compilation and remains retained; no new94-case execution claim |
+| usb-paseo-document-001 at2c | Prelaunch engine-read SSH banner timeout after ordinary wake; no instrumentation/app-load invocation; original native output recovered exactly |
+| usb-paseo-document-002 at2c/TEST956 | Separate45000ms document window,74observations, first nonzero text/button at21348ms; measurement completion47.348s |
+| usb-paseo-document-003 at2c/TEST956 | Separate45000ms document window; measurement completion46.795s; external frame guard did not qualify focus, so no image was taken |
+| usb-paseo-document-004 at2c/TEST956 | Separate45001ms observed elapsed,46.766s measurement completion; qualified in-window software frame shows anonymous welcome and connection/pairing-link/settings controls, untouched |
+| usb-native-network-chatgpt-causes-001 at2c | First physical serial read fails at SSHconnect; no device mutation or instrumentation launch |
+| usb-native-network-chatgpt-causes-002 at2c/TEST956 | Measurement completion7.480s; app-proxy SSLHandshakeException→EOFException5309ms, DIRECT ConnectException151ms; no HTTP response |
 | Anonymous public roots | Separate earlier Paseo pass and later failures retained; no stable site/account PASS |
 
 The controlled request-without-response failure is distinct from the earlier
@@ -124,10 +141,12 @@ polyfill, longer deadline or trust bypass.
 The current ChatGPT failure also occurs in the separate native HTTP client.
 Concurrent host-only root GETs record DIRECT connection timeout and HTTP403
 through Spark's existing loopback proxy; these are separate host observations,
-not device-browser outcomes. The exact158 source maps `net_error -100` to
-connection closure. No TLS validation exception or egress/profile change is
-introduced. The handshake failure's cause chain and Paseo rendering after page
-completion require further diagnosis.
+not device-browser outcomes. The [exact158 source](https://github.com/chromium/chromium/blob/a296091d1ed08d4dde44b8a427477fe570911472/net/base/net_error_list.h)
+maps `net_error -100` to connection closure. The new exception chain confirms
+an EOF inside the app-proxy handshake; a separate DIRECT connection also fails.
+No TLS validation exception or egress/profile change is introduced. The
+ChatGPT browser criterion remains NOT_PASSED; none of these measurements
+establish a single cause or universally unavailable network.
 
 A separate document diagnostic observes one45-second window without breaking
 at READY. It reads only origin/readiness/counts/anonymous-or-challenge flags;
@@ -135,6 +154,25 @@ the original site method, assertions and deadline are unchanged. A diagnostic
 JUnit completion is never promoted to anonymous-interface acceptance. The
 native GET diagnostic additionally records bounded exception class chains,
 without exception messages or server/credential content.
+
+The qualified current software frame at2c/TEST956 shows Paseo's anonymous
+welcome screen and its connection, pairing-link and settings controls. None
+were used. The same run's delivered observations have no possible-personal-link
+indicator and the actual foreground is the separate experimental Activity.
+This resolves the identity of the rendered interface beyond a nonzero count;
+it does not qualify accounts, pairing, optics, stable-site behavior or a first
+HTTP-cache-cold load. The retained prototype cache/profile was not cleared.
+An earlier frame guard failed without retaining its raw focus/count, so that
+failure stays unqualified; the later display-focus capture has its own binding.
+
+The remaining specific capability is a normally validated ChatGPT HTTPS path
+on the same RG. Current permitted native/browser paths have no qualified
+successful response. A Manager/Owner test-egress disposition is requested;
+the current mission excludes global network changes and relay exposure.
+An Owner-provided test network or separately scoped noncredential app-only
+egress can be qualified before a new unchanged original browser invocation.
+No such change is authorized or performed by this checkpoint. Without it,
+the ChatGPT criterion remains unresolved and T02 stays unconcluded.
 
 The two earlier temporary CAMERA fixtures restored their captured denied state
 and exact flags after closure, including failed groups. Current authenticated
@@ -163,7 +201,7 @@ hashed158 input; the owned dummy private-file read is denied. This is actual
 Chromium renderer evidence, not the generic isolated-service probe or complete
 production-security approval.
 
-## Retention limitation and pending resource state
+## Retention limitation and actual resource state
 
 Evidence lives under the assigned private `expert-t02-01/evidence` directory,
 including immutable APKs, source archive, invocation manifests, terminals,
@@ -196,13 +234,36 @@ buffer. Prior prototype process/TCP/TCP6/Unix absence and CAMERA denied with the
 captured flags were then verified before further work. The earlier access/stream
 failures and recovered4/1 focused outcome remain distinct.
 
-Old fixture PID2142813 was returned at16:55:39UTC. New precisely owned Spark
-fixture PID2239633 remains active on100.92.81.33:39030 with source/page/compiled
-JAR and process/start/CWD/argv bindings, requalified before the browser group.
+Old fixture PID2142813 was returned at16:55:39UTC. Precisely owned Spark
+fixture PID2239633 was requalified and stopped at18:31:25UTC, with PID absent
+and39030 listener-free. Source/page/compiled JAR/process/start/CWD/argv and
+receipt/log hashes remain retained. Manager independently verified the return;
+39030 is now Manager-held with no active fixture grant.
 The earlier failed native tailnet probe produced no retained fixture receipt;
 the new complete USB routing invocation has its own nonce-matched native and
 browser receipts and live DIRECT-rule evidence. The USB control route alone
-does not establish that result or public-site success. Independent first-origin
-TLS, anonymous checks and final actual RG/runtime/socket/camera/fixture return
-are still being completed. The assigned private u4090 tool stage and all mission source/app/
-evidence/workspace cleanup remain deferred to the recorded repair-end boundary.
+does not establish that result or public-site success.
+
+Recurring per-command SSH startup failures were retained as separate prelaunch
+negatives. One task-owned local SSH multiplex client reused the same u4090/USB
+route, with exact PID2276534/start/CWD/argv/private600socket qualification;
+each device command still executed freshly. It created no port forwarding or
+remote controller. Its original shim and per-invocation tool hashes remain.
+Only that exact master/socket were closed after device work; actual PID and
+socket absence were verified at19:04:33.728674UTC.
+
+Necessary prototype teardown completed with fresh physical/installed/signer/
+input/original-public/provider bindings. The owned runtime stopped; supported
+process/TCP/TCP6/Unix headers and no owned rows were verified, and active camera
+clients were empty. A strict postread initially rejected the IPv6 field label;
+the original failure remains and a new correctly qualified read records the
+actual `remote_address` header. CAMERA remains granted with unchanged flags.
+Complete final power/display snapshots show Awake/displayON at
+19:04:33.624478UTC. These are timestamped actual readbacks, not continuous
+state or original-private-data equality claims. The shared SSH/ADB/Paseo
+services remain untouched.
+
+The specific ChatGPT network capability question remains with Manager; this is
+neither `EXPERT_HANDBACK_READY` nor source relinquishment or a T02 conclusion.
+The assigned private u4090 tool stage and all mission source/app/evidence/
+workspace cleanup remain deferred to the recorded repair-end boundary.
