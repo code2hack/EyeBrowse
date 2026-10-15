@@ -8,6 +8,7 @@ import android.os.Parcel
 import android.os.ParcelFileDescriptor
 import android.os.Process
 import dalvik.system.PathClassLoader
+import dalvik.system.BaseDexClassLoader
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -40,12 +41,22 @@ class IsolatedEngineProbeService : Service() {
             val libraryPath = "/proc/self/fd/${library.fd}"
             report.put("archiveFdReadable", File(archivePath).inputStream().use { it.read() >= 0 })
             val loader = PathClassLoader(archivePath, "/proc/self/fd", classLoader.parent)
-            val engineClass = loader.loadClass("org.chromium.content.app.SandboxedProcessService0")
+            // Use the same defining loader for the public System.load caller and engine JNI.
+            // These are the loader's existing dex-element fields, not a hidden native-load API.
+            val pathList = BaseDexClassLoader::class.java.getDeclaredField("pathList").apply { isAccessible = true }
+            val from = pathList.get(loader)
+            val to = pathList.get(classLoader)
+            val elements = from.javaClass.getDeclaredField("dexElements").apply { isAccessible = true }
+            val engineElements = elements.get(from) as Array<*>
+            val appElements = elements.get(to) as Array<*>
+            val combined = java.lang.reflect.Array.newInstance(engineElements.javaClass.componentType!!,
+                engineElements.size + appElements.size)
+            System.arraycopy(engineElements, 0, combined, 0, engineElements.size)
+            System.arraycopy(appElements, 0, combined, engineElements.size, appElements.size)
+            elements.set(to, combined)
+            val engineClass = classLoader.loadClass("org.chromium.content.app.SandboxedProcessService0")
             report.put("engineClass", engineClass.name)
-            // Keep the engine's own defining loader for JNI registration and native namespace.
-            val load = Runtime::class.java.getDeclaredMethod("load0", Class::class.java, String::class.java)
-            load.isAccessible = true
-            load.invoke(Runtime.getRuntime(), engineClass, libraryPath)
+            System.load(libraryPath)
             report.put("nativeLoadReturned", true)
         } catch (failure: Throwable) {
             report.put("failure", (failure.cause ?: failure).toString())
