@@ -18,6 +18,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONArray
 import org.json.JSONObject
+import org.junit.After
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.rules.TestName
@@ -26,6 +27,7 @@ import org.junit.runner.RunWith
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 
 /**
@@ -50,13 +52,68 @@ class LocalBrowserInstrumentedTest {
         }
         fail(label)
     }
-    private fun js(scene: ActivityScenario<LocalBrowserActivity>, expression: String): String {
+    private val jsObservations = JSONArray()
+    private var jsObservationCount = 0
+
+    // Audited read-only expressions only. A lost callback may be reobserved, but all
+    // dispatches share the original 3s deadline and the first delivered value wins.
+    private fun readJs(scene: ActivityScenario<LocalBrowserActivity>, expression: String): String {
+        val started = SystemClock.elapsedRealtimeNanos()
+        val deadline = started + TimeUnit.SECONDS.toNanos(3)
+        val done = CountDownLatch(1)
+        val delivered = AtomicReference<Pair<String, Long>>()
+        var target: WebView? = null
+        var attempts = 0
+        jsObservationCount++
+        try {
+            while (delivered.get() == null && SystemClock.elapsedRealtimeNanos() < deadline) {
+                scene.onActivity {
+                    if (target == null) target = checkNotNull(it.tabs.current.session.page)
+                    if (delivered.get() == null && SystemClock.elapsedRealtimeNanos() < deadline) {
+                        attempts++
+                        checkNotNull(target).evaluateJavascript(expression) { value ->
+                            if (delivered.compareAndSet(null, value to SystemClock.elapsedRealtimeNanos()))
+                                done.countDown()
+                        }
+                    }
+                }
+                val remaining = deadline - SystemClock.elapsedRealtimeNanos()
+                if (remaining > 0 && done.await(minOf(remaining, TimeUnit.MILLISECONDS.toNanos(250)),
+                        TimeUnit.NANOSECONDS)) break
+            }
+            val observation = delivered.get()
+            assertTrue("owned live fixture observation", observation != null && observation.second <= deadline)
+            return checkNotNull(observation).first
+        } finally {
+            if (attempts > 1 || delivered.get() == null || delivered.get()!!.second > deadline)
+                jsObservations.put(JSONObject()
+                .put("observation", jsObservationCount).put("attempts", attempts)
+                .put("missingCallbacksBeforeReobserve", maxOf(0, attempts - 1))
+                .put("callbackDelivered", delivered.get() != null)
+                .put("deliveredWithinDeadline", delivered.get()?.second?.let { it <= deadline } ?: false)
+                .put("elapsedNs", SystemClock.elapsedRealtimeNanos() - started))
+        }
+    }
+
+    // This mutates the fixture's observation listeners; never dispatch it twice.
+    private fun setupJs(scene: ActivityScenario<LocalBrowserActivity>, expression: String): String {
         val done = CountDownLatch(1); var result = ""
         scene.onActivity { checkNotNull(it.tabs.current.session.page).evaluateJavascript(expression) { value ->
             result = value; done.countDown()
         } }
         assertTrue("owned live fixture observation", done.await(3, TimeUnit.SECONDS))
         return result
+    }
+
+    @After fun saveObserverDeliveryEvidence() {
+        val args = InstrumentationRegistry.getArguments()
+        val report = JSONObject().put("method", testName.methodName)
+            .put("candidateHead", args.getString("candidateHead"))
+            .put("invocationId", args.getString("evidenceRunId"))
+            .put("totalDeadlineMs", 3000).put("observationCount", jsObservationCount)
+            .put("reobservedOrMissing", jsObservations)
+        File(InstrumentationRegistry.getInstrumentation().targetContext.filesDir,
+            "local-browser-${testName.methodName}-observer.json").writeText(report.toString(2))
     }
     private fun center(activity: LocalBrowserActivity, view: View): InputPoint {
         val child = IntArray(2); val root = IntArray(2)
@@ -142,7 +199,7 @@ class LocalBrowserInstrumentedTest {
             scene.onActivity { settled = !it.root.isLayoutRequested && it.tabs.current.session.page?.isLaidOut == true }
             settled
         }
-        val rect = JSONArray(js(scene, "(()=>{const r=document.querySelector(" + JSONObject.quote(selector) +
+        val rect = JSONArray(readJs(scene, "(()=>{const r=document.querySelector(" + JSONObject.quote(selector) +
             ").getBoundingClientRect();return [r.x,r.y,r.width,r.height,innerWidth,innerHeight]})()"))
         var point = InputPoint(0f, 0f)
         scene.onActivity {
@@ -178,7 +235,7 @@ class LocalBrowserInstrumentedTest {
                 focused = it.tabs.current.session.page?.let { page -> page.isShown && page.hasFocus() } == true &&
                     it.keyboard.isShown && it.keyboard.height == 200 && !it.root.isLayoutRequested
             }
-            focused && js(scene, "document.activeElement.id") == "\"text\""
+            focused && readJs(scene, "document.activeElement.id") == "\"text\""
         }
     }
     private fun bounds(view: View): JSONArray {
@@ -261,7 +318,7 @@ class LocalBrowserInstrumentedTest {
     private inline fun Bitmap.checked(block: (Bitmap) -> Unit) { try { block(this) } finally { recycle() } }
     private fun pagePixel(scene: ActivityScenario<LocalBrowserActivity>, shot: Bitmap,
                           selector: String, fractionX: Double, fractionY: Double): Int {
-        val rect = JSONArray(js(scene, "(()=>{const r=document.querySelector(" + JSONObject.quote(selector) +
+        val rect = JSONArray(readJs(scene, "(()=>{const r=document.querySelector(" + JSONObject.quote(selector) +
             ").getBoundingClientRect();return [r.x,r.y,r.width,r.height,innerWidth]})()"))
         var result = 0
         scene.onActivity {
@@ -373,7 +430,7 @@ class LocalBrowserInstrumentedTest {
     private val keyboardEvidence = JSONArray()
     private fun observeNativeEvents(scene: ActivityScenario<LocalBrowserActivity>) {
         // Owned fixture observation only: no values, focus, selection or scroll assignments.
-        js(scene,"""(()=>{window.fixtureNativeEvents=[];
+        setupJs(scene,"""(()=>{window.fixtureNativeEvents=[];
             for(const type of ['pointerdown','pointerup','click','focusin'])
                 document.addEventListener(type,e=>fixtureNativeEvents.push({type,target:e.target.id,
                     x:e.clientX,y:e.clientY,scrollY,viewport:innerHeight,at:performance.now()}),true);
@@ -381,7 +438,7 @@ class LocalBrowserInstrumentedTest {
     }
     private fun keyboardObservation(scene: ActivityScenario<LocalBrowserActivity>, stage: String) {
         // Values stay in the owned page. Reports contain geometry, lengths and native selection only.
-        val row = JSONObject(js(scene, """(()=>{const e=document.activeElement,r=e.getBoundingClientRect();return {
+        val row = JSONObject(readJs(scene, """(()=>{const e=document.activeElement,r=e.getBoundingClientRect();return {
             field:e.id,type:e.type||'plain',length:(e.value===undefined?e.textContent:e.value).length,
             selectionStart:e.selectionStart,selectionEnd:e.selectionEnd,
             bounds:[r.x,r.y,r.width,r.height],viewport:[innerWidth,innerHeight],
@@ -451,12 +508,12 @@ class LocalBrowserInstrumentedTest {
             var native=false
             scene.onActivity { native=it.keyboard.isShown && !it.root.isLayoutRequested &&
                 it.tabs.current.session.page?.hasFocus()==true }
-            native && js(scene,"document.activeElement.id")==JSONObject.quote(id)
+            native && readJs(scene,"document.activeElement.id")==JSONObject.quote(id)
         }
         keyboardObservation(scene,"focused-$id")
     }
     private fun editorEquals(scene: ActivityScenario<LocalBrowserActivity>, id: String, expected: String): Boolean =
-        js(scene,"(()=>{const e=document.getElementById('$id');return (e.value===undefined?e.innerText:e.value)==="+
+        readJs(scene,"(()=>{const e=document.getElementById('$id');return (e.value===undefined?e.innerText:e.value)==="+
             JSONObject.quote(expected)+"})()") == "true"
     private fun nativeEditorKey(scene: ActivityScenario<LocalBrowserActivity>, code: Int, meta: Int=0) {
         scene.onActivity {
@@ -472,7 +529,7 @@ class LocalBrowserInstrumentedTest {
 
     @Test fun fourNativeEditorsPreserveUnicodeSelectionCaseAndDone() = keyboardScene { scene,source ->
         open(scene,"local-keyboard.html");ready(scene)
-        val identity=js(scene,"fixtureIdentity")
+        val identity=readJs(scene,"fixtureIdentity")
         for(id in listOf("text","password","multiline","plain")) {
             focusEditor(scene,id)
             assertTrue("declarative Unicode seed unchanged",editorEquals(scene,id,"aé中🙂z"))
@@ -488,20 +545,20 @@ class LocalBrowserInstrumentedTest {
                 var point=InputPoint(0f,0f)
                 scene.onActivity { point=center(it,it.keyButtons.getValue(RgKeyboardKeys.Key.Character("b"))) }
                 aim(scene,source,point)
-                val inputs=js(scene,"fixtureInputs").toInt()
+                val inputs=readJs(scene,"fixtureInputs").toInt()
                 pad(scene,KeyEvent.KEYCODE_ENTER,2);SystemClock.sleep(700)
                 assertTrue("double tap suppresses both native key actions",editorEquals(scene,id,"x"))
-                assertEquals(inputs,js(scene,"fixtureInputs").toInt())
+                assertEquals(inputs,readJs(scene,"fixtureInputs").toInt())
                 pad(scene,KeyEvent.KEYCODE_ENTER)
                 await("one recognized tap writes one actual built-in key") { editorEquals(scene,id,"xb") }
-                assertEquals(inputs+1,js(scene,"fixtureInputs").toInt())
+                assertEquals(inputs+1,readJs(scene,"fixtureInputs").toInt())
                 scene.onActivity { assertTrue("recognized native key dispatch <=100ms",checkNotNull(it.router.lastDispatchMs)<=100) }
                 keyboardObservation(scene,"recognized-key-single")
                 key(scene,RgKeyboardKeys.Key.Command.BACKSPACE)
                 await("normal native key remains usable after pad gesture") { editorEquals(scene,id,"x") }
             }
             if(id=="password") {
-                assertEquals("\"password\"",js(scene,"document.activeElement.type"))
+                assertEquals("\"password\"",readJs(scene,"document.activeElement.type"))
                 keyboardObservation(scene,"password-after-key")
                 capture(scene,"keyboard-password-early").recycle()
                 SystemClock.sleep(2_000)
@@ -517,30 +574,30 @@ class LocalBrowserInstrumentedTest {
             key(scene,RgKeyboardKeys.Key.Command.BACKSPACE)
             await("built-in Backspace uses current caret") { editorEquals(scene,id,"xQ7@ z") }
             nativeEditorKey(scene,KeyEvent.KEYCODE_MOVE_END)
-            val submits=js(scene,"fixtureSubmits").toInt()
+            val submits=readJs(scene,"fixtureSubmits").toInt()
             key(scene,RgKeyboardKeys.Key.Command.ENTER)
             if(id in listOf("multiline","plain")) {
                 type(scene,"b")
                 await("native multiline Enter inserts a newline") { editorEquals(scene,id,"xQ7@ z\nb") }
             } else {
-                await("ordinary single-line form action") { js(scene,"fixtureSubmits").toInt()==submits+if(id=="text") 1 else 0 }
+                await("ordinary single-line form action") { readJs(scene,"fixtureSubmits").toInt()==submits+if(id=="text") 1 else 0 }
                 assertTrue("Enter preserves single-line content",editorEquals(scene,id,"xQ7@ z"))
             }
             keyboardObservation(scene,"edited-$id")
             capture(scene,"keyboard-$id").recycle()
-            val submitted=js(scene,"fixtureSubmits")
+            val submitted=readJs(scene,"fixtureSubmits")
             key(scene,RgKeyboardKeys.Key.Command.DONE)
             scene.onActivity { assertFalse(it.keyboard.isShown);assertTrue(it.tabs.current.session.page?.hasFocus()==true) }
-            assertEquals("Done never deliberately submits",submitted,js(scene,"fixtureSubmits"))
-            assertEquals("Done preserves current native field",JSONObject.quote(id),js(scene,"document.activeElement.id"))
-            assertEquals("show/hide retains live document",identity,js(scene,"fixtureIdentity"))
+            assertEquals("Done never deliberately submits",submitted,readJs(scene,"fixtureSubmits"))
+            assertEquals("Done preserves current native field",JSONObject.quote(id),readJs(scene,"document.activeElement.id"))
+            assertEquals("show/hide retains live document",identity,readJs(scene,"fixtureIdentity"))
             assertTrue("Done retains completed editing",editorEquals(scene,id,if(id in listOf("multiline","plain")) "xQ7@ z\nb" else "xQ7@ z"))
         }
     }
 
     @Test fun actualAddressKeysKeepDraftAndFixedToolbarUntilOpen() = keyboardScene { scene,_ ->
         open(scene,"local-keyboard.html");ready(scene)
-        val identity=js(scene,"fixtureIdentity")
+        val identity=readJs(scene,"fixtureIdentity")
         val bookmarkFile=File(InstrumentationRegistry.getInstrumentation().targetContext.filesDir,"local-browser/bookmarks.properties")
         val url=fixtureBase+"/local-keyboard.html"
         var store: LocalBookmarks?=null
@@ -573,7 +630,7 @@ class LocalBrowserInstrumentedTest {
         }
         key(scene,RgKeyboardKeys.Key.Command.ENTER)
         scene.onActivity { assertTrue(it.keyboard.isShown);assertEquals(draft,it.address.text.toString()) }
-        assertEquals("invalid Open leaves page",identity,js(scene,"fixtureIdentity"))
+        assertEquals("invalid Open leaves page",identity,readJs(scene,"fixtureIdentity"))
         control(scene,"bookmark")
         scene.onActivity {
             added=it.bookmarks.contains(url)
@@ -588,11 +645,11 @@ class LocalBrowserInstrumentedTest {
         capture(scene,"keyboard-address").recycle()
         key(scene,RgKeyboardKeys.Key.Command.DONE)
         scene.onActivity { assertFalse(it.keyboard.isShown) }
-        assertEquals("address Done leaves page",identity,js(scene,"fixtureIdentity"))
+        assertEquals("address Done leaves page",identity,readJs(scene,"fixtureIdentity"))
         control(scene,"address")
         scene.onActivity { assertEquals("Done keeps unsent draft for correction",draft,it.address.text.toString());it.address.selectAll() }
         type(scene,fixtureBase+"/history.html");key(scene,RgKeyboardKeys.Key.Command.ENTER);ready(scene)
-        assertEquals("valid Open navigates", "\"RG local history\"",js(scene,"document.title"))
+        assertEquals("valid Open navigates", "\"RG local history\"",readJs(scene,"document.title"))
         }, restoreAndRemove = {
             scene.onActivity {
                 if(added) { removeOwnedBookmark(checkNotNull(store),bookmarkFile,url);added=false }
@@ -603,12 +660,12 @@ class LocalBrowserInstrumentedTest {
     @Test fun nativeFieldRevealSettlesOnceWithoutReloadOrFocusChange() = keyboardScene { scene,source ->
         open(scene,"local-keyboard.html");ready(scene)
         observeNativeEvents(scene)
-        val identity=js(scene,"fixtureIdentity")
+        val identity=readJs(scene,"fixtureIdentity")
         // Admit the unchanged lower editor through ordinary head-edge scrolling before activation.
         scene.onActivity { source.aimRelative(it,InputPoint(240f,it.pointer.motionBounds.bottom)) }
         try {
             await("bottom-edge scroll brings the whole lower field inside the closed-keyboard viewport") {
-                js(scene,"(()=>{const r=document.getElementById('lower').getBoundingClientRect();return r.top>=0 && r.bottom<=innerHeight-8})()") == "true"
+                readJs(scene,"(()=>{const r=document.getElementById('lower').getBoundingClientRect();return r.top>=0 && r.bottom<=innerHeight-8})()") == "true"
             }
         } finally {
             scene.onActivity { source.aimRelative(it,center(it,it.root)) }
@@ -619,23 +676,23 @@ class LocalBrowserInstrumentedTest {
             stopped
         }
         assertEquals("lower field still requires reveal after keyboard resize","true",
-            js(scene,"(()=>{const r=document.getElementById('lower').getBoundingClientRect();return r.top>innerHeight*392/592 && r.bottom<=innerHeight})()"))
+            readJs(scene,"(()=>{const r=document.getElementById('lower').getBoundingClientRect();return r.top>innerHeight*392/592 && r.bottom<=innerHeight})()"))
         focusEditor(scene,"lower")
         assertEquals("native tap focuses the selected editor without first-field focus", "[\"lower\"]",
-            js(scene,"fixtureNativeEvents.filter(e=>e.type==='focusin').map(e=>e.target)"))
+            readJs(scene,"fixtureNativeEvents.filter(e=>e.type==='focusin').map(e=>e.target)"))
         await("native resize reveals selected field within page viewport") {
-            js(scene,"(()=>{const e=document.activeElement,r=e.getBoundingClientRect();return e.id==='lower' && r.top>=0 && r.bottom<=innerHeight})()") == "true"
+            readJs(scene,"(()=>{const e=document.activeElement,r=e.getBoundingClientRect();return e.id==='lower' && r.top>=0 && r.bottom<=innerHeight})()") == "true"
         }
         type(scene,"a")
         await("actual lower field effect") { editorEquals(scene,"lower","a") }
         keyboardObservation(scene,"lower-revealed")
         capture(scene,"keyboard-reveal").recycle()
         key(scene,RgKeyboardKeys.Key.Command.DONE)
-        assertEquals(identity,js(scene,"fixtureIdentity"));assertTrue(editorEquals(scene,"lower","a"))
-        assertEquals("\"lower\"",js(scene,"document.activeElement.id"))
+        assertEquals(identity,readJs(scene,"fixtureIdentity"));assertTrue(editorEquals(scene,"lower","a"))
+        assertEquals("\"lower\"",readJs(scene,"document.activeElement.id"))
         focusEditor(scene,"lower");nativeEditorKey(scene,KeyEvent.KEYCODE_MOVE_END);type(scene,"b")
         await("reshown keyboard edits the same current native focus") { editorEquals(scene,"lower","ab") }
-        assertEquals(identity,js(scene,"fixtureIdentity"));assertEquals("0",js(scene,"fixtureSubmits"))
+        assertEquals(identity,readJs(scene,"fixtureIdentity"));assertEquals("0",readJs(scene,"fixtureSubmits"))
         keyboardObservation(scene,"lower-reshown")
     }
 
@@ -664,7 +721,7 @@ class LocalBrowserInstrumentedTest {
         }
         open(scene, "keyboard.html"); ready(scene); focusText(scene)
         key(scene, RgKeyboardKeys.Key.Character("a")); key(scene, RgKeyboardKeys.Key.Command.DONE)
-        val inputCount = js(scene, "fixtureInputs")
+        val inputCount = readJs(scene, "fixtureInputs")
         repeat(3) { control(scene, "more"); tagged(scene, "menu.0"); key(scene, RgKeyboardKeys.Key.Command.DONE) }
         scene.onActivity { it.selectTab(1) }; selected(1)
         capture(scene, "native-dpad-before").recycle()
@@ -710,12 +767,12 @@ class LocalBrowserInstrumentedTest {
             }
             assertEquals(0, it.tabs.selectedIndex); assertTrue(it.keyboard.isShown)
         }
-        assertEquals("\"a\"", js(scene, "document.getElementById('text').value"))
-        assertEquals("admission guards do not edit", inputCount, js(scene, "fixtureInputs"))
-        assertEquals("0", js(scene, "fixtureSubmits"))
+        assertEquals("\"a\"", readJs(scene, "document.getElementById('text').value"))
+        assertEquals("admission guards do not edit", inputCount, readJs(scene, "fixtureInputs"))
+        assertEquals("0", readJs(scene, "fixtureSubmits"))
         val editorObservations = JSONArray()
         fun observeEditor(stage: String) {
-            val observation = JSONObject(js(scene, """(()=>{const e=document.getElementById('text');return {
+            val observation = JSONObject(readJs(scene, """(()=>{const e=document.getElementById('text');return {
                 activeText:document.activeElement===e,textLength:e.value.length,
                 selectionStart:e.selectionStart,selectionEnd:e.selectionEnd,
                 expectedA:e.value==='a',expectedAB:e.value==='ab',
@@ -746,17 +803,17 @@ class LocalBrowserInstrumentedTest {
             assertTrue("native caret dispatch <=100ms", elapsed <= 100)
         }
         await("native Right collapses the current caret at the unchanged field end") {
-            js(scene, "(()=>{const e=document.getElementById('text');return document.activeElement===e && " +
+            readJs(scene, "(()=>{const e=document.getElementById('text');return document.activeElement===e && " +
                 "e.value==='a' && e.selectionStart===1 && e.selectionEnd===1})()") == "true"
         }
         observeEditor("after-native-right")
         selected(0)
-        assertEquals("native caret movement does not edit", inputCount, js(scene, "fixtureInputs"))
-        assertEquals("0", js(scene, "fixtureSubmits"))
+        assertEquals("native caret movement does not edit", inputCount, readJs(scene, "fixtureInputs"))
+        assertEquals("0", readJs(scene, "fixtureSubmits"))
         try {
             key(scene, RgKeyboardKeys.Key.Character("b"))
             await("native current-focus keyboard appends at the observed caret") {
-                js(scene, "document.getElementById('text').value") == "\"ab\""
+                readJs(scene, "document.getElementById('text').value") == "\"ab\""
             }
         } catch (failure: Throwable) {
             try { observeEditor("after-b-failure") }
@@ -764,11 +821,11 @@ class LocalBrowserInstrumentedTest {
             throw failure
         }
         observeEditor("after-b")
-        assertEquals("native current-focus keyboard remains usable", "\"ab\"", js(scene, "document.getElementById('text').value"))
+        assertEquals("native current-focus keyboard remains usable", "\"ab\"", readJs(scene, "document.getElementById('text').value"))
         native(KeyEvent.KEYCODE_DPAD_RIGHT, 106); selected(1)
         scene.onActivity { assertFalse("existing tab-switch keyboard dismissal", it.keyboard.isShown) }
         native(KeyEvent.KEYCODE_DPAD_LEFT, 105); selected(0)
-        assertEquals("tab switch preserves actual field value", "\"ab\"", js(scene, "document.getElementById('text').value"))
+        assertEquals("tab switch preserves actual field value", "\"ab\"", readJs(scene, "document.getElementById('text').value"))
         observeEditor("after-tab-return")
     }
 
@@ -812,18 +869,18 @@ class LocalBrowserInstrumentedTest {
         capture(scene, "empty").checked { assertEquals(Color.BLACK, it.getPixel(450, 620)) }
         open(scene, "keyboard.html"); ready(scene)
         observeNativeEvents(scene)
-        val document = js(scene, "fixtureIdentity")
+        val document = readJs(scene, "fixtureIdentity")
         address(scene, "javascript:" + "a".repeat(48))
         key(scene, RgKeyboardKeys.Key.Command.ENTER)
         scene.onActivity { assertTrue(it.keyboard.isShown); assertTrue(it.address.hasFocus()) }
         geometry(true)
-        assertEquals("invalid draft leaves live document unchanged", document, js(scene, "fixtureIdentity"))
+        assertEquals("invalid draft leaves live document unchanged", document, readJs(scene, "fixtureIdentity"))
         capture(scene, "address").checked {
             assertEquals("blank native keyboard margin", Color.BLACK, it.getPixel(2, 450))
             assertEquals(Color.BLACK, it.getPixel(390, 632))
         }
         val coveredField = elementPoint(scene, "#text")
-        val inputsBeforeStatus = js(scene, "fixtureInputs")
+        val inputsBeforeStatus = readJs(scene, "fixtureInputs")
         scene.onActivity {
             val status = it.root.findViewWithTag<View>("hud.status")
             val xy = IntArray(2); val root = IntArray(2)
@@ -834,8 +891,8 @@ class LocalBrowserInstrumentedTest {
             assertTrue(it.input.activate(coveredField))
             assertTrue("owned error status consumes its covered-page tap", it.address.hasFocus())
         }
-        assertEquals(inputsBeforeStatus, js(scene, "fixtureInputs"))
-        assertNotEquals("\"text\"", js(scene, "document.activeElement.id"))
+        assertEquals(inputsBeforeStatus, readJs(scene, "fixtureInputs"))
+        assertNotEquals("\"text\"", readJs(scene, "document.activeElement.id"))
         key(scene, RgKeyboardKeys.Key.Command.DONE)
         geometry(false)
         scene.onActivity {
@@ -843,16 +900,16 @@ class LocalBrowserInstrumentedTest {
                 it.tabs.current.session.state.url.removePrefix("http://"), it.address.text.toString())
         }
         element(scene, "a")
-        await("actual link document") { js(scene, "document.title") == "\"RG local history\"" }; ready(scene)
+        await("actual link document") { readJs(scene, "document.title") == "\"RG local history\"" }; ready(scene)
         control(scene, "back")
-        await("actual Back") { js(scene, "document.title") == "\"RG local editor fixture\"" }; ready(scene)
+        await("actual Back") { readJs(scene, "document.title") == "\"RG local editor fixture\"" }; ready(scene)
         control(scene, "forward")
-        await("actual Forward") { js(scene, "document.title") == "\"RG local history\"" }; ready(scene)
+        await("actual Forward") { readJs(scene, "document.title") == "\"RG local history\"" }; ready(scene)
         control(scene, "back")
-        await("Back before Refresh") { js(scene, "document.title") == "\"RG local editor fixture\"" }; ready(scene)
-        val before = js(scene, "fixtureIdentity")
+        await("Back before Refresh") { readJs(scene, "document.title") == "\"RG local editor fixture\"" }; ready(scene)
+        val before = readJs(scene, "fixtureIdentity")
         control(scene, "refresh")
-        await("actual Refresh creates a new document") { js(scene, "fixtureIdentity") != before }; ready(scene)
+        await("actual Refresh creates a new document") { readJs(scene, "fixtureIdentity") != before }; ready(scene)
         control(scene, "more")
         scene.onActivity {
             listOf("Add new tab", "Bookmarks", "QR scan", "Settings").forEachIndexed { i, label ->
@@ -862,10 +919,10 @@ class LocalBrowserInstrumentedTest {
             }
         }
         capture(scene, "more").checked { assertEquals(Color.BLACK, it.getPixel(470, 230)) }
-        val inputs = js(scene, "fixtureInputs"); val submits = js(scene, "fixtureSubmits")
+        val inputs = readJs(scene, "fixtureInputs"); val submits = readJs(scene, "fixtureSubmits")
         element(scene, "#send") // Covered-page point only dismisses the menu.
         scene.onActivity { assertEquals(LocalBrowserActivity.Utility.BROWSING, it.utility) }
-        assertEquals(inputs, js(scene, "fixtureInputs")); assertEquals(submits, js(scene, "fixtureSubmits"))
+        assertEquals(inputs, readJs(scene, "fixtureInputs")); assertEquals(submits, readJs(scene, "fixtureSubmits"))
         control(scene, "more"); tagged(scene, "menu.2")
         scene.onActivity { assertEquals(LocalBrowserActivity.Utility.QR, it.utility); assertFalse(checkNotNull(it.tabs.current.session.page).isShown) }
         tagged(scene, "qr.cancel")
@@ -892,10 +949,10 @@ class LocalBrowserInstrumentedTest {
 
     @Test fun fourLiveTabsAndPadGesturesKeepCurrentNativeEffects() = scene { scene, source ->
         open(scene, "keyboard.html"); ready(scene); focusText(scene); type(scene, "a")
-        await("first live editor effect") { js(scene, "document.getElementById('text').value") == "\"a\"" }
+        await("first live editor effect") { readJs(scene, "document.getElementById('text').value") == "\"a\"" }
         key(scene, RgKeyboardKeys.Key.Command.DONE)
-        val firstIdentity = js(scene, "fixtureIdentity")
-        val firstInputs = js(scene, "fixtureInputs")
+        val firstIdentity = readJs(scene, "fixtureIdentity")
+        val firstInputs = readJs(scene, "fixtureInputs")
         val pages = mutableListOf<WebView>()
         scene.onActivity { pages.add(checkNotNull(it.tabs.current.session.page)) }
         repeat(3) { index ->
@@ -904,7 +961,7 @@ class LocalBrowserInstrumentedTest {
             open(scene, "keyboard.html"); ready(scene)
             if (index == 0) {
                 element(scene, "a")
-                await("second tab owns a real history entry") { js(scene, "document.title") == "\"RG local history\"" }; ready(scene)
+                await("second tab owns a real history entry") { readJs(scene, "document.title") == "\"RG local history\"" }; ready(scene)
             }
             scene.onActivity { pages.add(checkNotNull(it.tabs.current.session.page)) }
         }
@@ -941,10 +998,10 @@ class LocalBrowserInstrumentedTest {
         scene.onActivity { assertEquals(0, it.tabs.selectedIndex); assertSame(pages[0], it.tabs.current.session.page) }
         pad(scene, 293)
         scene.onActivity { assertEquals("first boundary does not wrap", 0, it.tabs.selectedIndex) }
-        assertEquals(firstIdentity, js(scene, "fixtureIdentity"))
-        assertEquals("\"a\"", js(scene, "document.getElementById('text').value"))
-        assertEquals("swipes do not edit/click/submit", firstInputs, js(scene, "fixtureInputs"))
-        assertEquals("0", js(scene, "fixtureSubmits"))
+        assertEquals(firstIdentity, readJs(scene, "fixtureIdentity"))
+        assertEquals("\"a\"", readJs(scene, "document.getElementById('text').value"))
+        assertEquals("swipes do not edit/click/submit", firstInputs, readJs(scene, "fixtureInputs"))
+        assertEquals("0", readJs(scene, "fixtureSubmits"))
         scene.onActivity { assertEquals("no vertical scroll from swipes", 0, checkNotNull(it.tabs.current.session.page).scrollY) }
         focusText(scene)
         pad(scene, 292)
@@ -954,13 +1011,13 @@ class LocalBrowserInstrumentedTest {
             assertSame(pages[1], it.tabs.current.session.page)
             assertTrue(it.controls.getValue("hud.back").isEnabled)
         }
-        assertEquals("\"RG local history\"", js(scene, "document.title"))
+        assertEquals("\"RG local history\"", readJs(scene, "document.title"))
         control(scene, "back")
-        await("second tab retains its own Back") { js(scene, "document.title") == "\"RG local editor fixture\"" }; ready(scene)
+        await("second tab retains its own Back") { readJs(scene, "document.title") == "\"RG local editor fixture\"" }; ready(scene)
         control(scene, "tab_counter")
         capture(scene, "four-tabs").checked { assertEquals(Color.BLACK, it.getPixel(450,620)) }
         tagged(scene, "tab.0")
-        assertEquals(firstIdentity, js(scene, "fixtureIdentity"))
+        assertEquals(firstIdentity, readJs(scene, "fixtureIdentity"))
         control(scene, "close_tab")
         scene.onActivity { assertEquals(3, it.tabs.count); assertSame(pages[1], it.tabs.current.session.page) }
         control(scene, "tab_counter"); tagged(scene, "tab.2")
@@ -1022,7 +1079,7 @@ class LocalBrowserInstrumentedTest {
             var index = 0
             scene.onActivity { index = it.bookmarks.entries.indexOfFirst { b -> b.url == url }; assertTrue(index >= 0) }
             tagged(scene, "bookmark.open." + index); ready(scene)
-            await("bookmark opens the saved page instead of the draft") { js(scene, "document.title") == "\"RG local editor fixture\"" }
+            await("bookmark opens the saved page instead of the draft") { readJs(scene, "document.title") == "\"RG local editor fixture\"" }
             open(scene, "does-not-exist.html")
             await("bookmarked tab reaches actual HTTP error") {
                 var failed = false
@@ -1094,13 +1151,13 @@ class LocalBrowserInstrumentedTest {
         control(scene, "refresh"); error("http-refresh-error")
         control(scene, "more"); tagged(scene, "menu.3"); tagged(scene, "utility.done")
         open(scene, "keyboard.html"); ready(scene)
-        assertEquals("0", js(scene, "fixtureSubmits"))
+        assertEquals("0", readJs(scene, "fixtureSubmits"))
         capture(scene, "http-controls-recovered").recycle()
     }
 
     @Test fun liveBlackAndHiddenRecoveryUseProductionWindow() = scene { scene, _ ->
         open(scene, "author-light.html"); ready(scene)
-        await("unchanged media fixture loaded") { js(scene, "document.getElementById('media-image').complete") == "true" }
+        await("unchanged media fixture loaded") { readJs(scene, "document.getElementById('media-image').complete") == "true" }
         capture(scene, "author-light").checked {
             assertEquals(Color.BLACK, pagePixel(scene, it, "input", .9, .5))
             assertEquals(0xffe04040.toInt(), pagePixel(scene, it, "#media-image", .5, .5))
@@ -1108,24 +1165,24 @@ class LocalBrowserInstrumentedTest {
             assertEquals(Color.BLACK, it.getPixel(470,44))
         }
         element(scene, "button")
-        await("authored dynamic handler ran") { js(scene, "document.getElementById('dynamic').style.backgroundColor") == "\"rgb(221, 221, 221)\"" }
+        await("authored dynamic handler ran") { readJs(scene, "document.getElementById('dynamic').style.backgroundColor") == "\"rgb(221, 221, 221)\"" }
         capture(scene, "dynamic").checked { assertEquals(Color.BLACK, pagePixel(scene, it, "#dynamic", .9, .8)) }
         open(scene, "keyboard.html"); ready(scene)
         focusText(scene); type(scene, "a")
-        await("current field native effect") { js(scene, "document.getElementById('text').value") == "\"a\"" }
-        val identity = js(scene, "fixtureIdentity")
-        val inputs = js(scene, "fixtureInputs"); val submits = js(scene, "fixtureSubmits")
+        await("current field native effect") { readJs(scene, "document.getElementById('text').value") == "\"a\"" }
+        val identity = readJs(scene, "fixtureIdentity")
+        val inputs = readJs(scene, "fixtureInputs"); val submits = readJs(scene, "fixtureSubmits")
         capture(scene, "field").checked {
             assertEquals(Color.BLACK, pagePixel(scene, it, "#text", .9, .5))
             assertEquals(Color.BLACK, it.getPixel(2,450))
         }
         key(scene, RgKeyboardKeys.Key.Command.DONE)
-        assertEquals(submits, js(scene, "fixtureSubmits"))
+        assertEquals(submits, readJs(scene, "fixtureSubmits"))
         scene.moveToState(Lifecycle.State.CREATED)
         scene.onActivity { assertFalse(it.pointer.sourceRegistered) }
         scene.moveToState(Lifecycle.State.RESUMED)
         await("owned focused window resumed") { var focus = false; scene.onActivity { focus = it.hasWindowFocus() }; focus }
-        assertEquals(identity, js(scene, "fixtureIdentity")); assertEquals("\"a\"", js(scene, "document.getElementById('text').value"))
+        assertEquals(identity, readJs(scene, "fixtureIdentity")); assertEquals("\"a\"", readJs(scene, "document.getElementById('text').value"))
         val field = elementPoint(scene, "#text"); val submit = elementPoint(scene, "#send")
         scene.onActivity { assertTrue(it.tabs.current.session.open(fixtureBase + "/loading.html").accepted()) }
         scene.onActivity {
@@ -1136,8 +1193,8 @@ class LocalBrowserInstrumentedTest {
             assertFalse(it.input.key(RgKeyboardKeys.Key.Character("z")))
             assertFalse(it.input.key(RgKeyboardKeys.Key.Command.ENTER)); it.input.activate(submit)
         }
-        assertEquals("\"a\"", js(scene, "document.getElementById('text').value"))
-        assertEquals(inputs, js(scene, "fixtureInputs")); assertEquals(submits, js(scene, "fixtureSubmits"))
+        assertEquals("\"a\"", readJs(scene, "document.getElementById('text').value"))
+        assertEquals(inputs, readJs(scene, "fixtureInputs")); assertEquals(submits, readJs(scene, "fixtureSubmits"))
         capture(scene, "loading").checked {
             assertEquals(Color.BLACK, it.getPixel(450,300)); assertEquals(Color.BLACK, it.getPixel(450,620))
         }
@@ -1175,11 +1232,11 @@ class LocalBrowserInstrumentedTest {
         }
         capture(scene, "http-error", expectedError = "HTTP error 404").checked { assertEquals(Color.BLACK, it.getPixel(450,620)) }
         open(scene, "keyboard.html")
-        await("actual authored replacement blank field") { js(scene, "document.getElementById('text')?.value") == "\"\"" }
+        await("actual authored replacement blank field") { readJs(scene, "document.getElementById('text')?.value") == "\"\"" }
         ready(scene); focusText(scene)
         val recovery = JSONArray()
         fun observeRecovery(stage: String) {
-            val observation = JSONObject(js(scene, """(()=>{const e=document.getElementById('text');return {
+            val observation = JSONObject(readJs(scene, """(()=>{const e=document.getElementById('text');return {
                 activeText:document.activeElement===e,emptyText:e?.value==='',expectedB:e?.value==='b',
                 inputs:fixtureInputs,submits:fixtureSubmits}})()"""))
             scene.onActivity {
@@ -1199,10 +1256,10 @@ class LocalBrowserInstrumentedTest {
         observeRecovery("before-b")
         try {
             type(scene, "b")
-            await("visible recovery restores native field input") { js(scene, "document.getElementById('text').value") == "\"b\"" }
+            await("visible recovery restores native field input") { readJs(scene, "document.getElementById('text').value") == "\"b\"" }
         } finally { observeRecovery("after-b") }
         key(scene, RgKeyboardKeys.Key.Command.DONE)
-        assertEquals("0", js(scene, "fixtureSubmits"))
+        assertEquals("0", readJs(scene, "fixtureSubmits"))
         ready(scene)
         capture(scene, "http-explicit-recovery").recycle()
     }
