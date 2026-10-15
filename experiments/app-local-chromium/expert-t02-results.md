@@ -220,7 +220,8 @@ Manager record/hashes were not edited. Current9c6 files are separately preserved
 no rerun or reconstruction substitutes for the originals. The host runner now
 refuses existing log/binding paths and requires a distinct invocation name.
 
-RG window04 remains active. Owner moved the attached RG to USB on u4090;
+RG window04 was returned. Subsequent private windows05 and06 were also returned
+as recorded below. Owner moved the attached RG to USB on u4090;
 USB ADB through noninteractive SSH is now primary for this operation. Source,
 build and Paseo remain on Spark. The exact remote tool/USB identity, installed
 APP/TEST/original public package/provider hashes, signers and engine were
@@ -260,10 +261,87 @@ the original failure remains and a new correctly qualified read records the
 actual `remote_address` header. CAMERA remains granted with unchanged flags.
 Complete final power/display snapshots show Awake/displayON at
 19:04:33.624478UTC. These are timestamped actual readbacks, not continuous
-state or original-private-data equality claims. The shared SSH/ADB/Paseo
-services remain untouched.
+state or original-private-data equality claims. At the window04 return cutoff,
+shared SSH/ADB/Paseo services were untouched. The later window06 shared ADB
+incident is recorded separately below.
 
 The specific ChatGPT network capability question remains with Manager; this is
 neither `EXPERT_HANDBACK_READY` nor source relinquishment or a T02 conclusion.
 The assigned private u4090 tool stage and all mission source/app/evidence/
 workspace cleanup remain deferred to the recorded repair-end boundary.
+
+
+## Private egress windows05 and06: transport results, no browser pass
+
+The normal attributed source `43b799f593b9ef31811b5d78d06e45eb94bc038a`
+adds only a Kotlin status probe. Its affected build/lint passed, APP remains
+`5eb93e460987b9279c13770777058bd9a2bd96c22dc29e71888b91ca849f4720`,
+and TEST is
+`888c69d6287e1557e9f4e831a9992bead98e84e653a742af127e36be0d1bb9e3`.
+Existing original browser methods, waits, assertions, engine, loader and T01
+controls remain unchanged. No new JVM/full-group result is claimed.
+
+| Invocation | Actual result and limit |
+| --- | --- |
+| Window05 CLI creation | One explicit-localhost request rejected with `Invalid source port`; no reverse mapping, HTTP, native or browser invocation. TEST888 was host-only at this cutoff. All owned resources returned. |
+| Window06 normal service creation | Existing loopback server and separate framed `host:version` qualified first. One fixed explicit-localhost create completed all three statuses and resolved39072. Supported kernel reads showed one127.0.0.1 listener, UID2000/inode8906543. The device stored its name as `tcp:39072`; this was not a wildcard bind. |
+| Window06 literal-name teardown attempt | `--remove tcp:localhost:39072` failed with listener-not-found. That original failure and the first literal-row guard STOP remain unchanged. Manager subsequently reconciled the normalized device row and authorized its canonical removal. |
+| Window06 native status001, source43/APP5eb/TEST888 | JUnit completed one measurement in0.864s. Actual responseReceived=false, IOException→EOFException after845ms, no HTTP status. Legacy `window05` argument/report strings remain literal compiled-source fields; the invocation and route bindings identify window06. No HTTPS or browser PASS follows. |
+
+The exact own-path shared ADB log records PID15009 fatally rejecting the006
+reverse connection through `IsReverseConfigured`. Subsequent stock controller
+sampling/report reads implicitly started replacement PID50651, sameUID1000
+and exact SDK binary hash. The exact initiating client stderr was not retained;
+the original fatal, before/after process/start/socket identities and raw native
+outcome are retained. This implicit start violated the intended no-start
+boundary. The original guard checked SSH ownership without checking ADB server
+liveness on every post-failure read. No intentional start/kill/restart/version
+command or security-filter override followed; the replacement was left intact
+and is not described as the original unchanged service.
+
+Independently read host reference `sockets.cpp` and `transport.cpp` support a
+specific sequence hypothesis: reverse requests update host permission before
+remote success; the failed literal-name removal could erase host permission
+while the normalized device listener remained. This fits the later veto. It is
+not exact installed binary/source proof, nor evidence that normal creation
+intrinsically bypasses registration or Unix targets are generically unsupported.
+Manager separately records the missed host-bookkeeping continuation precheck.
+The veto was preserved. No new native retry, public-root request, browser wrapper or
+original45s/nativeOpen invocation occurred after it, and no profile fixture was
+created. First normally validated HTTPS response remains NOT_PASSED.
+
+Necessary return used fresh physical/public/APP5eb/TEST888/UID/signer/input
+bindings and the actual existing replacement server before every stock call.
+These separate checks retain their TOCTOU limits and do not establish atomic
+no-start enforcement. Transport death had already removed the mapping: the
+original reverse list was equal again and supported TCP/TCP6 showed no39072,
+so no canonical removal or recreation was issued. At20:19:36.305767UTC, owned
+main/test/renderer/controller processes, TCP and app-private Unix rows were
+absent, active camera clients were empty, CAMERA remained granted with its
+original flags, and full power/display reads showed Awake/displayON. Original
+public package/provider and158/dummy hashes matched. TEST888 remains installed.
+
+After fresh exact PID/start/CWD/argv/UID/inode guards, one SSH master exit
+returned only the006 bridge. Actual PID2305542 and local control were absent;
+only its still-owned remote Unix inode171600 was unlinked. This completed at
+20:20:31.560549UTC. Existing Spark7897 and shared SSH/Paseo services were left
+intact; the shared ADB replacement incident remains explicit. No discretionary
+file/app/workspace cleanup occurred.
+
+Read-only guard negatives, including absent profile-file parsing, the window
+subcommand's missing focus field, a generated return-script syntax error and a
+camera-header layout assertion, remain retained. Successful corrected reads are
+new records; authentic partial native tool outputs do not reconstruct missing
+raw data. Detailed bindings are under `evidence/egress-window05` and
+`evidence/egress-window06`, particularly the native invocation/outcome,
+`private-bridge-hop-readonly-001.json`, `post-veto-server-readonly-001.json`,
+`device-return-002.json` and `bridge-return-001.json`.
+
+Private `next-operation-preparation-001/proposal.json` records the concrete
+normal-registration sequence and final literal-host/canonical-device cleanup
+only after all traffic closes. It also records the reference-backed numeric
+server endpoint option, version-mismatch hazard, installed-runtime qualification
+limit and precheck races. This is preparation only; window06's one creation is
+consumed and no next window, route or request is authorized by that artifact.
+The two historical ordinary raw-client gaps remain unrecovered. T02 remains
+attempt2/failure1/lastConcluded1, unconcluded; no handback or T03 transfer.
