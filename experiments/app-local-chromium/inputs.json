@@ -10,7 +10,7 @@
     "rendererIsolation": "Five non-exported Android isolated services with read-only pinned code FD broker; actual native renderer qualification pending",
     "repairMapping": "loader/replacement-map.md"
   },
-  "engine": {
+  "baselineEngine": {
     "repository": "https://github.com/uazo/cromite",
     "sourceCommit": "11507ac1061b5ea227806f5e84db5a57df6ccf6a",
     "release": "v153.0.8010.37-11507ac1061b5ea227806f5e84db5a57df6ccf6a",
@@ -53,5 +53,55 @@
     "license": "https://github.com/uazo/cromite/blob/11507ac1061b5ea227806f5e84db5a57df6ccf6a/LICENSE",
     "source": "https://github.com/uazo/cromite/tree/11507ac1061b5ea227806f5e84db5a57df6ccf6a",
     "versionLimit": "Cromite153 is the observed non-prerelease fork artifact; not Google156 or an assurance of current Chromium security equivalence"
+  },
+  "engine": {
+    "repository": "https://chromium.googlesource.com/chromium/src",
+    "sourceCommit": "a296091d1ed08d4dde44b8a427477fe570911472",
+    "buildPosition": "refs/heads/main@{#1719582}",
+    "versionName": "158.0.8107.0",
+    "versionCode": 810700001,
+    "url": "https://storage.googleapis.com/chromium-browser-snapshots/Android_Arm64/1719582/chrome-android.zip?generation=1792071892816325",
+    "archiveMember": "chrome-android/apks/SystemWebView.apk",
+    "sha256": "8daa731574cf1d0e7f24996dd18c8d51554dc7f27806f2619528021674b78710",
+    "bytes": 318698363,
+    "minSdk": 29,
+    "targetSdk": 37,
+    "package": "com.android.webview",
+    "signerCertificateSha256": "32a2fc74d731105859e5a85df16d95f102d85b22099b8064c5d8915c61dad1e0",
+    "signingScheme": "v2",
+    "nativeLibraries": [
+      {
+        "path": "lib/arm64-v8a/libcrashpad_handler_trampoline.so",
+        "bytes": 6192,
+        "sha256": "ba112c5254fa29c239341f3f610f0c3d3495268a6f4849a102b76adf2f872d32",
+        "compression": 0
+      },
+      {
+        "path": "lib/arm64-v8a/libwebviewchromium.so",
+        "bytes": 202115656,
+        "sha256": "4a2cd075e018ef3827d21f5e721ee1b4a28ed03429ce19b03bea3ff8931cfad2",
+        "compression": 0
+      },
+      {
+        "path": "lib/armeabi-v7a/libcrashpad_handler_trampoline.so",
+        "bytes": 2876,
+        "sha256": "373fd6fbbbbde02ffc41d59a7d634d1c5361ba2e7dd20e2725ef21e8d0599521",
+        "compression": 0
+      },
+      {
+        "path": "lib/armeabi-v7a/libwebviewchromium.so",
+        "bytes": 101758772,
+        "sha256": "41ea1d3501871c7280e6284ae79a511e303ec28aaa48806016ce4f0b6b8177cd",
+        "compression": 0
+      }
+    ],
+    "dependencies": "Standalone full APK, no split/Trichrome/static shared-library dependency; android.test.base/androidx.window.extensions/android.ext.adservices all optional",
+    "licensing": "Chromium BSD source LICENSE and all component obligations; binary redistribution not authorized/qualified",
+    "publishedAt": "2026-10-15T13:44:52.876Z",
+    "versionLimit": "Fresh official upstream continuous-build snapshot, not Google stable156 or release/adoption qualification",
+    "comparisonAuthority": "Issue57 post-first-comparison disposition; original153 baseline/failures retained, no test or validation waiver",
+    "containerSHA256": "be89c4fec54f1d744455001efea11ded29f63418d93a920feb3a255c3305aaf0",
+    "containerBytes": 436247837,
+    "source": "https://chromium.googlesource.com/chromium/src/+/a296091d1ed08d4dde44b8a427477fe570911472"
   }
 }

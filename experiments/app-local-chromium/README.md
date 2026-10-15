@@ -15,10 +15,21 @@ No system provider, trust store, VPN or network configuration is changed.
 
 [inputs.json](inputs.json) pins the original upstream sources, release asset,
 archive/native hashes, certificate, SDK requirements and licensing references.
-The tested candidate engine is Cromite **153.0.8010.37**, not the separate
-Google156 staged release reported during the investigation. Its complete
-standalone APK includes the ARM64 engine and does not need Trichrome or a split.
-Optional Android libraries are recorded in the input manifest.
+The original baseline engine is Cromite **153.0.8010.37**. Its original
+archive/native hashes and every failed result remain in `baselineEngine` and
+[the retained result map](repair-results.md). The separately qualified comparison
+is official upstream Chromium **158.0.8107.0**, build position1719582, source
+`a296091d1ed08d4dde44b8a427477fe570911472`, published2026-10-15 by Chromium CI.
+The original standalone SystemWebView.apk is extracted unchanged from the pinned
+GCS ZIP. This is an upstream snapshot with a CI test signer, not Google stable156
+or a production/adoption/security-equivalence claim. Its API29 minimum and full
+ARM64 engine have no split/Trichrome dependency; declared Android libraries are
+optional. Exact source policy retains Android app/domain trust checks.
+
+The comparison has its own hash/version/native guards and private directory
+`files/chromium-engine-upstream158`. Keep the original153 directory and archived
+inputs intact. Source and component licenses still require separate assessment
+before any redistribution; no engine/native binary belongs in Git or the APP.
 
 The loader starts from the verified `core/src/main` source from WebViewUpgrade commit
 `5a5a7d11b5e67bba37787a697f45c9f5d45e6dda`, verified against
@@ -33,8 +44,9 @@ be recorded independently. It does not use the published0.1.0 artifact or claim
 that artifact matches this source. Apache2.0 license text is
 included in the experimental APK; upstream source and copyright notices remain
 unchanged. The engine APK/native binaries stay outside Git and outside the
-experimental APK. Cromite declares GPLv3 and has Chromium/component notice and
-source obligations. Engine redistribution is not qualified by this local test.
+experimental APK. The baseline Cromite input declares GPLv3. The comparison uses Chromium BSD
+source plus component licenses; neither input has a completed redistribution
+qualification from this local test.
 
 **The original upstream loader did not preserve Android isolated-UID renderer
 sandboxing.** The new experimental delegate requests only the pinned code APK
@@ -78,7 +90,7 @@ side-by-side packages, then reverify the installed bytes and UIDs. Ordinary
 already authenticated experimental state if unexpectedly present.
 
 Provision the verified external archive as
-`files/chromium-engine/engine.apk` inside the experimental package, using a
+`files/chromium-engine-upstream158/engine.apk` inside the experimental package, using a
 uniquely named mission-owned staging file and `run-as` for this debug variant.
 The main-process `ChromiumApplication` verifies the complete archive hash,
 extracts/verifies the two pinned ARM64 libraries and calls the pinned loader
@@ -103,11 +115,11 @@ assignment. Preserve all returned output and installed hashes.
 I57_STAGE="/data/local/tmp/eyebrowse-i57-${I57_RUN_ID}-engine.apk"
 "$I57_ADB" -s "$I57_RG_ENDPOINT" push -z zstd "$I57_ENGINE_APK" "$I57_STAGE"
 "$I57_ADB" -s "$I57_RG_ENDPOINT" shell run-as com.code2hack.eyebrowse.rg.chromium \
-  mkdir -p files/chromium-engine
+  mkdir -p files/chromium-engine-upstream158
 "$I57_ADB" -s "$I57_RG_ENDPOINT" shell run-as com.code2hack.eyebrowse.rg.chromium \
-  cp "$I57_STAGE" files/chromium-engine/engine.apk
+  cp "$I57_STAGE" files/chromium-engine-upstream158/engine.apk
 "$I57_ADB" -s "$I57_RG_ENDPOINT" shell run-as com.code2hack.eyebrowse.rg.chromium \
-  sha256sum files/chromium-engine/engine.apk
+  sha256sum files/chromium-engine-upstream158/engine.apk
 ```
 
 The last digest must match `inputs.json`. The engine archive is copied only;

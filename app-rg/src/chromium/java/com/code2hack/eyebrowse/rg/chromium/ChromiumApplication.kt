@@ -19,12 +19,13 @@ class ChromiumApplication : Application() {
         if (getProcessName() != packageName) return // Upstream owns its renderer service initialization.
         val started = SystemClock.elapsedRealtime()
         val report = JSONObject().put("pid", Process.myPid()).put("uid", Process.myUid())
-            .put("engineSha256", ENGINE_SHA256).put("loaderCommit", LOADER_COMMIT)
+            .put("engineSha256", ENGINE_SHA256).put("engineSource", "a296091d1ed08d4dde44b8a427477fe570911472")
+            .put("engineInput", "official-chromium-snapshot-1719582").put("loaderCommit", LOADER_COMMIT)
             .put("loaderRepair", "issue57-instance-lifetime-readonly-fd")
             .put("rendererIsolation", "ISOLATED_SERVICE_DECLARED_NATIVE_BOUNDARY_CHECKS_PENDING")
         val output = File(filesDir, "chromium-startup.json")
         try {
-            val directory = File(filesDir, "chromium-engine")
+            val directory = File(filesDir, "chromium-engine-upstream158")
             val archive = File(directory, "engine.apk")
             check(archive.isFile && sha256(archive) == ENGINE_SHA256) { "Missing or unqualified engine.apk" }
             val libs = File(directory, "libs")
@@ -79,12 +80,12 @@ class ChromiumApplication : Application() {
     }
 
     companion object {
-        const val ENGINE_VERSION = "153.0.8010.37"
-        const val ENGINE_SHA256 = "dcb233a86d58ca922f8aa08dd4216c9158450866286d727a1358e502e935baa3"
+        const val ENGINE_VERSION = "158.0.8107.0"
+        const val ENGINE_SHA256 = "8daa731574cf1d0e7f24996dd18c8d51554dc7f27806f2619528021674b78710"
         const val LOADER_COMMIT = "5a5a7d11b5e67bba37787a697f45c9f5d45e6dda"
         private val NATIVE_SHA256 = mapOf(
-            "libwebviewchromium.so" to "79fc039e9c48b1ff0f9693050e47e66252c4ad8437d69a0feb9f2cbd402aabe1",
-            "libcrashpad_handler_trampoline.so" to "d9dfe85ab98a154be9970b171474a7b56ef63f53e0810af18791108a3fa007d4",
+            "libwebviewchromium.so" to "4a2cd075e018ef3827d21f5e721ee1b4a28ed03429ce19b03bea3ff8931cfad2",
+            "libcrashpad_handler_trampoline.so" to "ba112c5254fa29c239341f3f610f0c3d3495268a6f4849a102b76adf2f872d32",
         )
 
         fun sha256(file: File): String {
