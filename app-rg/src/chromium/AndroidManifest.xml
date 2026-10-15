@@ -5,5 +5,8 @@
         android:networkSecurityConfig="@xml/proxy_fixture_network_security">
         <activity android:name=".NativeInputTestActivity" android:exported="false"
             android:screenOrientation="portrait" />
+        <service android:name=".chromium.IsolatedEngineProbeService"
+            android:process=":chromium_isolation_probe" android:isolatedProcess="true"
+            android:exported="false" />
     </application>
 </manifest>
