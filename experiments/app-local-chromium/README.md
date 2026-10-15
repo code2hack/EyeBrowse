@@ -90,6 +90,11 @@ an owned fixture page. It records exact app/startup/native bindings and checks
 `toReversed`, `AbortSignal.throwIfAborted`, `:has()`, container queries and
 `structuredClone` in the actual renderer without polyfills or UA changes.
 `files/chromium-qualification.json` remains incomplete when any assertion fails.
+`ChromiumHttpsInstrumentedTest` independently starts with an owned HTTPS origin,
+observes a real native DIRECT connection in Mihomo, and checks the production
+WebView's HTTPS fetch and WSS response. This prevents an earlier cross-origin
+failure in the full routing suite from hiding the basic TLS/WSS result; it
+does not replace or relax that suite.
 
 Use the existing `LocalBrowserInstrumentedTest` for native editors, tabs,
 navigation and current controls, and `MihomoRoutingInstrumentedTest` for genuine
