@@ -1,327 +1,218 @@
-# EyeBrowse SPEC v0.0.2
+# EyeBrowse SPEC v0.0.3
 
-**Revision:** D2.2 — Owner-directed direct RG-local input simplification; standalone RG, multi-tab and strict HUD retained  
-**Status:** Published development-branch contract; custom local stale-input fencing removed by Owner direction; HUD-G1 exact-design approval OPEN  
-**Product version:** v0.0.2, unreleased development  
-**Project Owner:** code2hack  
+**Revision:** D3.1  
+**Status:** Owner-directed implementation contract; unreleased development, not an implementation PASS  
+**Owner:** code2hack  
 **Editor:** Planner: SPEC Design  
-**Integration branch:** `work/v0.0.2-independent-clients`  
-**Preparation base:** `f6ca270b41cebf04275be1b4b713e08d194967e2`  
-**Preserved v0.0.1 source:** `2b217f5fb8d376d0f3d81dcac03006aa9919f197`  
-**Mandatory companion:** [RG HUD contract H1.2](docs/design/v0.0.2-rg-hud.md)
+**Integration branch:** `work/v0.0.3-rg-input-proxy`  
+**Base:** merged v0.0.2 on `main@32b69fa8aa2c5aa360424b73b37657f74b3a399c`  
+**Normative companion:** [RG HUD H3.1](docs/design/v0.0.3-rg-hud.md)  
+**Delivery plan:** [v0.0.3 plan](docs/plans/v0.0.3-plan.md) and [canonical issue index](docs/plans/v0.0.3-issues.md)
 
-## 0. Authority and document use
+## 0. Authority, scope and interpretation
 
-This file is the complete v0.0.2 portrait-corrected specification on the migration branch. It replaces the previous SPEC there; obsolete requirements are not appended beneath overriding paragraphs. `main` remains a separate preserved baseline until the authorized integration process completes.
+The Owner explicitly instructed the Planner to draft and publish the v0.0.3 SPEC and all six issue drafts, and separately confirmed that this version needs its own branch. This contract synthesizes those decisions and the presented D1 version-plan defaults. It is a complete replacement for the active SPEC on this branch, not an override appended to v0.0.2. Historical documents and evidence keep their original version and meaning.
 
-The Owner's latest directions require a standalone RG browser, built-in input, a continuously visible bounded cursor, vertical edge scrolling, multiple tabs, bookmarking, QR scan and Settings. The one-row toolbar order and black-background presentation are mandatory. The earlier single-tab and unassigned-swipe assumptions do not govern the RG design.
+This version changes **the RG application only**. Phone code, package metadata, network configuration and physical Phone acceptance are not part of this delivery. RG remains standalone. The unchanged portrait toolbar, black presentation, tabs, bookmarks, native keyboard and accepted password behavior are retained. New work consists of faster pointer movement and numeric controls, shallow off-screen scrolling strips, QR reliability, and bundled app-local Mihomo with profile management, combined node selection, China-DIRECT routing and automatic refresh.
 
-The companion HUD document is **normative, not inspiration**. Read both documents. SPEC governs product behavior; HUD defines layout and transitions. Earlier generated images are not approved implementation references. **Owner-directed direct-input rule:** taps and keys use native Android View/WebView/focus handling. Do not build per-action target fencing, generation tokens, ABA/reentrant race frameworks, custom stale-key queues or redundant validation/admission layers for the RG-local browser. Remote-only guards belong solely to historical migration code.
+`MUST`/`MUST NOT` are requirements; `SHOULD` is a default requiring a reason to depart. Initial numeric values and import-format boundaries below are the completion defaults presented in the D1 packet, now used for the Owner-authorized implementation. They are not claims that the Owner personally selected each engineering number. Workers choose implementation details within these outcomes; concrete material changes return through the existing authority path, not a whole-ticket planning ceremony.
 
-`MUST` and `MUST NOT` denote requirements. `SHOULD` denotes a default requiring a recorded reason to depart. `MAY` is permission, not additional required scope. The HUD document identifies Planner completion defaults for details the Owner did not specify, such as last-tab behavior and pixel allocation; those defaults are included in the open exact-design approval gate.
+The existing `AGENTS.md`, `DEV.md` and Kotlin-only ADR remain authoritative for process and language. No separate Planner ticket plan, Worker approach preapproval, new blanket HUD approval round or repeated approval of v0.0.2's unchanged design is required. Device access and security changes still require their existing operational authority. Publication is not an agent assignment, successful device test, main merge, or release.
 
-The request to edit these documents authorizes recording the requirements on the migration branch. It does not record Owner visual approval, passing implementation, a release, new device privileges, or permission to merge protected articles to `main`. `AGENTS.md` and `DEV.md` continue to govern roles, assignments, review, device access and publication. The HUD gate may be satisfied by explicit review of the exact contract and native-size references; a new image-generation session is not required by this edit.
+## 1. Product and user journeys
 
-## 1. Product definition
-
-> EyeBrowse v0.0.2 is a standalone RG browser with local tabs, a built-in head pointer and keyboard, a compact single-row top toolbar, and black-background/light-foreground presentation. The cursor never leaves the screen. Contact with the top or bottom screen edge scrolls the active browsing surface; horizontal touchpad swipes switch tabs.
-
-RG executes and renders its own websites. Phone EyeBrowse continues ordinary touch browsing independently. Each device owns its website requests, browser memory, cookies and site storage. Closing, stopping, foregrounding or locking Phone EyeBrowse does not control RG browsing. Phone may provide Internet connectivity without running the Phone EyeBrowse app.
-
-The RG browser has one interaction model. Keyboard visibility, menus, tab selection, bookmarks, settings and QR scanning are utility states, not Normal/Reading modes. There is no recenter control, replacement recenter gesture, mode toggle, bottom action dock, or mode-dependent cursor hiding.
-
-The migration preserves useful existing browser/input logic, not the requirement for Phone-hosted execution. The ordinary RG path must not start pairing, hosting, remote-frame reception or control handoff. Legacy shared/Phone consumers must be traced before removal. Phone's established browser, data and installed identity remain intact; this revision does not require redesigning Phone into the RG HUD.
-
-### 1.1 User journeys
+EyeBrowse is a local multi-tab RG WebView browser with built-in head pointer and English keyboard. It uses the full **480 pixels wide × 640 pixels high, portrait** display, one compact top toolbar and black backgrounds with light content. Pointer movement is faster and may intentionally enter shallow invisible top/bottom scroll strips. The built-in proxy starts automatically for EyeBrowse traffic; profile toggles contribute nodes to one shared automatic pool.
 
 | ID | User story |
 | --- | --- |
-| U01 | As an RG user, I want to browse without Phone EyeBrowse, so that another app is not a runtime prerequisite. |
-| U02 | As a Phone user, I want normal browsing and stored data preserved, so that the RG migration does not disrupt my phone. |
-| U03 | As an RG user, I want Close, Back, Forward, Refresh, address, bookmark star, tab position and More to remain reachable in one top row, so that the rest of the small display is useful content. |
-| U04 | As an RG user, I want black surfaces and light content, so that the HUD uses the requested display presentation consistently. |
-| U05 | As an RG user, I want the pointer to start automatically and remain visible, so that no mode or recenter step is needed. |
-| U06 | As an RG user, I want slight inward motion to release a saturated pointer, so that excess outward movement never traps it. |
-| U07 | As an RG user, I want edge contact to scroll and inward departure to stop, so that pointing and scrolling use one model. |
-| U08 | As an RG user, I want to create, select, swipe between and close local tabs, so that I can keep several pages open. |
-| U09 | As an RG user, I want each tab's Back/Forward history and live state preserved across normal switches, so that switching is not reloading. |
-| U10 | As an RG user, I want the star to save the current page and Bookmarks to reopen it, so that I can return to chosen locations. |
-| U11 | As an RG user, I want QR scan to offer a decoded webpage address for deliberate opening, so that scanning navigates without pairing. |
-| U12 | As an RG user, I want genuine, bounded pointer/scroll settings, so that the Settings entry has useful behavior. |
-| U13 | As an RG user, I want to edit full addresses with the built-in keys even though the toolbar shows a short location, so that compact display never truncates navigation data. |
-| U14 | As an RG user, I want to edit text, password, multiline and basic plain editable fields, so that supported forms remain usable. |
-| U15 | As an RG user, I want Enter and Done to differ, so that dismissal never unexpectedly submits. |
-| U16 | As an RG user, I want to scroll while the keyboard is open, so that I can inspect the page without moving the keyboard. |
-| U17 | As an RG user, I want taps and keys sent directly to the currently visible local browser and focused editor, so that interaction is immediate without artificial queues or per-action validation. |
-| U18 | As a browser user, I want honest restart recovery and a data-preserving upgrade, so that lost runtime state is not fabricated or replayed. |
+| V3-U01 | As an RG user, I want websites to run on my glasses without the Phone app, so that browsing remains independent. |
+| V3-U02 | As an RG user, I want the same head movement to move the pointer twice as far by default, so that aiming is not sluggish. |
+| V3-U03 | As an RG user, I want precise decrease/value/increase controls for pointer and scroll speeds, so that I can tune both independently. |
+| V3-U04 | As an RG user, I want shallow off-screen scroll zones, so that a small inward head movement does not stop scrolling too soon. |
+| V3-U05 | As an RG user, I want the cursor to reappear and scrolling to stop when it returns to the screen, without undoing unlimited invisible travel. |
+| V3-U06 | As an RG user, I want all toolbar, tab and bookmark controls preserved, so that the update does not disrupt navigation. |
+| V3-U07 | As an RG user, I want real camera QR scans to recognize usable codes reliably and recover after cancel/resume. |
+| V3-U08 | As an RG user, I want the ordinary QR scanner to open websites and the Proxy scanner to add subscriptions, without guessing the intended purpose. |
+| V3-U09 | As an RG user, I want built-in keys to edit the currently focused local field with normal Enter and Done behavior. |
+| V3-U10 | As an RG user, I want the built-in proxy to start automatically without taking over my system VPN or requiring the Phone. |
+| V3-U11 | As an RG user, I want each profile independently enabled or disabled, so that all enabled subscriptions contribute candidates together. |
+| V3-U12 | As an RG user, I want the healthy node with lowest measured delay from the whole enabled pool, rather than one selected profile. |
+| V3-U13 | As an RG user, I want mainland-China and local/tailnet destinations direct and other public traffic automatically proxied. |
+| V3-U14 | As an RG user, I want direct browsing whenever no usable proxy candidate exists. |
+| V3-U15 | As an RG user, I want subscriptions updated every 30 minutes without manual refresh controls or loss of working data on failure. |
+| V3-U16 | As an RG user, I want a profile list containing only names, toggles, Delete and Add, not a proxy dashboard. |
+| V3-U17 | As an RG user, I want data-preserving upgrades and honest recovery, without passwords or subscription tokens appearing in logs. |
 
-## 2. Targets, implementation and engine qualification
+## 2. Runtime and delivery boundaries
 
-### 2.1 Display and devices
+Use the existing Android-12/API-32-compatible RG app and current local WebView path as the starting point. The historical RG serial is `1906092617103125`; Manager must verify actual device/route/provider for execution. The target canvas is 480 × 640, always width × height. Measure display rotation, density and insets; do not transpose or stretch a screenshot into conformance.
 
-The RG display and canonical HUD review canvas are **480 pixels wide by 640 pixels high, portrait**. Dimensions in this specification always use **width × height** order. The full available app display is used. Android-reported buffer orientation, display rotation, insets and density must be measured on the real RG; they are not inferred from image dimensions.
+First-party Android/control code, tests and maintained JVM tooling are Kotlin; Gradle uses Kotlin DSL. Unmodified third-party/generated code keeps the standing ADR exception. Select and pin a genuine compatible Mihomo core and existing Android binding/artifact in V3-03, recording source, version/hash, ABI, build and redistribution requirements. Do not claim a specific license or binding is compatible without checking the chosen artifact. A new maintained native-language bridge, provider replacement, root or system VPN is not an assumed workaround; report the concrete need if existing supported integration cannot work.
 
-The runtime must use the native **480 × 640 portrait** presentation. Do not request landscape rotation, transpose width and height, stretch a landscape screenshot, or crop the screen to satisfy the erroneous previous 640-wide layout. Any genuine runtime geometry mismatch must be recorded without silently changing the target. The one-row toolbar is recomputed for 480 pixels of width; its compact address text yields space, not the required controls or the bookmark star.
+Preserve RG application ID, signing compatibility and app-private data. Finish with RG `versionName` 0.0.3 and a versionCode higher than the actual delivered/installed baseline, not merely the old Gradle label. Phone metadata stays unchanged. Do not add a Phone dependency or compulsory paired test matrix. Shared-consumer host checks apply only when their dependencies are actually touched.
 
-Retain an Android 12/API-32-compatible RG path. The historical physical RG identity is `1906092617103125`; the current Phone regression reference is the authorized S20+ SM-G9860/API31 (`R5CN30NA8GX`). Manager verifies current access, identity, software and screen procedures. No unobserved hardware or wearer condition is inferred from these references.
+## 3. Preserved local browser behavior
 
-### 2.2 Language, packaging and boundaries
+### 3.1 Navigation, tabs and bookmarks
 
-Keep one repository and the Phone/RG Android applications. ADR-0001 remains binding: first-party Android, shared/core, JVM/Android tooling and tests use Kotlin, Gradle uses Kotlin DSL, new first-party Java is prohibited, and actively changed Java debt is migrated. Generated and unmodified third-party sources retain their documented exceptions. Reused first-party renderer editing logic retains its Kotlin-authored build path.
+Support complete URL entry/correction, HTTPS, explicit HTTP including legitimate local addresses, and existing scheme-less-domain normalization. Invalid input keeps the draft/current page; arbitrary free text is not silently sent to a search provider. Do not execute script/file/native-intent payloads from address or QR input or silently bypass certificate errors. A short displayed address never truncates the real editable draft or navigation target.
 
-Preserve application identifiers, signing compatibility and ordinary stored data. A qualification probe may use a distinct disposable package without replacing a product application.
+Tabs have separate local WebViews/documents and Back/Forward histories, while ordinary RG tabs may share the local website-data profile. At least four live tabs must remain usable. Tab counter `i/n` is one-based, e.g. `2/4`. Add appends/selects a new empty tab and begins address editing. Close selects the next remaining position, or the preceding tab when closing the last position. Closing the sole tab leaves a fresh empty `1/1` tab, not app exit. Selection does not wrap at boundaries. Normal switching preserves live pages/history/form values without intentional reload; report actual renderer loss honestly.
 
-| Component | Responsibility |
+The counter opens a tab list. Touchpad swipe right selects next tab; swipe left selects previous tab. Swipes do not invoke history or vertical scrolling. The ordinary four-item More menu remains **Add new tab / Bookmarks / QR scan / Settings**. Unsolicited pop-ups do not create tabs; ordinary user-activated new-window links may open in the current tab.
+
+The independently clickable star inside the trailing address slot saves/removes the committed current page, including when an unsent address draft differs. Outline/filled/disabled state reflects actual validity and persistence. Bookmarks support empty/list/open-current-tab/remove/error states and survive restart. A failed save is not shown as durable success. Preserve meaningful URL path/query/fragment identity.
+
+### 3.2 Native input and keyboard
+
+Use direct Android View/WebView dispatch and current focus with one gesture/input consumer. Do not create application-wide original-target identities, operation generations, ABA checks, deferred-key queues or remote frame/ordinal admission for local input. Ordinary lifecycle cleanup is sufficient for actual repeating scroll/camera work.
+
+A recognized short tap activates once. A recognized double tap has no action and suppresses its constituent single taps. No recenter control or Normal/Reading mode returns. A tap while the logical cursor is off-screen has no target and does nothing; this is a current-coordinate hit-test rule, not a stale-input framework. Existing horizontal tab swipes retain their normal applicable-state behavior even while the pointer is off-screen.
+
+Retain built-in QWERTY, Shift/case, numbers, common URL/form symbols, Space, Backspace, Enter/Open and separate Done. Real keys operate the address draft and actual text/password/textarea/basic plain contenteditable fields through native focus. Preserve native selection, caret, Unicode and Backspace behavior. Enter follows ordinary newline or field/form semantics; Done dismisses without deliberate submission, navigating an address draft or undoing completed text. Keyboard show/hide reflows the local viewport without intentional reload or data loss; selected field/useful context remains visible without fighting deliberate scrolling.
+
+Native temporary final-character password echo followed by ordinary masking is **accepted**, as already decided by Owner in issue #29 comment 6072154841. Do not revive an immediate-no-echo gate or custom masking framework. Permanently plaintext password rendering, value mirroring and payload logging are not authorized.
+
+## 4. Faster pointer and numeric Settings
+
+### 4.1 Gain and migration
+
+Pointer speed is one value applied to both axes, measured against v0.0.2 Standard displacement using the visible-screen reference. Range **0.1×–6.0×**, step **0.1×**, default **2.0×**. The same moderate head movement should yield approximately twice the old Standard displacement before saturation. Do not multiply it by another hidden doubling factor or use the padded height to unintentionally change gain. Initially retain existing smoothing; adjust a velocity ceiling if it would defeat the intended increase. Test both moderate movement and a faster trace that exercises caps, plus real small-target operation.
+
+Migrate legacy Low/Standard/High once to **1.5×/2.0×/2.5×**. Preserve subsequent numeric choices; repeated launch must not double again. Scroll speed is independent: **10–1,200 native viewport px/s**, step **10**, default **240**. Old Slow/Standard/Fast become their same numeric **120/240/360** values.
+
+Each setting is one label/decrease/value/increase row. One tap changes one step, applies immediately and persists automatically. Disable the appropriate arrow at a bound. No slider, preset button group, editable number field, Save button or required long-press acceleration. Report a storage error rather than silently promising persistence.
+
+### 4.2 Bounded off-screen strips
+
+Logical pointer coordinates use the actual drawable screen; below are canonical coordinates. Initial strip depth is **24 rendered pixels** above and below. Only vertical bounds extend; horizontal bounds keep the cursor footprint on-screen.
+
+| Logical y | Cursor and scrolling |
 | --- | --- |
-| Phone runtime | Its existing local page, touch/IME input, navigation and storage. |
-| RG browser runtime | Local tab objects, documents, history, editor execution and rendering. |
-| RG HUD/input | Exact toolbar, cursor, keyboard and utilities; direct Android View/WebView events and normal focus. |
-| RG persistence | Local bookmarks, approved settings and safe location/recovery metadata. |
-| Shared logic | Applicable browser policy, input models and tests, without a shared live WebView. |
+| `-24 <= y < 0` | Cursor hidden; scroll the currently visible applicable surface upward. |
+| `0 <= y < 640` | Cursor drawn; no head-triggered vertical scrolling. |
+| `640 <= y <= 664` | Cursor hidden; scroll downward. |
+| Outside outer limits | Clamp to -24 or 664 and discard further outward movement/filter backlog. |
 
-### 2.3 Qualification boundary
+Scale offsets from actual screen top/bottom if unavoidable insets exist; these are virtual strips, not extra physical display pixels or UI padding that reduces the page. Temporary partial clipping of the glyph while its center crosses the edge is acceptable. Do not create another hidden trigger band inside the screen.
 
-Begin #28 with the installed System WebView in an ordinary RG application window. Record provider/version, supported update route, local navigation, editor isolation, real rendering and lifecycle observations. Provider upgrades and alternate engines require the applicable compatibility and authorization decision; this document does not silently install one.
+A hidden cursor inside a strip remains tracking-available. A small inward movement still within a strip continues scrolling. Re-entering the visible screen stops scrolling and redraws the cursor. Extended outward head movement cannot accumulate unlimited return debt; the only intentional extra return distance is the finite strip depth. Test top/bottom and corners at several overshoot magnitudes and durations, including slow inward motion.
 
-The selected engine must also be qualified for the dark-content policy in §9. Passing a local HTML sample is not proof of arbitrary website compatibility, maintainability or dark rendering. Report native theme, author-light page, dynamic content, fields and media results separately.
+The full screen remains the reference with keyboard open. Its divider and toolbar bottom are not triggers; page scrolls while keys stay fixed. A long visible utility/profile list may scroll itself, never the covered webpage. No tap targets exist beyond the screen; off-screen taps must not be clamped onto the nearest toolbar/key/delete control.
 
-A supported negative investigation can complete the investigation but cannot satisfy a downstream requirement for a working engine/editor. Qualify actual local WebView focus, field editing, rendering and layout through real key actions. Use the native input path where possible; any existing editor adapter remains minimal and must not impose custom target-identity fencing.
+### 4.3 Ordinary motion lifecycle
 
-## 3. Browser navigation and local tabs
+Use current pointer coordinates and fresh sensor input, not pitch-from-neutral or broad in-screen hot zones. Stop repeating scroll on visible-screen return, tracking expiry, pause, changed active tab or covering non-scrollable UI. Use ordinary callbacks/lifecycle, not per-action fences. On return to usable UI evaluate current pointer and tracking normally without a special rearm protocol.
 
-### 3.1 Navigation
+Retain **250 ms** sensor-age cutoff, at most **50 ms** integrated motion per step and **100 ms** visible-return/scroll-stop target for declared valid input conditions. No catch-up backlog after stalls. Page endpoints cannot bank unused scroll distance. Sensor unavailability is distinct from purposeful off-screen hiding; a still-visible unavailable cursor may freeze in place, and fresh acquisition automatically establishes the ordinary usable reference without a recenter button.
 
-Provide full-address entry/correction, Back, Forward, Refresh, links, ordinary buttons and clear errors. Support HTTPS, explicit HTTP including legitimate local addresses, and normalization of ordinary scheme-less domains to HTTPS under the existing address policy. Invalid input preserves the draft and current page. Free text is not silently sent to a search provider.
+## 5. QR scanning and two explicit purposes
 
-The compact address display may elide the path; the editable draft and navigation target remain complete. Display actual origin information without a false security claim. Current URL, title and loading state follow the selected local WebView using ordinary UI updates; no per-action callback-fencing layer is needed.
+Reuse one CameraX/decoder path. Diagnose the reported intermittent recognition failure as camera acquisition, preview/analyzer mismatch, exposure/focus/usable image quality, decoder failure or payload handling. Camera invocation is a hypothesis, not an established cause. Inspect actual camera identity, frame dimensions/crop/rotation/strides, arrival and release; use supported camera controls where verified. Do not replace the stack or change permissions/provider based on guesswork.
 
-Browser-generated navigation never executes arbitrary script/file/native-intent strings from address entry or QR data. Certificate errors are not bypassed silently.
+**More → QR scan:** decode a webpage address, show bounded URL preview, and navigate the current local tab only after explicit Open. Cancel, invalid/unsupported URL, permission denial and camera error have usable exits. Scanning never configures Wi-Fi, pairs with Phone or imports a subscription here.
 
-### 3.2 Tab contract
+**Settings → Proxy → Add a new profile:** scan a supported subscription/import URL, fetch and validate it, then automatically add/update the profile and return to the list with a brief result. It never navigates a tab merely because the decoded text is HTTPS. Purpose is selected by entry point, not URL heuristics.
 
-RG supports multiple local tabs, with at least four simultaneously open tabs demonstrated in acceptance. `2/4` means one-based active index 2 in a total of 4; it is not a hardcoded illustration or a four-tab limit.
+A successful preview or bitmap-only unit test does not establish optical recognition. Use real camera scans of owned short URL and longer dummy subscription codes in a documented clear-code setup, including ten repeat cycles per representative code and a **five-second clear-code acquisition target** from the first usable complete-code frame. Record actual outcome/timing and lighting/distance/display conditions. Test repeated open/cancel/resume and releases. No universal lighting/distance guarantee is implied. If the reported wearer situation cannot be reproduced, state that limitation rather than claim it fixed. Real optical fixtures can be a monitor or available rig; no physical Phone requirement is introduced.
 
-Each tab has a local WebView/document and independent Back/Forward history. Input goes to the selected visible tab and the currently focused View/editor. Tabs may share the RG browser's local website-data profile; Phone keeps its independent profile.
+Use dummy QR payloads for retained diagnostic images. Release camera/analyzer/executors on exit using normal lifecycle handling; no stale-scan identity framework.
 
-The toolbar `×` closes the current tab. More → **Add new tab** creates and selects a new empty tab. The counter opens a compact list for explicit selection. Touchpad swipe **right selects the next tab** and swipe **left selects the previous tab**. Directions are wearer-facing directions qualified against actual input events, not blindly copied from old forward/backward key names.
+## 6. Built-in app-local proxy
 
-Planner defaults to be reviewed at HUD-G1: tabs are ordered by creation; append new tabs; do not wrap at the first/last tab; after close, select the next tab at the same position or the previous tab if the last position closed; closing the sole tab leaves a fresh empty tab at `1/1`, not an app exit. A new empty tab focuses local address entry. These behaviors must be tested as state transitions, not inferred from a mockup.
+### 6.1 Core and routing boundary
 
-Normal switching must preserve surviving tabs' live pages, history and form values without intentional reload. Only the currently visible tab receives head/pad/keyboard operations and edge scrolling. If a new tab cannot be allocated, report it without silently closing or replacing an existing one; report actual renderer loss honestly.
+Bundle an attributable, pinned Mihomo core compatible with the RG and a supported Android integration. It is enabled automatically for EyeBrowse; there is no user master proxy toggle or new system VPN. Start/use it with the RG browsing runtime and stop unused foreground runtime resources normally. Do not keep it alive around the clock solely for update timers.
 
-Unsolicited pop-ups may not create tabs. For this revision, ordinary user-activated links requesting another window may open in the current tab; explicit Add new tab is the required creation route. Do not invent automatic background tabs.
+Target path: **RG WebView → loopback Mihomo → DIRECT or automatic enabled-node pool**. Feature-check supported Android WebView proxy APIs on the actual provider and wait for their configuration completion before relying on them. Route relevant native HTTP subscription/data clients explicitly: a WebView proxy setting is not a whole-process or whole-device routing guarantee. Qualify HTTPS, ordinary HTTP, WebSocket, relevant DNS and other actual supported browser flows. Do not silently claim untested WebRTC/UDP traffic is proxied.
 
-### 3.3 Direct local input
+No TUN/VpnService, existing Tailscale replacement, provider/private API or global network-setting mutation is implied. DIRECT uses the RG's ordinary OS routes, including its existing tailnet. Local listener is loopback only; management API, if used, stays private/authenticated and is not exposed to webpages, LAN or arbitrary native bridges. Use finite normal resource limits, not a new orchestration framework.
 
-Use normal Android View/WebView event dispatch, focus and visibility. On tab selection or close, dismiss its old keyboard as appropriate and stop active edge scrolling. Recognized key/tap actions execute directly against the current visible control; do not create an independent delayed action-delivery queue.
+The normal no-profile state is direct browsing. Core startup/failure must not strand browsing behind a dead loopback listener: use ordinary connection/error handling and direct operation when no usable proxy is available. Do not fake proxy success, introduce a hidden privacy guarantee or auto-replay consequential form requests. DIRECT fallback is the Owner's availability policy, not a kill switch.
 
-**Custom local stale-input frameworks are prohibited.** No per-tap document/element identity tokens, operation generations, ABA tests, event-replay ledgers, redundant hit-test snapshots or queued-key cancellation layers. Remote frame/context/ordinal admission must not be carried into the local browser interface.
+### 6.2 EyeBrowse-owned Rule policy
 
-Use ordinary selected-WebView UI ownership and normal Android lifecycle behavior. Hidden tabs do not receive physical controller input. Any real asynchronous navigation/camera result follows the current visible UI state; no browser-wide callback-fencing protocol is required. Edge scrolling acts only on the visible page while its current start/stop conditions hold.
+Mihomo stays in **Rule mode**, not Global mode. Ordered policy:
 
-## 4. Required HUD and utility functions
+1. Local/private/loopback/link-local and known tailnet destinations/names, with relevant IPv4/IPv6 ranges, use **DIRECT**. Include RFC1918 ranges, Tailscale/shared 100.64.0.0/10 and applicable local IPv6/tailnet ranges. Keep local names routed/resolved on their usable local path rather than sending private names to remote subscription nodes.
+2. Maintained mainland-China domain classification uses **DIRECT**.
+3. Maintained mainland-China IP classification uses **DIRECT**.
+4. Other destinations use the **shared automatic pool** if it contains usable healthy nodes; otherwise **DIRECT**.
 
-[The HUD contract](docs/design/v0.0.2-rg-hud.md) defines exact geometry, colors, states and tests. The mandatory toolbar is one row, in this order:
+Do not equate the China classification with only `.cn`, or claim any list perfectly classifies every domain/CDN. Bundle validated initial regional data with source/version/license provenance. Rule data refresh is daily. The subscription server supplies node data, not this policy. Imported `rules`, DNS, ports, controller/UI, global mode or scripts cannot override the application configuration. This is Mihomo configuration/rule data, not a PAC dependency.
 
-`×  |  ←  |  →  |  ↻  |  [ compact address …  ☆/★ ]  |  i/n  |  ⋮`
+### 6.3 One candidate pool and fallback
 
-**The bookmark star is a separate clickable control INSIDE the trailing end of the address slot. It must not be omitted or moved into More.** Back and Forward are separate visible controls, including when disabled. No second title/address row, lower action dock, time/battery strip, decorative device frame or duplicate menu is part of the app HUD.
+Each ON profile contributes all supported usable nodes to one candidate set; multiple ON rows are expected. Select the healthy candidate with **lowest measured latency** to the common configured test endpoint at a selection evaluation, across the full union. Do not first select a winning profile, round-robin profiles or limit testing to one source. Avoid collisions when different subscriptions use the same node names.
 
-The overflow contains exactly these first-level items, in this order: **Add new tab; Bookmarks; QR scan; Settings.** Every item has implemented behavior and a recoverable exit. Clicking through an overlay to the webpage is prohibited.
+Use Mihomo's existing health/selection facilities; configure provider-sourced node tests explicitly where needed. Health tests occur on eligible-pool changes and every **5 minutes** while active. They measure delay to a documented common endpoint, not universal website speed. Exact core options, including selection tolerance/ties, must implement the lowest-delay policy; no custom benchmark engine.
 
-### 4.1 Bookmarks
+DIRECT is a **fallback**, never a healthy candidate competing against proxy nodes. Test separately: no saved profiles; all OFF; no usable nodes; and all enabled nodes failing health checks. Each results in direct new connections. When eligible nodes recover, subsequent applicable connections return to the selected proxy. Existing sockets need not migrate or be force-closed; toggles, replacement and updates must not deliberately reload tabs. A group empty-fallback option alone is not evidence for the all-unhealthy case. A minimal Kotlin integration of real core health status is acceptable if necessary, but not a duplicate selector/scheduler framework.
 
-The outline star saves the active tab's actual current navigable URL and useful title in app-private persistent bookmarks. Filled star represents saved state. Activating it again removes that bookmark; failed persistence must not be displayed as durable success. The active page's bookmark state updates after navigation, tab switch and list deletion.
+## 7. Profiles and dedicated import
 
-The star always refers to the committed current page, not an unsubmitted address draft. It does not blur or submit an editor solely to save a page. During address entry it stays visible and still bookmarks the underlying page; an empty/non-navigable page shows a disabled outline star with no hidden replacement action.
+Settings → Proxy contains **only profile names, independent ON/OFF toggles, Delete, and Add a new profile**. No node list, selected-node/latency/traffic/core-version/last-update dashboard, manual mode switch, manual node selector or profile editor. Short progress/errors needed to finish an operation are allowed. Long names elide without displacing actions; long lists scroll using the same strips.
 
-The Bookmarks view supports empty state, opening a saved URL in the current tab, and explicit removal. Duplicate saving is idempotent by the documented URL identity; preserve meaningful path/query/fragment components. Bookmark persistence is distinct from logging sensitive URLs in diagnostics.
+New successful source defaults ON. OFF keeps cached source/data but removes its nodes from new selections. Delete removes only that saved source and its contribution; refresh must not resurrect it. Other toggles remain unchanged. Store profile names, source addresses, cached nodes and inclusion state app-privately; UI never substitutes a token-bearing URL for a friendly name.
 
-### 4.2 QR scan
+Initial supported import: HTTP(S) subscription URLs returning Clash/Mihomo YAML with a usable `proxies` list, including full YAML profiles from which **only node definitions** are extracted. Support the conventional `clash://install-config?url=...` wrapper as a URL container, not permission to execute its other settings. Validate using safe parsing and the chosen core's supported schema. Provider-reference-only or unsupported proprietary/encoded formats return an explicit unsupported-format result, not an empty successful row. The importer is not a universal conversion engine.
 
-QR scan is a local address acquisition flow, not Phone pairing. Request camera permission only for deliberate scanner entry. Decode into a bounded preview; the user explicitly selects Open to navigate the current tab through the same address policy. Decode alone must not navigate, submit, run script or change device/network settings.
+Rescanning the same subscription source URL updates its existing row, preserving name and ON/OFF. A different source adds a row. Do not merge by display name/hostname or strip account-bearing query components in a way that conflates sources. Use a safe supplied name or Profile N. Failed fetch/parse/validation leaves current profiles/cached working data intact. Do not delete a working source before validating its replacement.
 
-Provide cancel, permission-denied, invalid-code/unsupported-value and camera-unavailable states. Release camera resources when scanning stops. QR decoding presents a URL for explicit Open on the current visible tab; no stale-scan identity/fencing framework is required. Camera preview remains media.
+Use current usable connectivity to fetch an initial subscription, including DIRECT when the pool is empty; the first download cannot depend on nodes it has not downloaded. Protect credential-bearing URLs and node secrets from normal logs, screenshots, repository records and web content. Imported data cannot expose a LAN listener or management port, run code or change OS settings.
 
-### 4.3 Settings
+## 8. Automatic updates
 
-Settings must contain working controls, not future placeholders. Planner completion default for HUD-G1: **Pointer sensitivity** (Low `0.75×`, Standard `1.0×`, High `1.25×`) and **Edge-scroll speed** (Slow `120`, Standard `240`, Fast `360` native viewport px/s). Persist the selected non-secret values locally; fresh installs use Standard. Report the exact setting in test evidence.
+All saved subscriptions, including OFF sources, refresh on a **30-minute / 1,800-second** policy. OFF controls candidate eligibility, not update cadence; no ongoing node tests are needed for excluded candidates. Deleted sources stop updating. Validate new data before replacing the last valid copy. Network failures, malformed updates and one failing source must not erase other sources, silently re-enable OFF rows or defeat direct fallback.
 
-These bounded alternatives are review defaults; the mandatory initial rate stays 240 px/s. Settings changes apply prospectively without recentering or motion backlog. Dark presentation is fixed. Numeric layout/tuning defaults and minimal Settings contents require approval at the open HUD gate.
+Regional domain/IP data refreshes every **24 hours / 86,400 seconds** from the selected maintained source; startup can use bundled or last valid data before downloading. Validate downloads before activation. Subscription refresh, node health checks and rule-data refresh are separate intervals.
 
-## 5. Bounded always-visible pointer
+Use one scheduling owner for each refresh operation; coordinate core facilities and ordinary Android background work rather than running duplicate loops. When active, refresh due data and keep the configured cadence under usable connectivity. When inactive, use ordinary permitted scheduling; Android may delay work in Doze, network absence or force-stop. Refresh overdue data on launch/return of usable execution. Do not promise exact wall-clock execution when Android prevents it or introduce exact alarms/permanent foreground services merely for updates.
 
-Keep a single built-in pointer over the active EyeBrowse window, including keyboard, menu and utility states. Sensor unavailability freezes a visible unavailable cursor and disables unsafe actions; it does not hide the pointer or continue scrolling. The app is not required to draw over Android system permission screens it does not own.
+Recreation/resume must not multiply jobs, listeners or core instances. Test scheduler configuration and actual controlled-endpoint updates; accelerated tests are labeled as tests, not claimed as 30-minute/day-long observations. Apply updates to future connections without deliberately recreating live pages or submitting forms.
 
-Automatically establish a head reference near screen center when tracking becomes usable. On resume, use current fresh sensor samples for ordinary pointer/edge behavior; do not synthesize motion from paused tracking. No manual recenter button, menu item or substitute gesture is introduced.
+## 9. Black HUD, lifecycle, persistence and privacy
 
-Yaw and pitch control horizontal and vertical pointer motion through timestamp-aware smoothing/noise handling. Measure the full drawable app screen, actual insets, rotation and glyph size. The entire glyph, internal executable pointer position and hit-test coordinates stay in bounds. The page viewport and full cursor bounds are distinct.
+App window, toolbar, address, menu, key interiors, Settings, Proxy and empty/error/loading surfaces use opaque **#000000** with light content. No frosted/gray card backgrounds, gradients or bottom dock. Supported webpage primary backgrounds are black with readable forms/dynamic content while useful photo/video/canvas/QR-camera media colors remain. A dark flag alone or black toolbar above a white page does not pass. Preserve the existing qualified live presentation styling; do not replace pages, break links/focus/forms/scripts, globally invert media or claim universal recoloring. Observe transition frames for app-origin white flashes.
 
-At any boundary, discard outward excess from angular offset, target position and filter backlog. Equal inward input must yield equivalent inward return regardless of previous overshoot amount or hold duration. Merely clipping the drawn cursor while storing hidden travel does not meet the requirement. Test all edges, corners and slow intentional inward movement.
+The top row stays `× | ← | → | ↻ | [compact address + ☆/★] | i/n | ⋮`. It never gains a title/address second row or loses Forward/Refresh/star to long text. Full detailed geometry and state checks live in H3.1.
 
-A relative-motion model or equivalent boundary rebasing is an engineering choice. Preserve bounded velocity and noise suppression without permanently discarding deliberate small movements.
+Use ordinary tab/View/camera/sensor/core lifecycle cleanup. Preserve cookies, site storage, bookmarks, live tabs where still alive, numeric settings and saved profiles across supported recreation. Report renderer/process loss honestly; never claim unsaved JS/form memory survived a cold restart or automatically replay an uncertain POST. No data clearing is an upgrade prerequisite. No Phone app installation, credential copying or system-wide route change is required.
 
-## 6. Edge scrolling and gestures
+No browsing payload, passwords, subscription tokens or node credentials in normal telemetry. Use dummy accounts/codes in evidence. Ordinary URL parsing, safe configuration parsing, TLS checks, application storage and management-endpoint isolation remain necessary; these are not the removed local-input fencing protocol.
 
-### 6.1 Direction and rate
+## 10. Acceptance and issue ownership
 
-On a usable browser surface, actual clamped displayed-pointer contact with the full-screen top boundary scrolls the active tab up; contact with the bottom scrolls it down. Interior positions and left/right-only contact do not generate page scrolling. At corners the vertical edge supplies the direction. A held pointer at the edge continues while samples remain fresh; additional outward rotation is unnecessary and does not accelerate scrolling.
+The six canonical issues are indexed in [v0.0.3 issues](docs/plans/v0.0.3-issues.md). Initial root work is V3-01, V3-02 and V3-03. V3-04 depends on V3-02/V3-03; V3-05 on V3-04; V3-06 on all five. Their publication numbers replace these aliases in the index; do not infer GitHub numbers from aliases.
 
-No broad near-edge hot zone or absolute-pitch threshold substitutes for actual edge contact. Only declared pixel/subpixel rounding is allowed. Initial standard rate is constant **240 native viewport px/s**; the bounded Settings choices in §4.3 are subject to HUD-G1. Page endpoints cannot accumulate unused distance for later replay.
-
-### 6.2 Cancellation
-
-Use an ordinary active-View repeating-scroll callback: scroll the visible WebView only while the cursor is at the actual top/bottom screen edge and tracking remains fresh. Stop when the edge is left, tab changes, page is covered, Activity pauses or tracking expires. Integrate at most 50 ms of movement per step; do not build per-tick identity/generation checks, stale-event queues or catch-up backlogs.
-
-Stop edge scrolling on inward departure, tab switch/close, navigation, covering utility, pause or loss of tracking. When active again, evaluate the actual current pointer and fresh samples normally; no special interior-to-edge rearming state or preserved edge episode is needed.
-
-Menus, tab list, bookmarks, Settings and QR scanner do not scroll a covered webpage. A currently visible scrollable utility list may respond to the same top/bottom edge behavior; dismissal restores normal page input without an old-episode replay.
-
-### 6.3 Keyboard coexistence
-
-With the built-in keyboard open, the full-screen top/bottom boundaries still scroll the active webpage; the keyboard remains stationary. Its top divider is not a trigger. All keys have selectable interior positions. Page scroll alone must not change the selected editor or invalidate an otherwise unchanged native key solely because page pixels moved.
-
-Required field reveal, page-authored scrolling and explicit webpage scroll controls are distinct from EyeBrowse head/pad scrolling. Reveal logic must not fight a deliberate edge-scroll episode or focus another field. Keep cause labels in evidence.
-
-### 6.4 Gesture contract
-
-A recognized short tap activates the current control or WebView once. A recognized double tap has no action and suppresses its constituent taps. Swipe right/left selects the next/previous tab, not a page scroll or history action. Do not double-dispatch via both recognizer and native controls; do not add target snapshots or identity tokens.
-
-A swipe during keyboard entry changes tabs and dismisses the previous tab's keyboard without deliberately submitting. Swipes in non-browser utility/scanner states do not change an underlying tab. Tab-list selection is an explicit tap.
-
-## 7. Built-in keyboard and ordinary WebView editing
-
-Retain English QWERTY, Shift/case, numbers, common punctuation/symbols, Space, Backspace, Enter/Open and a distinct **Done**. The HUD contract names required keys; generated pictures cannot add or remove them. Actual built-in keys operate both address drafts and local webpage editors.
-
-Full address editing uses a horizontally revealable draft inside the same compact toolbar slot; it does not widen the row. Invalid Open preserves the draft/current page. Done dismisses without navigating. Saving the current page via star never substitutes the unsent draft.
-
-Supported webpage targets are text/password fields, textarea and basic plain contenteditable. Use native WebView focus/input behavior for selection replacement, caret movement, Backspace, Unicode text and field constraints. Multiline Enter inserts a newline; single-line/password Enter follows ordinary field/form behavior. Done dismisses without deliberate submission or undoing completed text.
-
-Dispatch actual built-in keys directly to the current focused editor through Android/WebView input handling. Use ordinary View focus, keyboard visibility and tab switching. Do not implement original-element/selection binding tokens, keyboard-session generations, ABA validation, target registries or a browser-wide deferred-edit queue.
-
-No separate application-level execution-boundary validation is required for ordinary local keypresses or taps. Rely on native View/WebView semantics and simple event ordering, not redundant reentrant callback checks, acknowledgement matching or uncertain-result reconciliation.
-
-Keep the selected field/context visible during editing and preserve password masking; do not log passwords or text drafts. No custom late-key or session-fencing machinery is required.
-
-Keyboard show/hide changes only the local content viewport; do not intentionally reload the tab or erase form values. Use current View bounds for pointer hit testing and current WebView focus; scrolling does not require custom pending-page-hit invalidation.
-
-## 8. Lifecycle, persistence and Phone independence
-
-Maintain ordinary local browser state: selected tab/WebView, navigation, focus, keyboard visibility, pointer/tracking, visible utilities and active scrolling. Do not add operation generations, per-input identities or a stale-input state machine.
-
-| Event | Required behavior |
-| --- | --- |
-| Initial/empty launch | Usable local tab and address entry; automatic pointer acquisition; no Phone connection. |
-| Normal tab switch | Preserve surviving live tabs; select visible WebView, dismiss previous keyboard as appropriate and stop active edge scrolling. |
-| Keyboard/layout change | Preserve document and entered values; use current layout and focused field. |
-| Pause, occlusion, screen-off or stale tracking | Stop controller motion; release/suspend appropriate work; preserve still-live browser state. |
-| Resume | Resume pointer tracking and ordinary input; no synthetic tap or automatic keyboard opening. |
-| UI recreation with surviving runtime | Reattach local browser Views/state where supported without intentionally replacing surviving tabs. |
-| Actual tab renderer/process loss | Mark the affected context interrupted; do not claim JS/form memory survived; offer safe local recovery. |
-| Network request failure | Show actual error; loaded local content and local controls remain usable as appropriate. |
-| Phone stopped or absent | No effect on RG runtime when its own network route remains available. |
-
-Persist local bookmarks, approved settings, safe last-location/tab metadata and normal engine cookies/site storage in app-private storage. Ordinary RG tabs may share local website login state; none imports Phone credentials automatically. Cold recovery may reconstruct recorded tab slots/locations with honest interruption feedback and explicit safe opening; it must not automatically replay an uncertain POST or form action. Unsaved forms/JavaScript memory are not custom-persisted.
-
-Preserve data already durably established before abrupt loss; distinguish graceful persistence from unflushed renderer memory. Upgrade does not require clearing either product application's data. Old pairing/mode records are inert and cannot start remote work or restore a removed mode. Missing new preferences use documented defaults.
-
-Stop sensor listeners, QR scanner, scroll callbacks and browser resources with ordinary View/Activity teardown. Hidden tabs do not receive controller events. No unused Phone-link/capture work should run for RG browsing. Trace consumers before deleting shared code. Phone retains touch/IME, navigation and storage.
-
-## 9. Native black presentation and website compatibility
-
-The RG presentation is black by default regardless of Phone or OS light theme. App window, toolbar, address field, menu, keyboard, utilities, empty/error/loading surfaces and non-media background fills are **opaque `#000000`**. Use light text/icons and outlined controls; no gray-filled cards, frosted panels, gradients, wallpaper or ornamental glow. Exact tokens are in the HUD document.
-
-A black toolbar over a white webpage does not pass. The selected engine/theme path must provide light readable text on black primary document surfaces for the supported website/fixture set, including fields and dynamic content. Apply presentation styling without replacing the live page or breaking links, focus, forms and scripts. Native/author dark-theme hints and engine darkening are mechanisms to qualify, not proof that every background became black.
-
-Photos, video/canvas content and camera previews are media, not background fill; they need not be flattened to black or globally inverted. Preserve useful media colors. Document custom-painted/cross-origin or incompatible content limitations separately. Do not silently report white primary page output as conforming, conceal a software failure under a generic compatibility label, or claim universal recoloring is proven. An unsatisfied required site/fixture result returns to Planner before weakening the contract.
-
-The black launch/recovery surface must prevent app-origin white flashes during page load, tab switch, keyboard transitions, menus and engine failure. Test startup and transition frames, not only settled screenshots. No confidence claim about real optical comfort follows from RGB screenshots.
-
-Android's documented darkening behavior depends on the app target/theme, WebView feature support and page styling; see the official references in the HUD contract. Engine limitations must be measured on the installed provider. Do not silently downgrade this output requirement to setting a dark-theme flag.
-
-## 10. Privacy, networking and permission boundaries
-
-Each device uses its own existing Internet and VPN route. A Phone hotspot is connectivity, not proof of Phone VPN routing or an EyeBrowse app dependency. EyeBrowse does not configure Wi-Fi/hotspots. Explicit HTTP is not presented as encrypted; certificate failures remain visible and are not bypassed for testing.
-
-Webpages and scanned values are untrusted. Native/page integrations expose only scoped validated operations, not private credentials, unrestricted native bridges or arbitrary commands. No ordinary browsing, typing, scrolling or QR decoding depends on production ADB commands.
-
-Use app-private storage for deliberately saved locations/bookmarks. Routine diagnostics record timing, classes and non-sensitive IDs, not passwords, typed payloads, QR tokens or arbitrary full sensitive URLs. Mission-scoped screenshots remain permitted under existing authorization and must be sanitized before public sharing. Use dummy credentials and fixture text.
-
-Camera access is limited to explicit QR scanning, with permission, cancellation and release. Permission dialogs are system UI; do not imitate permission success or manufacture device access. Device/provider/security-setting mutations still need their applicable authority.
-
-## 11. Quantitative contract
-
-| Quantity | Bound/default |
-| --- | --- |
-| Canonical HUD canvas | 480 × 640, width × height, portrait. |
-| Reference toolbar | One fixed 48-reference-pixel row, details in HUD H1.2; numeric layout awaits HUD-G1. |
-| Standard edge-scroll rate | 240 native viewport px/s; new bounded Settings presets require HUD-G1. |
-| Valid sample → visible cursor / edge response | At most 100 ms in declared device/replay conditions. |
-| Inward return after saturation | At most 100 ms after valid inward input, independent of prior outward angle/duration. |
-| Sensor-age cutoff | No scroll effect when last valid sample age is at or beyond 250 ms. |
-| Scroll integration step | At most 50 ms elapsed motion; no catch-up backlog. |
-| Confirmed tap/key → local dispatch | At most 100 ms; recognition, editor completion and visible results reported separately. |
-
-Measure native scroll units and qualified monotonic clocks. Do not call a no-op successful input dispatch or hide timing violations. Observe normal tap/key dispatch and scroll start/stop without extra generations. Resource/engine/tab bounds remain documented; local rendering does not inherit the old streaming frame-rate cap.
-
-## 12. Acceptance and mandatory HUD gate
-
-### 12.1 HUD-G1 / HUD-G2
-
-**HUD-G1 is OPEN.** Before production HUD work is accepted for implementation, the Owner must review the exact HUD contract revision and a complete native-size reference/prototype set or explicitly waive the image portion while approving the exact layout contract. The record identifies revision/hash, approved states and any deviations. None of the existing generated images is a complete approved reference: omissions, incorrect dimensions/orientation, duplicate pointer marks or missing keys are not authorized behavior.
-
-Qualification and behavior-preserving work in #28/#29 may continue. Prototype/layout validation specifically needed for HUD-G1 may be assigned as design work; that is not permission to ship a provisional layout. Manager must ensure the design gate and expanded tab/bookmark/QR/settings/dark-output requirements are covered by authorized canonical issues and dependencies before dispatching affected implementation. Separate Planner-authored ticket plans are not required.
-
-**HUD-G2** is exact-candidate implementation conformance. Automated structure/geometry/color/state checks and native-size screenshots must demonstrate the approved contract. Missing star, Forward, Refresh, Done, menu item, wrong order, a second toolbar row, wrong orientation or nonblack app background produces `CHANGES_REQUESTED`, not stylistic discretion. Passing functional navigation alone is insufficient.
-
-### 12.2 Evidence boundaries
-
-Use the real RG and currently authorized Phone for applicable regressions, via reserved mission-scoped ADB automation. Replay raw pose/pad events through production input paths. Positive keyboard/QR/navigation evidence uses actual implemented controls; direct DOM assignment or arbitrary state injection is not a replacement for those journeys.
-
-Use independent owned-fixture observations for values, selection, submissions, tab identity, navigation and scrolling. Predeclare cases, timebases and finite per-command safety limits. Preserve exact source/APK/provider/device/route/input bindings, executed versus cached checks, failure history, screenshots and cleanup. Physical optical/wearer claims require their own observation; unattended screenshots do not establish them.
-
-### 12.3 Acceptance groups
-
-| ID | Required demonstration |
-| --- | --- |
-| V2-A01 | Exact-head builds, applicable tests/lint, real launches and engine/display/rotation measurements. |
-| V2-A02 | RG local execution with Phone stopped; simultaneous independent browser use. |
-| V2-A03 | Complete address policy, draft preservation, Back/Forward/Refresh, links and errors on the active tab. |
-| V2-A04 | Always-visible pointer, automatic acquisition, all control targets reachable, no recenter/mode routes. |
-| V2-A05 | Four-edge/corner overshoot regression with three amounts and multiple hold durations; no hidden angle/filter payback. |
-| V2-A06 | Actual vertical edge-only movement, held-edge continuation, bounded configured speed, no lateral/pad vertical scroll. |
-| V2-A07 | Edge scrolling starts at actual top/bottom pointer contact and stops on departure, hidden tab/page, unavailable tracking or pause using ordinary View lifecycle behavior. |
-| V2-A08 | Recognized short tap activates exactly once; double tap suppresses constituent actions; no duplicated native/recognizer dispatch or custom target-identity tests. |
-| V2-A09 | Real built-in keys across four editor classes; selection/case/symbols/Space/Backspace/Enter/Done. |
-| V2-A10 | Keyboard viewport preservation, full-screen pointer/edge limits, visible current masked feedback. |
-| V2-A11 | Built-in keys edit the currently focused WebView field correctly across text/password/textarea/plain editable, tab switches and keyboard dismissal; no ABA/stale-key test matrix. |
-| V2-A12 | Restart/durable storage/network loss with honest recovery and no consequential replay. |
-| V2-A13 | Data-preserving upgrade, inert obsolete records and intact Phone browser/data. |
-| V2-A14 | Exact-head review, combined journey, limits/privacy and verified cleanup. |
-| V2-A15 | HUD-G1 receipt and HUD-G2: all eight toolbar hit targets, one row, 480-wide × 640-high portrait geometry, black palette, keys/menu/state inventory. |
-| V2-A16 | At least four real tabs: add/select/counter/swipe/close/boundaries/last-tab behavior, history and no background input. |
-| V2-A17 | Outline/filled star on correct committed page, add/remove persistence, list/empty/error and reopen semantics. |
-| V2-A18 | Real camera lifecycle, decoder, URL preview/explicit confirmation, invalid/permission/cancel handling; no separate stale-scan fencing requirement. |
-| V2-A19 | Actual bounded settings, persistence/defaults and ordinary scroll start/stop without recentering. |
-| V2-A20 | Black first-party surfaces and dark supported website/field/dynamic output, media preservation, no app-origin white transition flash. |
-
-Final integration includes navigation, multiple tabs and both swipe directions, star save/remove/list, QR URL confirmation, settings, overshoot/reversal, edge scrolling, actual field entry, utilities, sleep/resume and safe cold recovery. Each feature must appear in a canonical plan/evidence map; no new rows are automatically passed by the old six-ticket inventory.
-
-## 13. Migration and planning reconciliation
-
-Issues #28–#33 remain the original canonical migration tickets. Their publication predates the added tabs/bookmarks/QR/settings and strict HUD directions. The issue index records the updated authority. It is not accurate to treat the old single-page text or unassigned swipes as current requirements.
-
-The responsible Planner and Manager must reconcile affected canonical ticket scopes/dependencies before the relevant implementation starts. Workers execute directly from authorized issues, current SPEC/HUD requirements, and Manager mission assignments, without a separate ticket-plan gate. #28 engine/editor qualification and #29 refactoring remain independently useful. #30 and later UI work must use this SPEC and HUD H1.2, satisfy HUD-G1, and have mapped authorized scope for the newly required functions. This edit does not silently assign all new work to an already dispatched Worker or invent completed tickets.
-
-Keep historical R3 and v0.0.1 evidence at its original reference. Previous remote-only target-binding/cancellation/ABA checks are superseded for local input by this Owner-directed direct-dispatch rule; functional pointer, scroll, gesture, keyboard and lifecycle outcomes remain mandatory. Trace shared consumers and do not carry remote-only ordinals/capture leases into local operations.
-
-The designated editors handle protected articles. Implementation PRs target the migration branch with independent exact-head review. Publication here does not move `main`, reopen retired agents, dispatch new ones, or record a release.
-
-## 14. References
-
-- [Mandatory RG HUD H1.2](docs/design/v0.0.2-rg-hud.md).
-- [Current issue index and reconciliation status](docs/plans/v0.0.2-issues.md).
-- `AGENTS.md`, `DEV.md`, and `docs/decisions/0001-kotlin-only-first-party-code.md`.
-- Historical R3: `docs/plans/v0.0.2-standalone-rg-r3.md`; its earlier tab/swipe/layout assumptions are not the current contract.
-
-**Completion means independent RG browsing with the complete one-row black HUD, built-in input, local tabs and utilities, safe bounded edge scrolling, and verified conformance—not merely a similar-looking screenshot.**
+| Group | Owner | Required demonstration |
+| --- | --- | --- |
+| V3-A01 | V3-01 | Default 2× movement on both axes, suitable cap behavior and actual small-target use. |
+| V3-A02 | V3-01 | Numeric steps/bounds/persistence; one-time legacy preference migration. |
+| V3-A03 | V3-01 | Both finite strips, hidden cursor, continued scroll on slight inward motion, visible return stop, no excess debt/off-screen tap; keyboard/list coexistence. |
+| V3-A04 | V3-02 | Real camera recognition and repeat/open/cancel/resume behavior, short and long QR payloads, attributed original-bug limits. |
+| V3-A05 | V3-03 | Genuine pinned core loads in RG and carries actual WebView/relevant native traffic without device VPN changes. |
+| V3-A06 | V3-03 | China/local/tailnet DIRECT, other destinations shared AUTO; empty and all-unhealthy direct fallback plus recovery. |
+| V3-A07 | V3-04 | Minimal profile UI and actual dedicated QR import/update/toggle/delete/storage. |
+| V3-A08 | V3-04 | Fastest healthy node can come from either enabled source; OFF/deleted excluded; not a per-profile selector. |
+| V3-A09 | V3-05 | 30-minute all-saved-source updates, separate health tests and daily data; last-good preservation. |
+| V3-A10 | V3-05 | Single scheduling/resource ownership, overdue startup recovery and honest Android background limitations. |
+| V3-A11 | V3-06 | RG-only data-preserving upgrade/version metadata; toolbar/tabs/bookmarks/native input remain intact. |
+| V3-A12 | V3-06 | Complete native-size HUD and actual route/QR/input/refresh evidence, resource observations and independent exact-head review. |
+
+Verify at existing highest practical seams: native keys/pad/pose through production handlers, real RG WebView/network requests, owned endpoint route observations and actual optical QR input. Do not introduce large mock/identity frameworks to satisfy a checklist. State what was observed versus simulated or unavailable. Record source/APK/provider/core/dataset/device bindings, useful failure evidence and cleanup; never relabel old v0.0.2 or bitmap-only evidence as a new camera/route PASS.
+
+Starting host commands: `./gradlew :app-rg:testDebugUnitTest :app-rg:assembleDebug :app-rg:assembleDebugAndroidTest :app-rg:lintDebug`, reconciled to current DEV/toolchain. Include affected shared-consumer host checks only if needed; physical Phone tests are not a version gate. Optical/comfort/battery claims need their own observation and are not implied by screenshots. Missing core capability, actual QR setup or unsupported subscription is a concrete finding, not permission to waive the relevant feature result.
+
+Existing v0.0.2 HUD-G1 approval remains historical and effective for unchanged controls/defaults. The Owner-directed v0.0.3 stepper/Proxy/strip changes replace only those specified aspects; no fresh image-generation or blanket approval gate is added. H3.1 structural, color and state checks are implementation acceptance. No whole-version PASS until the six outcomes and final review/cleanup are complete. A real platform/provider/security or scope change still needs a specific disposition; no separate ticket plan.
+
+## 11. References and completion
+
+- [Merged v0.0.2 baseline / PR #40](https://github.com/code2hack/EyeBrowse/commit/32b69fa8aa2c5aa360424b73b37657f74b3a399c).
+- [Existing Owner HUD approval](https://github.com/code2hack/EyeBrowse/issues/30#issuecomment-6075367078); [accepted native password feedback](https://github.com/code2hack/EyeBrowse/issues/29#issuecomment-6072154841).
+- [Android WebView app proxy API](https://developer.android.com/reference/androidx/webkit/ProxyController).
+- [Mihomo providers](https://wiki.metacubex.one/en/config/proxy-providers/), [groups](https://wiki.metacubex.one/en/config/proxy-groups/), [URL-test](https://wiki.metacubex.one/en/config/proxy-groups/url-test/), [routing](https://wiki.metacubex.one/en/config/rules/).
+- [Android periodic scheduling](https://developer.android.com/reference/kotlin/androidx/work/PeriodicWorkRequest).
+- `AGENTS.md`, `DEV.md`, `docs/decisions/0001-kotlin-only-first-party-code.md`.
+
+These references support available mechanisms, not a claim that the new core, proxy, optical fix or performance already passed. Exact dependency/data versions are selected with evidence during the assigned implementation. Completion is a working, verified RG v0.0.3 under this contract, not a similar-looking screenshot or successful YAML parse.

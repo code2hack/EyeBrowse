@@ -1,0 +1,20 @@
+<!doctype html>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Owned overlay regression</title>
+<style>
+body { margin: 0; background: #eee; color: #111; font: 20px sans-serif; }
+main { padding: 20px; background: white; }
+h1 { font-size: 24px; }
+#shield { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+#opaque { background: #ddd; padding: 12px; margin-top: 12px; }
+</style>
+<main>
+<h1 id="heading">Owned overlay page</h1>
+<label>Owned field <input id="field" aria-label="Owned field"></label>
+<button id="action" onclick="document.getElementById('status').textContent='Pressed'">Press</button>
+<p id="status">Ready</p>
+<div id="opaque">Opaque panel</div>
+<canvas id="media" width="32" height="32" aria-label="Red media sample"></canvas>
+</main>
+<div id="shield"><span></span></div>
+<script>const c=document.getElementById('media').getContext('2d');c.fillStyle='#ff0000';c.fillRect(0,0,32,32);</script>

@@ -1,0 +1,28 @@
+EyeBrowse bundles the UNMODIFIED official MetaCubeX/mihomo v1.19.32 Android ARM64 executable.
+Core license: GNU General Public License version3; see licenses/Mihomo-GPL-3.0.txt.
+Binary provenance, hashes and build qualifications: provenance.json and core-build-info.txt.
+
+Corresponding core source and build scripts:
+https://github.com/MetaCubeX/mihomo/archive/88dcbf7f1614a67c3b36b848ee3592dfa92ada36.tar.gz
+https://github.com/MetaCubeX/mihomo/blob/88dcbf7f1614a67c3b36b848ee3592dfa92ada36/.github/workflows/build.yml
+Exact linked-module sources/versions/hashes: linked-modules.json.
+Linked-module notices (line endings/trailing whitespace normalized): licenses/Mihomo-linked-modules.txt.
+Go runtime notice: licenses/Go-BSD.txt.
+Retain notices and access to corresponding source/build information alongside any binary distribution.
+Recipients retain the rights provided by the applicable licenses; no additional restriction is imposed here.
+
+Regional classifications, renamed but otherwise unchanged:
+MetaCubeX/meta-rules-dat, snapshot bf52d18cf9f047308cf3b1844e5e9211989d2e03 (2026-10-13).
+https://github.com/MetaCubeX/meta-rules-dat/tree/bf52d18cf9f047308cf3b1844e5e9211989d2e03
+Project GPL3 notice: licenses/Meta-rules-GPL-3.0.txt.
+CN domain input: blackmatrix7/ios_rule_script ChinaMax, GPL2.
+https://github.com/blackmatrix7/ios_rule_script/tree/master/rule/Clash/ChinaMax
+Original notice: licenses/ChinaMax-GPL-2.0.txt.
+CN IP input: Loyalsoldier/geoip, CC-BY-SA-4.0.
+https://github.com/Loyalsoldier/geoip
+Original notice: licenses/GeoIP-CC-BY-SA-4.0.txt.
+Loyalsoldier credits gaoyifan/china-operator-ip for CN IPv4/IPv6 input (MIT).
+https://github.com/gaoyifan/china-operator-ip
+Original notice: licenses/China-operator-MIT.txt.
+Preserve the applicable attribution and share-alike terms. Exact consumed input commits are not published
+by the compiled snapshot. These lists do not universally classify every domain, CDN or address.

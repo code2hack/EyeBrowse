@@ -31,6 +31,7 @@ import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import com.code2hack.eyebrowse.core.browser.AddressPolicy
 import com.code2hack.eyebrowse.rg.qr.CameraQrScanner
+import com.code2hack.eyebrowse.rg.proxy.RgProfiles
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -43,7 +44,8 @@ class LocalBrowserActivity : ComponentActivity() {
         var draft: String? = null
         var recoveryUrl = ""
     }
-    internal enum class Utility { BROWSING, MORE, TABS, BOOKMARKS, QR, SETTINGS }
+    internal enum class Utility { BROWSING, MORE, TABS, BOOKMARKS, QR, SETTINGS, PROXY }
+    internal enum class QrPurpose { WEBPAGE, PROFILE }
     internal lateinit var root: FrameLayout
     internal lateinit var toolbar: FrameLayout
     internal lateinit var content: FrameLayout
@@ -55,6 +57,14 @@ class LocalBrowserActivity : ComponentActivity() {
     internal lateinit var tabs: LocalTabs<Tab>
     internal lateinit var bookmarks: LocalBookmarks
     internal lateinit var inputSettings: LocalInputSettings
+    internal lateinit var profiles: RgProfiles
+    private val profileChanged: () -> Unit = {
+        if (utility == Utility.PROXY) {
+            val position = utilityScroll?.scrollY ?: 0
+            renderUtility()
+            utilityScroll?.let { scroll -> scroll.post { scroll.scrollTo(0, position) } }
+        }
+    }
     internal val controls = linkedMapOf<String, TextView>()
     internal val keyButtons = linkedMapOf<RgKeyboardKeys.Key, TextView>()
     internal var utility = Utility.BROWSING
@@ -69,6 +79,8 @@ class LocalBrowserActivity : ComponentActivity() {
     private var scanner: CameraQrScanner? = null
     private var qrUrl: String? = null
     private var qrMessage = ""
+    private var qrPurpose = QrPurpose.WEBPAGE
+    private var profileQrResult: ((String?) -> Unit)? = null
     internal var cameraHasFrame = false
         private set
     internal val cameraActive get() = scanner != null
@@ -84,10 +96,10 @@ class LocalBrowserActivity : ComponentActivity() {
         override fun run() {
             val surface = scrollSurface()
             val now = SystemClock.elapsedRealtimeNanos()
-            val direction = edgeMotion.direction(pointer.inputPosition(),pointer.motionBounds,pointer.expiresAtNs,now)
+            val direction = edgeMotion.direction(pointer.inputPosition(),pointer.visibleBounds,pointer.expiresAtNs,now)
             if (surface == null || direction == 0) { stopEdgeScroll(); return }
-            val pixels = edgeMotion.step(pointer.position,pointer.motionBounds,pointer.expiresAtNs,now,
-                inputSettings.speed.pixelsPerSecond)
+            val pixels = edgeMotion.step(pointer.position,pointer.visibleBounds,pointer.expiresAtNs,now,
+                inputSettings.scrollSpeed)
             if (surface.canScrollVertically(direction)) {
                 if (utility==Utility.BROWSING) input.scroll(pixels) else surface.scrollBy(0,pixels)
             }
@@ -101,18 +113,18 @@ class LocalBrowserActivity : ComponentActivity() {
             Utility.BROWSING -> tabs.current.session.page?.takeIf {
                 it.isShown && tabs.current.session.state.phase == LocalBrowserSession.Phase.READY
             }
-            Utility.TABS, Utility.BOOKMARKS, Utility.SETTINGS -> utilityScroll?.takeIf { it.isShown }
+            Utility.TABS, Utility.BOOKMARKS, Utility.SETTINGS, Utility.PROXY -> utilityScroll?.takeIf { it.isShown }
             else -> null
         }
     }
     private fun updateEdgeScroll() {
         val now=SystemClock.elapsedRealtimeNanos()
-        if (scrollSurface()==null || edgeMotion.direction(pointer.position,pointer.motionBounds,pointer.expiresAtNs,now)==0) {
+        if (scrollSurface()==null || edgeMotion.direction(pointer.position,pointer.visibleBounds,pointer.expiresAtNs,now)==0) {
             stopEdgeScroll();return
         }
         if (!edgeScrollRunning) {
             edgeScrollRunning=true
-            edgeMotion.step(pointer.position,pointer.motionBounds,pointer.expiresAtNs,now,inputSettings.speed.pixelsPerSecond)
+            edgeMotion.step(pointer.position,pointer.visibleBounds,pointer.expiresAtNs,now,inputSettings.scrollSpeed)
             root.postDelayed(edgeScroll,16)
         }
     }
@@ -188,13 +200,14 @@ class LocalBrowserActivity : ComponentActivity() {
         keyboard = FrameLayout(this).apply { setBackgroundColor(Color.BLACK); visibility = View.GONE }
         root.addView(keyboard, box(-1, 200).apply { gravity = Gravity.BOTTOM })
         bookmarks = LocalBookmarks(File(filesDir, "local-browser/bookmarks.properties"))
+        profiles = RgProfiles.get(this)
         tabs = LocalTabs(::createTab) { tab -> pages.removeView(tab.session.surface); tab.session.destroy() }
         restoreMetadata(savedInstanceState?.getString("local.tabs") ?: getPreferences(MODE_PRIVATE).getString("local.tabs", null))
         val preferences=getSharedPreferences("local-input-settings",MODE_PRIVATE)
         inputSettings=LocalInputSettings({ key -> preferences.getString(key,null) }) { key,value ->
             preferences.edit().putString(key,value).commit()
         }
-        pointer = PointerOverlay(this).apply { sensitivity(inputSettings.sensitivity.gain) }
+        pointer = PointerOverlay(this).apply { sensitivity(inputSettings.pointerGain) }
         root.addView(pointer, box(-1, -1))
         input = NativeRgInputTarget(root, pointer, {
             if (utility == Utility.BROWSING) tabs.current.session.page else null
@@ -393,19 +406,31 @@ class LocalBrowserActivity : ComponentActivity() {
         if (utility == Utility.BOOKMARKS) renderUtility()
     }
 
-    internal fun showUtility(next: Utility) {
+    internal fun showUtility(next: Utility) = showUtility(next, QrPurpose.WEBPAGE, null)
+
+    /** #44 supplies the importer/list. Null reports cancellation; a payload never opens a tab. */
+    internal fun scanProfileQr(onResult: (String?) -> Unit) = showUtility(Utility.QR, QrPurpose.PROFILE, onResult)
+
+    private fun showUtility(next: Utility, purpose: QrPurpose, profileResult: ((String?) -> Unit)?) {
+        val cancelledProfile = profileQrResult
+        profileQrResult = null
         stopCamera(); qrUrl = null; qrMessage = ""
         stopEdgeScroll(); dismissKeyboard(); tabs.current.session.surface.clearFocus(); root.requestFocus()
+        qrPurpose = purpose; profileQrResult = profileResult
         utility = next; localError = null; overlay.visibility = View.VISIBLE
         showSelected(); renderUtility()
         if (next == Utility.QR) requestCamera()
+        cancelledProfile?.invoke(null)
     }
     internal fun dismissUtility() {
         if (!::overlay.isInitialized) return
+        val cancelledProfile = profileQrResult
+        profileQrResult = null
         stopCamera(); qrUrl = null
         stopEdgeScroll(); utilityScroll=null
         utility = Utility.BROWSING; overlay.visibility = View.GONE; overlay.removeAllViews()
         if (::tabs.isInitialized) showSelected()
+        cancelledProfile?.invoke(null)
     }
     private fun renderUtility() {
         stopEdgeScroll(); utilityScroll=null
@@ -430,13 +455,16 @@ class LocalBrowserActivity : ComponentActivity() {
         val title = when (utility) {
             Utility.TABS -> "Tabs"
             Utility.BOOKMARKS -> "Bookmarks"
+            Utility.PROXY -> "Proxy"
             else -> "Settings"
         }
-        overlay.addView(text(title, 24f), box(340, 44, 16, 14))
-        overlay.addView(button("Done") { dismissUtility() }.apply { tag = "utility.done" }, box(96, 44, 368, 14))
+        overlay.addView(text(title, 24f), box(340, 32, 16, 16))
+        overlay.addView(button(if (utility == Utility.PROXY) "Back" else "Done") {
+            if (utility == Utility.PROXY) showUtility(Utility.SETTINGS) else dismissUtility()
+        }.apply { tag = "utility.done" }, box(80, 48, 384, 8))
         val scroll = ScrollView(this).apply { setBackgroundColor(Color.BLACK); isFillViewport = true }
         val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.BLACK) }
-        scroll.addView(rows); overlay.addView(scroll, box(-1, -1, y = 76));utilityScroll=scroll
+        scroll.addView(rows); overlay.addView(scroll, box(-1, -1, y = 64));utilityScroll=scroll
         fun row(view: View, height: Int) { rows.addView(view, LinearLayout.LayoutParams(-1, height).apply { setMargins(16, 0, 16, 8) }) }
         when (utility) {
             Utility.TABS -> tabs.items.forEachIndexed { index, tab ->
@@ -465,20 +493,55 @@ class LocalBrowserActivity : ComponentActivity() {
                 }
             }
             Utility.SETTINGS -> {
+                fun numericRow(label: String, name: String, value: String, decrease: Boolean, increase: Boolean,
+                               change: (Int) -> Unit) {
+                    val group=FrameLayout(this)
+                    group.addView(text(label).apply { gravity=Gravity.CENTER_VERTICAL },box(184,56))
+                    group.addView(button("←","Decrease $label") { change(-1) }.apply {
+                        tag="settings.$name.decrease";isEnabled=decrease
+                    },box(48,56,192))
+                    group.addView(text(value).apply { tag="settings.$name.value";gravity=Gravity.CENTER },box(112,56,248))
+                    group.addView(button("→","Increase $label") { change(1) }.apply {
+                        tag="settings.$name.increase";isEnabled=increase
+                    },box(48,56,368))
+                    row(group,56)
+                }
+                numericRow("Pointer speed","pointer","${inputSettings.pointerGain}×",
+                    inputSettings.pointerTenths>1,inputSettings.pointerTenths<60) {
+                    if(inputSettings.stepPointer(it)) pointer.sensitivity(inputSettings.pointerGain)
+                    renderUtility()
+                }
+                numericRow("Scroll speed","scroll","${inputSettings.scrollSpeed} px/s",
+                    inputSettings.scrollSpeed>10,inputSettings.scrollSpeed<1200) {
+                    inputSettings.stepScroll(it);renderUtility()
+                }
+                row(button("Proxy  ›") { showUtility(Utility.PROXY) }.apply {
+                    tag = "settings.proxy"
+                }, 48)
+                (rows.getChildAt(2).layoutParams as LinearLayout.LayoutParams).topMargin = 8
                 inputSettings.error?.let { row(text(it,18f),52) }
-                row(text("Pointer sensitivity"),40)
-                LocalInputSettings.Sensitivity.entries.forEach { value ->
-                    row(button("${value.label} (${value.gain}×)") {
-                        if (inputSettings.select(value)) pointer.sensitivity(value.gain)
-                        renderUtility()
-                    }.apply { tag="settings.sensitivity.${value.name.lowercase()}";isSelected=inputSettings.sensitivity==value },48)
+            }
+            Utility.PROXY -> {
+                profiles.profiles.forEachIndexed { index, profile ->
+                    val group = FrameLayout(this)
+                    group.addView(text(profile.name).apply {
+                        tag = "profile.name.$index"; gravity = Gravity.CENTER_VERTICAL
+                        setSingleLine(); ellipsize = TextUtils.TruncateAt.END
+                    }, box(264, 56))
+                    group.addView(button(if (profile.enabled) "ON" else "OFF", "Toggle ${profile.name}") {
+                        profiles.toggle(profile.source)
+                    }.apply { tag = "profile.toggle.$index"; isEnabled = !profiles.busy }, box(64, 56, 272))
+                    group.addView(button("Delete", "Delete ${profile.name}") { profiles.delete(profile.source) }
+                        .apply { tag = "profile.delete.$index"; isEnabled = !profiles.busy }, box(104, 56, 344))
+                    row(group, 56)
                 }
-                row(text("Edge-scroll speed"),40)
-                LocalInputSettings.Speed.entries.forEach { value ->
-                    row(button("${value.label} (${value.pixelsPerSecond} px/s)") {
-                        inputSettings.select(value);renderUtility()
-                    }.apply { tag="settings.speed.${value.name.lowercase()}";isSelected=inputSettings.speed==value },48)
-                }
+                row(button("Add a new profile") {
+                    scanProfileQr { payload ->
+                        // A cancelled scanner must not reopen utilities over a toolbar action.
+                        if (payload != null) { showUtility(Utility.PROXY); profiles.import(payload) }
+                    }
+                }.apply { tag = "profile.add"; isEnabled = !profiles.busy }, 48)
+                profiles.message?.let { row(text(it, 18f).apply { tag = "profile.message"; maxLines = 3 }, 72) }
             }
             else -> Unit
         }
@@ -489,7 +552,7 @@ class LocalBrowserActivity : ComponentActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             startCamera()
         } else {
-            qrMessage = "Allow camera access to scan a webpage address."
+            qrMessage = "Allow camera access to scan a QR code."
             renderUtility(); cameraPermission.launch(Manifest.permission.CAMERA)
         }
     }
@@ -500,12 +563,16 @@ class LocalBrowserActivity : ComponentActivity() {
             tag = "qr.camera"
             // TextureView keeps the app's single pointer visible above real camera media.
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+            // Show the full camera field rather than hiding its edges in this wide preview slot.
+            scaleType = PreviewView.ScaleType.FIT_CENTER
+            setBackgroundColor(Color.BLACK)
         }
         overlay.addView(preview, box(448, 272, 16, 76))
         try {
             scanner = CameraQrScanner(this, this, ::previewQr, {
                 cameraHasFrame = true
-                qrMessage = "Point the camera at a webpage QR code."
+                qrMessage = if (qrPurpose == QrPurpose.WEBPAGE) "Point the camera at a webpage QR code."
+                    else "Point the camera at a profile QR code."
                 overlay.findViewWithTag<TextView>("qr.message")?.text = qrMessage
             }, { qrError("Camera unavailable. Try again or cancel.") }).also { it.start(preview) }
         } catch (_: Exception) { qrError("Camera unavailable. Try again or cancel.") }
@@ -519,13 +586,21 @@ class LocalBrowserActivity : ComponentActivity() {
     internal fun previewQr(value: String) {
         if (utility != Utility.QR) return
         stopCamera()
+        if (qrPurpose == QrPurpose.PROFILE) {
+            val receive = profileQrResult
+            profileQrResult = null
+            dismissUtility()
+            receive?.invoke(value)
+            return
+        }
         val result = AddressPolicy.resolve(value)
         qrUrl = result.url()
         qrMessage = if (result.accepted()) "Open this address in the current tab?" else "Unsupported QR address. ${result.message()}"
         renderUtility()
     }
     private fun renderQr() {
-        overlay.addView(text("QR scan", 24f), box(340, 44, 16, 14))
+        overlay.addView(text(if (qrPurpose == QrPurpose.WEBPAGE) "QR scan" else "Add a new profile", 24f)
+            .apply { tag = "qr.title" }, box(340, 44, 16, 14))
         overlay.addView(text(qrMessage, 18f).apply { tag = "qr.message"; maxLines = 3 }, box(448, 72, 16, 356))
         qrUrl?.let { url ->
             overlay.addView(text(url).apply { tag = "qr.url"; maxLines = 4; ellipsize = TextUtils.TruncateAt.END }, box(448, 100, 16, 100))
@@ -580,11 +655,21 @@ class LocalBrowserActivity : ComponentActivity() {
         } catch (_: Exception) { localError = "Some previous tab locations could not be recovered." }
     }
     override fun onSaveInstanceState(outState: Bundle) { outState.putString("local.tabs", metadata()); super.onSaveInstanceState(outState) }
+    override fun onStart() {
+        super.onStart()
+        com.code2hack.eyebrowse.rg.proxy.RgProxyRuntime.get(this).acquire()
+        profiles.observe(profileChanged)
+        profiles.activate()
+        com.code2hack.eyebrowse.rg.proxy.RgRefresh.get(this).start()
+    }
     override fun onStop() {
+        com.code2hack.eyebrowse.rg.proxy.RgRefresh.get(this).stop()
+        profiles.unobserve(profileChanged)
         android.webkit.CookieManager.getInstance().flush()
         if (!getPreferences(MODE_PRIVATE).edit().putString("local.tabs", metadata()).commit()) {
             localError = "Tab recovery could not be saved."; updateStatus()
         }
+        com.code2hack.eyebrowse.rg.proxy.RgProxyRuntime.get(this).release()
         super.onStop()
     }
     // Android's public Activity hook; AndroidX core marks its override library-only.
@@ -594,6 +679,7 @@ class LocalBrowserActivity : ComponentActivity() {
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
             if (event.action == KeyEvent.ACTION_UP) when {
                 keyboard.isShown -> dismissKeyboard()
+                utility == Utility.PROXY -> showUtility(Utility.SETTINGS)
                 utility != Utility.BROWSING -> dismissUtility()
                 tabs.current.session.state.canGoBack -> tabs.current.session.back()
                 else -> finish()

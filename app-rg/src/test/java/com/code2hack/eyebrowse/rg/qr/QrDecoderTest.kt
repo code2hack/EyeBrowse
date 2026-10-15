@@ -9,6 +9,69 @@ import org.junit.Test
 class QrDecoderTest {
     private fun payload(sample: Int) = "https://fixture.example/qr/$sample?from=camera#preview"
 
+    @Test fun `global threshold recovers a small low contrast code in a dark frame`() {
+        // Owned replacement for the private optical frame that HybridBinarizer missed.
+        val value = "https://subscription.example.invalid/subscribe?token=owned-dummy-0123456789abcdef&format=clash&source=rg-threshold-regression"
+        val qr = com.google.zxing.qrcode.QRCodeWriter().encode(value, com.google.zxing.BarcodeFormat.QR_CODE, 104, 104)
+        val width = 640; val height = 480
+        val frame = ByteArray(width * height) { 10 }
+        for (y in 0 until qr.height) for (x in 0 until qr.width) {
+            frame[(y + 32) * width + x + 32] = if (qr[x, y]) 60 else 100
+        }
+        assertEquals(value, QrDecoder.decodeYPlane(frame, width, width, height))
+    }
+
+    @Test fun `light modules on a dark background decode without changing the payload`() {
+        for (value in listOf(QrFixtures.SHORT_URL, QrFixtures.LONG_URL)) {
+            val matrix = com.google.zxing.qrcode.QRCodeWriter().encode(value, com.google.zxing.BarcodeFormat.QR_CODE, 384, 384)
+            val inverted = ByteArray(matrix.width * matrix.height) { i ->
+                if (matrix[i % matrix.width, i / matrix.width]) 220.toByte() else 35.toByte()
+            }
+            assertEquals(value, QrDecoder.decodeYPlane(inverted, matrix.width, matrix.width, matrix.height))
+        }
+    }
+
+    @Test fun `representative optical targets decode in rotated padded rectangular frames`() {
+        for ((name, value) in listOf("short" to QrFixtures.SHORT_URL, "long" to QrFixtures.LONG_URL)) {
+            val matrix = com.google.zxing.qrcode.QRCodeWriter().encode(value, com.google.zxing.BarcodeFormat.QR_CODE, 320, 320)
+            for (rotation in listOf(0, 90, 180, 270)) {
+                val stride = 672; val width = 640; val height = 480
+                val luma = ByteArray((height-1)*stride+width) { 230.toByte() }
+                for (y in 0 until matrix.height) for (x in 0 until matrix.width) {
+                    val black = when (rotation) {
+                        90 -> matrix[y, matrix.width-1-x]
+                        180 -> matrix[matrix.width-1-x, matrix.height-1-y]
+                        270 -> matrix[matrix.height-1-y, x]
+                        else -> matrix[x,y]
+                    }
+                    if (black) luma[(y+64)*stride+x+128] = 20
+                }
+                assertEquals("$name / $rotation", value, QrDecoder.decodeYPlane(luma, stride, width, height))
+            }
+            // Regenerable vector targets for a real display. Rendering a target is not a camera scan.
+            val natural = com.google.zxing.qrcode.QRCodeWriter().encode(value, com.google.zxing.BarcodeFormat.QR_CODE, 0, 0)
+            val path = buildString {
+                for (y in 0 until natural.height) for (x in 0 until natural.width) {
+                    if (natural[x,y]) append("M$x $y h1v1h-1z ")
+                }
+            }
+            java.io.File("build/qr-optical-fixture").apply { mkdirs() }.resolve("$name.svg").writeText(
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"720\" height=\"720\" viewBox=\"0 0 ${natural.width} ${natural.height}\" shape-rendering=\"crispEdges\"><path fill=\"white\" d=\"M0 0h${natural.width}v${natural.height}H0z\"/><path fill=\"black\" d=\"$path\"/></svg>\n",
+            )
+        }
+    }
+
+    @Test fun `last row need not include stride padding for a longer subscription`() {
+        val value = "https://subscription.example.invalid/subscribe?token=owned-dummy-0123456789abcdef&format=clash"
+        val matrix = com.google.zxing.qrcode.QRCodeWriter().encode(value, com.google.zxing.BarcodeFormat.QR_CODE, 320, 320)
+        val stride = matrix.width + 32
+        val luma = ByteArray((matrix.height - 1) * stride + matrix.width) { 220.toByte() }
+        for (y in 0 until matrix.height) for (x in 0 until matrix.width) {
+            if (matrix[x, y]) luma[y * stride + x] = 35
+        }
+        assertEquals(value, QrDecoder.decodeYPlane(luma, stride, matrix.width, matrix.height))
+    }
+
     @Test fun `valid codes decode even when their values must later be rejected`() {
         for (value in listOf("javascript:alert(1)", "intent://example", "file:///sdcard/private", "not a web address")) {
             val matrix = com.google.zxing.qrcode.QRCodeWriter().encode(value, com.google.zxing.BarcodeFormat.QR_CODE, 256, 256)

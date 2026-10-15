@@ -108,15 +108,34 @@ class LocalBrowserInstrumentedTest {
     private fun open(scene: ActivityScenario<LocalBrowserActivity>, route: String) {
         address(scene, fixtureBase + "/" + route); key(scene, RgKeyboardKeys.Key.Command.ENTER)
     }
-    private fun ready(scene: ActivityScenario<LocalBrowserActivity>, bound: Long = 10_000) =
-        await("current live page presented", bound) {
+    private fun ready(scene: ActivityScenario<LocalBrowserActivity>, bound: Long = 10_000) {
+        try { await("current live page presented", bound) {
             var result = false
             scene.onActivity {
                 result = it.tabs.current.session.state.phase == LocalBrowserSession.Phase.READY &&
                     it.tabs.current.session.page?.isShown == true && !it.keyboard.isShown
             }
             result
+        } } catch (failure: Throwable) {
+            try {
+                val state = JSONObject().put("method", testName.methodName)
+                scene.onActivity {
+                    val session = it.tabs.current.session
+                    val proxy = com.code2hack.eyebrowse.rg.proxy.RgProxyRuntime.get(it)
+                    val route = session.state.url.takeIf { url -> url.startsWith("$fixtureBase/") }
+                        ?.substringAfterLast('/')?.takeIf { name -> name in listOf("author-light.html", "keyboard.html", "history.html", "local-keyboard.html", "loading.html") }
+                    state.put("phase", session.state.phase.name).put("ownedRoute", route ?: "OTHER_OR_ABSENT")
+                        .put("pageShown", session.page?.isShown).put("keyboardShown", it.keyboard.isShown)
+                        .put("windowFocused", it.hasWindowFocus()).put("draftLength", it.address.text.length)
+                        .put("errorPresent", session.state.error != null).put("coreStatus", proxy.status)
+                        .put("corePort", proxy.proxyPort ?: JSONObject.NULL).put("webViewPort", proxy.webViewPort ?: JSONObject.NULL)
+                }
+                File(InstrumentationRegistry.getInstrumentation().targetContext.filesDir,
+                    "local-browser-ready-failure.json").writeText(state.toString(2))
+            } catch (diagnostic: Throwable) { failure.addSuppressed(diagnostic) }
+            throw failure
         }
+    }
     private fun elementPoint(scene: ActivityScenario<LocalBrowserActivity>, selector: String): InputPoint {
         await("current page layout settled before native geometry observation") {
             var settled = false
@@ -303,7 +322,7 @@ class LocalBrowserInstrumentedTest {
         return JSONObject().put("sampleNs",SystemClock.elapsedRealtimeNanos())
             .put("x",point.x).put("y",point.y).put("available",point.available)
             .put("bounds",JSONArray(listOf(bounds.left,bounds.top,bounds.right,bounds.bottom)))
-            .put("gain",activity.inputSettings.sensitivity.gain).put("sourceRegistered",activity.pointer.sourceRegistered)
+            .put("gain",activity.inputSettings.pointerGain).put("sourceRegistered",activity.pointer.sourceRegistered)
             .put("sourceReceiptNs",activity.pointer.lastSampleReceiptNs).put("expiresAtNs",activity.pointer.expiresAtNs)
             .put("windowFocused",activity.hasWindowFocus()).put("layoutRequested",activity.root.isLayoutRequested)
             .put("utility",activity.utility.name).put("selectedTab",activity.tabs.selectedIndex).put("tabCount",activity.tabs.count)
@@ -1065,6 +1084,10 @@ class LocalBrowserInstrumentedTest {
         }
         open(scene, "history.html"); ready(scene)
         open(scene, "does-not-exist.html"); error("http-initial-error")
+        // The HTTP error can arrive before WebView commits the failed history entry.
+        await("native Back enabled after failed document commits") {
+            var enabled = false; scene.onActivity { enabled = it.controls.getValue("hud.back").isEnabled }; enabled
+        }
         control(scene, "back"); ready(scene)
         scene.onActivity { assertTrue(it.tabs.current.session.state.url.endsWith("history.html")) }
         control(scene, "forward"); error("http-forward-error")

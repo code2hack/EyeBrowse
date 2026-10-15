@@ -21,6 +21,11 @@ class PointerOverlay(context: Context, attrs: AttributeSet?=null) : View(context
     private val radius=6f
     val position get() = model.position
     internal val motionBounds get() = model.motionBounds
+    internal val gainBounds get() = model.gainBounds
+    internal val gain get() = model.sensitivity
+    internal var visibleBounds = PointerBounds(0f,0f,0f,0f)
+        private set
+    internal val cursorVisible get() = position.y>=visibleBounds.top && position.y<visibleBounds.bottom
     internal val expiresAtNs get() = model.expiresAtNs
     internal var onPositionChanged: (() -> Unit)? = null
     internal fun sensitivity(value: Double) {
@@ -46,11 +51,12 @@ class PointerOverlay(context: Context, attrs: AttributeSet?=null) : View(context
     init { isClickable=false;isFocusable=false;importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO }
 
     fun bounds(left: Float, top: Float, right: Float, bottom: Float, rotation: Int) {
-        // Keep the entire ring inside the measured usable root, including its actual insets.
+        visibleBounds=PointerBounds(left,top,right,bottom)
+        // Preserve the old visible-span gain; padding extends only the logical vertical limits.
         val inset=minOf(8f,
             (right-left).coerceAtLeast(0f)/2,(bottom-top).coerceAtLeast(0f)/2)
         displayRotation=rotation
-        model.resize(PointerBounds(left+inset,top+inset,right-inset,bottom-inset),rotation)
+        model.resize(PointerBounds(left+inset,top+inset,right-inset,bottom-inset),rotation,inset+24f)
         publishAvailability();requestFrame()
     }
 
@@ -121,14 +127,15 @@ class PointerOverlay(context: Context, attrs: AttributeSet?=null) : View(context
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val point=position
+        lastDrawPosition=point
+        drawCount++;lastDrawElapsedNs=SystemClock.elapsedRealtimeNanos();lastDrawSampleReceiptNs=lastSampleReceiptNs
+        if (!cursorVisible) return
         paint.style=Paint.Style.STROKE;paint.strokeWidth=3f;paint.color=Color.BLACK
         canvas.drawCircle(point.x,point.y,radius,paint)
         paint.strokeWidth=2f;paint.color=if(point.available) 0xfff2f2f2.toInt() else 0xff8a8a8a.toInt()
         canvas.drawCircle(point.x,point.y,radius,paint)
         paint.style=Paint.Style.FILL
         canvas.drawCircle(point.x,point.y,2f,paint)
-        lastDrawPosition=point
-        drawCount++;lastDrawElapsedNs=SystemClock.elapsedRealtimeNanos();lastDrawSampleReceiptNs=lastSampleReceiptNs
     }
     override fun onDetachedFromWindow() { stop();super.onDetachedFromWindow() }
 }
