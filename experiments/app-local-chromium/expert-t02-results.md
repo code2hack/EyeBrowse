@@ -97,7 +97,7 @@ Original153 archive/native/source and every result remain separate.
 | browser-resource-trace-003 at9c6, optional forwarding listener | 10tests/1failure; ordinary404 request had no main-frame response/error/commit within the original wait |
 | Native public Paseo transport diagnostic | JUnit completed1 test; proxy root timed out, direct root200, direct script response then read timeout; not browser PASS |
 | current158-focused-001 | 5tests/2 setup failures from omitted fixtureBaseUrl; original terminal retained, no modern/JSON body success |
-| Corrected current158-focused-002 | Access lost during the invocation; exact outcome and dependent TLS/routing reruns pending |
+| Corrected current158-focused-002 | Access lost; bounded completion monitor ended without a terminal receipt; exact device outcome and dependent TLS/routing reruns remain pending |
 | Anonymous public roots | Separate earlier Paseo pass and later failures retained; no stable site/account PASS |
 
 The controlled request-without-response failure is distinct from the earlier
@@ -136,8 +136,12 @@ refuses existing log/binding paths and requires a distinct invocation name.
 
 RG window04 remains active. The5555 route stopped answering bounded shell reads;
 the specifically authorized41877 fallback did not establish authenticated access.
-The exact current invocation has not been replayed. Physical readiness, its
-terminal outcome and current process/socket state require recovery. Last verified
-CAMERA restoration preceded this access loss. Necessary host fixture teardown and
-actual RG Awake/displayON return are pending, not claimed complete. Source,
+The exact current invocation has not been replayed. Its existing620s completion
+monitor ended without receiving a device exit or JUnit terminal. Physical
+readiness, that original outcome and current process/socket state require
+recovery. Last verified CAMERA restoration preceded this access loss. After the
+finite command bounds expired, owned host fixture PID2142813 was requalified
+by start time/CWD/command/source and stopped; PID absence and39030 free were
+verified at16:55:39UTC. This is host-fixture return only. Actual RG
+Awake/displayON and device resource return remain unverified. Source,
 experimental app/data, evidence and workspace cleanup remain deferred.
