@@ -90,22 +90,22 @@ cannot be swapped in a live process. Initial extraction and complete hashing
 are synchronous experimental startup costs, not a production startup design.
 
 Example provisioning after those checks and a **fresh** resource grant (the
-recorded window is ended): resolve the approved `I55_ADB`, identity-verified
-`I55_RG_ENDPOINT`, verified `I55_ENGINE_APK` and unique `I55_RUN_ID` from the new
+recorded window is ended): resolve the approved `I57_ADB`, identity-verified
+`I57_RG_ENDPOINT`, verified `I57_ENGINE_APK` and unique `I57_RUN_ID` from the new
 assignment. Preserve all returned output and installed hashes.
 
 ```sh
-"$I55_ADB" -s "$I55_RG_ENDPOINT" install --no-streaming -r \
+"$I57_ADB" -s "$I57_RG_ENDPOINT" install --no-streaming -r \
   app-rg/build/outputs/apk/chromium/app-rg-chromium.apk
-"$I55_ADB" -s "$I55_RG_ENDPOINT" install --no-streaming -r \
+"$I57_ADB" -s "$I57_RG_ENDPOINT" install --no-streaming -r \
   app-rg/build/outputs/apk/androidTest/chromium/app-rg-chromium-androidTest.apk
-I55_STAGE="/data/local/tmp/eyebrowse-i55-${I55_RUN_ID}-engine.apk"
-"$I55_ADB" -s "$I55_RG_ENDPOINT" push -z zstd "$I55_ENGINE_APK" "$I55_STAGE"
-"$I55_ADB" -s "$I55_RG_ENDPOINT" shell run-as com.code2hack.eyebrowse.rg.chromium \
+I57_STAGE="/data/local/tmp/eyebrowse-i57-${I57_RUN_ID}-engine.apk"
+"$I57_ADB" -s "$I57_RG_ENDPOINT" push -z zstd "$I57_ENGINE_APK" "$I57_STAGE"
+"$I57_ADB" -s "$I57_RG_ENDPOINT" shell run-as com.code2hack.eyebrowse.rg.chromium \
   mkdir -p files/chromium-engine
-"$I55_ADB" -s "$I55_RG_ENDPOINT" shell run-as com.code2hack.eyebrowse.rg.chromium \
-  cp "$I55_STAGE" files/chromium-engine/engine.apk
-"$I55_ADB" -s "$I55_RG_ENDPOINT" shell run-as com.code2hack.eyebrowse.rg.chromium \
+"$I57_ADB" -s "$I57_RG_ENDPOINT" shell run-as com.code2hack.eyebrowse.rg.chromium \
+  cp "$I57_STAGE" files/chromium-engine/engine.apk
+"$I57_ADB" -s "$I57_RG_ENDPOINT" shell run-as com.code2hack.eyebrowse.rg.chromium \
   sha256sum files/chromium-engine/engine.apk
 ```
 
@@ -130,6 +130,8 @@ its actual PID/CWD/listener and stop that exact owned process at resource return
 Do not start the old #55 Python fixture or write to its retained evidence.
 
 Keep [the original #55 results](results.md) and their failure cutoffs unchanged.
+The [#57 result map](repair-results.md) records the verified partial repair and
+remaining failures; it does not claim complete browser readiness.
 Repair evidence must identify the actual repaired source/compiled JAR/APP/TEST
 and installed bindings; no native or browser PASS is implied by host checks.
 
@@ -158,16 +160,16 @@ not keyboard results. Instrumentation preference lookup follows the Activity's
 real `getLocalClassName()` rule for both the original ID and the suffix variant;
 existing persistence/restoration assertions are retained.
 
-For an assigned fixed-page/nonce fixture, set `I55_FIXTURE_BASE` and
-`I55_TAILNET_ORIGIN` to its qualified origins. Preserve the terminal JUnit result
+For an assigned fixed-page/nonce fixture, set `I57_FIXTURE_BASE` and
+`I57_TAILNET_ORIGIN` to its qualified origins. Preserve the terminal JUnit result
 as well as the command exit; `am instrument` can exit0 with failed tests.
 
 ```sh
-I55_HEAD="$(git rev-parse HEAD)"
-"$I55_ADB" -s "$I55_RG_ENDPOINT" shell am instrument -w -r \
+I57_HEAD="$(git rev-parse HEAD)"
+"$I57_ADB" -s "$I57_RG_ENDPOINT" shell am instrument -w -r \
   -e class com.code2hack.eyebrowse.rg.MihomoRoutingInstrumentedTest \
-  -e candidateHead "$I55_HEAD" -e evidenceRunId "$I55_RUN_ID" \
-  -e fixtureBaseUrl "$I55_FIXTURE_BASE" -e tailnetOrigin "$I55_TAILNET_ORIGIN" \
+  -e candidateHead "$I57_HEAD" -e evidenceRunId "$I57_RUN_ID" \
+  -e fixtureBaseUrl "$I57_FIXTURE_BASE" -e tailnetOrigin "$I57_TAILNET_ORIGIN" \
   com.code2hack.eyebrowse.rg.chromium.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
