@@ -1,7 +1,7 @@
 # Expert T02 repair investigation
 
 I57-T02 remains **unconcluded / NOT_PASSED**, attempt2/failure1/lastConcluded1,
-assignment revision2. This is an investigation checkpoint, not
+assignment revision3. This is an investigation checkpoint, not
 `EXPERT_HANDBACK_READY`, acceptance, adoption or a source handoff. The retained
 [Worker partial handback](repair-results.md) and [original results](results.md)
 remain unchanged. T01's instance/lifetime fix and controls are preserved;
@@ -61,9 +61,12 @@ behavior through this amended observer, not reliable single-callback delivery.
 ## Bound inputs and current evidence
 
 Compiled APP source is `cb39bf49bcbed32fe90dc2fe534926619073937e`;
-TEST source including the observer and optional diagnostics is
-`9c6ab28ce13d2d32e74d9aba8924de2d92cfcc04`, tree
-`09b91e0908dc3515e10f764ea65bc0c183d10fa5`.
+Actual compiled TEST source including the observer and optional diagnostics is
+original `9c6ab28ce13d2d32e74d9aba8924de2d92cfcc04`, tree
+`09b91e0908dc3515e10f764ea65bc0c183d10fa5`. Its corrected metadata identity is
+`019b31fb497292b8bfc3f8bcbc81d850040201cf`; this is an equivalent tree, not a new
+compilation or execution. The [exact metadata map](expert-attribution-correction.md)
+preserves all original invocation/source SHAs.
 
 | Artifact | SHA256 |
 | --- | --- |
@@ -97,7 +100,9 @@ Original153 archive/native/source and every result remain separate.
 | browser-resource-trace-003 at9c6, optional forwarding listener | 10tests/1failure; ordinary404 request had no main-frame response/error/commit within the original wait |
 | Native public Paseo transport diagnostic | JUnit completed1 test; proxy root timed out, direct root200, direct script response then read timeout; not browser PASS |
 | current158-focused-001 | 5tests/2 setup failures from omitted fixtureBaseUrl; original terminal retained, no modern/JSON body success |
-| Corrected current158-focused-002 | Access lost; bounded completion monitor ended without a terminal receipt; exact device outcome and dependent TLS/routing reruns remain pending |
+| Corrected current158-focused-002, original recovered without replay | 4tests/1failure,25.513s; instance2/CoreControl1 pass, modern fixture presentation fails; original monitor loss retained |
+| resume-https-first-001 at original2ef579f | Independent original HTTPS/WSS `OK (1 test)`,6.018s |
+| resume-routing-full-001 at original2ef579f | 2tests/1failure,50.293s at native external-tailnet DIRECT before the later browser/HTTPS/form tail; post-JUnit log export went offline |
 | Anonymous public roots | Separate earlier Paseo pass and later failures retained; no stable site/account PASS |
 
 The controlled request-without-response failure is distinct from the earlier
@@ -134,14 +139,25 @@ Manager record/hashes were not edited. Current9c6 files are separately preserved
 no rerun or reconstruction substitutes for the originals. The host runner now
 refuses existing log/binding paths and requires a distinct invocation name.
 
-RG window04 remains active. The5555 route stopped answering bounded shell reads;
-the specifically authorized41877 fallback did not establish authenticated access.
-The exact current invocation has not been replayed. Its existing620s completion
-monitor ended without receiving a device exit or JUnit terminal. Physical
-readiness, that original outcome and current process/socket state require
-recovery. Last verified CAMERA restoration preceded this access loss. After the
-finite command bounds expired, owned host fixture PID2142813 was requalified
-by start time/CWD/command/source and stopped; PID absence and39030 free were
-verified at16:55:39UTC. This is host-fixture return only. Actual RG
-Awake/displayON and device resource return remain unverified. Source,
-experimental app/data, evidence and workspace cleanup remain deferred.
+RG window04 remains active. Owner moved the attached RG to USB on u4090;
+USB ADB through noninteractive SSH is now primary for this operation. Source,
+build and Paseo remain on Spark. The exact remote tool/USB identity, installed
+APP/TEST/original public package/provider hashes, signers and engine were
+independently qualified. Complete power/display snapshots show Awake/displayON
+at their recorded cutoffs, not continuously.
+
+Original `resume-routing-full-001` reports and scoped logs were recovered first
+through USB into new host paths. Its saved terminal matches the original hash;
+no invocation was replayed. Late log recovery is limited to the actual retained
+buffer. Prior prototype process/TCP/TCP6/Unix absence and CAMERA denied with the
+captured flags were then verified before further work. The earlier access/stream
+failures and recovered4/1 focused outcome remain distinct.
+
+Old fixture PID2142813 was returned at16:55:39UTC. New precisely owned Spark
+fixture PID2239633 remains active on100.92.81.33:39030 with source/page/compiled
+JAR and process/start/CWD/argv bindings. Stable USB does not prove that the device
+browser/public network or tailnet data path works. The failed native tailnet
+probe produced no retained receipt on the fresh host fixture. All affected
+criteria and final actual RG/runtime/socket/camera/fixture return still require
+completion. The assigned private u4090 tool stage and all mission source/app/
+evidence/workspace cleanup remain deferred to the recorded repair-end boundary.
