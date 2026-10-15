@@ -67,6 +67,8 @@ class ChromiumAnonymousNetworkDiagnosticInstrumentedTest {
                     if (status == 200 && url.path == "/") body = prefix.toString("UTF-8")
                 } catch (failure: Exception) {
                     row.put("complete", false).put("failureClass", failure.javaClass.name)
+                        .put("failureCauseClasses", JSONArray(generateSequence<Throwable>(failure) { it.cause }
+                            .take(8).map { it.javaClass.name }.toList()))
                     // Exception text can include server content or URLs; retain only its type.
                 } finally {
                     connection?.disconnect()

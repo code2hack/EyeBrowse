@@ -1,7 +1,7 @@
 # Expert T02 repair investigation
 
 I57-T02 remains **unconcluded / NOT_PASSED**, attempt2/failure1/lastConcluded1,
-assignment revision3. This is an investigation checkpoint, not
+assignment revision4. This is an investigation checkpoint, not
 `EXPERT_HANDBACK_READY`, acceptance, adoption or a source handoff. The retained
 [Worker partial handback](repair-results.md) and [original results](results.md)
 remain unchanged. T01's instance/lifetime fix and controls are preserved;
@@ -103,6 +103,14 @@ Original153 archive/native/source and every result remain separate.
 | Corrected current158-focused-002, original recovered without replay | 4tests/1failure,25.513s; instance2/CoreControl1 pass, modern fixture presentation fails; original monitor loss retained |
 | resume-https-first-001 at original2ef579f | Independent original HTTPS/WSS `OK (1 test)`,6.018s |
 | resume-routing-full-001 at original2ef579f | 2tests/1failure,50.293s at native external-tailnet DIRECT before the later browser/HTTPS/form tail; post-JUnit log export went offline |
+| usb-focused-001 at f8091cb | `OK (4 tests)`,7.844s; original instance2, genuine modern Web APIs1 and CoreControl1 |
+| usb-routing-full-001 at f8091cb | `OK (2 tests)`,57.291s; all30 stages including correlated native/browser external-tailnet receipts, HTTPS/WSS, live form, recreation and core-exit recovery; exceptional restoration passes |
+| usb-browser-group-001 at f8091cb | `OK (10 tests)`,138.112s; full LocalBrowser9 and original Standalone recreation1 together; granted CAMERA retained under current Owner direction |
+| usb-https-first-001 at f8091cb | Original independent first-origin HTTPS/WSS `OK (1 test)`,6.332s; ordinary certificate validation and DIRECT |
+| usb-anonymous-paseo-001 at f8091cb | Original presentation assertion passes,46.054s; READY after40.956s observation, but delivered DOM samples have zero text/buttons and retained screenshot is blank |
+| usb-anonymous-chatgpt-001 at f8091cb | Original1test/1failure47.532s; actual ERROR `Page unavailable (-6)` and Chromium handshake `net_error -100` |
+| usb-native-network-chatgpt-001 at f8091cb | Diagnostic completion only,17.511s; app-proxy SSLHandshakeException and DIRECT SocketTimeoutException, no successful native root response |
+| usb-anonymous-paseo-trace-001 at f8091cb | Original presentation assertion passes,16.124s; passive metrics confirm22,147,384-byte script downloaded/status200, but delivered DOM samples still have zero text/buttons |
 | Anonymous public roots | Separate earlier Paseo pass and later failures retained; no stable site/account PASS |
 
 The controlled request-without-response failure is distinct from the earlier
@@ -113,12 +121,47 @@ do not establish one cause for all remaining failures. No public root was
 preloaded or made successful by a cached/fabricated result, UA substitution,
 polyfill, longer deadline or trust bypass.
 
-Temporary CAMERA permission was confined to the separate prototype's existing
-controlled scanner/native group. Both completed granted-camera groups restored
-the actual captured denied permission and exact flags after closure, including
-failed runs. Granted-camera results do not qualify denied-permission dialog
-behavior or optics. No new QR/photo capture, account login, pairing, offer,
-credential, personal session or original-app private-data operation occurred.
+The current ChatGPT failure also occurs in the separate native HTTP client.
+Concurrent host-only root GETs record DIRECT connection timeout and HTTP403
+through Spark's existing loopback proxy; these are separate host observations,
+not device-browser outcomes. The exact158 source maps `net_error -100` to
+connection closure. No TLS validation exception or egress/profile change is
+introduced. The handshake failure's cause chain and Paseo rendering after page
+completion require further diagnosis.
+
+A separate document diagnostic observes one45-second window without breaking
+at READY. It reads only origin/readiness/counts/anonymous-or-challenge flags;
+the original site method, assertions and deadline are unchanged. A diagnostic
+JUnit completion is never promoted to anonymous-interface acceptance. The
+native GET diagnostic additionally records bounded exception class chains,
+without exception messages or server/credential content.
+
+The two earlier temporary CAMERA fixtures restored their captured denied state
+and exact flags after closure, including failed groups. Current authenticated
+Owner direction in revision4 permits the separate prototype to retain CAMERA.
+After fresh physical/installed/signature qualification, its denied permission
+was granted with ordinary `pm grant --user 0`; actual before/during/after records
+show unchanged flags and `granted=true` after the complete USB browser group.
+Required permission end-state is `GRANTED_RETAINED_BY_CURRENT_OWNER_DIRECTION`;
+scanner/camera clients must still close normally. Granted-camera results do not
+qualify denied-permission dialog behavior or optics. No new QR/photo capture,
+account login, pairing, offer, credential, personal session or original-app
+private-data operation occurred.
+
+The complete USB browser group has nine valid observer reports bound to its
+invocation/head. Five missing callback deliveries were recovered in253.8–299.8ms
+within the unchanged3000ms total deadline; no wrong value was discarded.
+Standalone recreation uses its original one-shot helper. An extra collector
+attempt for a nonexistent LocalBrowser recreation observer returned non-JSON
+diagnostic text, which is retained and explicitly excluded from observer proof.
+The actual complete JUnit terminal reports all10 methods passed.
+
+Current full-routing security evidence separately binds main UID10076 to actual
+child PID22666/UID99147, kernel-authenticated `isolated_app` and a matching
+external OS sample. Its executable native inode60648 matches the separately
+hashed158 input; the owned dummy private-file read is denied. This is actual
+Chromium renderer evidence, not the generic isolated-service probe or complete
+production-security approval.
 
 ## Retention limitation and pending resource state
 
@@ -155,9 +198,11 @@ failures and recovered4/1 focused outcome remain distinct.
 
 Old fixture PID2142813 was returned at16:55:39UTC. New precisely owned Spark
 fixture PID2239633 remains active on100.92.81.33:39030 with source/page/compiled
-JAR and process/start/CWD/argv bindings. Stable USB does not prove that the device
-browser/public network or tailnet data path works. The failed native tailnet
-probe produced no retained receipt on the fresh host fixture. All affected
-criteria and final actual RG/runtime/socket/camera/fixture return still require
-completion. The assigned private u4090 tool stage and all mission source/app/
+JAR and process/start/CWD/argv bindings, requalified before the browser group.
+The earlier failed native tailnet probe produced no retained fixture receipt;
+the new complete USB routing invocation has its own nonce-matched native and
+browser receipts and live DIRECT-rule evidence. The USB control route alone
+does not establish that result or public-site success. Independent first-origin
+TLS, anonymous checks and final actual RG/runtime/socket/camera/fixture return
+are still being completed. The assigned private u4090 tool stage and all mission source/app/
 evidence/workspace cleanup remain deferred to the recorded repair-end boundary.
