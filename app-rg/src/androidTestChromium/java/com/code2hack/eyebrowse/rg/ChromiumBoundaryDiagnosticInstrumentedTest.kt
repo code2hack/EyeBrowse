@@ -1,0 +1,137 @@
+package com.code2hack.eyebrowse.rg
+
+import android.net.http.SslError
+import android.net.http.X509TrustManagerExtensions
+import android.view.ViewGroup
+import android.webkit.SslErrorHandler
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.test.core.app.ActivityScenario
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.code2hack.eyebrowse.rg.proxy.CoreControl
+import com.code2hack.eyebrowse.rg.proxy.ProxyPolicy
+import com.code2hack.eyebrowse.rg.proxy.RgProxyRuntime
+import com.code2hack.eyebrowse.rg.proxy.RouteFixture
+import org.json.JSONArray
+import org.json.JSONObject
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+import java.io.Closeable
+import java.io.File
+import java.security.KeyStore
+import java.security.cert.X509Certificate
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import javax.net.ssl.TrustManagerFactory
+import javax.net.ssl.X509TrustManager
+
+/** Observations on controlled inputs only; this does not replace any original acceptance case. */
+@RunWith(AndroidJUnit4::class)
+class ChromiumBoundaryDiagnosticInstrumentedTest {
+    @Test fun observeTrustAndRawCallbacksWithoutChangingPolicy() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        require(context.packageName == "com.code2hack.eyebrowse.rg.chromium")
+        val preferences = localBrowserTestPreferences(context)
+        val previous = preferences.getString("local.tabs", null)
+        val report = JSONObject().put("scope", "DIAGNOSTIC_ONLY_ORIGINAL_CRITERIA_UNCHANGED")
+        val events = CopyOnWriteArrayList<JSONObject>()
+        val observations = JSONArray()
+        val runtime = RgProxyRuntime.get(context)
+        Closeable {
+            assertTrue(preferences.edit().apply {
+                if (previous == null) remove("local.tabs") else putString("local.tabs", previous)
+            }.commit())
+            report.put("events", JSONArray(events)).put("observations", observations)
+            File(context.filesDir, "chromium-boundary-diagnostic.json").writeText(report.toString(2))
+        }.use {
+            RouteFixture(instrumentation.context.assets.open("proxy-fixture.p12")).use { fixture ->
+                ActivityScenario.launch(LocalBrowserActivity::class.java).use { scenario ->
+                    val readyBy = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
+                    while (runtime.webViewPort == null && System.nanoTime() < readyBy) Thread.sleep(25)
+                    val port = checkNotNull(runtime.webViewPort)
+                    val socket = File(context.filesDir, "mihomo/control.sock").absolutePath
+                    val configuration = ProxyPolicy.configuration(emptyList(), port, socket,
+                        listOf("system"), ProxyPolicy.TEST_URL)
+                        .put("hosts", JSONObject().put("route.test", "127.0.0.1"))
+                    val file = File(context.filesDir, "mihomo/boundary-diagnostic.json")
+                    file.writeText(ProxyPolicy.configurationText(configuration.toString()))
+                    CoreControl(socket).request("PUT", "/configs", JSONObject().put("path", file.absolutePath))
+                    val keys = KeyStore.getInstance("PKCS12").apply {
+                        instrumentation.context.assets.open("proxy-fixture.p12").use { load(it, "fixture".toCharArray()) }
+                    }
+                    val chain = keys.getCertificateChain(keys.aliases().nextElement())
+                        .map { it as X509Certificate }.toTypedArray()
+                    val trust = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply {
+                        init(null as KeyStore?)
+                    }.trustManagers.filterIsInstance<X509TrustManager>().single()
+                    report.put("platformTrustManager", trust.javaClass.name)
+                    report.put("platformFixtureTrust", runCatching {
+                        X509TrustManagerExtensions(trust).checkServerTrusted(chain, "RSA", "route.test").size
+                    }.fold({ "ACCEPTED_CHAIN_LENGTH_$it" }, { it.toString() }))
+                    var probe: WebView? = null
+                    scenario.onActivity { activity ->
+                        probe = WebView(activity).apply {
+                            settings.javaScriptEnabled = true
+                            webViewClient = object : WebViewClient() {
+                                private fun record(name: String, url: String?, extra: JSONObject = JSONObject()) {
+                                    events += extra.put("event", name).put("url", url).put("atNs", System.nanoTime())
+                                }
+                                override fun onPageStarted(view: WebView, url: String?, icon: android.graphics.Bitmap?) {
+                                    record("started", url)
+                                }
+                                override fun onPageFinished(view: WebView, url: String?) { record("finished", url) }
+                                override fun doUpdateVisitedHistory(view: WebView, url: String?, reload: Boolean) {
+                                    record("history", url)
+                                }
+                                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                                    record("override", request.url.toString(), JSONObject().put("main", request.isForMainFrame))
+                                    return false
+                                }
+                                override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                                    record("error", request.url.toString(), JSONObject().put("main", request.isForMainFrame)
+                                        .put("code", error.errorCode).put("description", error.description))
+                                }
+                                override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
+                                    record("httpError", request.url.toString(), JSONObject().put("main", request.isForMainFrame)
+                                        .put("status", response.statusCode))
+                                }
+                                override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
+                                    record("sslError", error.url, JSONObject().put("code", error.primaryError))
+                                    handler.cancel()
+                                }
+                            }
+                        }
+                        activity.addContentView(probe, ViewGroup.LayoutParams(-1, -1))
+                    }
+                    try {
+                        for (url in listOf("https://route.test:${fixture.https}/page",
+                            "http://127.0.0.1:${fixture.http}/page")) {
+                            scenario.onActivity { probe!!.loadUrl(url) }
+                            Thread.sleep(5000) // Diagnostic sampling only; original tests keep their own waits.
+                            val done = CountDownLatch(1)
+                            scenario.onActivity {
+                                probe!!.evaluateJavascript("({url:location.href,ready:document.readyState,route:document.body?.dataset.route,ws:document.body?.dataset.ws})") { value ->
+                                    observations.put(JSONObject().put("requested", url).put("document", JSONObject(value)))
+                                    done.countDown()
+                                }
+                            }
+                            assertTrue("diagnostic renderer response", done.await(3, TimeUnit.SECONDS))
+                        }
+                    } finally {
+                        scenario.onActivity { (probe!!.parent as ViewGroup).removeView(probe); probe!!.destroy() }
+                        report.put("fixtureReceipts", JSONArray(fixture.observations.map {
+                            JSONObject().put("path", it.first).put("peer", it.second)
+                        }))
+                    }
+                }
+            }
+        }
+    }
+}
