@@ -10,14 +10,15 @@ remain retained and packaged by the existing experimental application wiring.
 | --- | --- |
 | `hook/ActivityManagerHook.java` | Excluded; replaced by `src/main/kotlin/com/norman/webviewup/lib/hook/ActivityManagerHook.kt` |
 | `sandbox/stub/StubSandboxedProcessService0.java` through `StubSandboxedProcessService4.java` | Excluded; replaced by the five same-name classes in `src/main/kotlin/com/norman/webviewup/lib/sandbox/stub/StubSandboxedProcessServices.kt` |
-| All other pinned sources, including `SandboxedProcessServiceDelegate` and `BindServiceArgsAdapter` | Unchanged vendor Java; the old argument adapter remains compiled but the Kotlin hook does not call it |
-| Original manifest | Unchanged five ordinary child-process services; no isolated UID claim |
+| `sandbox/SandboxedProcessServiceDelegate.java` | Excluded; replaced by the same-name Kotlin delegate using private Binder/read-only engine FDs and API30 resources |
+| All other pinned sources, including `BindServiceArgsAdapter` | Unchanged vendor Java; the old argument adapter remains compiled but the Kotlin hook does not call it |
+| Original manifest | Verified as input, replaced by the five non-exported isolated services in the maintained manifest |
 
 `RendererInstances.kt` is new Kotlin lifetime bookkeeping, tested independently
 of Android. The API32 hook preserves `(component, instanceName)`, copies the
 caller's Intent, redirects only the selected engine's renderer services and
 passes unrelated calls to the original AM. It removes `instanceName` only after
-assigning a unique ordinary service slot. Its fixed pool rejects exhaustion
+assigning a unique service slot. Its fixed pool rejects exhaustion
 explicitly rather than aliasing a live renderer or lowering the browser tab limit.
 
 A connection token is a set member, matching Android unbind semantics: repeating
@@ -29,10 +30,17 @@ or a child that never reports its token conservatively retain the slot. Chromium
 existing destroy/exit path is retained. No sandbox-disabling or single-process
 flags are added.
 
-The five stubs still run with the experimental host UID. This repair does not
-make the private external APK/native paths accessible to an Android isolated
-UID; merely adding `isolatedProcess` would fail that boundary. Loading external
-code through an isolated UID requires separately qualified code/native/asset
-transport and startup support. Do not treat functional results as production
-or account-use approval. Actual ELF/process/UID and classes.jar hashes belong
-in the candidate evidence; a repaired runtime JAR is not the original JAR.
+The five stubs now declare Android isolated processes. A private Binder capability
+returns only the pinned APK and two native libraries as read-only descriptors;
+the child supplies no path. It accepts only a same-user isolated caller. The
+engine and a tiny native-load bridge share one defining loader, which resolves
+only the qualified library descriptors. Public resource-loader APIs provide the
+engine assets without granting access to other app-private files.
+
+The allocator still waits for the actual child process Binder to die, retains
+connections across repeated binds, and fails closed on exhaustion. These source
+declarations are not an observed renderer-isolation PASS. Required native runs
+must independently bind UID, SELinux, dummy private-file denial, pinned ELF and
+browser behavior. The preceding isolated-service FD probe is separate from real
+renderer acceptance. Existing ordinary-UID and failed setup evidence remains
+unchanged. No engine/native input is packaged or modified by this correction.

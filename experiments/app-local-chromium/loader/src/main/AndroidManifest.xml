@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <application>
+        <service android:name="com.norman.webviewup.lib.sandbox.stub.StubSandboxedProcessService0"
+            android:exported="false" android:isolatedProcess="true" android:process=":sandboxed_process0" />
+        <service android:name="com.norman.webviewup.lib.sandbox.stub.StubSandboxedProcessService1"
+            android:exported="false" android:isolatedProcess="true" android:process=":sandboxed_process1" />
+        <service android:name="com.norman.webviewup.lib.sandbox.stub.StubSandboxedProcessService2"
+            android:exported="false" android:isolatedProcess="true" android:process=":sandboxed_process2" />
+        <service android:name="com.norman.webviewup.lib.sandbox.stub.StubSandboxedProcessService3"
+            android:exported="false" android:isolatedProcess="true" android:process=":sandboxed_process3" />
+        <service android:name="com.norman.webviewup.lib.sandbox.stub.StubSandboxedProcessService4"
+            android:exported="false" android:isolatedProcess="true" android:process=":sandboxed_process4" />
+    </application>
+</manifest>

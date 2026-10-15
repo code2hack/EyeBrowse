@@ -1,5 +1,5 @@
 /* Kotlin replacements of WebViewUpgrade's five Apache-2.0 stub services at 5a5a7d11.
- * The pinned SandboxedProcessServiceDelegate is compiled unchanged. See replacement-map.md. */
+ * The maintained Kotlin delegate uses read-only engine FDs. See replacement-map.md. */
 package com.norman.webviewup.lib.sandbox.stub
 
 import android.app.Service
@@ -19,7 +19,8 @@ abstract class RendererStubService : Service() {
     override fun onCreate() { super.onCreate(); delegate.onCreate(this, applicationContext) }
     @Suppress("DEPRECATION")
     override fun onBind(intent: Intent): IBinder? {
-        intent.getParcelableExtra<ResultReceiver>(ActivityManagerHook.CHILD_RECEIVER)?.send(0, Bundle().apply {
+        val receiver = intent.getParcelableExtra<ResultReceiver>(ActivityManagerHook.CHILD_RECEIVER)
+        val identity = Bundle().apply {
             putBinder(ActivityManagerHook.CHILD_TOKEN, ProcessLifetime.token)
             putInt("pid", Process.myPid()); putInt("uid", Process.myUid())
             putBoolean("privateProbeReadable", runCatching {
@@ -28,9 +29,21 @@ abstract class RendererStubService : Service() {
             putString("selinux", runCatching {
                 File("/proc/self/attr/current").readText().substringBefore('\u0000').trim()
             }.getOrNull())
-        })
+        }
+        receiver?.send(0, identity)
         Log.i(ActivityManagerHook.TAG, "SERVICE component=${javaClass.name} pid=${Process.myPid()} uid=${Process.myUid()}")
-        return delegate.onBind(intent)
+        return try {
+            delegate.onBind(intent).also {
+                receiver?.send(1, Bundle(identity).apply {
+                    putString("nativeMappings", File("/proc/self/maps").readLines()
+                        .filter { line -> line.contains("libwebviewchromium.so") }.take(5).joinToString("\n"))
+                })
+            }
+        } catch (failure: Throwable) {
+            receiver?.send(2, Bundle(identity).apply { putString("failure", failure.stackTraceToString().take(3000)) })
+            Process.killProcess(Process.myPid()) // Failed bootstrap owns no usable renderer; preserve the failure.
+            throw failure
+        }
     }
     override fun onRebind(intent: Intent) { super.onRebind(intent); delegate.onRebind(intent) }
     override fun onDestroy() {

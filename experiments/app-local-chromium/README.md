@@ -25,7 +25,7 @@ The loader starts from the verified `core/src/main` source from WebViewUpgrade c
 [loader/source.sha256](loader/source.sha256) at every build. The small Kotlin
 DSL wrapper builds that external source with the project's AGP8.7.3/JDK17/SDK35
 and its required AndroidX annotations. Repair #57 replaces the activity manager
-hook and five stub classes with maintained Kotlin. Original sources are checked
+hook, five stub classes and the renderer delegate with maintained Kotlin. Original sources are checked
 intact before staging the remaining vendor Java for both compilers.
 [The replacement map](loader/replacement-map.md) identifies every exclusion,
 replacement and security limitation. Repaired runtime classes.jar hashes must
@@ -36,11 +36,12 @@ unchanged. The engine APK/native binaries stay outside Git and outside the
 experimental APK. Cromite declares GPLv3 and has Chromium/component notice and
 source obligations. Engine redistribution is not qualified by this local test.
 
-**The upstream loader does not preserve Android isolated-UID renderer
-sandboxing.** Its five non-exported stub services have ordinary app child
-processes. `SandboxedProcessServiceDelegate.java` explicitly describes this
-choice so those processes can read the app-private archive. Multiprocess
-execution is not proof of a renderer security boundary. No real Owner sign-in,
+**The original upstream loader did not preserve Android isolated-UID renderer
+sandboxing.** The new experimental delegate requests only the pinned code APK
+and libraries through read-only Binder descriptors. Its five services declare
+Android isolation; actual renderer UID/native/private-file and browser runs
+remain required. The successful standalone isolated-service probe is not real
+renderer acceptance. Multiprocess execution alone proves no security boundary. No real Owner sign-in,
 authenticated Paseo pairing, credential/offer import or personal conversation
 test is authorized in this stage. Account/session compatibility remains
 unperformed pending an explicit disposition.
@@ -81,9 +82,9 @@ Provision the verified external archive as
 uniquely named mission-owned staging file and `run-as` for this debug variant.
 The main-process `ChromiumApplication` verifies the complete archive hash,
 extracts/verifies the two pinned ARM64 libraries and calls the pinned loader
-before production Activity/provider creation. Child engine initialization remains
-upstream-owned; the Kotlin stubs also report a process-lifetime Binder to the
-instance allocator. A missing/changed input, initialized provider, wrong version or
+before production Activity/provider creation. The Kotlin child delegate loads the unchanged engine through read-only FDs
+using public native/resource loading and reports a process-lifetime Binder to
+the instance allocator. A missing/changed input, initialized provider, wrong version or
 missing native mapping fails startup and writes `files/chromium-startup.json`;
 there is no success fallback to95. A fully cold app start is required; engines
 cannot be swapped in a live process. Initial extraction and complete hashing

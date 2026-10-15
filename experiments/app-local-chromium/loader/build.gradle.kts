@@ -26,20 +26,21 @@ val vendorSources = layout.buildDirectory.dir("verified-upstream-java")
 val prepareUpstream by tasks.registering(Sync::class) {
     dependsOn(verifyUpstream)
     from(upstream.resolve("src/main/java"))
-    exclude("**/ActivityManagerHook.java", "**/stub/StubSandboxedProcessService*.java")
+    exclude("**/ActivityManagerHook.java", "**/stub/StubSandboxedProcessService*.java",
+        "**/sandbox/SandboxedProcessServiceDelegate.java")
     into(vendorSources)
 }
 
 android {
     namespace = "com.norman.webviewup.lib"
     compileSdk = 35
-    defaultConfig { minSdk = 21 }
+    defaultConfig { minSdk = 32 } // This module is the RG-only API32 experiment.
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
     sourceSets.getByName("main") {
-        manifest.srcFile(upstream.resolve("src/main/AndroidManifest.xml"))
+        manifest.srcFile("src/main/AndroidManifest.xml")
         // Kotlin also reads Java declarations: stage the verified subset for both compilers.
         java.setSrcDirs(listOf(vendorSources))
     }

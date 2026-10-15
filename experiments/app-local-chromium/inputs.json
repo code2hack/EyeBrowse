@@ -6,8 +6,8 @@
     "archiveSha256": "41835d21539f13efc117280e1c49892d1e59010e43ddfc19bfd943bc6621309c",
     "sourceInventory": "loader/source.sha256",
     "license": "Apache-2.0",
-    "build": "Original62 core/src/main inputs verified unchanged; six classes excluded and replaced in Kotlin per loader/replacement-map.md; remaining vendor subset with AGP8.7.3/JDK17/SDK35; annotation1.8.2 compile-only; no published core0.1.0 equivalence claimed",
-    "rendererIsolation": "Five ordinary host-UID children; not Android isolated UID",
+    "build": "Original62 inputs verified unchanged; hook, five stubs, delegate and manifest intentionally replaced by Kotlin/XML per replacement-map.md; API32 RG-only wrapper; remaining vendor Java unchanged",
+    "rendererIsolation": "Five non-exported Android isolated services with read-only pinned code FD broker; actual native renderer qualification pending",
     "repairMapping": "loader/replacement-map.md"
   },
   "engine": {

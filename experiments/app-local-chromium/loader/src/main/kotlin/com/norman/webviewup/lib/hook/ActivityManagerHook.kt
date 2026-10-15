@@ -17,6 +17,7 @@ import android.util.Log
 import com.norman.webviewup.lib.WebViewReplace
 import com.norman.webviewup.lib.reflect.RuntimeAccess
 import com.norman.webviewup.lib.sandbox.SandboxedProcessServiceDelegate as Delegate
+import com.norman.webviewup.lib.sandbox.RendererEngineFiles
 import com.norman.webviewup.lib.service.binder.BinderHook
 import com.norman.webviewup.lib.service.binder.ProxyBinder
 import com.norman.webviewup.lib.service.interfaces.IActivityManager
@@ -30,6 +31,7 @@ class ActivityManagerHook(private val context: Context, private val target: Repl
     private val instances = RendererInstances<IBinder, IBinder>(
         ActivityManagerHookPolicy.resolveMaxStubServices(context))
     private val lock = Any()
+    private val engineFiles = RendererEngineFiles(checkNotNull(target.apkPath), checkNotNull(target.libsPath))
     private lateinit var singleton: ISingleton
     private lateinit var original: Any
 
@@ -85,7 +87,17 @@ class ActivityManagerHook(private val context: Context, private val target: Repl
             override fun onReceiveResult(code: Int, data: Bundle?) {
                 val process = data?.getBinder(CHILD_TOKEN) ?: return
                 val pid = data.getInt("pid")
-                if (data.getInt("uid") != Process.myUid() || pid <= 0 || pid == Process.myPid()) return
+                val uid = data.getInt("uid")
+                if (uid / 100000 != Process.myUid() / 100000 || uid % 100000 !in 90000..99999 ||
+                    pid <= 0 || pid == Process.myPid()) return
+                if (code == 1) {
+                    Log.i(TAG, "NATIVE serial=${lease.serial} slot=${lease.slot} pid=$pid uid=$uid mappings=${data.getString("nativeMappings")}")
+                    return
+                }
+                if (code == 2) {
+                    Log.e(TAG, "BOOTSTRAP_FAILED serial=${lease.serial} slot=${lease.slot} pid=$pid uid=$uid failure=${data.getString("failure")}")
+                    return
+                }
                 if (!instances.started(lease, process)) return
                 Log.i(TAG, "CHILD serial=${lease.serial} slot=${lease.slot} pid=$pid uid=${data.getInt("uid")} " +
                     "privateProbeReadable=${data.getBoolean("privateProbeReadable")} selinux=${data.getString("selinux")}")
@@ -105,6 +117,7 @@ class ActivityManagerHook(private val context: Context, private val target: Repl
             putExtra(Delegate.EXTRA_ORIGINAL_SERVICE_CLASS, component.className)
             putExtra(Delegate.EXTRA_SHARED_LIBS, WebViewReplace.REPLACE_WEB_VIEW_PACKAGE_INFO?.applicationInfo?.sharedLibraryFiles)
             putExtra(CHILD_RECEIVER, receiver)
+            putExtras(Bundle().apply { putBinder(RendererEngineFiles.EXTRA, engineFiles) })
         }
         val adapted = args.filterIndexed { index, _ -> !named || index != 6 }.toTypedArray()
         adapted[2] = redirected
