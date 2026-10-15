@@ -25,7 +25,9 @@ abstract class RendererStubService : Service() {
             putBoolean("privateProbeReadable", runCatching {
                 File(filesDir, "chromium-boundary-probe.txt").readText() == "i57-owned-dummy"
             }.getOrDefault(false))
-            putString("selinux", runCatching { File("/proc/self/attr/current").readText().trim() }.getOrNull())
+            putString("selinux", runCatching {
+                File("/proc/self/attr/current").readText().substringBefore('\u0000').trim()
+            }.getOrNull())
         })
         Log.i(ActivityManagerHook.TAG, "SERVICE component=${javaClass.name} pid=${Process.myPid()} uid=${Process.myUid()}")
         return delegate.onBind(intent)
