@@ -22,7 +22,9 @@ internal class CoreControl(private val path: String) : Closeable {
                 val header = "$method $target HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n" +
                     "Content-Type: application/json\r\nContent-Length: ${bytes.size}\r\n\r\n"
                 socket.outputStream.write(header.toByteArray(Charsets.US_ASCII))
-                socket.outputStream.write(bytes)
+                // A bodyless request is complete after its header. The core may already have
+                // replied and closed; Android's zero-byte socket write can then report EPIPE.
+                if (bytes.isNotEmpty()) socket.outputStream.write(bytes)
                 socket.outputStream.flush()
                 val response = ByteArrayOutputStream()
                 val buffer = ByteArray(8192)
