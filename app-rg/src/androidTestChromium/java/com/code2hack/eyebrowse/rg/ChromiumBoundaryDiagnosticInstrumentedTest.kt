@@ -34,6 +34,80 @@ import javax.net.ssl.X509TrustManager
 /** Observations on controlled inputs only; this does not replace any original acceptance case. */
 @RunWith(AndroidJUnit4::class)
 class ChromiumBoundaryDiagnosticInstrumentedTest {
+    @Test fun observeProductionNavigationWithHealthyPool() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        require(context.packageName == "com.code2hack.eyebrowse.rg.chromium")
+        val base = checkNotNull(InstrumentationRegistry.getArguments().getString("fixtureBaseUrl")).trimEnd('/')
+        require(base == "http://100.92.81.33:39030")
+        val preferences = localBrowserTestPreferences(context)
+        val previous = preferences.getString("local.tabs", null)
+        val runtime = RgProxyRuntime.get(context)
+        val events = CopyOnWriteArrayList<JSONObject>()
+        val observations = JSONArray()
+        val report = JSONObject().put("scope", "DIAGNOSTIC_ONLY_ORIGINAL_CRITERIA_UNCHANGED")
+        Closeable {
+            report.put("events", JSONArray(events)).put("observations", observations)
+            File(context.filesDir, "chromium-navigation-diagnostic.json").writeText(report.toString(2))
+            assertTrue(preferences.edit().apply {
+                if (previous == null) remove("local.tabs") else putString("local.tabs", previous)
+            }.commit())
+        }.use {
+            RouteFixture(instrumentation.context.assets.open("proxy-fixture.p12")).use { fixture ->
+                Closeable {
+                    runtime.useTestEndpoint(ProxyPolicy.TEST_URL)
+                    runtime.replaceSources(emptyList()).get(20, TimeUnit.SECONDS)
+                }.use {
+                    runtime.useTestEndpoint("http://health.test:${fixture.http}/health")
+                    assertTrue(runtime.replaceSources(fixture.sources()).get(20, TimeUnit.SECONDS))
+                    ActivityScenario.launch(LocalBrowserActivity::class.java).use { scenario ->
+                        val readyBy = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
+                        while (runtime.webViewPort == null && System.nanoTime() < readyBy) Thread.sleep(25)
+                        val port = checkNotNull(runtime.webViewPort)
+                        val socket = File(context.filesDir, "mihomo/control.sock").absolutePath
+                        val config = ProxyPolicy.configuration(ProxyPolicy.nodes(fixture.sources()), port, socket,
+                            listOf("system"), runtime.testUrl)
+                            .put("hosts", JSONObject().put("route.test", "127.0.0.1").put("health.test", "127.0.0.1"))
+                        val configFile = File(context.filesDir, "mihomo/navigation-diagnostic.json")
+                        configFile.writeText(ProxyPolicy.configurationText(config.toString()))
+                        CoreControl(socket).request("PUT", "/configs", JSONObject().put("path", configFile.absolutePath))
+                        scenario.onActivity { activity ->
+                            val session = activity.tabs.current.session
+                            val original = session.onStateChanged
+                            session.onStateChanged = { state ->
+                                events += JSONObject().put("phase", state.phase.name).put("url", state.url)
+                                    .put("error", state.error).put("callback", Throwable().stackTrace
+                                        .map { it.methodName }.take(7).joinToString("/"))
+                                original(state)
+                            }
+                        }
+                        val nonce = java.util.UUID.randomUUID().toString()
+                        for (path in listOf("keyboard.html", "link", "route-probe/$nonce", "does-not-exist.html", "keyboard.html")) {
+                            scenario.onActivity { activity ->
+                                val session = activity.tabs.current.session
+                                if (path == "link") session.page!!.evaluateJavascript("document.querySelector('a').click()", null)
+                                else assertTrue(session.open("$base/$path").accepted())
+                            }
+                            Thread.sleep(4000)
+                            val done = CountDownLatch(1)
+                            scenario.onActivity { activity ->
+                                val session = activity.tabs.current.session
+                                val sample = JSONObject().put("requested", path).put("phase", session.state.phase.name)
+                                    .put("stateUrl", session.state.url).put("viewUrl", session.page!!.url)
+                                    .put("visibility", session.page!!.visibility).put("error", session.state.error)
+                                session.page!!.evaluateJavascript("({url:location.href,ready:document.readyState,title:document.title,body:document.body?.innerText.slice(0,500)})") { value ->
+                                    observations.put(sample.put("document", JSONObject(value)))
+                                    done.countDown()
+                                }
+                            }
+                            assertTrue("diagnostic renderer sample", done.await(3, TimeUnit.SECONDS))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     @Test fun observeTrustAndRawCallbacksWithoutChangingPolicy() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

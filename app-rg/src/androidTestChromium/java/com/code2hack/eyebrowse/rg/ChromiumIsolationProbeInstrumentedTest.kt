@@ -4,11 +4,10 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
-import android.os.Bundle
 import android.os.IBinder
+import android.os.Parcel
 import android.os.ParcelFileDescriptor
 import android.os.Process
-import android.os.ResultReceiver
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.code2hack.eyebrowse.rg.chromium.IsolatedEngineProbeService
@@ -28,24 +27,34 @@ class ChromiumIsolationProbeInstrumentedTest {
         require(context.packageName == "com.code2hack.eyebrowse.rg.chromium")
         val received = CountDownLatch(1)
         var result: JSONObject? = null
-        val connection = object : ServiceConnection {
-            override fun onServiceConnected(name: ComponentName, service: IBinder) {}
-            override fun onServiceDisconnected(name: ComponentName) {}
-        }
         val report = JSONObject().put("scope", "ISOLATED_SERVICE_FEASIBILITY_NOT_RENDERER_ACCEPTANCE")
             .put("hostUid", Process.myUid())
-        val receiver = object : ResultReceiver(null) {
-            override fun onReceiveResult(code: Int, data: Bundle?) {
-                result = JSONObject(checkNotNull(data?.getString("report")))
-                received.countDown()
-            }
-        }
         val engine = File(context.filesDir, "chromium-engine")
         ParcelFileDescriptor.open(File(engine, "engine.apk"), ParcelFileDescriptor.MODE_READ_ONLY).use { archive ->
             ParcelFileDescriptor.open(File(engine, "libs/arm64-v8a/libwebviewchromium.so"),
                 ParcelFileDescriptor.MODE_READ_ONLY).use { library ->
+                val connection = object : ServiceConnection {
+                    override fun onServiceConnected(name: ComponentName, service: IBinder) {
+                        Thread {
+                            val data = Parcel.obtain()
+                            val reply = Parcel.obtain()
+                            try {
+                                data.writeInterfaceToken(IsolatedEngineProbeService::class.java.name)
+                                data.writeFileDescriptor(archive.fileDescriptor)
+                                data.writeFileDescriptor(library.fileDescriptor)
+                                check(service.transact(1, data, reply, 0))
+                                reply.readException()
+                                result = JSONObject(checkNotNull(reply.readString()))
+                            } catch (failure: Throwable) {
+                                result = JSONObject().put("transportFailure", failure.toString())
+                            } finally {
+                                reply.recycle(); data.recycle(); received.countDown()
+                            }
+                        }.start()
+                    }
+                    override fun onServiceDisconnected(name: ComponentName) {}
+                }
                 val intent = Intent(context, IsolatedEngineProbeService::class.java)
-                    .putExtra("result", receiver).putExtra("archive", archive).putExtra("library", library)
                 var bound = false
                 try {
                     bound = context.bindService(intent, connection, Context.BIND_AUTO_CREATE)
