@@ -19,6 +19,44 @@ import java.util.concurrent.TimeUnit
 /** Real production page/native engine observations; no polyfills or UA substitutions. */
 @RunWith(AndroidJUnit4::class)
 class ChromiumQualificationInstrumentedTest {
+    /** Diagnostic only: preserve the original routing assertion while observing the owned JSON DOM. */
+    @Test fun observeOwnedJsonReceiptConsumerBoundary() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val args = InstrumentationRegistry.getArguments()
+        val base = checkNotNull(args.getString("fixtureBaseUrl")).trimEnd('/')
+        require(context.packageName == "com.code2hack.eyebrowse.rg.chromium")
+        val nonce = java.util.UUID.randomUUID().toString()
+        val report = JSONObject().put("state", "INCOMPLETE").put("candidateHead", args.getString("candidateHead"))
+            .put("scope", "OWNED_DUMMY_RECEIPT_DIAGNOSTIC_NOT_FULL_ROUTING_ACCEPTANCE").put("nonce", nonce)
+        try {
+            ActivityScenario.launch(LocalBrowserActivity::class.java).use { scenario ->
+                scenario.onActivity { assertTrue(it.tabs.current.session.open("$base/route-probe/$nonce").accepted()) }
+                val end = SystemClock.elapsedRealtime() + 15_000
+                var ready = false
+                while (!ready && SystemClock.elapsedRealtime() < end) {
+                    scenario.onActivity { ready = it.tabs.current.session.state.phase == LocalBrowserSession.Phase.READY }
+                    if (!ready) SystemClock.sleep(30)
+                }
+                assertTrue("owned receipt document presented", ready)
+                val done = CountDownLatch(1)
+                var document: JSONObject? = null
+                scenario.onActivity { activity ->
+                    activity.tabs.current.session.page!!.evaluateJavascript("""(()=>{
+                        const body=document.body.innerText, pre=document.querySelector('pre')?.innerText??'';
+                        function parse(text){try{return JSON.parse(text)}catch(e){return null}}
+                        return {origin:location.origin,contentType:document.contentType,bodyText:body,preText:pre,
+                            bodyReceipt:parse(body),preReceipt:parse(pre),bodyChildren:[...document.body.children].map(e=>e.tagName)};
+                    })()""") { value -> document = JSONObject(value); done.countDown() }
+                }
+                assertTrue("owned receipt DOM callback", done.await(5, TimeUnit.SECONDS))
+                report.put("document", document).put("state", "DIAGNOSTIC_OBSERVED")
+                // Only the controlled dummy receipt is captured; no public-site content or credentials.
+                assertTrue("actual owned nonce present", checkNotNull(document).getString("bodyText").contains(nonce))
+            }
+        } finally { File(context.filesDir, "chromium-receipt-diagnostic.json").writeText(report.toString(2)) }
+    }
+
     @Test fun pinnedNativeEngineRunsModernWebApisInTheCurrentBrowser() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
