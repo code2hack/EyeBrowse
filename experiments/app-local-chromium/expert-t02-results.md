@@ -1,8 +1,12 @@
 # Expert T02 repair investigation
 
-I57-T02 remains **unconcluded / NOT_PASSED**, attempt2/failure1/lastConcluded1,
-assignment revision4. This is an investigation checkpoint, not
-`EXPERT_HANDBACK_READY`, acceptance, adoption or a source handoff. The retained
+The scoped T02 correction/verification package is **ready for Manager handback**
+under assignment revision7. Canonical attempt2/failure1/lastConcluded1 remains
+unconcluded until Manager records the outcome; this is not ticket acceptance,
+production adoption, account/session qualification or automatic source transfer.
+The fixed153 TLS result remains NOT_PASSED. Separately qualified158 results and
+all original cutoffs are distinguished below and in the
+[reproduction/evidence guide](expert-t02-reproduction.md). The retained
 [Worker partial handback](repair-results.md) and [original results](results.md)
 remain unchanged. T01's instance/lifetime fix and controls are preserved;
 T03 remains Worker57's later dependent objective.
@@ -345,3 +349,84 @@ limit and precheck races. This is preparation only; window06's one creation is
 consumed and no next window, route or request is authorized by that artifact.
 The two historical ordinary raw-client gaps remain unrecovered. T02 remains
 attempt2/failure1/lastConcluded1, unconcluded; no handback or T03 transfer.
+
+
+## Window07: qualified response, original browser method and bounded document
+
+Manager verified window06 return before allocating a fresh007 operation. Every
+stock call used explicit numeric `-H 127.0.0.1 -P 5037`, the selected USB serial,
+and a fresh check of existing server PID/start/UID/binary/loopback socket plus a
+separate framed version41 exchange. These are bounded controls with explicit
+version-mismatch and TOCTOU limits, not atomic no-start enforcement. No server
+absence/version/kill experiment or security-map override was performed.
+
+One normal explicit-localhost create completed all three statuses and resolved
+39072. The canonical row targeted only007; the actual listener was
+127.0.0.1/UID2000/inode8963913 with no same-port wildcard or IPv6. No pretraffic
+remove was attempted, so normal host registration remained intact through the
+checks. This supports the earlier failed-removal/permission-loss sequence
+hypothesis; it does not establish installed-binary/source equivalence or a
+universal cause for earlier failures.
+
+| Invocation | Source / TEST | Actual result |
+| --- | --- | --- |
+| `w07-native-status-001` | doc-only69431b9, TEST compiled43 /888c69d6 | Normal Android TLS/hostname validation, HTTP200, responseReceived=true,1480ms. JUnit OK1/1.513s is measurement completion. Legacy window05 labels remain literal source fields; invocation/route identify007. |
+| `w07-browser-acceptance-001` | a8c92e98, TEST9c9537f3 | Original complete address/Open method OK1/10.122s, within its unchanged45s maximum.9/9 observations delivered, finalREADY/shown/complete/style applied, originChatGPT,95text/42buttons, personal-links0. |
+| `w07-browser-document-001` | a8c92e98, TEST9c9537f3 | Original separate diagnostic completed45000ms,84/84 delivered,75READY samples, finalshown/styled/complete/95text/46buttons, personal-links0 and no challenge flags. JUnit OK1/48.166s remains diagnostic measurement. |
+
+The original focused480×640 screenshot was actually updated during the first
+browser method, qualified against its delivered final personal-state guard,
+and independently viewed. It shows ChatGPT's anonymous welcome/input interface
+and login control, with native EyeBrowse navigation/address chrome. PNG33873bytes,
+SHA256 `eb2ed491f5eb799a22449e31eba2e767e9ad84e622aaee81abd93622e8a2c1f0`.
+This is software/UI evidence beyond DOM counts; no login, message, pairing,
+CAPTCHA or account operation was attempted. Neither this frame nor45seconds
+qualifies optics, conversations, enduring reliability or production adoption.
+These were fresh application processes with retained browser cache/profile;
+cache/profile-cold loading is not claimed.
+
+The only implementation change after69431b9 is a153-line Kotlin TEST wrapper
+with two fixed entrypoints calling the existing original methods. It holds the
+existing runtime through a credential-free owned HTTP proxy fixture, preserving
+all preceding DIRECT rules, DNS/listener settings, normal TLS and original
+method bodies/actions/assertions/deadlines. It uses the actual core selection
+and completed provider override, with no fake health/readiness. It snapshots
+owned recovery/configuration and original file absence and restores them on
+normal or exceptional closure. Opaque backup contents stay private.
+
+Host build/lint at a8c92e98 succeeded19s/97tasks8executed89upToDate with the same
+JDK17/SDK35/flock/no-daemon/two-worker/Xmx2g/GOMAXPROCS2 controls. No new94-JVM or
+whole-group run is claimed. APP remains exact5eb/compiledcb39; TEST is
+`9c9537f364b86a6526cc31b8f43cb5dd810249e7bc01408cd27bd40c74d0a6e1`,
+compiled at `a8c92e98caff44bde41fb6a89fdb89996dc63a7f`, tree
+`0983a6c682609c1cbca6bc02034bf6c8fd12debd`. Same e372 signer and UID10077;
+only TEST needed installation. Original T01, production, acceptance and
+ordinary sources are unchanged by this wrapper. Its complete original-body
+results supplement the earlier full focused/routing/browser/first-TLS groups;
+those retain their actual f809/d359 source and execution identities.
+
+Both fixture restorations were independently read back: recovery string and
+configuration bytes equal their captured baselines, profile and fixture files
+absent, no owned process, camera clients empty and CAMERA granted. After all
+traffic closed, one canonical `--remove tcp:39072` succeeded; original list and
+no39072 were verified before one literal `--remove tcp:localhost:39072`.
+The latter's exit1/listener-not-found is retained as an actual failed device
+operation, not a deletion PASS. Ordinary request order/reference semantics
+support host-key revocation; no direct release-server map readback is claimed.
+No traffic/create/re-registration followed teardown.
+
+Actual final RG return21:30:01.556973UTC binds unchanged public/APP/TEST/UID/signer
+and APK/main-ELF/ARM64-crashpad/dummy hashes, original reverse list/no39072,
+supported no-owned TCP/TCP6/Unix/process rows, controller PIDs5990/6596/7228
+absent, empty camera clients, CAMERA granted with unchanged flags, and full
+Awake/displayON snapshots. A copied environment key stopped incomplete return002;
+its inherited never-created-fixture label is invalid for007. Source/partial
+failure remain; fresh corrected003 records the actual two restored fixtures.
+
+After exact ownership guards, one SSH exit returned only PID2324577/control
+inode7495474 and guarded Unix inode171940. Actual absence was verified by
+21:31:35.671120UTC. Existing shared server50651/start6726426 and proxy2767 were
+left intact; the earlier006server violation remains separate. No discretionary
+files/app/workspace cleanup, original-app private read, global trust/provider/
+network action or production integration occurred. All required evidence and
+source/remote/device artifact bindings remain in the private mission.
