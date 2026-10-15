@@ -82,20 +82,8 @@ internal class LocalBrowserSession(context: Context, private val onPageTouchUp: 
             override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
                 publish(state.phase, state.error)
             }
-            override fun onPageFinished(view: WebView, url: String?) {
-                if (state.phase != Phase.LOADING || url != view.url) return
-                // The same fixed public styling route qualified in #28, on the live document.
-                view.evaluateJavascript(PRESENTATION_SCRIPT) {
-                    view.postVisualStateCallback(0, object : WebView.VisualStateCallback() {
-                        override fun onComplete(requestId: Long) {
-                            if (state.phase == Phase.LOADING && url == view.url) {
-                                view.visibility = View.VISIBLE
-                                publish(Phase.READY)
-                            }
-                        }
-                    })
-                }
-            }
+            override fun onPageCommitVisible(view: WebView, url: String?) { presentCommittedPage(view, url) }
+            override fun onPageFinished(view: WebView, url: String?) { presentCommittedPage(view, url) }
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val allowed = AddressPolicy.resolve(request.url.toString()).accepted()
                 if (!allowed && request.isForMainFrame) publish(state.phase, "Blocked unsupported address")
@@ -169,6 +157,22 @@ internal class LocalBrowserSession(context: Context, private val onPageTouchUp: 
         // Transparency alone still admits native touch/focus. Keep layout for the visual callback.
         view.clearFocus()
         view.visibility = View.INVISIBLE
+    }
+
+    private fun presentCommittedPage(view: WebView, url: String?) {
+        if (state.phase != Phase.LOADING || url != view.url) return
+        // A committed frame can be usable while a site's remaining resources are still loading.
+        // Keep the same live styling and visual-state barrier before admitting page input.
+        view.evaluateJavascript(PRESENTATION_SCRIPT) {
+            view.postVisualStateCallback(0, object : WebView.VisualStateCallback() {
+                override fun onComplete(requestId: Long) {
+                    if (state.phase == Phase.LOADING && url == view.url) {
+                        view.visibility = View.VISIBLE
+                        publish(Phase.READY)
+                    }
+                }
+            })
+        }
     }
 
     private fun publish(phase: Phase, error: String? = null) {

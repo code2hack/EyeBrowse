@@ -9,6 +9,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Binder
 import android.os.IBinder
 import android.os.IInterface
 import android.os.Process
@@ -88,6 +89,10 @@ class ActivityManagerHook(private val context: Context, private val target: Repl
                 val process = data?.getBinder(CHILD_TOKEN) ?: return
                 val pid = data.getInt("pid")
                 val uid = data.getInt("uid")
+                if (Binder.getCallingUid() != uid) {
+                    Log.e(TAG, "REJECT_CHILD_UID serial=${lease.serial} reported=$uid caller=${Binder.getCallingUid()}")
+                    return
+                }
                 if (uid / 100000 != Process.myUid() / 100000 || uid % 100000 !in 90000..99999 ||
                     pid <= 0 || pid == Process.myPid()) return
                 if (code == 1) {
