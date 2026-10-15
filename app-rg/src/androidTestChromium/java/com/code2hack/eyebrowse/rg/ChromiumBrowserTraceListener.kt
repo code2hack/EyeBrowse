@@ -8,6 +8,13 @@ import android.os.Looper
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
 import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceError
+import android.webkit.WebResourceResponse
+import android.webkit.RenderProcessGoneDetail
+import android.webkit.SslErrorHandler
+import android.net.http.SslError
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONArray
 import org.json.JSONObject
@@ -33,6 +40,8 @@ class ChromiumBrowserTraceListener : RunListener() {
                 if (page.url?.let { it.startsWith("https://app.paseo.sh/") || it.startsWith("https://chatgpt.com/") } == true) {
                     page.evaluateJavascript("""(()=>({origin:location.origin,visibility:document.visibilityState,
                         ready:document.readyState,bodyChildren:document.body?.children.length,scripts:document.scripts.length,
+                        scriptKinds:Array.from(document.scripts,e=>({type:e.type,async:e.async,defer:e.defer,
+                        external:!!e.src,origin:e.src?new URL(e.src,location.href).origin:null})),
                         navigation:performance.getEntriesByType('navigation').map(e=>({responseStart:e.responseStart,
                         responseEnd:e.responseEnd,domInteractive:e.domInteractive,domContentLoaded:e.domContentLoadedEventEnd,
                         load:e.loadEventEnd,bytes:e.decodedBodySize})),resources:performance.getEntriesByType('resource').slice(-20)
@@ -70,6 +79,40 @@ class ChromiumBrowserTraceListener : RunListener() {
             val original = session.onStateChanged
             originals[session] = original
             session.page?.let { page ->
+                val client = checkNotNull(page.webViewClient)
+                fun network(kind: String, url: String?, mainFrame: Boolean?, code: Int? = null, detail: String? = null) {
+                    val event = JSONObject().put("atNs", android.os.SystemClock.elapsedRealtimeNanos())
+                        .put("networkCallback", kind).put("origin", location(url))
+                        .put("mainFrame", mainFrame).put("code", code).put("errorKind", detail)
+                    main.post { if (events.length() < 512) events.put(event) else dropped++ }
+                }
+                page.webViewClient = object : WebViewClient() {
+                    override fun onPageStarted(view: WebView, url: String?, icon: android.graphics.Bitmap?) = client.onPageStarted(view, url, icon)
+                    override fun onPageFinished(view: WebView, url: String?) = client.onPageFinished(view, url)
+                    override fun onPageCommitVisible(view: WebView, url: String?) = client.onPageCommitVisible(view, url)
+                    override fun doUpdateVisitedHistory(view: WebView, url: String?, reload: Boolean) = client.doUpdateVisitedHistory(view, url, reload)
+                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = client.shouldOverrideUrlLoading(view, request)
+                    override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                        network("REQUEST", request.url.toString(), request.isForMainFrame)
+                        return client.shouldInterceptRequest(view, request)
+                    }
+                    override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                        val kind = listOf("ERR_NAME_NOT_RESOLVED", "ERR_CONNECTION_TIMED_OUT", "ERR_CONNECTION_REFUSED",
+                            "ERR_TUNNEL_CONNECTION_FAILED", "ERR_CONNECTION_CLOSED", "ERR_CONNECTION_RESET", "ERR_INTERNET_DISCONNECTED")
+                            .firstOrNull { error.description.contains(it) } ?: "OTHER"
+                        network("ERROR", request.url.toString(), request.isForMainFrame, error.errorCode, kind)
+                        client.onReceivedError(view, request, error)
+                    }
+                    override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
+                        network("HTTP", request.url.toString(), request.isForMainFrame, response.statusCode)
+                        client.onReceivedHttpError(view, request, response)
+                    }
+                    override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
+                        network("SSL", error.url, null, error.primaryError)
+                        client.onReceivedSslError(view, handler, error)
+                    }
+                    override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean = client.onRenderProcessGone(view, detail)
+                }
                 val chrome = page.webChromeClient
                 page.webChromeClient = object : WebChromeClient() {
                     override fun onReceivedTitle(view: WebView, title: String?) { chrome?.onReceivedTitle(view, title) }
