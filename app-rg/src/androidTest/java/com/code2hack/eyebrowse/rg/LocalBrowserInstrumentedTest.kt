@@ -277,7 +277,7 @@ class LocalBrowserInstrumentedTest {
 
     private fun scene(body: (ActivityScenario<LocalBrowserActivity>, RawPoseReplay) -> Unit) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val preferences = context.getSharedPreferences("LocalBrowserActivity", Context.MODE_PRIVATE)
+        val preferences = localBrowserTestPreferences(context)
         val previous = preferences.getString("local.tabs", null)
         val source = RawPoseReplay()
         val scenario = ActivityScenario.launch(LocalBrowserActivity::class.java)
@@ -397,7 +397,7 @@ class LocalBrowserInstrumentedTest {
     }
     private fun keyboardScene(body: (ActivityScenario<LocalBrowserActivity>,RawPoseReplay) -> Unit) {
         val context=InstrumentationRegistry.getInstrumentation().targetContext
-        val prefs=context.getSharedPreferences("LocalBrowserActivity",Context.MODE_PRIVATE)
+        val prefs=localBrowserTestPreferences(context)
         val before=prefs.getString("local.tabs",null)
         val args=InstrumentationRegistry.getArguments()
         val started=SystemClock.elapsedRealtimeNanos()

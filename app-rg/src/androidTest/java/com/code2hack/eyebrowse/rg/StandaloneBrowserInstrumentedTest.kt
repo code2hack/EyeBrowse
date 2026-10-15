@@ -54,7 +54,7 @@ class StandaloneBrowserInstrumentedTest {
         fail(label)
     }
     private fun scene(body: (ActivityScenario<LocalBrowserActivity>) -> Unit) {
-        val preferences = context.getSharedPreferences("LocalBrowserActivity", Context.MODE_PRIVATE)
+        val preferences = localBrowserTestPreferences(context)
         val previous = preferences.getString("local.tabs", null)
         val scenario = ActivityScenario.launch(LocalBrowserActivity::class.java)
         try {
@@ -483,7 +483,7 @@ class StandaloneBrowserInstrumentedTest {
 
     /** Separate invocations with an ordinary force-stop/install-r between them prove cold durability. */
     @Test fun prepareOwnedColdRecoveryData() {
-        val metadata = context.getSharedPreferences("LocalBrowserActivity", Context.MODE_PRIVATE)
+        val metadata = localBrowserTestPreferences(context)
         val settings = context.getSharedPreferences("local-input-settings", Context.MODE_PRIVATE)
         val before = JSONObject().put("tabs", metadata.getString("local.tabs", null))
             .put("pointer.sensitivity", settings.getString("pointer.sensitivity", null))
@@ -512,7 +512,7 @@ class StandaloneBrowserInstrumentedTest {
     @Test fun coldRestartAndDataPreservingInstallKeepDurableDataWithoutLoadingOrSubmitting() {
         val record = java.io.File(context.filesDir, "issue33-owned-cold-before.json")
         val before = JSONObject(record.readText())
-        val metadata = context.getSharedPreferences("LocalBrowserActivity", Context.MODE_PRIVATE)
+        val metadata = localBrowserTestPreferences(context)
         val settings = context.getSharedPreferences("local-input-settings", Context.MODE_PRIVATE)
         try {
             ActivityScenario.launch(LocalBrowserActivity::class.java).use { s ->

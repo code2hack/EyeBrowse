@@ -40,7 +40,7 @@ class RealProfileImportInstrumentedTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val preferences = context.getSharedPreferences("proxy-profiles", Context.MODE_PRIVATE)
         val before = checkNotNull(preferences.getString("profiles", null))
-        val tabs = context.getSharedPreferences("LocalBrowserActivity", Context.MODE_PRIVATE)
+        val tabs = localBrowserTestPreferences(context)
         val previousTabs = tabs.getString("local.tabs", null)
         val disk = ProfileStore({ preferences.getString("profiles", null) }) { error("Read-only check must not write") }
         val profiles = RgProfiles.get(context).profiles
@@ -67,7 +67,7 @@ class RealProfileImportInstrumentedTest {
         val invocation = UUID.fromString(checkNotNull(args.getString("invocationId"))).toString()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        val tabs = context.getSharedPreferences("LocalBrowserActivity", Context.MODE_PRIVATE)
+        val tabs = localBrowserTestPreferences(context)
         val previousTabs = tabs.getString("local.tabs", null)
         val profiles = context.getSharedPreferences("proxy-profiles", Context.MODE_PRIVATE)
         val previousProfiles = checkNotNull(profiles.getString("profiles", null))
@@ -194,7 +194,7 @@ class RealProfileImportInstrumentedTest {
         val context = instrumentation.targetContext
         val runtime = RgProxyRuntime.get(context)
         val profiles = RgProfiles.get(context)
-        val preferences = context.getSharedPreferences("LocalBrowserActivity", Context.MODE_PRIVATE)
+        val preferences = localBrowserTestPreferences(context)
         val previousTabs = preferences.getString("local.tabs", null)
         val profilePreferences = context.getSharedPreferences("proxy-profiles", Context.MODE_PRIVATE)
         val report = JSONObject().put("invocation", invocation).put("mode", "OWNER_REAL_QR_OPTICAL")

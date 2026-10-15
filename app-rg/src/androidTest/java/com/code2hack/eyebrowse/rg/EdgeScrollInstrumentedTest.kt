@@ -40,7 +40,7 @@ class EdgeScrollInstrumentedTest {
     }
     private fun scene(legacyPointer: String?=null, legacyScroll: String?=null, body: (ActivityScenario<LocalBrowserActivity>,RawPoseReplay) -> Unit) {
         val context=InstrumentationRegistry.getInstrumentation().targetContext
-        val metadata=context.getSharedPreferences("LocalBrowserActivity",Context.MODE_PRIVATE)
+        val metadata=localBrowserTestPreferences(context)
         val previousMetadata=metadata.getString("local.tabs",null)
         val preferences=context.getSharedPreferences("local-input-settings",Context.MODE_PRIVATE)
         val keys=listOf("pointer.sensitivity","edge.speed","pointer.tenths","edge.pixels-per-second")

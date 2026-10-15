@@ -32,7 +32,7 @@ class VersionIntegrationInstrumentedTest {
             // restores its exact starting profile, due metadata, jobs, files and numeric choices.
             instrumentation.runOnMainSync { RgRefresh.get(context).testConnectivity = { online } }
             context.getSharedPreferences("proxy-profiles", Context.MODE_PRIVATE).edit().remove("profiles").commit().also { assertTrue(it) }
-            context.getSharedPreferences("LocalBrowserActivity", Context.MODE_PRIVATE).edit().remove("local.tabs").commit().also { assertTrue(it) }
+            localBrowserTestPreferences(context).edit().remove("local.tabs").commit().also { assertTrue(it) }
             RgProfiles.get(context).activate().get(45, TimeUnit.SECONDS)
             if (name == "browser") {
                 val bookmarks = File(context.filesDir, "local-browser/bookmarks.properties")

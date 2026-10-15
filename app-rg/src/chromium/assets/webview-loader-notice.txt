@@ -1,0 +1,7 @@
+Experimental dependency: JonaNorman/WebViewUpgrade
+Source: https://github.com/JonaNorman/WebViewUpgrade/tree/5a5a7d11b5e67bba37787a697f45c9f5d45e6dda
+Unchanged third-party core/src/main sources, built with the EyeBrowse toolchain.
+License: Apache License 2.0; see licenses/WebViewUpgrade-Apache-2.0.txt.
+
+No Chromium engine archive is bundled. The external fixed engine input and its
+source/license provenance are documented in experiments/app-local-chromium/inputs.json.

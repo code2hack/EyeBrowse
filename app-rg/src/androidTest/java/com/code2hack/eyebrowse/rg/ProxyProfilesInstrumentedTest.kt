@@ -80,7 +80,7 @@ class ProxyProfilesInstrumentedTest {
     }
 
     @Test fun exceptionalTeardownAndReportKeepStartingControlledState() {
-        val preferences = context.getSharedPreferences("LocalBrowserActivity", Context.MODE_PRIVATE)
+        val preferences = localBrowserTestPreferences(context)
         val profilePreferences = context.getSharedPreferences("proxy-profiles", Context.MODE_PRIVATE)
         val inputPreferences = context.getSharedPreferences("local-input-settings", Context.MODE_PRIVATE)
         val previous = preferences.getString("local.tabs", null)

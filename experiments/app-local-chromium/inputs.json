@@ -1,0 +1,56 @@
+{
+  "loader": {
+    "repository": "https://github.com/JonaNorman/WebViewUpgrade",
+    "commit": "5a5a7d11b5e67bba37787a697f45c9f5d45e6dda",
+    "archive": "https://github.com/JonaNorman/WebViewUpgrade/archive/5a5a7d11b5e67bba37787a697f45c9f5d45e6dda.tar.gz",
+    "archiveSha256": "41835d21539f13efc117280e1c49892d1e59010e43ddfc19bfd943bc6621309c",
+    "sourceInventory": "loader/source.sha256",
+    "license": "Apache-2.0",
+    "build": "Unchanged core/src/main with AGP8.7.3/JDK17/SDK35; annotation1.8.2 compile-only; no published core0.1.0 equivalence claimed",
+    "rendererIsolation": "Five ordinary host-UID children; not Android isolated UID"
+  },
+  "engine": {
+    "repository": "https://github.com/uazo/cromite",
+    "sourceCommit": "11507ac1061b5ea227806f5e84db5a57df6ccf6a",
+    "release": "v153.0.8010.37-11507ac1061b5ea227806f5e84db5a57df6ccf6a",
+    "publishedAt": "2026-09-15T11:51:14Z",
+    "asset": "arm64_SystemWebView.apk",
+    "url": "https://github.com/uazo/cromite/releases/download/v153.0.8010.37-11507ac1061b5ea227806f5e84db5a57df6ccf6a/arm64_SystemWebView.apk",
+    "sha256": "dcb233a86d58ca922f8aa08dd4216c9158450866286d727a1358e502e935baa3",
+    "bytes": 305322500,
+    "package": "com.android.webview",
+    "versionName": "153.0.8010.37",
+    "versionCode": 801003701,
+    "minSdk": 29,
+    "targetSdk": 36,
+    "signingScheme": "v2",
+    "signerCertificateSha256": "633fa41d8211d6d0916a819b89668c6de92e64232da67f9d16fd81c3b7e923ff",
+    "nativeLibraries": [
+      {
+        "path": "lib/arm64-v8a/libwebviewchromium.so",
+        "size": 182192712,
+        "sha256": "79fc039e9c48b1ff0f9693050e47e66252c4ad8437d69a0feb9f2cbd402aabe1"
+      },
+      {
+        "path": "lib/arm64-v8a/libcrashpad_handler_trampoline.so",
+        "size": 6832,
+        "sha256": "d9dfe85ab98a154be9970b171474a7b56ef63f53e0810af18791108a3fa007d4"
+      },
+      {
+        "path": "lib/armeabi-v7a/libcrashpad_handler_trampoline.so",
+        "size": 2960,
+        "sha256": "77ae336a45a7d337b56ab5b9a2a0a57d0d12dd5f59586c9cf067ba724c718bb7"
+      },
+      {
+        "path": "lib/armeabi-v7a/libwebviewchromium.so",
+        "size": 109008636,
+        "sha256": "60515d07e052927372b079a2ec844d60b9bc2cafe47d78debad6bb736267e4b9"
+      }
+    ],
+    "dependencies": "Complete standalone archive; no required static shared library/Trichrome/split; optional android.test.base and androidx.window.extensions",
+    "licensing": "Upstream declares GPLv3; Chromium and component notices also apply. External locally qualified input only; engine/native archive excluded from repository and experimental APK. No completed redistribution/compliance determination.",
+    "license": "https://github.com/uazo/cromite/blob/11507ac1061b5ea227806f5e84db5a57df6ccf6a/LICENSE",
+    "source": "https://github.com/uazo/cromite/tree/11507ac1061b5ea227806f5e84db5a57df6ccf6a",
+    "versionLimit": "Cromite153 is the observed non-prerelease fork artifact; not Google156 or an assurance of current Chromium security equivalence"
+  }
+}

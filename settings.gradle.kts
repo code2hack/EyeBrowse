@@ -24,3 +24,8 @@ include(":renderer-editor")
 include(":experiments:rg-local-probe")
 include(":experiments:rg-local-probe:fixture")
 include(":experiments:hud-g1-reference")
+
+// Opt-in spike: the verified upstream source stays outside the repository.
+if (providers.gradleProperty("chromiumLoaderSource").isPresent) {
+    include(":experiments:app-local-chromium:loader")
+}

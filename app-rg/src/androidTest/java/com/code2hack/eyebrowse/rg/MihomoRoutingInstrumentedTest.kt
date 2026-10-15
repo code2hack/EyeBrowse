@@ -35,7 +35,7 @@ class MihomoRoutingInstrumentedTest {
     @Test(timeout = 150000) fun actualProviderCoreAndNativeRoutesFallbackAndRecreation() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        val preferences = context.getSharedPreferences("LocalBrowserActivity", Context.MODE_PRIVATE)
+        val preferences = localBrowserTestPreferences(context)
         val previousRecovery = preferences.getString("local.tabs", null)
         val tailnetOrigin = URL(checkNotNull(InstrumentationRegistry.getArguments().getString("tailnetOrigin")) {
             "Supply the exclusively reserved tailnet fixture origin"
@@ -322,7 +322,7 @@ class MihomoRoutingInstrumentedTest {
 
     @Test fun teardownAndReportFailuresCannotSkipRecoveryRestoration() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val preferences = context.getSharedPreferences("LocalBrowserActivity", Context.MODE_PRIVATE)
+        val preferences = localBrowserTestPreferences(context)
         val snapshot = preferences.getString("local.tabs", null)
         val runtime = RgProxyRuntime.get(context)
         val observations = JSONArray()

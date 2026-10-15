@@ -20,6 +20,16 @@ android {
         release {
             isMinifyEnabled = false
         }
+        if (providers.gradleProperty("chromiumLoaderSource").isPresent) {
+            create("chromium") {
+                initWith(getByName("debug"))
+                applicationIdSuffix = ".chromium"
+                versionNameSuffix = "-chromium-spike"
+                matchingFallbacks.add("debug")
+                resValue("string", "app_name", "EyeBrowse Chromium experiment")
+            }
+            testBuildType = "chromium"
+        }
     }
 
     compileOptions {
@@ -65,4 +75,11 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:rules:1.6.1")
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
+
+    if (providers.gradleProperty("chromiumLoaderSource").isPresent) {
+        add("chromiumImplementation", project(":experiments:app-local-chromium:loader"))
+        // Preserve existing app-scoped fixture trust only in this debug-derived experiment.
+        android.sourceSets.getByName("chromium").res.srcDir("src/debug/res")
+        android.sourceSets.getByName("chromium").java.srcDir("src/debug/java")
+    }
 }

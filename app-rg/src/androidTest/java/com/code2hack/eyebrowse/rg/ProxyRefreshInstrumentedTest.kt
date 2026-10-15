@@ -181,14 +181,14 @@ class ProxyRefreshInstrumentedTest {
 
     @Test fun savedOwnerProfileRemainsPrivateInFreshProcess() {
         val raw = checkNotNull(profilesPrefs.getString("profiles", null))
-        val tabs = context.getSharedPreferences("LocalBrowserActivity", Context.MODE_PRIVATE).getString("local.tabs", null)
+        val tabs = localBrowserTestPreferences(context).getString("local.tabs", null)
         val store = ProfileStore({ profilesPrefs.getString("profiles", null) }) { error("Read-only verification") }
         assertTrue(store.readable)
         assertEquals(1, store.profiles.size)
         assertEquals(6, store.profiles.single().nodes.size)
         assertTrue(store.profiles.single().enabled)
         assertTrue("Private cache unchanged", raw == profilesPrefs.getString("profiles", null))
-        assertTrue("Private tabs unchanged", tabs == context.getSharedPreferences("LocalBrowserActivity", Context.MODE_PRIVATE).getString("local.tabs", null))
+        assertTrue("Private tabs unchanged", tabs == localBrowserTestPreferences(context).getString("local.tabs", null))
         assertNull(runtime.proxyPort)
         File(context.filesDir, "issue45-owner-preservation.json").writeText(JSONObject().put("profiles", 1).put("nodes", 6)
             .put("enabled", true).put("cacheSha256", digest(raw.toByteArray())).put("tabsSha256", tabs?.let { digest(it.toByteArray()) })

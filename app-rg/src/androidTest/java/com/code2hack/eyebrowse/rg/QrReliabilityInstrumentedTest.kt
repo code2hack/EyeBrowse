@@ -59,7 +59,7 @@ class QrReliabilityInstrumentedTest {
     }
 
     private fun scene(body: (ActivityScenario<LocalBrowserActivity>) -> Unit) {
-        val preferences = context.getSharedPreferences("LocalBrowserActivity", Context.MODE_PRIVATE)
+        val preferences = localBrowserTestPreferences(context)
         val previous = preferences.getString("local.tabs", null)
         val scenario = ActivityScenario.launch(LocalBrowserActivity::class.java)
         try {

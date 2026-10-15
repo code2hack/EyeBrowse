@@ -20,7 +20,7 @@ class LocalPagePresentationInstrumentedTest {
     @Test fun transparentLayersDoNotCoverTheLivePage() {
         val instrumentation=InstrumentationRegistry.getInstrumentation()
         val context=instrumentation.targetContext
-        val prefs=context.getSharedPreferences("LocalBrowserActivity",Context.MODE_PRIVATE)
+        val prefs=localBrowserTestPreferences(context)
         val previous=prefs.getString("local.tabs",null)
         val scene=ActivityScenario.launch(LocalBrowserActivity::class.java)
         fun js(script:String):String {
