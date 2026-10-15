@@ -20,6 +20,7 @@ class ChromiumApplication : Application() {
         val started = SystemClock.elapsedRealtime()
         val report = JSONObject().put("pid", Process.myPid()).put("uid", Process.myUid())
             .put("engineSha256", ENGINE_SHA256).put("loaderCommit", LOADER_COMMIT)
+            .put("loaderRepair", "issue57-kotlin-instance-lifetime")
             .put("rendererIsolation", "UPSTREAM_ORDINARY_APP_UID_CHILD_NOT_ISOLATED_UID")
         val output = File(filesDir, "chromium-startup.json")
         try {

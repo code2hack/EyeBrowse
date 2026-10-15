@@ -1,4 +1,4 @@
-# App-local Chromium experiment (#55)
+# App-local Chromium experiment (#55, repair #57)
 
 This opt-in RG variant asks whether a complete newer Chromium engine can run
 inside EyeBrowse without replacing Rokid's WebView or the installed EyeBrowse
@@ -20,12 +20,17 @@ Google156 staged release reported during the investigation. Its complete
 standalone APK includes the ARM64 engine and does not need Trichrome or a split.
 Optional Android libraries are recorded in the input manifest.
 
-The loader is the unchanged `core/src/main` source from WebViewUpgrade commit
+The loader starts from the verified `core/src/main` source from WebViewUpgrade commit
 `5a5a7d11b5e67bba37787a697f45c9f5d45e6dda`, verified against
 [loader/source.sha256](loader/source.sha256) at every build. The small Kotlin
 DSL wrapper builds that external source with the project's AGP8.7.3/JDK17/SDK35
-and its required AndroidX annotations. It does not use the published0.1.0
-artifact or claim that artifact matches this source. Apache2.0 license text is
+and its required AndroidX annotations. Repair #57 replaces the activity manager
+hook and five stub classes with maintained Kotlin. Original sources are checked
+intact before staging the remaining vendor Java for both compilers.
+[The replacement map](loader/replacement-map.md) identifies every exclusion,
+replacement and security limitation. Repaired runtime classes.jar hashes must
+be recorded independently. It does not use the published0.1.0 artifact or claim
+that artifact matches this source. Apache2.0 license text is
 included in the experimental APK; upstream source and copyright notices remain
 unchanged. The engine APK/native binaries stay outside Git and outside the
 experimental APK. Cromite declares GPLv3 and has Chromium/component notice and
@@ -76,8 +81,9 @@ Provision the verified external archive as
 uniquely named mission-owned staging file and `run-as` for this debug variant.
 The main-process `ChromiumApplication` verifies the complete archive hash,
 extracts/verifies the two pinned ARM64 libraries and calls the pinned loader
-before production Activity/provider creation. Child initialization remains
-upstream-owned. A missing/changed input, initialized provider, wrong version or
+before production Activity/provider creation. Child engine initialization remains
+upstream-owned; the Kotlin stubs also report a process-lifetime Binder to the
+instance allocator. A missing/changed input, initialized provider, wrong version or
 missing native mapping fails startup and writes `files/chromium-startup.json`;
 there is no success fallback to95. A fully cold app start is required; engines
 cannot be swapped in a live process. Initial extraction and complete hashing
@@ -107,6 +113,25 @@ The last digest must match `inputs.json`. The engine archive is copied only;
 neither installation command above installs it as a provider.
 
 ## Verification
+
+`ChromiumInstanceInstrumentedTest` sends the same public API32 named-binding
+requests to the original APP (focused red control) and repaired APP (green).
+Distinct names must connect to distinct child Binders; a repeat name retains
+its child, the caller's Intent stays intact, and an unrelated app-owned service
+keeps its ordinary component. The original engine delegate owns child exit.
+Host lifetime controls additionally cover no premature reuse, stale death
+callbacks, definite/unknown bind outcomes and explicit pool exhaustion.
+
+The opt-in `:experiments:app-local-chromium:fixture:installDist` builds the Kotlin
+adapter for the unchanged fixed pages and existing nonce-receipt protocol.
+Its launcher takes `bind port pages-directory evidence-directory`; use only the
+assigned host address/39030 after checking that the listener is free. Qualify
+its actual PID/CWD/listener and stop that exact owned process at resource return.
+Do not start the old #55 Python fixture or write to its retained evidence.
+
+Keep [the original #55 results](results.md) and their failure cutoffs unchanged.
+Repair evidence must identify the actual repaired source/compiled JAR/APP/TEST
+and installed bindings; no native or browser PASS is implied by host checks.
 
 `ChromiumQualificationInstrumentedTest` uses the real production Activity and
 an owned fixture page. It records exact app/startup/native bindings and checks
