@@ -12,6 +12,7 @@ import android.os.ResultReceiver
 import android.util.Log
 import com.norman.webviewup.lib.hook.ActivityManagerHook
 import com.norman.webviewup.lib.sandbox.SandboxedProcessServiceDelegate
+import java.io.File
 
 abstract class RendererStubService : Service() {
     private val delegate = SandboxedProcessServiceDelegate()
@@ -21,6 +22,10 @@ abstract class RendererStubService : Service() {
         intent.getParcelableExtra<ResultReceiver>(ActivityManagerHook.CHILD_RECEIVER)?.send(0, Bundle().apply {
             putBinder(ActivityManagerHook.CHILD_TOKEN, ProcessLifetime.token)
             putInt("pid", Process.myPid()); putInt("uid", Process.myUid())
+            putBoolean("privateProbeReadable", runCatching {
+                File(filesDir, "chromium-boundary-probe.txt").readText() == "i57-owned-dummy"
+            }.getOrDefault(false))
+            putString("selinux", runCatching { File("/proc/self/attr/current").readText().trim() }.getOrNull())
         })
         Log.i(ActivityManagerHook.TAG, "SERVICE component=${javaClass.name} pid=${Process.myPid()} uid=${Process.myUid()}")
         return delegate.onBind(intent)

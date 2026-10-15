@@ -46,6 +46,8 @@ class ChromiumApplication : Application() {
             }
             check(archive.setReadable(true, false))
             report.put("inputVerifiedMs", SystemClock.elapsedRealtime() - started)
+            // Owned dummy file only: the child reports whether its actual UID can read this boundary.
+            File(filesDir, "chromium-boundary-probe.txt").writeText("i57-owned-dummy")
             // The pinned loader checks that WebViewFactory has never been initialized.
             WebViewReplace.replace(this, archive.absolutePath, libs.absolutePath)
             val provider = checkNotNull(WebView.getCurrentWebViewPackage())

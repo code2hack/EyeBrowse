@@ -41,14 +41,14 @@ class ActivityManagerHook(private val context: Context, private val target: Repl
         val contract = Class.forName("android.app.IActivityManager")
         val proxy = Proxy.newProxyInstance(contract.classLoader, arrayOf(contract)) { _, method, source ->
             val args = source?.map { it }.orEmpty().toTypedArray()
-            synchronized(lock) {
-                if (method.name == "unbindService") {
+            when (method.name) {
+                "unbindService" -> synchronized(lock) {
                     val result = call(method, args)
                     if (result == true) instances.unbound((args.single() as IInterface).asBinder())
                     result
-                } else if (method.name in listOf("bindIsolatedService", "bindServiceInstance", "bindService")) {
-                    bind(method, args)
-                } else call(method, args)
+                }
+                "bindIsolatedService", "bindServiceInstance", "bindService" -> bind(method, args)
+                else -> call(method, args)
             }
         }
         singleton.instance = proxy
@@ -62,6 +62,10 @@ class ActivityManagerHook(private val context: Context, private val target: Repl
         if (!isRendererService(target.webViewPackageName, component.packageName, component.className, custom)) {
             return call(method, args)
         }
+        return synchronized(lock) { redirect(method, args, intent, component) }
+    }
+
+    private fun redirect(method: Method, args: Array<Any?>, intent: Intent, component: ComponentName): Any? {
         // Unknown platform signatures fail visibly; never guess which string carries instance identity.
         val named = method.name != "bindService"
         check(args.size == (if (named) 9 else 8) && args[2] === intent && args[5] is Int && args.last() is Int) {
@@ -83,7 +87,8 @@ class ActivityManagerHook(private val context: Context, private val target: Repl
                 val pid = data.getInt("pid")
                 if (data.getInt("uid") != Process.myUid() || pid <= 0 || pid == Process.myPid()) return
                 if (!instances.started(lease, process)) return
-                Log.i(TAG, "CHILD serial=${lease.serial} slot=${lease.slot} pid=$pid uid=${data.getInt("uid")}")
+                Log.i(TAG, "CHILD serial=${lease.serial} slot=${lease.slot} pid=$pid uid=${data.getInt("uid")} " +
+                    "privateProbeReadable=${data.getBoolean("privateProbeReadable")} selinux=${data.getString("selinux")}")
                 try {
                     process.linkToDeath({
                         instances.died(lease, process)
