@@ -54,7 +54,7 @@ directory; it is an external input, not a machine path embedded in source.
 ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
   -PchromiumLoaderSource="$LOADER_CORE" \
   :app-rg:testChromiumUnitTest :app-rg:assembleChromium \
-  :app-rg:assembleChromiumAndroidTest :app-rg:lintChromium
+:app-rg:assembleChromiumAndroidTest :app-rg:lintChromium
 ```
 
 With no `chromiumLoaderSource` property, no experiment variant or loader module
@@ -83,6 +83,29 @@ there is no success fallback to95. A fully cold app start is required; engines
 cannot be swapped in a live process. Initial extraction and complete hashing
 are synchronous experimental startup costs, not a production startup design.
 
+Example provisioning after those checks and a **fresh** resource grant (the
+recorded window is ended): resolve the approved `I55_ADB`, identity-verified
+`I55_RG_ENDPOINT`, verified `I55_ENGINE_APK` and unique `I55_RUN_ID` from the new
+assignment. Preserve all returned output and installed hashes.
+
+```sh
+"$I55_ADB" -s "$I55_RG_ENDPOINT" install --no-streaming -r \
+  app-rg/build/outputs/apk/chromium/app-rg-chromium.apk
+"$I55_ADB" -s "$I55_RG_ENDPOINT" install --no-streaming -r \
+  app-rg/build/outputs/apk/androidTest/chromium/app-rg-chromium-androidTest.apk
+I55_STAGE="/data/local/tmp/eyebrowse-i55-${I55_RUN_ID}-engine.apk"
+"$I55_ADB" -s "$I55_RG_ENDPOINT" push -z zstd "$I55_ENGINE_APK" "$I55_STAGE"
+"$I55_ADB" -s "$I55_RG_ENDPOINT" shell run-as com.code2hack.eyebrowse.rg.chromium \
+  mkdir -p files/chromium-engine
+"$I55_ADB" -s "$I55_RG_ENDPOINT" shell run-as com.code2hack.eyebrowse.rg.chromium \
+  cp "$I55_STAGE" files/chromium-engine/engine.apk
+"$I55_ADB" -s "$I55_RG_ENDPOINT" shell run-as com.code2hack.eyebrowse.rg.chromium \
+  sha256sum files/chromium-engine/engine.apk
+```
+
+The last digest must match `inputs.json`. The engine archive is copied only;
+neither installation command above installs it as a provider.
+
 ## Verification
 
 `ChromiumQualificationInstrumentedTest` uses the real production Activity and
@@ -109,6 +132,24 @@ actual source commit as `candidateHead`; missing bindings are setup failures,
 not keyboard results. Instrumentation preference lookup follows the Activity's
 real `getLocalClassName()` rule for both the original ID and the suffix variant;
 existing persistence/restoration assertions are retained.
+
+For an assigned fixed-page/nonce fixture, set `I55_FIXTURE_BASE` and
+`I55_TAILNET_ORIGIN` to its qualified origins. Preserve the terminal JUnit result
+as well as the command exit; `am instrument` can exit0 with failed tests.
+
+```sh
+I55_HEAD="$(git rev-parse HEAD)"
+"$I55_ADB" -s "$I55_RG_ENDPOINT" shell am instrument -w -r \
+  -e class com.code2hack.eyebrowse.rg.MihomoRoutingInstrumentedTest \
+  -e candidateHead "$I55_HEAD" -e evidenceRunId "$I55_RUN_ID" \
+  -e fixtureBaseUrl "$I55_FIXTURE_BASE" -e tailnetOrigin "$I55_TAILNET_ORIGIN" \
+  com.code2hack.eyebrowse.rg.chromium.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+Use the same bound invocation shape for the engine/native cases, selecting their
+exact class/method names. The HTTPS first-origin case needs its own fresh
+invocation and no external fixture. Do not backfill missing results after a
+failure with an assumed pass.
 
 Anonymous public `https://chatgpt.com/` and `https://app.paseo.sh/` rendering may
 be observed without account commands/submissions. A welcome or pairing page is
