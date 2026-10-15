@@ -62,11 +62,33 @@ unperformed pending an explicit disposition.
 
 Use an assigned RG reservation, isolated worktree, private scratch directory,
 the current host build lock and the DEV resource limits. Resolve JDK17/SDK35
-in the environment. Fetch the exact loader source archive and the original
-Cromite release asset linked in `inputs.json`; verify the engine SHA256 and
-APK signing certificate before provisioning. Do not install the engine APK as
-a system/application package. Set `LOADER_CORE` to the unpacked upstream `core`
-directory; it is an external input, not a machine path embedded in source.
+in the environment. Fetch the exact loader source archive in `inputs.json`'s
+`loader` entry. Set `LOADER_CORE` to its unpacked upstream `core` directory;
+it is an external input, not a machine path embedded in source.
+
+The current engine is `inputs.engine`: upstream Chromium **158.0.8107.0**,
+snapshot1719582. Download its original [immutable ZIP, generation1792071892816325](https://storage.googleapis.com/chromium-browser-snapshots/Android_Arm64/1719582/chrome-android.zip?generation=1792071892816325).
+Verify the ZIP container hash, then extract exactly
+`chrome-android/apks/SystemWebView.apk` unchanged into a new mission-owned file
+and set `I57_ENGINE_APK` to that extracted APK's path. Before provisioning,
+verify the APK hash, signing certificate and package/version against these pins:
+
+| Current input identity (`inputs.engine`) | Expected value |
+| --- | --- |
+| ZIP container SHA256 | `be89c4fec54f1d744455001efea11ded29f63418d93a920feb3a255c3305aaf0` |
+| Extracted APK SHA256 | `8daa731574cf1d0e7f24996dd18c8d51554dc7f27806f2619528021674b78710` |
+| APK signer certificate SHA256 | `32a2fc74d731105859e5a85df16d95f102d85b22099b8064c5d8915c61dad1e0` |
+| APK package / version / versionCode | `com.android.webview` / `158.0.8107.0` / `810700001` |
+
+Keep normal signature/TLS validation and the CI snapshot limits in the
+[Expert reproduction/evidence guide](expert-t02-reproduction.md). Do not install
+the engine APK as a system/application package.
+
+**Retained 153 comparison:** `baselineEngine` selects Cromite153 only for the
+[original investigation](results.md) and [first repair comparison](repair-results.md),
+with their matching historical source/guards and separate input directory.
+Preserve those pins and failed results; never provision that baseline into the
+current `chromium-engine-upstream158` directory.
 
 ```sh
 ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
@@ -89,10 +111,10 @@ side-by-side packages, then reverify the installed bytes and UIDs. Ordinary
 `install -r` updates are restricted to these experimental packages. Keep any
 already authenticated experimental state if unexpectedly present.
 
-Provision the verified external archive as
+Provision the verified extracted 158 APK (`I57_ENGINE_APK`), not the ZIP container, as
 `files/chromium-engine-upstream158/engine.apk` inside the experimental package, using a
 uniquely named mission-owned staging file and `run-as` for this debug variant.
-The main-process `ChromiumApplication` verifies the complete archive hash,
+The main-process `ChromiumApplication` verifies the complete APK hash,
 extracts/verifies the two pinned ARM64 libraries and calls the pinned loader
 before production Activity/provider creation. The Kotlin child delegate loads the unchanged engine through read-only FDs
 using public native/resource loading and reports a process-lifetime Binder to
@@ -122,7 +144,7 @@ I57_STAGE="/data/local/tmp/eyebrowse-i57-${I57_RUN_ID}-engine.apk"
   sha256sum files/chromium-engine-upstream158/engine.apk
 ```
 
-The last digest must match `inputs.json`. The engine archive is copied only;
+The last digest must match `inputs.engine.sha256` in `inputs.json`. The engine APK is copied only;
 neither installation command above installs it as a provider.
 
 ## Verification
