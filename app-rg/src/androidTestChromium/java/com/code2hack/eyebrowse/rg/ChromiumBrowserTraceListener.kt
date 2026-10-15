@@ -28,6 +28,7 @@ class ChromiumBrowserTraceListener : RunListener() {
     private val metrics = JSONArray()
     private val sample = object : Runnable {
         override fun run() {
+            current?.let { attach(it) } // The original tests replace the initial empty tab.
             current?.tabs?.current?.session?.page?.let { page ->
                 if (page.url?.let { it.startsWith("https://app.paseo.sh/") || it.startsWith("https://chatgpt.com/") } == true) {
                     page.evaluateJavascript("""(()=>({origin:location.origin,visibility:document.visibilityState,
@@ -83,8 +84,7 @@ class ChromiumBrowserTraceListener : RunListener() {
                     }
                 }
             }
-            session.onStateChanged = { state ->
-                original(state)
+            val record: (LocalBrowserSession.State) -> Unit = { state ->
                 if (events.length() >= 512) dropped++ else {
                     val page = session.page
                     val history = page?.copyBackForwardList()
@@ -101,6 +101,8 @@ class ChromiumBrowserTraceListener : RunListener() {
                         .put("callback", Throwable().stackTrace.map { it.methodName }.take(9).joinToString("/")))
                 }
             }
+            session.onStateChanged = { state -> original(state); record(state) }
+            record(session.state)
         }
     }
 
