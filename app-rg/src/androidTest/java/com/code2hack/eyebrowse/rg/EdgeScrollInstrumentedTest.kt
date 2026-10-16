@@ -14,6 +14,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.webkit.WebView
 import androidx.lifecycle.Lifecycle
+import androidx.core.view.descendants
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -26,6 +27,11 @@ import org.junit.rules.TestName
 import org.junit.runner.RunWith
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.io.Closeable
+import java.io.File
+import com.code2hack.eyebrowse.rg.proxy.ProfileStore
+import com.code2hack.eyebrowse.rg.proxy.RgProfiles
+import com.code2hack.eyebrowse.rg.proxy.SavedProfile
 import kotlin.math.abs
 
 /** Requires a new exclusive grant. Raw pose replay is application evidence, never physical head evidence. */
@@ -65,7 +71,23 @@ class EdgeScrollInstrumentedTest {
             reset(active,source)
             body(active,source)
             bodyCompleted=true
-        } catch(t: Throwable) { failure=t }
+        } catch(t: Throwable) {
+            failure=t
+            try { scene?.let { active ->
+                var owned=false
+                active.onActivity {
+                    val base=arguments.getString("nestedFixtureBaseUrl")
+                    owned=base!=null && it.tabs.current.session.page?.url==base.trimEnd('/')+"/keyboard.html"
+                    evidence.put(edgeObservation(it).put("kind","failure-current-native-state").put("ownedNestedDocument",owned))
+                }
+                if(owned) evidence.put(JSONObject().put("kind","failure-owned-nested-state").put("dom",JSONObject(js(active,"""(()=>({
+                    root:scrollY, width:innerWidth, height:innerHeight, visibility:document.visibilityState,
+                    right:document.getElementById('right')?.scrollTop, left:document.getElementById('left')?.scrollTop,
+                    inner:document.getElementById('inner')?.scrollTop, modal:document.getElementById('modal')?.scrollTop,
+                    contentType:document.contentType
+                }))()"""))))
+            } } catch(observation: Throwable) { t.addSuppressed(observation) }
+        }
         finally {
             for((name,action) in listOf<Pair<String,() -> Unit>>(
                 "activityAndRawSource" to { scene?.close();assertFalse(source.registered) },
@@ -175,6 +197,122 @@ class EdgeScrollInstrumentedTest {
     }
     private fun y(scene: ActivityScenario<LocalBrowserActivity>): Int {
         var value=0;scene.onActivity { value=checkNotNull(it.tabs.current.session.page).scrollY };return value
+    }
+
+    private fun nestedFixture(scene: ActivityScenario<LocalBrowserActivity>) {
+        val base=checkNotNull(InstrumentationRegistry.getArguments().getString("nestedFixtureBaseUrl"))
+        val url=base.trimEnd('/')+"/keyboard.html"
+        scene.onActivity { assertTrue("owned nested navigation admitted",it.tabs.current.session.open(url).accepted()) }
+        try {
+            await("owned nested fixture ready") { var ready=false;scene.onActivity {
+                ready=it.tabs.current.session.state.phase==LocalBrowserSession.Phase.READY &&
+                    it.tabs.current.session.page?.isShown==true
+            };ready }
+            scene.onActivity { evidence.put(JSONObject().put("kind","owned-browser-engine")
+                .put("chromeVersion",it.tabs.current.session.page?.settings?.userAgentString?.let { ua ->
+                    Regex("Chrome/([0-9.]+)").find(ua)?.groupValues?.get(1)
+                } ?: JSONObject.NULL)) }
+        } catch(failure: Throwable) {
+            try { scene.onActivity {
+                evidence.put(edgeObservation(it).put("kind","owned-nested-readiness-failure")
+                    .put("sessionOwnedDestination",it.tabs.current.session.state.url==url)
+                    .put("pageOwnedDestination",it.tabs.current.session.page?.url==url))
+            } } catch(observation: Throwable) { failure.addSuppressed(observation) }
+            throw failure
+        }
+    }
+    private fun nestedY(scene: ActivityScenario<LocalBrowserActivity>, id: String): Int {
+        val dom=JSONArray(js(scene,"[document.getElementById(${JSONObject.quote(id)}).scrollTop,innerWidth]"))
+        var width=0;scene.onActivity { width=checkNotNull(it.tabs.current.session.page).width }
+        // Match pageOracle: requested scroll distances are native viewport pixels, not CSS pixels.
+        return (dom.getDouble(0)*width/dom.getDouble(1)).toInt()
+    }
+    private fun nestedPoint(scene: ActivityScenario<LocalBrowserActivity>, id: String): InputPoint {
+        val position=JSONArray(js(scene,"""(()=>{const r=document.getElementById(${JSONObject.quote(id)}).getBoundingClientRect();
+            return [(r.left+r.width/2)/innerWidth,(r.top+Math.min(r.height,120)/2)/innerHeight]})()"""))
+        var result=InputPoint(0f,0f)
+        scene.onActivity { val page=checkNotNull(it.tabs.current.session.page);val origin=IntArray(2);val pointer=IntArray(2)
+            page.getLocationOnScreen(origin);it.pointer.getLocationOnScreen(pointer)
+            result=InputPoint((position.getDouble(0)*page.width+origin[0]-pointer[0]).toFloat(),
+                (position.getDouble(1)*page.height+origin[1]-pointer[1]).toFloat()) }
+        return result
+    }
+    private fun nestedScroll(scene: ActivityScenario<LocalBrowserActivity>, source: RawPoseReplay, id: String, delta: Int) {
+        val point=nestedPoint(scene,id)
+        scene.onActivity { source.aimRelative(it,point) }
+        await("raw pose aimed at owned panel") { var aimed=false;scene.onActivity {
+            aimed=abs(it.pointer.position.x-point.x)<3 && abs(it.pointer.position.y-point.y)<3
+        };aimed }
+        scene.onActivity {
+            val page=checkNotNull(it.tabs.current.session.page)
+            page.setOnGenericMotionListener { _, event ->
+                if(event.action==android.view.MotionEvent.ACTION_SCROLL) evidence.put(JSONObject()
+                    .put("kind","native-wheel-observation").put("source",event.source)
+                    .put("toolType",event.getToolType(0))
+                    .put("x",event.x).put("y",event.y)
+                    .put("axis",event.getAxisValue(android.view.MotionEvent.AXIS_VSCROLL))
+                    .put("configuredFactor",android.view.ViewConfiguration.get(it).scaledVerticalScrollFactor))
+                false // Observe the actual native dispatch without consuming or changing it.
+            }
+            evidence.put(edgeObservation(it).put("kind","native-wheel-request").put("requestedPixels",delta)
+                .put("targetX",point.x).put("targetY",point.y).put("pageWidth",page.width).put("pageHeight",page.height))
+            assertTrue("geometry request admitted once",it.input.scroll(delta))
+        }
+    }
+
+    @Test fun fixedDocumentNestedPanelsUseNativeWheelAndKeepEndpointsIsolated()=scene { scene,source ->
+        nestedFixture(scene)
+        scene.onActivity { val page=checkNotNull(it.tabs.current.session.page)
+            assertFalse("fixed outer document",page.canScrollVertically(1));assertFalse(page.canScrollVertically(-1)) }
+        val scaledTick=JSONArray(js(scene,"$BROWSER_SCROLL_TARGET(.8,.5,3,324)"))
+        assertEquals("fractional CSS scaling preserves a native pixel tick",3,scaledTick.getInt(2))
+        nestedScroll(scene,source,"right",80)
+        await("native wheel actually moved intended nested panel") { abs(nestedY(scene,"right")-80)<=2 }
+        assertEquals(0,nestedY(scene,"left"));assertEquals(0,y(scene))
+        js(scene,"document.documentElement.style.overflow='auto';document.body.style.overflow='visible';document.body.style.height='4000px';document.getElementById('right').scrollTop=9999")
+        val end=nestedY(scene,"right")
+        nestedScroll(scene,source,"right",80);SystemClock.sleep(180)
+        assertEquals(end,nestedY(scene,"right"));assertEquals(0,y(scene))
+        nestedScroll(scene,source,"right",-80)
+        await("reversal has no banked endpoint distance") { abs(nestedY(scene,"right")-(end-80))<=2 }
+        js(scene,"document.getElementById('right').scrollTop=3")
+        nestedScroll(scene,source,"right",-80)
+        await("final upward tick stops at panel zero") { nestedY(scene,"right")==0 }
+        assertEquals(0,y(scene))
+        nestedScroll(scene,source,"inner",60)
+        await("deepest panel scrolls") { abs(nestedY(scene,"inner")-60)<=2 }
+        assertEquals(0,nestedY(scene,"left"))
+        js(scene,"document.getElementById('inner').scrollTop=9999")
+        nestedScroll(scene,source,"inner",60)
+        await("ordinary auto chain inside panel") { nestedY(scene,"left")>0 }
+        await("native wheel completes the selected ancestor distance") { abs(nestedY(scene,"left")-60)<=2 }
+        assertEquals(0,y(scene))
+        evidence.put(JSONObject().put("case","native-nested-wheel-endpoints").put("physicalHeadUse",false)
+            .put("rightEndpoint",end).put("innerY",nestedY(scene,"inner")).put("leftY",nestedY(scene,"left")))
+    }
+
+    @Test fun modalAndCoveredNativeMenuNeverScrollTheBackground()=scene { scene,source ->
+        nestedFixture(scene)
+        val popup=nestedPoint(scene,"popup")
+        scene.onActivity { assertTrue(it.input.activate(popup)) }
+        await("actual native tap opened modal") { js(scene,"document.getElementById('modal').open")=="true" }
+        nestedScroll(scene,source,"modal",80)
+        await("modal scroll effect") { abs(nestedY(scene,"modal")-80)<=2 }
+        assertEquals(0,nestedY(scene,"left"));assertEquals(0,nestedY(scene,"right"));assertEquals(0,y(scene))
+        js(scene,"document.getElementById('modal').close()")
+        reset(scene,source)
+        scene.onActivity { source.aimRelative(it,InputPoint(384f,664f)) }
+        await("raw head pose stream scrolls fixed-root nested panel") { nestedY(scene,"right")>12 }
+        scene.onActivity { assertTrue(it.edgeScrollRunning);assertFalse(it.pointer.cursorVisible) }
+        stopped(scene,"More covers nested page",effect={it.utility==LocalBrowserActivity.Utility.MORE}) {
+            nativeTap(it,it.controls.getValue("hud.more"))
+        }
+        SystemClock.sleep(100)
+        val stoppedY=nestedY(scene,"right");SystemClock.sleep(180)
+        assertEquals("inert More leaves background panel fixed",stoppedY,nestedY(scene,"right"))
+        assertEquals(0,y(scene))
+        evidence.put(JSONObject().put("case","modal-and-more-isolation").put("physicalHeadUse",false)
+            .put("nestedStopY",stoppedY))
     }
     /** Public/current native state only: no field text, DOM mutation or production probe. */
     private fun edgeObservation(activity: LocalBrowserActivity): JSONObject {
@@ -434,11 +572,7 @@ class EdgeScrollInstrumentedTest {
         scene.onActivity {repeat(14) { _ -> it.addTab() };it.selectTab(0)}
         val pageY=y(scene);control(scene,"tab_counter")
         var list: ScrollView?=null
-        scene.onActivity {list=it.root.findViewById<android.view.ViewGroup>(R.id.rg_root).let { root ->
-            fun find(view: View): ScrollView? = if(view is ScrollView) view else
-                (view as? android.view.ViewGroup)?.let { group -> (0 until group.childCount).firstNotNullOfOrNull { find(group.getChildAt(it)) } }
-            find(root)
-        }}
+        scene.onActivity {list=it.root.descendants.filterIsInstance<ScrollView>().single { view -> view.isShown }}
         reset(scene,source);scene.onActivity {source.orientationDegrees(0.0,50.0)}
         await("actual visible utility list scrolls") {var moved=false;scene.onActivity {moved=checkNotNull(list).scrollY>20};moved}
         assertEquals("covered page did not scroll",pageY,y(scene))
@@ -450,6 +584,73 @@ class EdgeScrollInstrumentedTest {
         scene.onActivity {assertEquals(after,checkNotNull(list).scrollY)}
         assertEquals(pageY,y(scene));capture(scene,"long-list-return")
         evidence.put(JSONObject().put("case","visible-list").put("listBeforeReturn",before).put("listAfterReturn",after).put("coveredPageY",pageY))
+    }
+
+    @Test fun longBookmarksAndProxyListsOwnBothDirectionsAndKeepThePageFixed()=scene { scene,source ->
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val owner=RgProfiles.get(context)
+        fun activate() {
+            var completion: java.util.concurrent.CompletableFuture<Unit>?=null
+            scene.onActivity { completion=owner.activate() }
+            checkNotNull(completion).get()
+        }
+        activate();owner.idle().get();assertFalse(owner.busy)
+        val preferences=context.getSharedPreferences("proxy-profiles",Context.MODE_PRIVATE)
+        val previous=preferences.getString("profiles",null)
+        val ownedFile=File.createTempFile("owned-native-lists-",".properties",context.cacheDir)
+        var originalBookmarks: LocalBookmarks?=null
+        Closeable {
+            assertTrue("restore only the captured profile value",preferences.edit().apply {
+                if(previous==null) remove("profiles") else putString("profiles",previous)
+            }.commit())
+            activate()
+            assertTrue("prior saved profiles restored",preferences.getString("profiles",null)==previous)
+            evidence.put(JSONObject().put("case","fixture-profiles-restored").put("restored",true))
+        }.use {
+            Closeable {
+                scene.onActivity { activity -> originalBookmarks?.let { activity.bookmarks=it } }
+                assertTrue("remove only the owned bookmark fixture",ownedFile.delete())
+            }.use {
+                val base=checkNotNull(InstrumentationRegistry.getArguments().getString("fixtureBaseUrl")).trimEnd('/')
+                val bookmarks=LocalBookmarks(ownedFile)
+                repeat(14) { assertTrue(bookmarks.save("$base/owned-bookmark-$it","Owned bookmark $it")) }
+                scene.onActivity { originalBookmarks=it.bookmarks;it.bookmarks=bookmarks }
+                var encoded: String?=null
+                val store=ProfileStore({ null }) { encoded=it;true }
+                val nodes: List<Map<String,Any?>> = listOf(mapOf("name" to "Owned node","type" to "socks5",
+                    "server" to "127.0.0.1","port" to 9))
+                assertTrue(store.save((0 until 14).map { SavedProfile("$base/owned-profile-$it","Owned proxy $it",false,nodes) }))
+                assertTrue(preferences.edit().putString("profiles",checkNotNull(encoded)).commit())
+                activate();assertEquals(14,owner.profiles.size)
+                settings(scene,gain=2.0,speed=240);open(scene)
+                val pageY=y(scene)
+                for(utility in listOf(LocalBrowserActivity.Utility.BOOKMARKS,LocalBrowserActivity.Utility.PROXY)) {
+                    control(scene,"more")
+                    tagged(scene,if(utility==LocalBrowserActivity.Utility.BOOKMARKS) "menu.1" else "menu.3")
+                    if(utility==LocalBrowserActivity.Utility.PROXY) tagged(scene,"settings.proxy")
+                    var list: ScrollView?=null
+                    scene.onActivity {list=it.root.descendants.filterIsInstance<ScrollView>().single { view -> view.isShown }}
+                    reset(scene,source);scene.onActivity {source.orientationDegrees(0.0,50.0)}
+                    await("visible owned list reaches its bottom") {var bottom=false;scene.onActivity {
+                        bottom=checkNotNull(list).scrollY>20 && !checkNotNull(list).canScrollVertically(1)
+                    };bottom}
+                    var bottom=0;scene.onActivity {bottom=checkNotNull(list).scrollY};SystemClock.sleep(180)
+                    scene.onActivity {assertEquals(bottom,checkNotNull(list).scrollY)}
+                    assertEquals(pageY,y(scene))
+                    scene.onActivity {source.orientationDegrees(0.0,-50.0)}
+                    await("reverse reaches the visible list top without debt") {var top=false;scene.onActivity {
+                        top=checkNotNull(list).scrollY==0 && !checkNotNull(list).canScrollVertically(-1)
+                    };top}
+                    stopped(scene,"$utility visible return",effect={it.pointer.cursorVisible}) {source.orientationDegrees(0.0,-48.5)}
+                    SystemClock.sleep(150);scene.onActivity {assertEquals(0,checkNotNull(list).scrollY)}
+                    assertEquals(pageY,y(scene))
+                    evidence.put(JSONObject().put("case","owned-native-list").put("utility",utility.name)
+                        .put("bottomY",bottom).put("finalY",0).put("coveredPageY",pageY))
+                    tagged(scene,"utility.done")
+                    if(utility==LocalBrowserActivity.Utility.PROXY) tagged(scene,"utility.done")
+                }
+            }
+        }
     }
 
     @Test fun allBoundariesDiscardOvershootWithPromptSlowInwardDraw()=scene { scene,source ->
@@ -589,7 +790,11 @@ class EdgeScrollInstrumentedTest {
         val beforeRefresh=js(scene,"fixtureIdentity")
         startScrolling(scene,source)
         stopped(scene,"Refresh",requireRunning=true) {nativeTap(it,it.controls.getValue("hud.refresh"))}
-        await("new document after actual Refresh") {js(scene,"fixtureIdentity")!=beforeRefresh}
+        await("new document after actual Refresh") {
+            var ready=false;scene.onActivity {ready=it.tabs.current.session.state.phase==LocalBrowserSession.Phase.READY &&
+                it.tabs.current.session.page?.isShown==true}
+            ready && js(scene,"fixtureIdentity")!=beforeRefresh
+        }
         reset(scene,source);scene.onActivity {source.orientationDegrees(0.0,50.0)}
         await("actual bottom endpoint") {var bottom=false;scene.onActivity {bottom=it.pointer.position.y==664f && it.tabs.current.session.page?.canScrollVertically(1)==false};bottom}
         val endpoint=pageOracle(scene);val endpointY=y(scene)
