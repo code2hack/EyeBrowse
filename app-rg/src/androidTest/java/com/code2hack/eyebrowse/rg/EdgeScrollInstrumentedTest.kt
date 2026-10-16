@@ -65,7 +65,23 @@ class EdgeScrollInstrumentedTest {
             reset(active,source)
             body(active,source)
             bodyCompleted=true
-        } catch(t: Throwable) { failure=t }
+        } catch(t: Throwable) {
+            failure=t
+            try { scene?.let { active ->
+                var owned=false
+                active.onActivity {
+                    val base=arguments.getString("nestedFixtureBaseUrl")
+                    owned=base!=null && it.tabs.current.session.page?.url==base.trimEnd('/')+"/keyboard.html"
+                    evidence.put(edgeObservation(it).put("kind","failure-current-native-state").put("ownedNestedDocument",owned))
+                }
+                if(owned) evidence.put(JSONObject().put("kind","failure-owned-nested-state").put("dom",JSONObject(js(active,"""(()=>({
+                    root:scrollY, width:innerWidth, height:innerHeight, visibility:document.visibilityState,
+                    right:document.getElementById('right')?.scrollTop, left:document.getElementById('left')?.scrollTop,
+                    inner:document.getElementById('inner')?.scrollTop, modal:document.getElementById('modal')?.scrollTop,
+                    contentType:document.contentType
+                }))()"""))))
+            } } catch(observation: Throwable) { t.addSuppressed(observation) }
+        }
         finally {
             for((name,action) in listOf<Pair<String,() -> Unit>>(
                 "activityAndRawSource" to { scene?.close();assertFalse(source.registered) },
@@ -213,7 +229,20 @@ class EdgeScrollInstrumentedTest {
         await("raw pose aimed at owned panel") { var aimed=false;scene.onActivity {
             aimed=abs(it.pointer.position.x-point.x)<3 && abs(it.pointer.position.y-point.y)<3
         };aimed }
-        scene.onActivity { assertTrue("geometry request admitted once",it.input.scroll(delta)) }
+        scene.onActivity {
+            val page=checkNotNull(it.tabs.current.session.page)
+            page.setOnGenericMotionListener { _, event ->
+                if(event.action==android.view.MotionEvent.ACTION_SCROLL) evidence.put(JSONObject()
+                    .put("kind","native-wheel-observation").put("source",event.source)
+                    .put("x",event.x).put("y",event.y)
+                    .put("axis",event.getAxisValue(android.view.MotionEvent.AXIS_VSCROLL))
+                    .put("configuredFactor",android.view.ViewConfiguration.get(it).scaledVerticalScrollFactor))
+                false // Observe the actual native dispatch without consuming or changing it.
+            }
+            evidence.put(edgeObservation(it).put("kind","native-wheel-request").put("requestedPixels",delta)
+                .put("targetX",point.x).put("targetY",point.y).put("pageWidth",page.width).put("pageHeight",page.height))
+            assertTrue("geometry request admitted once",it.input.scroll(delta))
+        }
     }
 
     @Test fun fixedDocumentNestedPanelsUseNativeWheelAndKeepEndpointsIsolated()=scene { scene,source ->
