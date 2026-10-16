@@ -14,6 +14,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.webkit.WebView
 import androidx.lifecycle.Lifecycle
+import androidx.core.view.descendants
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -26,6 +27,11 @@ import org.junit.rules.TestName
 import org.junit.runner.RunWith
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.io.Closeable
+import java.io.File
+import com.code2hack.eyebrowse.rg.proxy.ProfileStore
+import com.code2hack.eyebrowse.rg.proxy.RgProfiles
+import com.code2hack.eyebrowse.rg.proxy.SavedProfile
 import kotlin.math.abs
 
 /** Requires a new exclusive grant. Raw pose replay is application evidence, never physical head evidence. */
@@ -566,11 +572,7 @@ class EdgeScrollInstrumentedTest {
         scene.onActivity {repeat(14) { _ -> it.addTab() };it.selectTab(0)}
         val pageY=y(scene);control(scene,"tab_counter")
         var list: ScrollView?=null
-        scene.onActivity {list=it.root.findViewById<android.view.ViewGroup>(R.id.rg_root).let { root ->
-            fun find(view: View): ScrollView? = if(view is ScrollView) view else
-                (view as? android.view.ViewGroup)?.let { group -> (0 until group.childCount).firstNotNullOfOrNull { find(group.getChildAt(it)) } }
-            find(root)
-        }}
+        scene.onActivity {list=it.root.descendants.filterIsInstance<ScrollView>().single { view -> view.isShown }}
         reset(scene,source);scene.onActivity {source.orientationDegrees(0.0,50.0)}
         await("actual visible utility list scrolls") {var moved=false;scene.onActivity {moved=checkNotNull(list).scrollY>20};moved}
         assertEquals("covered page did not scroll",pageY,y(scene))
@@ -582,6 +584,73 @@ class EdgeScrollInstrumentedTest {
         scene.onActivity {assertEquals(after,checkNotNull(list).scrollY)}
         assertEquals(pageY,y(scene));capture(scene,"long-list-return")
         evidence.put(JSONObject().put("case","visible-list").put("listBeforeReturn",before).put("listAfterReturn",after).put("coveredPageY",pageY))
+    }
+
+    @Test fun longBookmarksAndProxyListsOwnBothDirectionsAndKeepThePageFixed()=scene { scene,source ->
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val owner=RgProfiles.get(context)
+        fun activate() {
+            var completion: java.util.concurrent.CompletableFuture<Unit>?=null
+            scene.onActivity { completion=owner.activate() }
+            checkNotNull(completion).get()
+        }
+        activate();owner.idle().get();assertFalse(owner.busy)
+        val preferences=context.getSharedPreferences("proxy-profiles",Context.MODE_PRIVATE)
+        val previous=preferences.getString("profiles",null)
+        val ownedFile=File.createTempFile("owned-native-lists-",".properties",context.cacheDir)
+        var originalBookmarks: LocalBookmarks?=null
+        Closeable {
+            assertTrue("restore only the captured profile value",preferences.edit().apply {
+                if(previous==null) remove("profiles") else putString("profiles",previous)
+            }.commit())
+            activate()
+            assertTrue("prior saved profiles restored",preferences.getString("profiles",null)==previous)
+            evidence.put(JSONObject().put("case","fixture-profiles-restored").put("restored",true))
+        }.use {
+            Closeable {
+                scene.onActivity { activity -> originalBookmarks?.let { activity.bookmarks=it } }
+                assertTrue("remove only the owned bookmark fixture",ownedFile.delete())
+            }.use {
+                val base=checkNotNull(InstrumentationRegistry.getArguments().getString("fixtureBaseUrl")).trimEnd('/')
+                val bookmarks=LocalBookmarks(ownedFile)
+                repeat(14) { assertTrue(bookmarks.save("$base/owned-bookmark-$it","Owned bookmark $it")) }
+                scene.onActivity { originalBookmarks=it.bookmarks;it.bookmarks=bookmarks }
+                var encoded: String?=null
+                val store=ProfileStore({ null }) { encoded=it;true }
+                val nodes: List<Map<String,Any?>> = listOf(mapOf("name" to "Owned node","type" to "socks5",
+                    "server" to "127.0.0.1","port" to 9))
+                assertTrue(store.save((0 until 14).map { SavedProfile("$base/owned-profile-$it","Owned proxy $it",false,nodes) }))
+                assertTrue(preferences.edit().putString("profiles",checkNotNull(encoded)).commit())
+                activate();assertEquals(14,owner.profiles.size)
+                settings(scene,gain=2.0,speed=240);open(scene)
+                val pageY=y(scene)
+                for(utility in listOf(LocalBrowserActivity.Utility.BOOKMARKS,LocalBrowserActivity.Utility.PROXY)) {
+                    control(scene,"more")
+                    tagged(scene,if(utility==LocalBrowserActivity.Utility.BOOKMARKS) "menu.1" else "menu.3")
+                    if(utility==LocalBrowserActivity.Utility.PROXY) tagged(scene,"settings.proxy")
+                    var list: ScrollView?=null
+                    scene.onActivity {list=it.root.descendants.filterIsInstance<ScrollView>().single { view -> view.isShown }}
+                    reset(scene,source);scene.onActivity {source.orientationDegrees(0.0,50.0)}
+                    await("visible owned list reaches its bottom") {var bottom=false;scene.onActivity {
+                        bottom=checkNotNull(list).scrollY>20 && !checkNotNull(list).canScrollVertically(1)
+                    };bottom}
+                    var bottom=0;scene.onActivity {bottom=checkNotNull(list).scrollY};SystemClock.sleep(180)
+                    scene.onActivity {assertEquals(bottom,checkNotNull(list).scrollY)}
+                    assertEquals(pageY,y(scene))
+                    scene.onActivity {source.orientationDegrees(0.0,-50.0)}
+                    await("reverse reaches the visible list top without debt") {var top=false;scene.onActivity {
+                        top=checkNotNull(list).scrollY==0 && !checkNotNull(list).canScrollVertically(-1)
+                    };top}
+                    stopped(scene,"$utility visible return",effect={it.pointer.cursorVisible}) {source.orientationDegrees(0.0,-48.5)}
+                    SystemClock.sleep(150);scene.onActivity {assertEquals(0,checkNotNull(list).scrollY)}
+                    assertEquals(pageY,y(scene))
+                    evidence.put(JSONObject().put("case","owned-native-list").put("utility",utility.name)
+                        .put("bottomY",bottom).put("finalY",0).put("coveredPageY",pageY))
+                    tagged(scene,"utility.done")
+                    if(utility==LocalBrowserActivity.Utility.PROXY) tagged(scene,"utility.done")
+                }
+            }
+        }
     }
 
     @Test fun allBoundariesDiscardOvershootWithPromptSlowInwardDraw()=scene { scene,source ->
@@ -721,7 +790,11 @@ class EdgeScrollInstrumentedTest {
         val beforeRefresh=js(scene,"fixtureIdentity")
         startScrolling(scene,source)
         stopped(scene,"Refresh",requireRunning=true) {nativeTap(it,it.controls.getValue("hud.refresh"))}
-        await("new document after actual Refresh") {js(scene,"fixtureIdentity")!=beforeRefresh}
+        await("new document after actual Refresh") {
+            var ready=false;scene.onActivity {ready=it.tabs.current.session.state.phase==LocalBrowserSession.Phase.READY &&
+                it.tabs.current.session.page?.isShown==true}
+            ready && js(scene,"fixtureIdentity")!=beforeRefresh
+        }
         reset(scene,source);scene.onActivity {source.orientationDegrees(0.0,50.0)}
         await("actual bottom endpoint") {var bottom=false;scene.onActivity {bottom=it.pointer.position.y==664f && it.tabs.current.session.page?.canScrollVertically(1)==false};bottom}
         val endpoint=pageOracle(scene);val endpointY=y(scene)

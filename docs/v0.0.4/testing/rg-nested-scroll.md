@@ -2,7 +2,44 @@
 
 Worker: Worker-#61
 
-## Precise native wheel continuation
+## Native acceptance fixture followup
+
+The precision candidate `5cf4b80` / APP `2af9356d…` / TEST `1b9714d1…` passes both
+new nested/modal methods, including completed 60-pixel parent displacement.
+The owned browser reports 158.0.8107.0. Five of six original Edge methods pass;
+the former stop-effect failures now pass their original assertions. The larger
+keyboard/lifecycle method reaches Refresh and fails its original three-second
+JavaScript observation after navigation entered LOADING. Its terminal and
+partial successful cases remain retained, bringing the historical native
+failures to eleven. It is not a complete method PASS.
+
+The test observer now requires real READY and a visible current page before
+comparing the refreshed document identity. Its ten-second await, three-second
+callback assertion and actual document-change condition remain unchanged.
+A controlled regression also exercises both directions/endpoints of long
+Bookmarks and Proxy lists without moving the covered page. It substitutes an
+owned temporary bookmark store and disabled dummy profile rows, then restores
+the captured profile value and bookmark store through exception-safe teardown.
+It performs no real subscription import or account/source-app action.
+
+`SensorNestedScrollInstrumentedTest` uses the default production sensor source
+and owned fixed-root page. Its readiness method qualifies real callbacks at
+rest and explicitly does not prove head movement. Its separate head-run method
+requires a correlated wearer-action reference before launch, observes downward
+and reversed nested-panel movement plus visible returns, and preserves captured
+recovery state. It never installs RawPoseReplay. Unexpected recovery-state drift
+leaves the current state intact and reports failed restoration for reconciliation.
+Owner wearing/movement is requested only after actual fixture qualification.
+
+New ordinary/Chromium TEST assembly and lint complete with retained analyzer
+limits. Production APP bytes and all production/build inputs are unchanged;
+the 91-test zero-skip gates and APP from 5cf are explicitly reused, with no new
+APP compile or JVM execution claimed. New Chromium TEST `bfb11d3b…` is retained
+with authentic source/archive/diff, compiled APK/signature and terminal bindings;
+its Android checks and the real sensor/head demonstration are still pending.
+Default pre-grant APP/TEST restoration and verified return remain required.
+
+## Precise native wheel continuation (5cf history)
 
 On `b2ee2db`, both new nested/modal methods completed OK (1 test), with complete
 body and cleanup reports. Four of six original Edge methods also passed:
