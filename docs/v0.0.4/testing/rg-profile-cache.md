@@ -1,6 +1,6 @@
 # RG profile cache: Android slash escapes
 
-This is the controlled diagnosis for issue #59, based on `03de921e2400147842ce6c56101b58d514dde77c` and its accepted #61 integration. The two Owner-reported subscription inputs remain unacquired and unexecuted at this checkpoint. Their relationship to this defect is not established. This record does not claim issue acceptance or candidate readiness.
+This is the controlled diagnosis for issue #59. Implementation commit `a6353428c940de202650667849581e11f9571b07` (tree `c06be3be01e5972ee3f047859022b88d2c201537`) is based on `03de921e2400147842ce6c56101b58d514dde77c` and its accepted #61 integration. The two Owner-reported subscription inputs remain unacquired and unexecuted at this checkpoint. Their relationship to this defect is not established. This record does not claim issue acceptance or candidate readiness.
 
 ## Cause and correction
 
@@ -24,7 +24,7 @@ Fixed `ProfileStore.kt` SHA256: `1c44ae8e5f4e7677f028bfedbb6193235c318c646208c06
 | Exact nested fixture before correction | Desktop suite: 9 passed. Android JSON suite: 9 run, 1 failed at save preflight. |
 | Original RG store probe | 1 failed; candidate preflight rejected, writer calls 0, real profile value unchanged, owned fixture removed. |
 | Fixed import and policy tests with Android JSON | 16 passed, including the unchanged nested fixture and an exact literal-backslash-before-solidus round trip. |
-| Fixed Chromium JVM/build/lint gate | RG 93 passed; loader 12 passed; APP/TEST build and lint passed. Lint: 0 errors, 11 warnings, with the existing Kotlin metadata coverage limit. 125 tasks: 19 executed, 106 up-to-date. |
+| Fixed Chromium JVM/build/lint gate | RG 93 executed and passed. The unchanged loader test task was UP-TO-DATE; its retained XML counts are 12 passed, not 12 new executions. APP/TEST build and lint passed. Lint: 0 errors, 11 warnings, with the existing Kotlin metadata coverage limit. 125 tasks: 19 executed, 106 up-to-date. |
 | Ordinary full JVM gate, two invocations | Each ran 93 tests with 1 failure: the unchanged native China-IP live-connection observer. Both failures and their incomplete six-observation journals remain retained. |
 | Isolated unchanged ordinary native class | 1 passed, with 14 destination observations. This does not erase the two failed full-suite invocations or establish their cause. |
 | Ordinary full JVM suite with owned-core syscall tracing | 93 passed. Diagnostic execution only: tracing may perturb timing and does not substitute for an uninstrumented gate. |
@@ -36,6 +36,8 @@ Fixed `ProfileStore.kt` SHA256: `1c44ae8e5f4e7677f028bfedbb6193235c318c646208c06
 The ordinary check set has passing uninstrumented JVM and separate build/lint results. The two earlier combined invocations remain failed, with their cause unidentified. An independent bounded public-service request returned HTTP 200 with normal TLS verification, and the Chromium native gate passed its 14 observations. These different execution contexts do not establish why the ordinary pre-TLS observer missed its connection. Original assertions, the three-second observation deadline and the two-worker limit were not changed; this record does not introduce a project-wide test-ordering policy.
 
 The failed Android probe used APP `5eb93e460987b9279c13770777058bd9a2bd96c22dc29e71888b91ca849f4720`, compiled from `cb39bf49bcbed32fe90dc2fe534926619073937e`. Its relevant import/store/controller sources were independently compared with the assigned baseline. The fixed probe used APP `c5d1b20a6a3e98831ea79c6ee16d6b1c4715f5580b12453f2b3a905d463b57a8`, compiled from the recorded working source over `03de921`. Both used the exact same TEST `1bf0277a8be9ea2f598bfa9f6e93cb1f0828dcd77848a765646b326835b58ccc`. All have signer SHA256 `e372f80243affb0fd2462d4c90f8aede64a9ffb683cebad6c517d73eacc6a963`.
+
+All 306 recorded maintained code/test/build inputs matched the committed implementation content. Documentation is not a compiled input. This equivalence does not relabel the APK's producer cut or create a new APK/test execution.
 
 The fixed APP retains package `com.code2hack.eyebrowse.rg.chromium`, versionCode 3 and versionName `0.0.3-chromium-spike`; version metadata is assigned to #62. No ordinary build was installed over the original app. Source app, system provider and pinned engine bytes remain separately guarded.
 
