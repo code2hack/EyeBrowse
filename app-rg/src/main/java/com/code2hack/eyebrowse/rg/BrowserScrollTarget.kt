@@ -15,7 +15,22 @@ internal const val BROWSER_SCROLL_TARGET = """
     }
     function result(e,px,py) {
         const amount=Math.min(Math.abs(pixels),Math.floor(Math.max(0,room(e))*scale));
-        return amount>0 ? [px/innerWidth,py/innerHeight,Math.sign(pixels)*amount] : [];
+        if(amount<=0) return [];
+        const r=e.getBoundingClientRect();
+        const left=Math.max(0,r.left)+1, right=Math.min(innerWidth,r.right)-1;
+        const top=Math.max(0,r.top)+1, bottom=Math.min(innerHeight,r.bottom)-1;
+        // Native wheel hit testing must reach the selected ancestor, not its exhausted child.
+        for(const [hx,hy] of [[px,py],[(left+right)/2,(top+bottom)/2],
+            [left,top],[right,top],[left,bottom],[right,bottom]]) {
+            if(hx<0 || hx>=innerWidth || hy<0 || hy>=innerHeight) continue;
+            let hit=document.elementFromPoint(hx,hy);
+            for(; hit && hit!==e; hit=hit.parentElement) {
+                if(hit.tagName==='IFRAME' || (/^(auto|scroll|overlay)$/.test(getComputedStyle(hit).overflowY) &&
+                    hit.scrollHeight>hit.clientHeight)) break;
+            }
+            if(hit===e) return [hx/innerWidth,hy/innerHeight,Math.sign(pixels)*amount];
+        }
+        return [];
     }
     function panel(e,px,py) {
         let nested=false,covered=false;

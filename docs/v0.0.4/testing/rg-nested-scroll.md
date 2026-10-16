@@ -2,7 +2,59 @@
 
 Worker: Worker-#61
 
-## Revision3 device continuation
+## Owner route event and ancestor correction
+
+This is still an incomplete implementation checkpoint. The authenticated Owner
+bootstrap41877 event allowed one bounded requalification. Existing primary5555
+reconnected and matched RG serial/model/user/API, current source/target/TEST
+hashes and UIDs, provider95 and all six retained engine/native objects. No
+bootstrap, tcpip, pairing or server restart was needed. Four of five target
+preference files remained byte-identical; the sole change was the app-defined
+subscription refresh-attempt timestamp. Its exact writer is not attributed.
+The current timestamp is preserved, with no old preference overlay or claim of
+whole-store byte equality.
+
+Measurement-corrected TEST `4fff6949…` was then installed against unchanged APP
+`acddd513…`. Two additional readiness failures occurred after a private fixture
+startup guard failed and my shell chain incorrectly continued without the
+service. Both original failed invocations remain retained. A new uniquely owned
+fixture and fail-fast PID/start/CWD/direct-HTTP-body checks corrected that setup.
+With the fixture verified, `modalAndCoveredNativeMenuNeverScrollTheBackground`
+completed **OK (1 test)** with body and cleanup complete. The nested method
+failed later at the unchanged `ordinary auto chain inside panel` assertion:
+right-panel movement, endpoint isolation, reversal and deepest-inner movement
+had succeeded, but a real native wheel event still hit the exhausted inner
+container while the selector had found available capacity in its parent.
+These eight native failures remain failed; the later modal result is scoped to
+that invocation and still uses RawPoseReplay, not physical head movement.
+
+The correction now checks current browser hit testing at the selected
+container's original point, visible center and inset corners. A point inside a
+different scrollable child cannot represent its parent. Native wheel dispatch
+therefore reaches an exposed part of the chosen parent when chaining. If none
+of the bounded visible points belongs to that container, the tick is dropped;
+fully covered ancestors have no qualified fallback. No page scroll assignment,
+focus change, retained DOM target, iframe traversal, new input queue or changed
+timing/assertion is introduced.
+
+The source-bound host Chrome155 matrix passes 20 checks, including an explicit
+selected-parent hit-point check. Both new affected host invocations execute
+91 JVM tests/18 suites with **0 skipped, failures or errors** using the qualified
+unmodified Linux Mihomo input. APP/TEST assembly and lint complete: ordinary
+lint has 0 errors/8 warnings; Chromium has 0 errors/11 warnings, retaining the
+Kotlin2.2/analyzer2.0 semantic-analysis limitation. Each invocation preserves
+its authentic XML, signed APP/TEST, source inventory/archive/diff, compiled-class
+hashes, native evidence and terminal log before another build. These are new
+runs; the original 91-total/2-skipped sets and baseline retention gaps remain.
+
+Current ancestor-correction Chromium APP `59c02f50…` / TEST `e417fdce…` are retained
+from those exact working inputs. Installation and Android verification of this
+production correction are pending. Actual physical SENSOR/head-use, remaining
+connected/native utility checks, default pre-grant APP `5eb93e46…` / TEST
+`9c9537f3…` restoration and verified resource return remain required. Source
+app/provider are untouched; no ticket acceptance or handoff is claimed.
+
+## Earlier revision3 device history
 
 This remains an incomplete checkpoint. Manager granted exclusive RG reservation
 `V004-BATCH001-RG-W61-01` after verified both-app preservation and Worker59's
@@ -193,7 +245,8 @@ and `#modalAndCoveredNativeMenuNeverScrollTheBackground`. They use production
 input, owned content and the existing raw quaternion source. They cover native
 wheel displacement, two panels, nested ancestors, fractional conversion,
 endpoints, modal native activation and the 100-ms More cancellation oracle.
-Their assembly is a host check; their execution and assertions remain NOT_RUN.
+Their original assembly was a host check; later exact-source native outcomes
+are recorded above, with every earlier failure retained.
 Raw quaternion replay never counts as an actual sensor or wearer result.
 
 The obsolete `nativePageScrollDelta` helper and its three model-only JVM tests
