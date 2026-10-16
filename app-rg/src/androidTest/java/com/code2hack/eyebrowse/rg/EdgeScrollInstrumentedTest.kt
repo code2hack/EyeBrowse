@@ -202,6 +202,10 @@ class EdgeScrollInstrumentedTest {
                 ready=it.tabs.current.session.state.phase==LocalBrowserSession.Phase.READY &&
                     it.tabs.current.session.page?.isShown==true
             };ready }
+            scene.onActivity { evidence.put(JSONObject().put("kind","owned-browser-engine")
+                .put("chromeVersion",it.tabs.current.session.page?.settings?.userAgentString?.let { ua ->
+                    Regex("Chrome/([0-9.]+)").find(ua)?.groupValues?.get(1)
+                } ?: JSONObject.NULL)) }
         } catch(failure: Throwable) {
             try { scene.onActivity {
                 evidence.put(edgeObservation(it).put("kind","owned-nested-readiness-failure")
@@ -238,6 +242,7 @@ class EdgeScrollInstrumentedTest {
             page.setOnGenericMotionListener { _, event ->
                 if(event.action==android.view.MotionEvent.ACTION_SCROLL) evidence.put(JSONObject()
                     .put("kind","native-wheel-observation").put("source",event.source)
+                    .put("toolType",event.getToolType(0))
                     .put("x",event.x).put("y",event.y)
                     .put("axis",event.getAxisValue(android.view.MotionEvent.AXIS_VSCROLL))
                     .put("configuredFactor",android.view.ViewConfiguration.get(it).scaledVerticalScrollFactor))
@@ -274,6 +279,7 @@ class EdgeScrollInstrumentedTest {
         js(scene,"document.getElementById('inner').scrollTop=9999")
         nestedScroll(scene,source,"inner",60)
         await("ordinary auto chain inside panel") { nestedY(scene,"left")>0 }
+        await("native wheel completes the selected ancestor distance") { abs(nestedY(scene,"left")-60)<=2 }
         assertEquals(0,y(scene))
         evidence.put(JSONObject().put("case","native-nested-wheel-endpoints").put("physicalHeadUse",false)
             .put("rightEndpoint",end).put("innerY",nestedY(scene,"inner")).put("leftY",nestedY(scene,"left")))

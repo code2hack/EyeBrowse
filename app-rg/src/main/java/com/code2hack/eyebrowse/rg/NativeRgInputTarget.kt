@@ -72,7 +72,8 @@ internal class NativeRgInputTarget(
                 this.x = (x*visible.width).toFloat(); this.y = (y*visible.height).toFloat()
                 setAxisValue(MotionEvent.AXIS_VSCROLL, (-pixels/factor).toFloat())
             }
-            val properties = MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_MOUSE }
+            // Integrated pixel deltas use touchpad precision without a mouse wheel's animation tail.
+            val properties = MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_FINGER }
             val now = SystemClock.uptimeMillis()
             val event = MotionEvent.obtain(now, now, MotionEvent.ACTION_SCROLL, 1, arrayOf(properties),
                 arrayOf(coordinates), 0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0)

@@ -2,7 +2,44 @@
 
 Worker: Worker-#61
 
-## Owner route event and ancestor correction
+## Precise native wheel continuation
+
+On `b2ee2db`, both new nested/modal methods completed OK (1 test), with complete
+body and cleanup reports. Four of six original Edge methods also passed:
+numeric presets/limits, the long native Tabs list, all 72 boundary/overshoot
+cases, and the actual declared rates/gains. Two unchanged stop regressions
+failed. The app callback stopped within 63.557552 ms after visible re-entry,
+but native page Y then moved 168→175 over 120 ms. With the keyboard open, the
+callback stopped within 54.503177 ms, but Y moved 113→122 over 150 ms. These are
+real effect failures despite callback cancellation. All ten failed native
+invocations remain failed; complete terminals and reports are retained.
+
+The exact pinned engine's [event builder](https://chromium.googlesource.com/chromium/src/+/a296091d1ed08d4dde44b8a427477fe570911472/components/input/web_input_event_builders_android.cc)
+and [default feature](https://chromium.googlesource.com/chromium/src/+/a296091d1ed08d4dde44b8a427477fe570911472/ui/events/features.cc)
+identify mouse-tool wheel input separately from precise touchpad pixels. The
+candidate changes only generated wheel tool metadata to `TOOL_TYPE_FINGER`,
+keeping `SOURCE_MOUSE` and public native dispatch. This tests the hypothesis
+that precise pixels remove the mouse-wheel animation tail; no engine, feature
+flag, system provider, focus, touch gesture or timing assertion is changed.
+The existing parent-chain first-movement assertion remains, with an additional
+completed 60-native-pixel distance check using the normal await. Passive event
+tool type and owned browser Chrome version metadata are also retained; no
+field value, page text, private URL or complete user agent is exported.
+
+Both new affected host invocations execute 91 tests/18 suites with zero skipped,
+failures or errors, including the genuine native controls. APP/TEST assembly
+and lint complete, retaining the same analyzer limitation and 8/11 warnings.
+Their separate authentic XML, source inventories/archives/diffs, compiled hashes,
+APKs/signatures, native evidence and terminal logs are preserved. Earlier host
+sets retain their original counts and missing-history limits.
+
+Current precision-candidate APP `2af9356d…` / TEST `1b9714d1…` are retained from
+those exact inputs. Installation and Android validation of this change are
+pending. Other connected browser/native utility checks, actual production
+SENSOR/head use and the default pre-grant APP/TEST restoration and verified
+return remain required. This is not a completed candidate or resource handoff.
+
+## Owner route event and ancestor correction (b2ee history)
 
 This is still an incomplete implementation checkpoint. The authenticated Owner
 bootstrap41877 event allowed one bounded requalification. Existing primary5555
@@ -47,9 +84,9 @@ its authentic XML, signed APP/TEST, source inventory/archive/diff, compiled-clas
 hashes, native evidence and terminal log before another build. These are new
 runs; the original 91-total/2-skipped sets and baseline retention gaps remain.
 
-Current ancestor-correction Chromium APP `59c02f50…` / TEST `e417fdce…` are retained
-from those exact working inputs. Installation and Android verification of this
-production correction are pending. Actual physical SENSOR/head-use, remaining
+The ancestor-correction Chromium APP `59c02f50…` / TEST `e417fdce…` were initially retained
+from those exact working inputs. The later b2ee native outcomes are recorded
+above. Actual physical SENSOR/head-use, remaining
 connected/native utility checks, default pre-grant APP `5eb93e46…` / TEST
 `9c9537f3…` restoration and verified resource return remain required. Source
 app/provider are untouched; no ticket acceptance or handoff is claimed.
