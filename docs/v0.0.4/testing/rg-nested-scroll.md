@@ -2,7 +2,91 @@
 
 Worker: Worker-#61
 
-## Current device checkpoint (924 source)
+## Physical result and verified return
+
+The single real-SENSOR invocation
+`i61-r3-ownerHeadMovesAndReversesTheFixedRootNestedPanel-7b45d715b429`
+completed **OK (1 test)** on RG API32. It ran source `e352abee`, which changes
+only documentation from compiled TEST source `924eb5d`; APP `2af9356d…` is the
+unchanged production build from `5cf4b80`, with TEST `bfb11d3b…` and signer
+`e372f802…`. This documentation child also changes no production/test/build
+input and claims no new compilation or JVM execution.
+
+An actual authenticated Owner wearing/start event supplied the correlated action
+reference before launch. Fresh server/primary-route/physical serial/model/user,
+installed APK/UID/signer, current Owner state and exact fixture009 checks preceded
+the one launch. Observed host wrapper, remote wrapper and AM nonce/PID/start
+records were retained before identity-dependent monitoring. The production
+source was **Game Rotation Vector Non-wakeup (QTI, type15)**, with owned browser
+version 158.0.8107.0. No RawPoseReplay or sensor replacement was installed.
+
+Post-run extraction from the original 257 samples gives:
+
+| Actual physical observation | Result |
+| --- | --- |
+| Right-panel downward movement and visible return | 0 → 274.34293 native pixels; first qualifying downward sample 61.07635. |
+| Same-panel upward reversal and visible return | 274.34293 → 115.14394 native pixels; the unchanged 30-pixel reverse condition passed. |
+| Left panel and fixed root | Maximum absolute displacement 0 for both. |
+| Sensor receipt to visible return draw | 11.944063 ms and 21.810937 ms, both within the unchanged 100-ms bound. |
+| Stationary return checks | Both original 200-ms observations passed, within their original 2-pixel tolerance. |
+| Production samples | Accepted sample count 128–370; maximum sampled receipt age 35.914271 ms. |
+
+Body completion, `productionSensorVerified`, `headMovementObserved`, captured
+recovery restoration and Activity/sensor release are all true. This is physical
+head-use evidence for the owned nested-panel case. The separate replay rate,
+24-pixel boundary, 250-ms expiry, 50-ms integration and lifecycle cases retain
+their own scope; this one physical case is not a physical rerun of that matrix.
+There are now 21 complete passing selected Android invocations across 20
+distinct methods on the code-equivalent current APP/TEST; readiness was
+qualified twice. Earlier failure and unknown-completion counts remain unchanged.
+
+One operational reporting gap remains explicit: the separate private 12-second
+readiness-file probe returned the original `READY_NOT_OBSERVED` marker, so no
+live `PAGE_SENSOR_READY` message was sent. The launch message and actual complete
+result were sent. The later complete method proves its normal page/SENSOR/head
+assertions, without retroactively filling that live-notification gap. No normal
+10-second page/SENSOR await, 180-second head observation, threshold or assertion
+was changed, and no head method was relaunched to manufacture a report.
+
+Necessary target-only data-preserving reinstallation restored pre-grant APP
+`5eb93e46…` / UID10076 and TEST `9c9537f3…` / UID10077. Actual fresh readback
+matches both APKs/signers, original source APP `d6a9145b…` / UID10073, provider95
+`54401e4d…` and all six original 153/158 engine/native/trampoline objects. The
+source app was not launched, installed, restored or cleared. All six current
+preference files match the pre-return bytes: four original Owner preferences,
+the current refresh timestamp and the known added empty `proxy-profiles.xml`.
+Its originally absent profile key remains absent.
+
+The initial return bookmark byte-hash check failed and remains retained. Private
+comparison proves both original/current bookmark files contain zero entries and
+only a generated Properties date comment; that comment changed during controlled
+add/remove serialization. Logical Owner bookmarks match. The current file was
+preserved, with no deletion or old overlay to force a hash. Test-owned cache,
+diagnostic and owned-origin effects remain identified; no full CE/DP byte or
+original literal-file-set equality is claimed.
+
+Fresh return at 10:40:06 UTC records no source/target/test UID or target-named
+isolated process, no own wrapper/AM or active instrumentation, empty active
+camera clients, CAMERA granted, Awake/displayON and unshown/nonsecure keyguard.
+TCP/TCP6 ownership tables contain no target/test UID rows. Sensor and Unix
+teardown are scoped to completed release and absence of their owning processes;
+no global system socket/process equality is claimed. Fixture009 was qualified
+by its own PID/start/CWD/argv before SIGTERM, then actual PID/listener absence
+and exact 39030 bind availability were verified. Shared services were left
+running. No further device actions occur without a new Manager event/assignment.
+This timestamp is a verified return cut, not a continuous-state guarantee.
+
+The exact source/APKs, original terminal/samples, physical extraction,
+readiness negative, restoration, bookmark classification and return report are
+retained for independent review. Prior twelve native failures, both START-only
+unknown consumer completions, original skipped sets and baseline retention gaps
+remain authentic. Unsupported iframe/OS-popup/fully covered ancestor limits and
+the unreproduced private reported site remain explicit below. Migration/account
+journeys remain separate. Candidate readiness and resource return do not imply
+independent acceptance, a PR, integration, closure or release. All evidence and
+backups remain retained; discretionary cleanup waits until version end.
+
+## Connected checkpoint (924/e352 history)
 
 Source `924eb5ddc3eecabf9ff35dabe02b6a0a3b90fb34` has now run on RG API32
 with APP `2af9356d…` and TEST `bfb11d3b…`, using the qualified primary5555
