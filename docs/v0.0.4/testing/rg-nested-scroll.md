@@ -2,7 +2,76 @@
 
 Worker: Worker-#61
 
-## Native acceptance fixture followup
+## Current device checkpoint (924 source)
+
+Source `924eb5ddc3eecabf9ff35dabe02b6a0a3b90fb34` has now run on RG API32
+with APP `2af9356d…` and TEST `bfb11d3b…`, using the qualified primary5555
+route and pinned unmodified 158.0.8107.0 engine. Fresh readback matches the
+installed source/target/TEST hashes and UIDs and system provider95. The original
+source app was not launched or changed. This documentation child changes no
+production, test or build input and reuses those exact retained APKs; it claims
+no new compile or JVM execution.
+
+These are individually selected AndroidJUnitRunner methods with complete
+one-test terminals, rather than an aggregate connected-task or full-suite pass:
+
+| Current-source methods | Completed passes and scope |
+| --- | --- |
+| Edge, 5 methods | Fixed-root nested panels, modal/More isolation, full-screen keyboard/lifecycle cancellation, long Tabs, and long Bookmarks/Proxy lists. Native parent chaining completes 60 pixels; both directions/endpoints and stationary covered content are observed. |
+| NativeInput, 2 methods | Native view activation once, browser focus, built-in keys and Done behavior. |
+| LocalBrowser, 9 methods | Address draft/fixed controls, native field reveal, all four Unicode/caret/selection editors, Dpad admission, geometry, live tabs/pad gestures, durable bookmarks, HTTP/history recovery and black/hidden-page recovery. |
+| Standalone, 2 methods | Activity recreation preserves owned cookie/local-storage data without form replay; actual screen-off/resume releases camera/sensor use and requires deliberate camera restart. |
+| Production SENSOR readiness, 1 method | Two separate completed qualifications on the owned nested page, with real default-source callbacks and recovery/sensor teardown. Neither is a head-movement demonstration. |
+
+There are 19 distinct passing selected methods and 20 passing invocations at
+this cut. The four unchanged original Edge methods for rates/gains, numeric
+limits, hidden-strip stop and all 72 boundaries retain their successful 5cf
+executions against the same APP; their unchanged source and production/build
+inputs are bound separately, rather than relabeled as bfb executions.
+
+Twelve completed native failures remain failed, including the first current
+editor run, which failed page readiness before editing. Its later fresh pass
+supplies the editor verdict without replacing that negative. Two other original
+consumer invocations (Dpad and visibility recovery) retain START-only terminals,
+absent remote exit markers and **unknown body completion**. Their original host
+AM exit0/empty stdout is not a JUnit result; original wrapper start ticks were
+not retained. Fresh successful retests have different invocation IDs and do
+not fill those gaps. Before each fresh run, actual prior process absence and
+Owner state were reconciled. The later five private launches persist observed
+host/remote nonce, PID and start ticks before monitoring; normal assertions and
+product deadlines remain unchanged. A bounded detached wrapper writes its
+own terminal separately from the client connection. These completed runs do
+not establish interruption survival; no uncertain operation was replayed and
+no shared service changed.
+
+The current ready fixture is the explicitly labeled owned nested-page copy at
+the authorized exact host address/39030. Its source/page/JAR and PID/start/CWD/
+argv/listener bindings are retained separately from unchanged original-page
+checks. The latest production sensor qualification completes with fresh samples,
+body success and all recovery/activity/sensor cleanup fields true. The actual
+wearer method has **not been launched**: it requires a correlated authenticated
+Owner action, then downward right-panel movement, visible return, upward
+reversal and a second visible return. Physical head use remains required.
+
+The four original Owner preference files still match. Controlled list testing
+restored the originally absent profiles key and left an additional empty
+`proxy-profiles.xml`; that known effect is retained. The current subscription
+refresh timestamp is preserved. The successful recreation test issued removal
+of its owned cookie/local-storage keys. No full-store/file-set or private byte-equality
+claim is made; test-owned cache/diagnostic effects remain identified and retained.
+No source-app, real subscription, private recovery navigation or account action
+was performed. Default pre-grant target APP `5eb93e46…` / TEST `9c9537f3…`
+restoration and fresh actual resource return remain pending. This checkpoint is
+not CANDIDATE_READY, ticket acceptance, independent review or resource handoff.
+
+Iframe scrolling (including same-origin frames), browser/OS popup windows and
+fully covered scroll ancestors without a qualified native hit point remain
+unsupported or unqualified as described below. The private reported site itself
+has not been reproduced; the actual controlled Android fixture demonstrates
+the bounded nested-panel behavior. Migration and designated account journeys
+remain #60 and #62.
+
+## Acceptance fixture changes (924 history)
 
 The precision candidate `5cf4b80` / APP `2af9356d…` / TEST `1b9714d1…` passes both
 new nested/modal methods, including completed 60-pixel parent displacement.
@@ -36,8 +105,9 @@ limits. Production APP bytes and all production/build inputs are unchanged;
 the 91-test zero-skip gates and APP from 5cf are explicitly reused, with no new
 APP compile or JVM execution claimed. New Chromium TEST `bfb11d3b…` is retained
 with authentic source/archive/diff, compiled APK/signature and terminal bindings;
-its Android checks and the real sensor/head demonstration are still pending.
-Default pre-grant APP/TEST restoration and verified return remain required.
+at that compile cut its Android checks and the real sensor/head demonstration
+were pending. Current selected results are recorded above. Default pre-grant
+APP/TEST restoration and verified return remain required.
 
 ## Precise native wheel continuation (5cf history)
 
