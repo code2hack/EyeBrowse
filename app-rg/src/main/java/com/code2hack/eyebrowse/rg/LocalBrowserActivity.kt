@@ -100,10 +100,14 @@ class LocalBrowserActivity : ComponentActivity() {
             if (surface == null || direction == 0) { stopEdgeScroll(); return }
             val pixels = edgeMotion.step(pointer.position,pointer.visibleBounds,pointer.expiresAtNs,now,
                 inputSettings.scrollSpeed)
-            if (surface.canScrollVertically(direction)) {
-                if (utility==Utility.BROWSING) input.scroll(pixels) else surface.scrollBy(0,pixels)
-            }
-            else edgeMotion.stop() // Endpoints never bank unused travel.
+            if (utility==Utility.BROWSING) {
+                input.scroll(pixels) {
+                    scrollSurface() === surface &&
+                        edgeMotion.direction(pointer.inputPosition(),pointer.visibleBounds,pointer.expiresAtNs,
+                            SystemClock.elapsedRealtimeNanos()) == direction
+                }
+            } else if (surface.canScrollVertically(direction)) surface.scrollBy(0,pixels)
+            else edgeMotion.stop() // Native list endpoints never bank unused travel.
             root.postDelayed(this,16)
         }
     }

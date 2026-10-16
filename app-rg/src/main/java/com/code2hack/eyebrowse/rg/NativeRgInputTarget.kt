@@ -5,18 +5,21 @@ import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.InputDevice
 import android.view.MotionEvent
-import android.view.View
 import android.view.ViewGroup
+import android.view.ViewConfiguration
 import android.view.inputmethod.EditorInfo
+import android.webkit.WebView
+import org.json.JSONArray
 
 /** Direct View/WebView input. Android owns hit testing, selection and current editor focus. */
 internal class NativeRgInputTarget(
     private val root: ViewGroup,
-    private val pointer: View,
-    private val page: () -> View?,
+    private val pointer: PointerOverlay,
+    private val page: () -> WebView?,
     private val dismissKeyboard: () -> Unit,
 ) : RgInputTarget {
     val keys = RgKeyboardKeys()
+    private var selectingScroll: WebView? = null
 
     override fun activate(point: InputPoint): Boolean {
         if (!root.isShown || !point.x.isFinite() || !point.y.isFinite()) return false
@@ -39,9 +42,42 @@ internal class NativeRgInputTarget(
         return down && up
     }
 
-    override fun scroll(delta: Int): Boolean {
+    override fun scroll(delta: Int): Boolean = scroll(delta) { true }
+
+    /** One geometry request at a time; dropped distance is never queued for later input. */
+    fun scroll(delta: Int, stillApplicable: () -> Boolean): Boolean {
         val visible = page()?.takeIf { it.isShown } ?: return false
-        visible.scrollBy(0, nativePageScrollDelta(visible.scrollY, delta))
+        if (delta == 0 || visible.width <= 0 || visible.height <= 0 || selectingScroll === visible) return false
+        val pointerToGlobal = Matrix().apply { pointer.transformMatrixToGlobal(this) }
+        val pageToGlobal = Matrix().apply { visible.transformMatrixToGlobal(this) }
+        val globalToPage = Matrix()
+        if (!pageToGlobal.invert(globalToPage)) return false
+        val point = floatArrayOf(pointer.position.x, pointer.position.y)
+        pointerToGlobal.mapPoints(point); globalToPage.mapPoints(point)
+        if (point.any { !it.isFinite() }) return false
+        val started = SystemClock.uptimeMillis()
+        selectingScroll = visible
+        visible.evaluateJavascript("$BROWSER_SCROLL_TARGET(${point[0]/visible.width},${point[1]/visible.height},$delta,${visible.width})") { value ->
+            if (selectingScroll === visible) selectingScroll = null
+            if (SystemClock.uptimeMillis()-started > 50 || page() !== visible || !visible.isShown ||
+                !root.isShown || !visible.hasWindowFocus() || !stillApplicable()) return@evaluateJavascript
+            val target = try { JSONArray(value) } catch (_: org.json.JSONException) { return@evaluateJavascript }
+            if (target.length() != 3) return@evaluateJavascript
+            val x = target.optDouble(0); val y = target.optDouble(1); val pixels = target.optDouble(2)
+            if (!x.isFinite() || !y.isFinite() || x !in 0.0..<1.0 || y !in 0.0..<1.0 ||
+                !pixels.isFinite() || pixels*delta <= 0 || kotlin.math.abs(pixels) > kotlin.math.abs(delta.toDouble())) return@evaluateJavascript
+            val factor = ViewConfiguration.get(visible.context).scaledVerticalScrollFactor
+            if (!factor.isFinite() || factor <= 0) return@evaluateJavascript
+            val coordinates = MotionEvent.PointerCoords().apply {
+                this.x = (x*visible.width).toFloat(); this.y = (y*visible.height).toFloat()
+                setAxisValue(MotionEvent.AXIS_VSCROLL, (-pixels/factor).toFloat())
+            }
+            val properties = MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_MOUSE }
+            val now = SystemClock.uptimeMillis()
+            val event = MotionEvent.obtain(now, now, MotionEvent.ACTION_SCROLL, 1, arrayOf(properties),
+                arrayOf(coordinates), 0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0)
+            try { visible.dispatchGenericMotionEvent(event) } finally { event.recycle() }
+        }
         return true
     }
 
@@ -68,7 +104,3 @@ internal class NativeRgInputTarget(
         }
     }
 }
-
-/** View.scrollBy can cross zero even when the renderer clamps its own offset. */
-internal fun nativePageScrollDelta(scrollY: Int, delta: Int): Int =
-    delta.coerceAtLeast(-scrollY.coerceAtLeast(0))

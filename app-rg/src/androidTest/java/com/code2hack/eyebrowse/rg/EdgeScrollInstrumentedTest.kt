@@ -176,6 +176,89 @@ class EdgeScrollInstrumentedTest {
     private fun y(scene: ActivityScenario<LocalBrowserActivity>): Int {
         var value=0;scene.onActivity { value=checkNotNull(it.tabs.current.session.page).scrollY };return value
     }
+
+    private fun nestedFixture(scene: ActivityScenario<LocalBrowserActivity>) {
+        scene.onActivity { checkNotNull(it.tabs.current.session.page).loadDataWithBaseURL(
+            "https://nested-scroll-fixture.invalid/",NestedScrollFixture.HTML,"text/html","UTF-8",null) }
+        await("owned nested fixture ready") { var ready=false;scene.onActivity {
+            ready=it.tabs.current.session.state.phase==LocalBrowserSession.Phase.READY &&
+                it.tabs.current.session.page?.isShown==true
+        };ready }
+    }
+    private fun nestedY(scene: ActivityScenario<LocalBrowserActivity>, id: String): Int =
+        js(scene,"document.getElementById(${JSONObject.quote(id)}).scrollTop").toDouble().toInt()
+    private fun nestedPoint(scene: ActivityScenario<LocalBrowserActivity>, id: String): InputPoint {
+        val position=JSONArray(js(scene,"""(()=>{const r=document.getElementById(${JSONObject.quote(id)}).getBoundingClientRect();
+            return [(r.left+r.width/2)/innerWidth,(r.top+Math.min(r.height,120)/2)/innerHeight]})()"""))
+        var result=InputPoint(0f,0f)
+        scene.onActivity { val page=checkNotNull(it.tabs.current.session.page);val origin=IntArray(2);val pointer=IntArray(2)
+            page.getLocationOnScreen(origin);it.pointer.getLocationOnScreen(pointer)
+            result=InputPoint((position.getDouble(0)*page.width+origin[0]-pointer[0]).toFloat(),
+                (position.getDouble(1)*page.height+origin[1]-pointer[1]).toFloat()) }
+        return result
+    }
+    private fun nestedScroll(scene: ActivityScenario<LocalBrowserActivity>, source: RawPoseReplay, id: String, delta: Int) {
+        val point=nestedPoint(scene,id)
+        scene.onActivity { source.aimRelative(it,point) }
+        await("raw pose aimed at owned panel") { var aimed=false;scene.onActivity {
+            aimed=abs(it.pointer.position.x-point.x)<3 && abs(it.pointer.position.y-point.y)<3
+        };aimed }
+        scene.onActivity { assertTrue("geometry request admitted once",it.input.scroll(delta)) }
+    }
+
+    @Test fun fixedDocumentNestedPanelsUseNativeWheelAndKeepEndpointsIsolated()=scene { scene,source ->
+        nestedFixture(scene)
+        scene.onActivity { val page=checkNotNull(it.tabs.current.session.page)
+            assertFalse("fixed outer document",page.canScrollVertically(1));assertFalse(page.canScrollVertically(-1)) }
+        val scaledTick=JSONArray(js(scene,"$BROWSER_SCROLL_TARGET(.8,.5,3,324)"))
+        assertEquals("fractional CSS scaling preserves a native pixel tick",3,scaledTick.getInt(2))
+        nestedScroll(scene,source,"right",80)
+        await("native wheel actually moved intended nested panel") { abs(nestedY(scene,"right")-80)<=2 }
+        assertEquals(0,nestedY(scene,"left"));assertEquals(0,y(scene))
+        js(scene,"document.documentElement.style.overflow='auto';document.body.style.overflow='visible';document.body.style.height='4000px';document.getElementById('right').scrollTop=9999")
+        val end=nestedY(scene,"right")
+        nestedScroll(scene,source,"right",80);SystemClock.sleep(180)
+        assertEquals(end,nestedY(scene,"right"));assertEquals(0,y(scene))
+        nestedScroll(scene,source,"right",-80)
+        await("reversal has no banked endpoint distance") { abs(nestedY(scene,"right")-(end-80))<=2 }
+        js(scene,"document.getElementById('right').scrollTop=3")
+        nestedScroll(scene,source,"right",-80)
+        await("final upward tick stops at panel zero") { nestedY(scene,"right")==0 }
+        assertEquals(0,y(scene))
+        nestedScroll(scene,source,"inner",60)
+        await("deepest panel scrolls") { abs(nestedY(scene,"inner")-60)<=2 }
+        assertEquals(0,nestedY(scene,"left"))
+        js(scene,"document.getElementById('inner').scrollTop=9999")
+        nestedScroll(scene,source,"inner",60)
+        await("ordinary auto chain inside panel") { nestedY(scene,"left")>0 }
+        assertEquals(0,y(scene))
+        evidence.put(JSONObject().put("case","native-nested-wheel-endpoints").put("physicalHeadUse",false)
+            .put("rightEndpoint",end).put("innerY",nestedY(scene,"inner")).put("leftY",nestedY(scene,"left")))
+    }
+
+    @Test fun modalAndCoveredNativeMenuNeverScrollTheBackground()=scene { scene,source ->
+        nestedFixture(scene)
+        val popup=nestedPoint(scene,"popup")
+        scene.onActivity { assertTrue(it.input.activate(popup)) }
+        await("actual native tap opened modal") { js(scene,"document.getElementById('modal').open")=="true" }
+        nestedScroll(scene,source,"modal",80)
+        await("modal scroll effect") { abs(nestedY(scene,"modal")-80)<=2 }
+        assertEquals(0,nestedY(scene,"left"));assertEquals(0,nestedY(scene,"right"));assertEquals(0,y(scene))
+        js(scene,"document.getElementById('modal').close()")
+        reset(scene,source)
+        scene.onActivity { source.aimRelative(it,InputPoint(384f,664f)) }
+        await("raw head pose stream scrolls fixed-root nested panel") { nestedY(scene,"right")>12 }
+        scene.onActivity { assertTrue(it.edgeScrollRunning);assertFalse(it.pointer.cursorVisible) }
+        stopped(scene,"More covers nested page",effect={it.utility==LocalBrowserActivity.Utility.MORE}) {
+            nativeTap(it,it.controls.getValue("hud.more"))
+        }
+        SystemClock.sleep(100)
+        val stoppedY=nestedY(scene,"right");SystemClock.sleep(180)
+        assertEquals("inert More leaves background panel fixed",stoppedY,nestedY(scene,"right"))
+        assertEquals(0,y(scene))
+        evidence.put(JSONObject().put("case","modal-and-more-isolation").put("physicalHeadUse",false)
+            .put("nestedStopY",stoppedY))
+    }
     /** Public/current native state only: no field text, DOM mutation or production probe. */
     private fun edgeObservation(activity: LocalBrowserActivity): JSONObject {
         val now=SystemClock.elapsedRealtimeNanos();val pointer=activity.pointer;val position=pointer.position
