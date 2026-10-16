@@ -34,7 +34,9 @@ internal class ProfileStore(private val read: () -> String?, private val write: 
                     require(ProfileImport.source(source) == source)
                     val name = profile.getString("name")
                     require(name.isNotBlank() && name.length <= 128 && name.none { it.isISOControl() } && "://" !in name)
-                    val nodes = ProfileImport.nodes(JSONObject().put("proxies", profile.getJSONArray("nodes")).toString())
+                    // The cache's Android JSON needs the same slash handling as core YAML input.
+                    val document = JSONObject().put("proxies", profile.getJSONArray("nodes")).toString()
+                    val nodes = ProfileImport.nodes(ProxyPolicy.configurationText(document))
                     SavedProfile(source, name, profile.getBoolean("enabled"), nodes)
                 }
                 require(loaded.map { it.source }.distinct().size == loaded.size)

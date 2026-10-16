@@ -177,4 +177,42 @@ class ProfileImportTest {
         assertTrue(restarted.readable)
         assertEquals(lastGood.single().nodes, restarted.profiles.single().nodes)
     }
+
+    @Test fun nestedSupportedOptionsSurviveTheExactCacheRepresentation() {
+        val nodes = ProfileImport.nodes("""
+            proxies:
+              - type: vless
+                server: fixture.invalid
+                port: 443
+                uuid: 00000000-0000-0000-0000-000000000001
+                tls: true
+                network: ws
+                ws-opts: {path: '/owned/é', headers: {X-Owned: 'dummy "quoted" value'}}
+                reality-opts: {public-key: owned-dummy, short-id: '01'}
+                alpn: [h2, http/1.1]
+        """.trimIndent())
+        var disk: String? = null
+        var writes = 0
+        val store = ProfileStore({ disk }) { disk = it; writes++; true }
+        val candidate = store.imported("https://fixture.invalid/sub?account=owned-dummy", nodes)
+        assertTrue("Supported nested data remains saveable", store.canSave(candidate))
+        assertEquals(0, writes)
+        assertTrue(store.save(candidate))
+        val fresh = ProfileStore({ disk }) { false }
+        assertTrue(fresh.readable)
+        assertEquals(nodes, fresh.profiles.single().nodes)
+    }
+
+    @Test fun cachedBackslashesBeforeSolidusKeepTheirExactValue() {
+        val password = "owned\\/\"quoted\" café"
+        val nodes = ProfileImport.nodes("""
+            proxies: [{type: http, server: fixture.invalid, port: 80, password: '$password'}]
+        """.trimIndent())
+        var disk: String? = null
+        val store = ProfileStore({ disk }) { disk = it; true }
+        assertTrue(store.save(store.imported("https://fixture.invalid/", nodes)))
+        val fresh = ProfileStore({ disk }) { false }
+        assertTrue(fresh.readable)
+        assertEquals(password, fresh.profiles.single().nodes.single()["password"])
+    }
 }

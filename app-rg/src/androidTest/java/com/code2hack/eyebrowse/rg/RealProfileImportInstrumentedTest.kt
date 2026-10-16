@@ -13,6 +13,9 @@ import com.code2hack.eyebrowse.rg.proxy.ProfileStore
 import com.code2hack.eyebrowse.rg.proxy.ProxyPolicy
 import com.code2hack.eyebrowse.rg.proxy.RgProfiles
 import com.code2hack.eyebrowse.rg.proxy.RgProxyRuntime
+import com.code2hack.eyebrowse.rg.qr.QrDecoder
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
 import org.json.JSONObject
 import org.json.JSONTokener
 import org.yaml.snakeyaml.LoaderOptions
@@ -25,12 +28,13 @@ import org.junit.runner.RunWith
 import java.io.Closeable
 import java.io.File
 import java.net.URL
+import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
-/** Opt-in, actual Owner presentation. Never captures QR pixels, payloads or node credentials. */
+/** Opt-in real-source checks. Reports contain only fixed categories, counts and hashes. */
 @RunWith(AndroidJUnit4::class)
 class RealProfileImportInstrumentedTest {
     @Test fun savedProfilesSurviveFreshProcessWithoutChangingThem() {
@@ -184,6 +188,140 @@ class RealProfileImportInstrumentedTest {
                 .put("fieldCategory", failure.field ?: "NONE").put("protocolCategory", failure.protocol ?: "NONE")
         } catch (_: Exception) { output.put("stage", "PARSER_REJECTED").put("failureCategory", "OTHER") }
         return output
+    }
+
+    @Test fun selectedPrivateSourceUsesNativeAddAndProductionImport() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val arguments = InstrumentationRegistry.getArguments()
+        assumeTrue(arguments.getString("privateSourceImport") == "true")
+        val invocation = UUID.fromString(checkNotNull(arguments.getString("invocationId"))).toString()
+        val context = instrumentation.targetContext
+        val preferences = localBrowserTestPreferences(context)
+        val previousTabs = preferences.getString("local.tabs", null)
+        val cache = context.getSharedPreferences("proxy-profiles", Context.MODE_PRIVATE)
+        val previousCache = cache.getString("profiles", null)
+        val profiles = RgProfiles.get(context)
+        val download = AtomicReference<JSONObject>()
+        val report = JSONObject().put("invocation", invocation)
+            .put("delivery", "CONTROLLED_RASTER_NOT_OPTICAL").put("phase", "PRIVATE_INPUT")
+        var ownsInspection = false
+        fun writeReport() {
+            download.get()?.let { report.put("download", it) }
+            context.openFileOutput("issue59-import-$invocation.json", Context.MODE_PRIVATE).use {
+                it.write(report.toString(2).toByteArray(Charsets.UTF_8))
+            }
+        }
+        fun await(label: String, condition: () -> Boolean) {
+            val end = SystemClock.elapsedRealtime() + 45_000
+            while (SystemClock.elapsedRealtime() < end) {
+                if (condition()) return
+                SystemClock.sleep(25)
+            }
+            fail(label)
+        }
+        try {
+            val input = File(context.filesDir, "issue59-input-$invocation.txt")
+            assertTrue("Private input size", input.length() in 1L..16_384L)
+            val bytes = input.readBytes()
+            assertTrue("Private input bound", bytes.size in 1..16_384)
+            val fingerprint = MessageDigest.getInstance("SHA-256").digest(bytes)
+                .joinToString("") { "%02x".format(it) }
+            assertTrue("Selected private input binding", fingerprint == arguments.getString("sourceSHA256"))
+            val payload = bytes.toString(Charsets.UTF_8)
+            report.put("sourceSHA256", fingerprint)
+            check(profiles.inspectDownload == null)
+            profiles.inspectDownload = { status, type, document -> download.set(inspect(status, type, document)) }
+            ownsInspection = true
+            Closeable {
+                profiles.inspectDownload = null
+                writeReport()
+            }.use {
+                Closeable {
+                    assertTrue("Starting tabs restored", preferences.edit().apply {
+                        if (previousTabs == null) remove("local.tabs") else putString("local.tabs", previousTabs)
+                    }.commit())
+                    report.put("startingTabsRestored", preferences.getString("local.tabs", null) == previousTabs)
+                }.use {
+                    ActivityScenario.launch(LocalBrowserActivity::class.java).use { scene ->
+                        fun click(tag: String) {
+                            await("Current native import control") {
+                                var ready = false
+                                scene.onActivity {
+                                    val view = it.root.findViewWithTag<View>(tag)
+                                    ready = view != null && view.isShown && view.isEnabled &&
+                                        view.width > 0 && !it.root.isLayoutRequested
+                                }
+                                ready
+                            }
+                            scene.onActivity {
+                                val view = checkNotNull(it.root.findViewWithTag<View>(tag))
+                                val point = IntArray(2); view.getLocationOnScreen(point)
+                                assertTrue(it.input.activate(InputPoint(point[0] + view.width / 2f,
+                                    point[1] + view.height / 2f)))
+                            }
+                            instrumentation.waitForIdleSync()
+                        }
+                        report.put("phase", "NATIVE_SETTINGS_PROXY_ADD")
+                        click("hud.more"); click("menu.3"); click("settings.proxy"); click("profile.add")
+                        val matrix = QRCodeWriter().encode(payload, BarcodeFormat.QR_CODE, 512, 512)
+                        val plane = ByteArray(matrix.width * matrix.height) {
+                            if (matrix[it % matrix.width, it / matrix.width]) 0 else 0xff.toByte()
+                        }
+                        val decoded = QrDecoder.decodeYPlane(plane, matrix.width, matrix.width, matrix.height)
+                        assertTrue("Private source controlled decoder round trip", decoded == payload)
+                        scene.onActivity {
+                            assertTrue(it.utility == LocalBrowserActivity.Utility.QR)
+                            assertTrue(it.root.findViewWithTag<TextView>("qr.title").text == "Add a new profile")
+                            report.put("cameraHadFrameAtDelivery", it.cameraHasFrame)
+                            it.previewQr(checkNotNull(decoded))
+                            assertFalse(it.cameraActive)
+                            assertTrue(it.utility == LocalBrowserActivity.Utility.PROXY)
+                        }
+                        report.put("phase", "PRODUCTION_IMPORT")
+                        // Production IO/core operations retain their own bounds; do not abandon an applied pool.
+                        while (profiles.busy) SystemClock.sleep(100)
+                        instrumentation.waitForIdleSync()
+                        val saved = profiles.message == "Profile saved."
+                        val feedback = when (profiles.message) {
+                            "Profile saved." -> "SAVED"
+                            "Unsupported profile URL. Use HTTP(S) or a Clash install link." -> "URL_REJECTED"
+                            "Profile download failed. Existing data kept." -> "DOWNLOAD_FAILED"
+                            "Unsupported or invalid profile. A usable YAML proxies list is required." -> "PARSER_REJECTED"
+                            "Profile nodes were rejected. Existing data kept." -> "CORE_REJECTED"
+                            "Profile change could not be applied. Existing data kept." -> "APPLY_FAILED"
+                            "Profile change could not be saved. Existing data kept." -> "SAVE_FAILED"
+                            else -> "OTHER"
+                        }
+                        report.put("feedbackCategory", feedback).put("importSaved", saved)
+                        if (!saved) report.put("priorCacheUnchanged", previousCache == cache.getString("profiles", null))
+                        writeReport()
+                        assertTrue("Selected private source import saved; see fixed-category report", saved)
+                        val fresh = ProfileStore({ cache.getString("profiles", null) }) { false }
+                        val source = ProfileImport.source(payload)
+                        val persisted = fresh.readable && fresh.profiles.any { it.source == source } &&
+                            fresh.profiles.size == profiles.profiles.size && fresh.profiles.zip(profiles.profiles).all {
+                                (a, b) -> a.source == b.source && a.name == b.name &&
+                                    a.enabled == b.enabled && a.nodes == b.nodes
+                            }
+                        report.put("phase", "FRESH_READER").put("freshReaderExact", persisted)
+                            .put("profileCount", fresh.profiles.size)
+                            .put("enabledNodeCount", fresh.profiles.filter { it.enabled }.sumOf { it.nodes.size })
+                        assertTrue("Real source/name/toggle/nodes persisted", persisted)
+                        report.put("result", "IMPORT_AND_READER_PASSED")
+                    }
+                }
+            }
+        } catch (_: AssertionError) {
+            report.put("result", "NOT_PASSED").put("failureCategory", "ASSERTION")
+            writeReport()
+            throw AssertionError("Private source import failed; see fixed-category report")
+        } catch (_: Exception) {
+            report.put("result", "NOT_PASSED").put("failureCategory", "OPERATION")
+            writeReport()
+            throw AssertionError("Private source import operation failed; see fixed-category report")
+        } finally {
+            if (ownsInspection) profiles.inspectDownload = null
+        }
     }
 
     @Test fun ownerPresentedSubscriptionIsImportedThroughNormalCameraFlow() {
