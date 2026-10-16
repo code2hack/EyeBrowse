@@ -4,13 +4,15 @@ Worker: Worker-#61
 
 This is a **host implementation checkpoint**, not ticket acceptance. Actual RG
 reproduction, Android wheel calibration, sensor/head use and connected native
-regressions remain **NOT_RUN**. Manager's device queue disposition retains
-HOST_ONLY: u4090 access is unavailable, #59's both-app preservation checkpoint is
-NOT_CAPTURED, and no exclusive device grant has been issued to this Worker.
-No device, original-app data or account was accessed by this checkpoint.
+regressions remain **NOT_RUN**. Mission revision2 retains HOST_ONLY. The current
+Owner route is Spark-local Tailscale TCP5555 primary, with already authorized
+wireless41877 bootstrap; u4090 is not used for now. This supersedes the original
+checkpoint's historical USB/access wording. The targeted host-followup assignment
+records #59 preservation in progress/NOT_CAPTURED; this Worker still has no
+exclusive device grant. No device, original-app data or account was accessed.
 
 The contract is [issue #61](https://github.com/code2hack/EyeBrowse/issues/61),
-[P4.1 §6](https://github.com/code2hack/EyeBrowse/blob/8178a5992899a6dde82d8e20f8c54f87ff81292f/docs/plans/v0.0.4-plan.md),
+[P4.2 §6](https://github.com/code2hack/EyeBrowse/blob/9442398f599232d08c42b852050c6aa580f104af/docs/plans/v0.0.4-plan.md),
 SPEC D3.1 §§3–4 and HUD H3.1. Source starts at
 `cb603db8fc1bb74a3c0a4883e5dc044fc4c1c23c`, tree
 `38445bd4b15557c45abda8bc70a98db12d0cccf0`; the assigned branch is
@@ -78,8 +80,37 @@ browser uses its own profile and no listening service, relay or device route.
 | `host-selector-matrix-003.json` | New fractional-scale case fails: a requested 3-pixel tick becomes 2. Other 18 cases pass. Original rounding negative retained. |
 | `host-selector-matrix-004.json` | Source-bound selector/browser-wheel checks cover the corrected tick, fixed outer document, competing panels/focus, caret selection, nested auto/contain chains, endpoints/reversal, modal/cover isolation, reopen/replacement, ordinary document and opaque iframe handling. |
 | Baseline host gate | Observed 94 JVM cases/19 suites and shell0; 52 executed tasks. Original XML and compiled APK bytes were overwritten before retention. The command/log and original native count observation remain; later XML/APKs do not replace these missing originals. |
-| `ordinary-final-001` | 91 JVM cases/18 suites, zero failures/errors; APP/TEST assembly and lint complete. 19 tasks executed / 59 up-to-date; lint 0 errors / 8 warnings. |
-| `chromium-final-001` | 91 JVM cases/18 suites, zero failures/errors; APP/TEST assembly and lint complete. 20 tasks executed / 100 up-to-date; lint 0 errors / 11 warnings. |
+| `ordinary-final-001` | 91 total JVM cases/18 suites: **2 skipped, 89 non-skipped**, zero failures/errors; APP/TEST assembly and lint complete. 19 tasks executed / 59 up-to-date; lint 0 errors / 8 warnings. |
+| `chromium-final-001` | 91 total JVM cases/18 suites: **2 skipped, 89 non-skipped**, zero failures/errors; APP/TEST assembly and lint complete. 20 tasks executed / 100 up-to-date; lint 0 errors / 11 warnings. |
+| `targeted-native-debug-002` | Only the two previously skipped Linux controls: 2 tests/2 suites, **0 skipped/failures/errors**, shell0. 1 task executed / 23 up-to-date. |
+| `targeted-native-chromium-002` | Same two Linux controls: 2 tests/2 suites, **0 skipped/failures/errors**, shell0. 2 tasks executed / 39 up-to-date. |
+
+The original report omitted the skip count. Both original final XML sets and
+their immutable hash manifests are retained unchanged. The skipped methods were:
+
+- `com.code2hack.eyebrowse.rg.proxy.RefreshPolicyTest.genuineCoreRejectsCorruptPartialWrongBehaviorAndSelectsOnlyCompletePair`
+- `com.code2hack.eyebrowse.rg.proxy.MihomoHostTest.realCoreRoutesAndSelectsAcrossSourcesWithAllDownRecovery`
+
+Manager requested only these methods for each variant. The unmodified Linux
+ARM64 Mihomo v1.19.32 binary was copied into this mission's private space and
+qualified by SHA256
+`c80df2ca5159567804da883401e0118908fc1155e05df2baf3dbd4d3ecfc3754`,
+actual ownership, executable permission, ELF architecture and version output.
+The existing `EYEBROWSE_MIHOMO_HOST_BINARY` and a unique
+`EYEBROWSE_MIHOMO_HOST_EVIDENCE` directory were supplied. Both Gradle invocations
+used only the two exact `--tests` selectors, the existing shared flock/fresh
+memory gate, JDK17 and the established resource limits. JVM temporary storage
+used its verified default `/tmp`; no long `java.io.tmpdir` override or changed
+fixture, assertion, assumption or wait was introduced.
+
+Each targeted invocation retains its own source archive/inventory/diff, authentic
+XML, log, terminal result, compiled-class hashes, native core log and fixture
+observations before the next build. These runs supplement the original
+89 non-skipped cases per variant; they do not turn the original 91-total sets
+into zero-skip executions. They ran on product/test source `857e97f`; this child
+changes this testing record only. Existing APP/TEST bytes are explicitly reused
+with unchanged source and SHA256 bindings; no new APK compilation is claimed.
+These are Linux controls, with no Android dispatch, RG or wearer result.
 
 Both final JVM tasks executed. Cached/up-to-date tasks are not new executions.
 Lint retains the Kotlin 2.2 metadata / analyzer 2.0 incompatibility, limiting
@@ -107,7 +138,8 @@ Raw quaternion replay never counts as an actual sensor or wearer result.
 
 The obsolete `nativePageScrollDelta` helper and its three model-only JVM tests
 were removed with the old outer-only writer. Current unit totals therefore
-start at 91; the earlier 94-case executions are retained, not rewritten.
+start at 91 total; the earlier 94-total observations and original retention gap
+remain, without reconstructing unavailable XML or its skip count.
 Endpoint coverage now measures the actual browser boundary in host fixtures
 and is prepared for native dispatch in the two Android methods above.
 
@@ -116,7 +148,9 @@ and is prepared for native dispatch in the two Android methods above.
 After Manager verifies #59's coherent both-app preservation and grants a fresh
 exclusive reservation, bind actual physical serial/user/OS, current APP/TEST,
 signer, pinned engine/native inputs and source before any install or test.
-Preserve the original source app and newer Owner state. No old window007,
+Use the current mission's TCP5555/authorized41877 transport policy; this record
+grants no connection or recovery operation. Preserve the original source app
+and newer Owner state. No old window007,
 39030, reverse, service, private account or relay grant is implied here.
 
 Run the two new methods and affected existing Edge/NativeInput/LocalBrowser
