@@ -211,8 +211,12 @@ class EdgeScrollInstrumentedTest {
             throw failure
         }
     }
-    private fun nestedY(scene: ActivityScenario<LocalBrowserActivity>, id: String): Int =
-        js(scene,"document.getElementById(${JSONObject.quote(id)}).scrollTop").toDouble().toInt()
+    private fun nestedY(scene: ActivityScenario<LocalBrowserActivity>, id: String): Int {
+        val dom=JSONArray(js(scene,"[document.getElementById(${JSONObject.quote(id)}).scrollTop,innerWidth]"))
+        var width=0;scene.onActivity { width=checkNotNull(it.tabs.current.session.page).width }
+        // Match pageOracle: requested scroll distances are native viewport pixels, not CSS pixels.
+        return (dom.getDouble(0)*width/dom.getDouble(1)).toInt()
+    }
     private fun nestedPoint(scene: ActivityScenario<LocalBrowserActivity>, id: String): InputPoint {
         val position=JSONArray(js(scene,"""(()=>{const r=document.getElementById(${JSONObject.quote(id)}).getBoundingClientRect();
             return [(r.left+r.width/2)/innerWidth,(r.top+Math.min(r.height,120)/2)/innerHeight]})()"""))

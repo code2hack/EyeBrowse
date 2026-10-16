@@ -28,6 +28,17 @@ production READY/URL/visual barrier, wait, assertion, input code or error
 handling was weakened. Native verification of this correction and actual
 sensor/head use remain pending.
 
+Normal HTTP navigation subsequently reached READY on `e7ce8d8`, but both native
+effect assertions failed. A passive observer on `8dee36c` then recorded a real
+wheel event (source8194, factor82, axis -0.9756098), valid fresh/focused/visible
+input, and right-panel movement of 62.745098 CSS pixels. Native width480 divided
+by CSS width376 converts that distance to 80.100125 native pixels; other panels
+and the document stayed at zero. The test incorrectly compared CSS scrollTop
+directly with the requested native80. Its measurement helper now uses the
+existing `pageOracle` width conversion and integer truncation. Expected80,
+±2-native-pixel tolerance and all waits remain unchanged. Original JUnit
+failures remain retained failures; corrected exact-source runs are pending.
+
 ## Historical host checkpoint
 
 This is a **host implementation checkpoint**, not ticket acceptance. Actual RG
