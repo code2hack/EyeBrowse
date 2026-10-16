@@ -39,6 +39,27 @@ existing `pageOracle` width conversion and integer truncation. Expected80,
 ±2-native-pixel tolerance and all waits remain unchanged. Original JUnit
 failures remain retained failures; corrected exact-source runs are pending.
 
+At the subsequent pre-install read, primary5555 reported the device offline
+before any measurement-corrected TEST install. One bounded primary reconnect
+and one authorized41877 bootstrap connect did not recover access. At the
+06:05 UTC capability observation the exact Tailscale peer was offline (last seen
+06:00 UTC), with both authorized ports timing out. The qualified Spark ADB
+server/client remained unchanged; no `tcpip`, pairing, server restart or other
+route was used. This is a concrete route-recovery gate, not a new product result.
+
+Last verified installed target was APP `acddd513…` / observer TEST `ae8d3351…`.
+Corrected TEST `4fff6949…`, built against `ab92ae5` test bytes, is signed and
+retained but **not installed or run**. Native methods still have no complete
+PASS. The owned fixture PID/start/CWD/argv were rechecked before SIGTERM;
+the process and listener are absent and `100.92.81.33:39030` is bind-free.
+Last completed test reports recorded Activity/raw-source, tabs and settings
+cleanup, but current device processes/sensors/camera/power/data state cannot be
+reverified while offline. The required pre-grant target APP `5eb93e46…` / TEST
+`9c9537f3…` restoration is **pending**, not completed. Source app is untouched.
+Manager received the concrete normal Owner wake/reconnection request. Resume
+requires fresh route/physical/installed/Owner-state reconciliation; no mutation
+may be replayed blindly and no actual resource handoff is claimed at this gate.
+
 ## Historical host checkpoint
 
 This is a **host implementation checkpoint**, not ticket acceptance. Actual RG
