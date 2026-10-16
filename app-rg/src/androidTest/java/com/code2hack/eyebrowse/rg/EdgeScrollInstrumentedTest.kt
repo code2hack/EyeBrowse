@@ -178,12 +178,22 @@ class EdgeScrollInstrumentedTest {
     }
 
     private fun nestedFixture(scene: ActivityScenario<LocalBrowserActivity>) {
-        scene.onActivity { checkNotNull(it.tabs.current.session.page).loadDataWithBaseURL(
-            "https://nested-scroll-fixture.invalid/",NestedScrollFixture.HTML,"text/html","UTF-8",null) }
-        await("owned nested fixture ready") { var ready=false;scene.onActivity {
-            ready=it.tabs.current.session.state.phase==LocalBrowserSession.Phase.READY &&
-                it.tabs.current.session.page?.isShown==true
-        };ready }
+        val base=checkNotNull(InstrumentationRegistry.getArguments().getString("nestedFixtureBaseUrl"))
+        val url=base.trimEnd('/')+"/keyboard.html"
+        scene.onActivity { assertTrue("owned nested navigation admitted",it.tabs.current.session.open(url).accepted()) }
+        try {
+            await("owned nested fixture ready") { var ready=false;scene.onActivity {
+                ready=it.tabs.current.session.state.phase==LocalBrowserSession.Phase.READY &&
+                    it.tabs.current.session.page?.isShown==true
+            };ready }
+        } catch(failure: Throwable) {
+            try { scene.onActivity {
+                evidence.put(edgeObservation(it).put("kind","owned-nested-readiness-failure")
+                    .put("sessionOwnedDestination",it.tabs.current.session.state.url==url)
+                    .put("pageOwnedDestination",it.tabs.current.session.page?.url==url))
+            } } catch(observation: Throwable) { failure.addSuppressed(observation) }
+            throw failure
+        }
     }
     private fun nestedY(scene: ActivityScenario<LocalBrowserActivity>, id: String): Int =
         js(scene,"document.getElementById(${JSONObject.quote(id)}).scrollTop").toDouble().toInt()

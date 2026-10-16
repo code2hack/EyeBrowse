@@ -2,6 +2,34 @@
 
 Worker: Worker-#61
 
+## Revision3 device continuation
+
+This remains an incomplete checkpoint. Manager granted exclusive RG reservation
+`V004-BATCH001-RG-W61-01` after verified both-app preservation and Worker59's
+safe handoff. Fresh guarded checks matched physical serial/model/user/API,
+installed source/target/TEST hashes and UIDs, provider95, target CE/DP member
+sets and all 500 regular-file hashes. Only target APP/TEST were upgraded
+data-preservingly to APP `acddd513…` / TEST `2e21f535…`; source app was untouched.
+
+Both new native methods completed one-test/one-failure runs at the unchanged
+10-second `owned nested fixture ready` assertion, before scroll dispatch. Their
+Activity/raw-source, tabs and settings cleanup reports were all true. These
+are retained native fixture-readiness failures, with no scrolling or physical
+PASS. The original reports contain no callback trace establishing which inline
+load callback failed, so no exact missing-callback diagnosis is asserted.
+
+The fixture correction uses ordinary `LocalBrowserSession.open` navigation
+through the granted HTTP fixture module at `100.92.81.33:39030`, with the
+required `nestedFixtureBaseUrl` test argument. The module serves an explicitly
+labeled private own-copy `keyboard.html` from `NestedScrollFixture.HTML`.
+This copy is not an original keyboard/protocol test. All five original page
+sources remain unchanged for their separately bound original tests. No
+production READY/URL/visual barrier, wait, assertion, input code or error
+handling was weakened. Native verification of this correction and actual
+sensor/head use remain pending.
+
+## Historical host checkpoint
+
 This is a **host implementation checkpoint**, not ticket acceptance. Actual RG
 reproduction, Android wheel calibration, sensor/head use and connected native
 regressions remain **NOT_RUN**. Mission revision2 retains HOST_ONLY. The current
