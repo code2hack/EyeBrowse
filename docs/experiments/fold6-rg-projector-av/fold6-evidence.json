@@ -1,0 +1,272 @@
+{
+  "schemaVersion": 1,
+  "issue": 66,
+  "observedUTCDate": "2026-10-17",
+  "disposition": "PARTIAL_FEASIBILITY_REQUIRES_INDEPENDENT_REVIEW",
+  "privateMission": "fold6-rg-projector-av/run-001/issue-66/worker-66-001/evidence",
+  "baseline": "23467848448a1c8251a68a553deea3d2426cbd4e",
+  "fixtureSourceCommit": "23bf0664ea8ad85e5893cfdb80cd7602091b0a68",
+  "fixtureTree": "32437e5ea971973bbb1acf0d44d88adb6f3c275c",
+  "fixtureAPK_SHA256": "d4d6583c25d5dea33fd48087d4047faf6c20ccb52d562626b168801fcbf7d8c1",
+  "results": {
+    "independentVDChangingVideo": "DEMONSTRATED_480x640_240DPI",
+    "ChromeAndSettings": "DEMONSTRATED_ON_VD16",
+    "PhoneIMEPixels": "DEMONSTRATED",
+    "stableVisibleKeyTypingEditingReopen": "NOT_QUALIFIED",
+    "ownedOutputAudioReceivedDecoded": "DEMONSTRATED_TWELVE_1KHZ_PULSES",
+    "audibleOutputAndPhoneAcousticSilence": "UNOBSERVED_DUMMY_HOST_SINK",
+    "AVSyncLatencyDrift": "UNMEASURED_RETAINED_PTS_BUFFER_WARNINGS",
+    "physicalOffIsolation": "NOT_QUALIFIED_LOGICAL_STATE_AND_POWER_SEPARATE",
+    "TermuxContextSocket": "PERMISSION_DENIED_CONTEXT_SPECIFIC",
+    "PhoneShellSocket": "DEMONSTRATED_LOCAL_AF_UNIX_NO_PC_FORWARD",
+    "normalPINUnlock": "UNTESTED_REAL_CREDENTIAL_UNUSED",
+    "originalAppData": "ALL_610_HASHES_UNCHANGED_DEVICE_ARCHIVE_RETAINED",
+    "endState": "USER0_LOCKED_DOZING_PRODUCT_CUT_DOZE_SUSPEND_LATEST_NATIVE072_CUT_DOZE",
+    "primaryDebugTunnel": "RETAINED_MANAGER071_CLEANUP_CUSTODY",
+    "RGOrNoPCAV": "NO_RG_WORK_OR_FINAL_DATA_PATH_PROOF",
+    "nativePINSurface": "NOT_PRESENTED_NO_EXPLICIT_SUPPORTED_REVEAL_TARGET_NO_PIN_USED"
+  },
+  "records": [
+    {
+      "file": "upstream-pin.json",
+      "bytes": 642,
+      "sha256": "8aaa4522d7ba9faedd376d003b3b60c79a860b1d473afa7bc251fa1cb1384711"
+    },
+    {
+      "file": "hostprobe-source-apk-binding-round2.json",
+      "bytes": 644,
+      "sha256": "f57b3bbf12f31a5f62d7987229e6edaf5b1a38ffcdc9251e36c0d25576f2a920"
+    },
+    {
+      "file": "hostprobe-build-round2.json",
+      "bytes": 575,
+      "sha256": "ea00a3429c0aab14e1e70d3c31115f2065fec2d0747534e61bd471680df6d2f5"
+    },
+    {
+      "file": "phone-preservation-002-device-restore-proof.json",
+      "bytes": 3100,
+      "sha256": "53dc03e5000e7feeacd40f94d55fd668b2f976cc4dc75c211946cf3d24f95133"
+    },
+    {
+      "file": "preservation-transfer-owned-stop-settlement.json",
+      "bytes": 553,
+      "sha256": "10a4c863bfe171bebb40d143b7d367da61388855c33e6e14bde75035ac24f067"
+    },
+    {
+      "file": "pre-test-physical-guard-timeout-host-reconcile.json",
+      "bytes": 806,
+      "sha256": "55f577af866bae3a0a5064c73b365cf79b059d7d794c13121046ac2e68fffe90"
+    },
+    {
+      "file": "pre-test-physical-guard-timeout-ssh-reconcile.json",
+      "bytes": 1133,
+      "sha256": "6d506e423d0220862753892368ce65732c082110e7711df71f3141da9c185927"
+    },
+    {
+      "file": "stock-videoonly-case001.json",
+      "bytes": 3079,
+      "sha256": "7d6fe4705c47758563ae1a46fb52e93265a5197f3c436ec3cf2abbb6b50bce4f"
+    },
+    {
+      "file": "stock-case001-forward-removal-recovery.json",
+      "bytes": 894,
+      "sha256": "31c8c82b6145d15f308b83387104dd613b3a2c2b5234a7fffb1b8f0fbdbca51c"
+    },
+    {
+      "file": "stock-case001-settlement-and-av-preflight.json",
+      "bytes": 1548,
+      "sha256": "25a036320045011c2956081e855893193c9e8003a8ab7eae8cb48e6943e80b34"
+    },
+    {
+      "file": "stock-av-case002-active-capture-proof.json",
+      "bytes": 524,
+      "sha256": "d47c9608916d7335921dba7a38c79d01934c9f0a3573e48b913d460d993ef32d"
+    },
+    {
+      "file": "stock-av-case002-guard-end-readback.json",
+      "bytes": 888,
+      "sha256": "4688830dfef9c5aeb58de9389a8bcda5bf06fe6751f35eaca5e6bd63e360f787"
+    },
+    {
+      "file": "stock-av-case002-settlement.json",
+      "bytes": 1050,
+      "sha256": "d6b6bac7a915a8dc3c006a07683974ad466502aad04c1953df7b4bc54d7cf111"
+    },
+    {
+      "file": "stock-av-case003-stop-preflight-incomplete.json",
+      "bytes": 310,
+      "sha256": "7354be120a28c19e326caf89a37950650a84a9461772f6a23f007f2e2931709a"
+    },
+    {
+      "file": "av-guard004-synthetic-and-schema-qualification.json",
+      "bytes": 4647,
+      "sha256": "bacbf631ec362bba7350fa220e98654263d4f07054f2e8025e4719a62bfa5085"
+    },
+    {
+      "file": "stock-av-case004-guard-settlement-readback.json",
+      "bytes": 5078,
+      "sha256": "f8bdf9b111a7d154ec3b99d81f7aead87f38660ac6c6aa2416d40b1aa47106f5"
+    },
+    {
+      "file": "stock-av-case005-guard-and-play.json",
+      "bytes": 3894,
+      "sha256": "8c41c676ee853c313aec45954ba75eedfeaa5b7b9037acd3abc8323f2aa4c8ce"
+    },
+    {
+      "file": "stock-av-case005-guard-and-resource-settlement.json",
+      "bytes": 1531,
+      "sha256": "08b05394bba889fdb5f4c8d2e86445a31f42de27f8b61e02fb9a4ce67ca5ec4b"
+    },
+    {
+      "file": "stock-av-case005-stream-metadata.json",
+      "bytes": 802,
+      "sha256": "37e89e55c7dc98f863e3251aeff97163212493bae0009f96d6de4b320977f3af"
+    },
+    {
+      "file": "stock-av-case005-owned-audio-signal.json",
+      "bytes": 251,
+      "sha256": "981a5f177dc2f222eaf8d397a309b5e5d2aa9c87ca0ac9b1a1bfe5ce89c404bc"
+    },
+    {
+      "file": "stock-av-case005-owned-audio-signal-stdlib.json",
+      "bytes": 2475,
+      "sha256": "85096db61cc248b685dba00b7328eed30e47e117f1213e85051ed6c3d91a4377"
+    },
+    {
+      "file": "stock-av-case005-owned-video-frame-signal.json",
+      "bytes": 427,
+      "sha256": "dd2b335a75bed15006c05290731e5dac0b762a0205a830001442c48cd90cf6b9"
+    },
+    {
+      "file": "stock-case006-letter-observation.json",
+      "bytes": 706,
+      "sha256": "e1e355913fdf1460fd94ec40f6f51a16c179f811f2be4b521f49b74997d7d2c2"
+    },
+    {
+      "file": "stock-case006-browser-launch.json",
+      "bytes": 2564,
+      "sha256": "e35d51b98ad2e51ee99880e84880f73f763c9407b1021f368aa42ec492743645"
+    },
+    {
+      "file": "stock-case006-chrome-frame.json",
+      "bytes": 336,
+      "sha256": "3f927ebf47babda15d2d1ae0d0774403ca69a1b595bd5aece595b9d3787014d7"
+    },
+    {
+      "file": "stock-case006-settings-launch.json",
+      "bytes": 3272,
+      "sha256": "7d41b4a40d5d20325110d3469d03ac82fdf64eabe6f4bc7e3aa8fc66e842b3ff"
+    },
+    {
+      "file": "stock-case006-settings-frame.json",
+      "bytes": 330,
+      "sha256": "b5cd6ccfa235686f1dbb3392197d8ac0e60325f9334b61f97bbdc978d22ee2b7"
+    },
+    {
+      "file": "stock-case006-bounded-display-off-on.json",
+      "bytes": 2981,
+      "sha256": "14d6403a921d26ecae082c08e224a5342a445e357805c2f9284ec356d2696b4a"
+    },
+    {
+      "file": "stock-case006-settlement.json",
+      "bytes": 3275,
+      "sha256": "2547fae10e571849cda3039f0b3feaa207e8962e5ea65fcd59a2e5ba7b9aa038"
+    },
+    {
+      "file": "stock-case006-settlement-readback.json",
+      "bytes": 171,
+      "sha256": "cff90ccfbe793b6687cbe8f9d24dc6f6b224a42a3f49fb97f2164d9472085a49"
+    },
+    {
+      "file": "stock-case007-field-and-ime-target.json",
+      "bytes": 1302,
+      "sha256": "0cb9e822faa532b7b3db980be282b0025afb5e0cf7e167dd36d1bcf4c45fd121"
+    },
+    {
+      "file": "stock-case007-one-visible-letter.json",
+      "bytes": 379,
+      "sha256": "1e31a780c8c8751b956cbe650b8e828ec1690d22a4048a8c0d1a688c5ec7d912"
+    },
+    {
+      "file": "stock-case007-coherent-refocus-letter.json",
+      "bytes": 882,
+      "sha256": "ee9271758f3509ce697936987562ac557ba0ac7fdebe4bc3d0ac484c5b0637f2"
+    },
+    {
+      "file": "stock-case007-settlement.json",
+      "bytes": 1005,
+      "sha256": "fdbedaa35b673a65e5f26667283e235816c2bfe95bb064e401e6683076878391"
+    },
+    {
+      "file": "phone-local-socket-qualification001.json",
+      "bytes": 2634,
+      "sha256": "f9cb5d7b6e20353927d1b3332bc9583f8b7cc5d4c2852ed210144dc61891cebe"
+    },
+    {
+      "file": "phone-local-shell-socket-qualification002.json",
+      "bytes": 1496,
+      "sha256": "f7246ae70636440276fbde2c05120d5cc51421b1c6351a5d581e49d290c1acea"
+    },
+    {
+      "file": "fold6-final-ordinary-sleep-and-lock.json",
+      "bytes": 7558,
+      "sha256": "eb30b6ac60faf7f836212e1e0bbd603533a8de9e86b492592c8db09d12d6e9b7"
+    },
+    {
+      "file": "fold6-screen-helper-host-dummy-qualification070c.json",
+      "bytes": 5353,
+      "sha256": "ab3ae2675076b23df65df3c1c072c60a5c6528212d6ab3c000d3d904f0a1eaca"
+    },
+    {
+      "file": "helper070-host-harness-isolation-failure.json",
+      "bytes": 498,
+      "sha256": "04d85a25b375cd5919c6a425c5270e7e9b2a012b459934aaf6f0d07402e1d400"
+    },
+    {
+      "file": "fold6-helper070-control-only-power-keypad.json",
+      "bytes": 1593,
+      "sha256": "1354b8eeefd7b5639b94d7f9db2e88d8300a9a32cacc2cbe7cfaa85a14a272f9"
+    },
+    {
+      "file": "fold6-helper070-state-dependent-keypad002.json",
+      "bytes": 2501,
+      "sha256": "e756780dac5b9b0010b04af8900c33160d631f8764c9164d124977122cab19fa"
+    },
+    {
+      "file": "fold6-screen-helper-user0-query-finalization.json",
+      "bytes": 975,
+      "sha256": "bb3bdcec6eb201c55a5ec0d63606113a1158f08b8bdc647b0ea330265627ab85"
+    },
+    {
+      "file": "phone-posttest-original-app-and-defaults.json",
+      "bytes": 1456,
+      "sha256": "c4d0e2567ee5c09123f3778b0d9b9f569809fadba8c06900d6d7fe99148b74c1"
+    },
+    {
+      "file": "owned-obsolete-bootstrap-xvfb-settlement.json",
+      "bytes": 1062,
+      "sha256": "2785f4b3ead8735e1807645333c00de846774140f912b63549c27b96c9a9d609"
+    },
+    {
+      "file": "fold6-final-defaults-media-physical-qualification.json",
+      "bytes": 2349,
+      "sha256": "1fe4e81380fbd23d4fee917280f9e66c54170df7c26d85a7f35fa15f04e6fd2a"
+    },
+    {
+      "file": "fold6-native-surface072-host-qualification.json",
+      "bytes": 477,
+      "sha256": "934b441e1f6dc2600c20754e3ac8478682481d57d58c810cdac01411f2115847"
+    },
+    {
+      "file": "fold6-native-surface072-live.json",
+      "bytes": 3613,
+      "sha256": "8d3c3a1df105593e55c46a6ef058b56639d752f2dc87133a3df30a1d200717ed"
+    },
+    {
+      "file": "final-host-owned-listener-settlement.json",
+      "bytes": 714,
+      "sha256": "2e0ada33d770168c3b9b0a8f56583ec364819916fc8dbc407188f73849c3d664"
+    }
+  ],
+  "claims": "Hashes bind retained records; neither publication nor individual checks imply recipient receipt, independent acceptance, downstream readiness or release."
+}
