@@ -1,10 +1,13 @@
 package com.code2hack.eyebrowse.projector.hostprobe
 
 import android.app.Activity
+import android.app.ActivityOptions
+import android.content.Intent
 import android.graphics.Color
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.text.InputType
 import android.view.WindowInsets
 import android.view.inputmethod.EditorInfo
@@ -39,8 +42,9 @@ class FixtureActivity : Activity() {
             hint = "Owned text only"
             setTextColor(Color.WHITE)
             setHintTextColor(Color.LTGRAY)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
             maxLines = 2
             setSelectAllOnFocus(false)
         })
@@ -71,6 +75,35 @@ class FixtureActivity : Activity() {
                 video.stopPlayback()
                 status.text = "Owned clip stopped"
             }
+        })
+        fun openHere(intent: Intent) {
+            val currentDisplay = display ?: return
+            try {
+                startActivity(intent, ActivityOptions.makeBasic()
+                    .setLaunchDisplayId(currentDisplay.displayId).toBundle())
+            } catch (error: RuntimeException) {
+                status.text = "Launch failed: ${error.javaClass.simpleName}"
+            }
+        }
+        root.addView(LinearLayout(this).apply {
+            addView(Button(context).apply {
+                text = "Owned browser page"
+                setOnClickListener {
+                    // Official Custom Tab API: a null session avoids opening the tab switcher.
+                    val extras = Bundle().apply {
+                        putBinder("android.support.customtabs.extra.SESSION", null)
+                    }
+                    openHere(Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com/"))
+                        .setPackage("com.android.chrome").putExtras(extras))
+                }
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(Button(context).apply {
+                text = "Display settings"
+                setOnClickListener {
+                    openHere(Intent(Settings.ACTION_DISPLAY_SETTINGS)
+                        .setPackage("com.android.settings"))
+                }
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         })
         root.addView(video, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)

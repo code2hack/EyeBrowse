@@ -12,6 +12,13 @@ Install only the unused `com.code2hack.eyebrowse.projector.hostprobe` package in
 the reserved Fold6 window, after required preservation. Do not replace another
 package or clear application data.
 
+Two buttons request ordinary apps on the fixture's current display: Chrome opens
+`https://example.com/` in a Custom Tab, and Settings opens its Display page. The
+fixture neither opens the existing browser tab switcher nor edits any setting.
+The Custom Tab uses the [official low-level null-session API](https://developer.chrome.com/docs/android/custom-tabs/howto-custom-tab-low-level-api)
+without adding a browser library or WebView. Actual app/display placement and
+rendering still require device verification.
+
 From the repository root:
 
 ```sh
