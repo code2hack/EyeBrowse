@@ -113,6 +113,35 @@ class MihomoHostTest {
                             .put("provider", api("GET", "/providers/proxies/ENABLED", null, 3000))
                             .put("egress", api("GET", "/proxies/EGRESS", null, 3000)))
                     }
+                    fun minimumAndNewRoute(label: String, expectedPeer: String) {
+                        assertTrue(fixture.slowHealthy && fixture.fastHealthy)
+                        assertTrue(fixture.sources().all { it.enabled })
+                        val provider = api("GET", "/providers/proxies/ENABLED", null, 3000).getJSONArray("proxies")
+                        val delays = (0 until provider.length()).associate { index ->
+                            val node = provider.getJSONObject(index)
+                            val health = node.getJSONObject("extra").getJSONObject(healthUrl)
+                            assertTrue(health.getBoolean("alive"))
+                            val history = health.getJSONArray("history")
+                            node.getString("name") to history.getJSONObject(history.length() - 1).getInt("delay")
+                        }
+                        assertEquals(ProxyPolicy.nodes(fixture.sources()).map { it.getString("name") }.toSet(), delays.keys)
+                        assertEquals(2, delays.size)
+                        assertTrue(delays.values.all { it > 0 })
+                        val selected = api("GET", "/proxies/AUTO", null, 3000).getString("now")
+                        assertEquals(delays.values.minOrNull(), delays[selected])
+                        assertEquals("AUTO", api("GET", "/proxies/EGRESS", null, 3000).getString("now"))
+                        val start = fixture.proxyRequests.size
+                        assertEquals(expectedPeer, observe(label))
+                        assertTrue("New connection through the measured winner", fixture.proxyRequests.drop(start).any {
+                            it.first == expectedPeer && it.second == "127.0.0.1:${fixture.http}"
+                        })
+                        healthJournal.put(JSONObject().put("case", label).put("provider", provider)
+                            .put("bothSourcesEnabledAndHealthy", true).put("selected", selected)
+                            .put("minimumMeasuredDelayMs", delays.values.minOrNull()).put("selectedDelayMs", delays[selected])
+                            .put("firstConfiguredDelayMs", fixture.slowDelayMs).put("secondConfiguredDelayMs", fixture.fastDelayMs)
+                            .put("ordinaryAutoCacheWaitMs", 10_100).put("destinationPeer", expectedPeer)
+                            .put("newReceipts", fixture.proxyReceipts(start)))
+                    }
                     for ((label, sources) in listOf("no-sources" to emptyList(),
                         "all-off" to fixture.sources().map { ProxySource(it.id, false, it.nodes) },
                         "empty" to listOf(ProxySource("empty", true, emptyList())))) {
@@ -120,7 +149,8 @@ class MihomoHostTest {
                     }
                     assertEquals("AUTO", apply(fixture.sources()))
                     recordHealth("both-healthy")
-                    assertEquals("127.0.0.3", observe("second-source-fastest"))
+                    Thread.sleep(10_100) // Observe the genuine AUTO cache interval in both delay orderings.
+                    minimumAndNewRoute("second-source-fastest", "127.0.0.3")
                     assertEquals("127.0.0.3", observe("https", "https"))
                     val receiptsBefore = fixture.proxyRequests.size
                     assertEquals("127.0.0.3", observe("cn-ip-control-before"))
@@ -175,6 +205,24 @@ class MihomoHostTest {
                         assertEquals("127.0.0.3", frame.toString(Charsets.UTF_8))
                         journal.put(JSONObject().put("case", "websocket").put("destinationPeer", frame.toString(Charsets.UTF_8)))
                     }
+                    fixture.slowDelayMs = 15; fixture.fastDelayMs = 180
+                    Thread.sleep(1100) // Native health calls deduplicate within one second.
+                    assertEquals("AUTO", ProxyPolicy.applyHealth(2, healthUrl, ::api))
+                    Thread.sleep(10_100)
+                    minimumAndNewRoute("first-source-fastest-after-delay-swap", "127.0.0.2")
+                    fixture.slowDelayMs = 180; fixture.fastDelayMs = 15
+                    var transactionApplication = 0
+                    fixture.checkProfileTransaction(home, { sources ->
+                        try {
+                            apply(sources)
+                            val provider = api("GET", "/providers/proxies/ENABLED", null, 3000).getJSONArray("proxies")
+                            assertEquals(ProxyPolicy.nodes(sources).map { it.getString("name") }.toSet(),
+                                (0 until provider.length()).map { provider.getJSONObject(it).getString("name") }.toSet())
+                            recordHealth("production-transaction-apply-${++transactionApplication}")
+                            true
+                        } catch (_: Exception) { false }
+                    }, ::observe)
+                    recordHealth("production-transaction-refusal-kept-prior")
                     fixture.slowHealthy = false; fixture.fastHealthy = false
                     Thread.sleep(1100) // Native health calls deduplicate within one second.
                     assertEquals("DIRECT", ProxyPolicy.applyHealth(2, healthUrl, ::api))
@@ -192,6 +240,10 @@ class MihomoHostTest {
                     process.waitFor(3, TimeUnit.SECONDS)
                     evidence?.mkdirs()
                     evidence?.let { File(home, "core.log").copyTo(File(it, "core-host.log"), overwrite = true) }
+                    evidence?.let { destination ->
+                        for (name in listOf("transaction-observations.json", "transaction-profiles.json", "next.json", "config.json"))
+                            File(home, name).takeIf { it.exists() }?.copyTo(File(destination, name), overwrite = true)
+                    }
                 }
             } finally {
                 evidence?.let { File(it, "destination-observations.json").writeText(journal.toString(2)) }

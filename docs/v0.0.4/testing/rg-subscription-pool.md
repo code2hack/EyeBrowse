@@ -1,6 +1,6 @@
 # RG subscription import and pool verification
 
-Issue #59, current [P4.4](https://github.com/code2hack/EyeBrowse/blob/7125378fe07dda1bd5cdb7e8399ff770884edb38/docs/plans/v0.0.4-plan.md), Worker59 mission6. This record supplies candidate evidence for independent review; it does not grant acceptance or integration. Product and test code match component commit `0dbe0375f52d46b16845904d39c2ceeb02b7c3c3`, which extends `aeb463ac9f90d80b8fcbdfb622fc23b288330e37`, based on integration `03de921e2400147842ce6c56101b58d514dde77c`. This documentation update requires no new APK build. Main `8929241f348bae9005b9b6bc1a93fbabd47145c1` is unchanged.
+Issue #59, current [P4.5](https://github.com/code2hack/EyeBrowse/blob/e64067f60bf575343a8387c163c7705e4dabf1a1/docs/plans/v0.0.4-plan.md). Original candidate `2ca9bcd7d09c8c440054c1010a5b41b29efa683c` was a documentation-only child of component `0dbe0375f52d46b16845904d39c2ceeb02b7c3c3`, over integration `03de921e2400147842ce6c56101b58d514dde77c`. Independent review1 requested two evidence corrections, R59-01 and R59-02. Mission7 makes these host-only corrections; earlier results below retain their original source/APK cuts. Changed code requires new affected verification and independent whole-head review. Main `8929241f348bae9005b9b6bc1a93fbabd47145c1` is unchanged.
 
 The [Android JSON cache correction](rg-profile-cache.md) remains separately demonstrated. The identities of the two historical Owner-reported failed inputs, their relationship to either available source, and their original failure causes remain unknown. Neither later Owner success nor these executions retroactively identifies those inputs.
 
@@ -13,7 +13,7 @@ Both cases used the normal native More → Settings → Proxy → Add path, cont
 | Manager-selected original saved source, distinct from the current target source | Invocation `56f2d291-bab2-4d49-8b35-39204a845e9b`: JUnit 1 passed. HTTP 200; six usable nodes. Target profiles increased from one to two; the existing source, friendly name, ON state and cached nodes were retained. |
 | Exact current target source reimport | Invocation `cc568808-eea4-44a4-8672-07f04ac6cbd8`: JUnit 1 passed. HTTP 200; 35 usable nodes. Exactly the same two source identities, names and ON states remained; the other source's cache was unchanged. The server also returned unchanged node data for the reimported source, so this execution does not demonstrate a changed server-side node set. |
 
-Both enabled sources remain saved, contributing 35 + 6 = 41 nodes. Bookmarks and starting tab metadata were preserved; the original app was not launched, stopped, written or replaced. These import/store results do not establish runtime routing. The earlier controlled tests separately cover changed node sets, OFF state, budgets, failed persistence and last-good behavior.
+Both enabled sources remain saved, contributing 35 + 6 = 41 nodes. Bookmarks and starting tab metadata were preserved; the original app was not launched, stopped, written or replaced. These import/store results do not establish runtime routing. The earlier controlled tests separately cover changed node sets, OFF state, budgets and store-only failed persistence. Production post-apply rollback was not covered by that standalone store probe; it is R59-02 below.
 
 ## Runtime startup defect
 
@@ -68,9 +68,32 @@ The post-run generated configuration contained two resolvers and no scoped entry
 | Chromium WebView public route | A distinct pooled core connection and the public Example Domain page reached READY. No private tab or account page was loaded. |
 | Teardown and retained data | Profile cache and bookmarks unchanged; starting tab metadata restored; foreground runtime released. Actual subsequent state was HOME, keyguard false, with source/target/TEST and associated app processes absent. |
 
-The test froze automatic refresh only while examining the current saved inputs, then restored the test connectivity seam. It used no seeded profiles, relay, reverse connection or fixture service. The controlled native tests separately demonstrate switched delays, either source winning, OFF/deleted exclusion and unhealthy fallback/recovery; this real execution selected one actual source at its observed latency.
+The test froze automatic refresh only while examining the current saved inputs, then restored the test connectivity seam. It used no seeded profiles, relay, reverse connection or fixture service. The original controlled tests demonstrated OFF/deleted exclusion and unhealthy fallback/recovery; the first source won only while the second remained unhealthy. The earlier assertion that those tests demonstrated switched healthy-source delays was unsupported (R59-01). This real execution selected one actual source at its observed latency.
 
 Separate fresh-process invocation `4d7bc769-c400-47aa-b9ab-982fb31d3ac8` passed one JUnit test in a new Android process, PID 14140. Both `ProfileStore` and fresh `RgProfiles` recovered the exact canonical source, friendly name, enabled state and nodes for both profiles and all 41 enabled nodes. The private cache, complete profile XML and tab metadata stayed unchanged; this headless check did not start the core. Neither execution demonstrates account E2E or optical acquisition.
+
+## Review1 correction round2
+
+R59-01 extends the existing fixture with independently mutable delays, retaining both sources ON and healthy. The native check measures both at the same health URL, waits the genuine AUTO ten-second cache interval in each ordering, checks the measured minimum and native choice, and records fresh proxy and destination receipts. The original 90-second test bound is unchanged.
+
+R59-02 exposes the unchanged `RgProfiles.applyAndSave` transaction as an internal companion seam used by ordinary imports, toggles, deletes and refresh. The shared controlled check uses that production body with a genuine core and an isolated dummy disk store. It observes a candidate's new route before the writer returns false, then verifies the rollback call, prior usable route, other-source data, exact disk bytes and fresh-reader state. A core-invalid but store-saveable candidate separately checks actual runtime refusal before any write. The standalone store-only probe retains its original narrower scope.
+
+Both affected host gates passed with **94 actual RG JVM executions each, zero failures/errors/skips**, APP/TEST builds and lint (0 errors, 8 ordinary / 11 Chromium warnings). Ordinary invocation002 took 88.126341 seconds; Chromium invocation001 took 88.860249 seconds. Both source inventories contain 483 files and the 66 pinned inputs were checked before and after. Loader XML's 12 passes remain UP-TO-DATE reused coverage. Each native journal has 19 actual destination observations. Existing fallback, TLS, WebSocket and regional/direct checks still passed; no timeout, health bound or assertion was relaxed.
+
+| Host gate / ordering | Measured first / second delay | AUTO and actual new route |
+| --- | --- | --- |
+| Ordinary, configured 180 / 15 ms | 181 / 17 ms | Second source, 17 ms; new `.3` proxy and destination receipt. |
+| Ordinary, configured 15 / 180 ms | 17 / 183 ms | First source, 17 ms; new `.2` proxy and destination receipt. |
+| Chromium, configured 180 / 15 ms | 182 / 17 ms | Second source, 17 ms; new `.3` proxy and destination receipt. |
+| Chromium, configured 15 / 180 ms | 17 / 182 ms | First source, 17 ms; new `.2` proxy and destination receipt. |
+
+Both rows remained enabled and both actual health entries remained alive with positive measurements in every evaluation. The common health URL was unchanged within each invocation, and each ordering used a genuine 10.1-second wait. These are controlled real-core results, separate from the historical single-minimum 41-node device observation.
+
+Each gate also passed the production transaction check: a two-source last-good pool routed through `.3`; the candidate disabled only the second source, and a new `.2` route was observed inside the writer before it returned false. Rollback restored both live members and a new `.3` route; memory, other-source data, exact disk bytes and a fresh reader matched. A store-saveable invalid-cipher candidate was then refused by the native application adapter without another write, retaining both members and another new `.3` route. Live membership counts were 2 → 1 → 2 → 2. This executes the same production transaction body used by `RgProfiles`, with real native application and route receipts; it does not claim Android `RgProxyRuntime` execution.
+
+The first ordinary invocation001 remains **94 executions / 1 failure**: its raw fixture node name was not normalized before seeding the dummy store, so the exact fresh-reader assertion found `same` versus `node`. Its partial swaps and accepted rollback are retained without promoting that failed run to PASS. Correcting the seed through `ProfileImport.nodes` preserved the equality assertion. The original PR-read EOF and a host process-audit shell-text false positive also remain recorded setup negatives.
+
+The opt-in Android method `ProfileStoreInstrumentedTest#productionTransactionRestoresRuntimeAfterSaveFailure` is compiled into both TEST APKs, with arguments `transactionProbe=true` and a new invocation UUID. It shares the checks with the host test and uses actual `RgProxyRuntime`, an owned local fixture and isolated dummy storage, then restores the starting saved runtime sources and checks Owner preferences/tabs/bookmarks unchanged. **It has not executed.** Worker64 owns RG; mission7 performed zero device actions. Changed-candidate Android verification and renewed whole-head independent review remain explicit gates; no CANDIDATE_READY or whole-ticket PASS follows from these host corrections.
 
 ## Transport history and current preservation
 

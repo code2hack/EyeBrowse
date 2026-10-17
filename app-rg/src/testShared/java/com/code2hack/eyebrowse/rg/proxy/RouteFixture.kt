@@ -17,7 +17,7 @@ import javax.net.ssl.TrustManagerFactory
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Real TCP/TLS destinations record peer IP: .1=DIRECT, .2=slow source, .3=fast source. */
+/** Real TCP/TLS destinations record peer IP: .1=DIRECT, .2=first source, .3=second source. */
 internal class RouteFixture(keyStore: InputStream) : Closeable {
     val tls: SSLContext
     val observations = CopyOnWriteArrayList<Pair<String, String>>()
@@ -28,6 +28,8 @@ internal class RouteFixture(keyStore: InputStream) : Closeable {
     @Volatile var subscriptionAgent: String? = null
     @Volatile var slowHealthy = true
     @Volatile var fastHealthy = true
+    @Volatile var slowDelayMs = 180L
+    @Volatile var fastDelayMs = 15L
     private val sockets = Collections.newSetFromMap(ConcurrentHashMap<Closeable, Boolean>())
     private val loopback = InetAddress.getByName("127.0.0.1")
     val http: Int
@@ -43,8 +45,8 @@ internal class RouteFixture(keyStore: InputStream) : Closeable {
         http = listen(ServerSocket(0, 16, loopback), ::origin)
         https = listen(tls.serverSocketFactory.createServerSocket(0, 16, loopback), ::origin)
         ipv6 = listen(ServerSocket(0, 16, InetAddress.getByName("::1")), ::origin)
-        slow = listen(ServerSocket(0, 16, loopback)) { node(it, "127.0.0.2", 180, slowHealthy) }
-        fast = listen(ServerSocket(0, 16, loopback)) { node(it, "127.0.0.3", 15, fastHealthy) }
+        slow = listen(ServerSocket(0, 16, loopback)) { node(it, "127.0.0.2", slowDelayMs, slowHealthy) }
+        fast = listen(ServerSocket(0, 16, loopback)) { node(it, "127.0.0.3", fastDelayMs, fastHealthy) }
     }
     fun sources() = listOf(ProxySource("source-one", true, listOf(node(slow))), ProxySource("source-two", true, listOf(node(fast))))
     fun proxyReceipts(fromIndex: Int = 0) = JSONArray(proxyRequests.drop(fromIndex).map {

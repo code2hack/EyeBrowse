@@ -125,16 +125,7 @@ internal class RgProfiles private constructor(context: Context) {
     }
 
     private fun applyAndSave(candidate: List<SavedProfile>) {
-        val previous = store.profiles
-        if (!store.canSave(candidate)) error("Profile change could not be saved. Existing data kept.")
-        // Core/health calls already have bounds; an outer timeout could abandon an applied pool.
-        if (!runtime.replaceSources(candidate.map { it.asSource() }).get())
-            error("Profile change could not be applied. Existing data kept.")
-        if (!runCatching { store.save(candidate) }.getOrDefault(false)) {
-            check(runtime.replaceSources(previous.map { it.asSource() }).get())
-            error("Profile change could not be saved. Existing data kept.")
-        }
-        profiles = store.profiles
+        profiles = applyAndSave(store, candidate, runtime::replaceSources)
     }
 
     private fun fetch(source: String): String {
@@ -181,6 +172,21 @@ internal class RgProfiles private constructor(context: Context) {
     }
 
     companion object {
+        // User changes and controlled real-core failure checks share this exact transaction.
+        internal fun applyAndSave(store: ProfileStore, candidate: List<SavedProfile>,
+            replaceSources: (List<ProxySource>) -> CompletableFuture<Boolean>): List<SavedProfile> {
+            val previous = store.profiles
+            if (!store.canSave(candidate)) error("Profile change could not be saved. Existing data kept.")
+            // Core/health calls already have bounds; an outer timeout could abandon an applied pool.
+            if (!replaceSources(candidate.map { it.asSource() }).get())
+                error("Profile change could not be applied. Existing data kept.")
+            if (!runCatching { store.save(candidate) }.getOrDefault(false)) {
+                check(replaceSources(previous.map { it.asSource() }).get())
+                error("Profile change could not be saved. Existing data kept.")
+            }
+            return store.profiles
+        }
+
         private val publicErrors = setOf(
             "Unsupported profile URL. Use HTTP(S) or a Clash install link.",
             "Profile download failed. Existing data kept.",
