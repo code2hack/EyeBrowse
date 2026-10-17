@@ -188,9 +188,10 @@ interaction counter or composer observation executed in this phase. A distinct
 persistent-state Profiler.enable also timed out; Profiler.start was never sent.
 The browser timeline attempt yielded no useful task records: start was sent
 without a response, one necessary cleanup End answered, and tracingComplete
-confirmed completion with no data loss. Only metadata was collected. Its buffer
-was bounded to 1 MiB, with Chrome tracing and argument filtering, without system
-tracing, heap dumps, screenshots or network capture. The retained target records
+confirmed completion with no data loss. Only metadata was collected. The request
+specified a 1 MiB buffer, Chrome tracing and argument filtering, without system
+tracing, heap dumps, screenshots or network capture; start acceptance was not
+established. The retained target records
 and public derivatives are separate.
 
 One timeline process-name predicate and one pre-close persistence predicate
