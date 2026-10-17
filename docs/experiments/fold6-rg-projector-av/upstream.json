@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "issue": 66,
+  "observedDate": "2026-10-17",
+  "scope": "Official upstream and native desktop diagnostic tool qualification; device capability is recorded separately",
+  "scrcpy": {
+    "repository": "https://github.com/Genymobile/scrcpy",
+    "release": "https://github.com/Genymobile/scrcpy/releases/tag/v5.0.1",
+    "tag": "v5.0.1",
+    "tagObject": "a0c27ff382c411af1301dcc1cd8205c9aeb81996",
+    "commit": "a60891aea193d92e7e5c3942700eca63f9d19a5f",
+    "tree": "eb740a30415199219479610728420ebcfd8a9064",
+    "server": {
+      "url": "https://github.com/Genymobile/scrcpy/releases/download/v5.0.1/scrcpy-server-v5.0.1",
+      "bytes": 733930,
+      "sha256": "764eb6f79811d5211fe9df341120882ba9994c7a61b897d7bf3fb662e53bc536",
+      "githubAssetDigestMatched": true,
+      "publishedSHA256SUMSMatched": true,
+      "apkMetadata": {
+        "package": "com.genymobile.scrcpy",
+        "versionName": "5.0.1",
+        "versionCode": 50001,
+        "minSdk": 21,
+        "targetSdk": 36,
+        "compileSdk": 36
+      }
+    },
+    "checksumFile": {
+      "url": "https://github.com/Genymobile/scrcpy/releases/download/v5.0.1/SHA256SUMS.txt",
+      "bytes": 661,
+      "sha256": "b6e9a0b549caaaa4d0e5e1a2ef56069f9516cc10eced9477406dee4bb59180f8",
+      "githubAssetDigestMatched": true
+    },
+    "nativeClient": {
+      "version": "5.0.1",
+      "architecture": "aarch64",
+      "sha256": "a61f28ac9b7d3b27975a02bdbb470144a5a846fec765196b21cf0ffa87eeeee4",
+      "bytes": 1193304,
+      "buildtype": "debug",
+      "upstreamSourceModified": false,
+      "compileServer": false,
+      "usb": false,
+      "v4l2": false,
+      "vaapi": false,
+      "upstreamTests": {"passed": 12, "failed": 0, "skipped": 0, "timeouts": 0},
+      "compiledAndLinkedVersions": {
+        "SDL": "3.4.18",
+        "libavcodec": "60.31.102",
+        "libavformat": "60.16.100",
+        "libavutil": "58.29.100"
+      }
+    },
+    "protocolSources": {
+      "versionCheck": "https://github.com/Genymobile/scrcpy/blob/a60891aea193d92e7e5c3942700eca63f9d19a5f/server/src/main/java/com/genymobile/scrcpy/Options.java#L328",
+      "sockets": "https://github.com/Genymobile/scrcpy/blob/a60891aea193d92e7e5c3942700eca63f9d19a5f/server/src/main/java/com/genymobile/scrcpy/device/DesktopConnection.java#L56",
+      "framing": "https://github.com/Genymobile/scrcpy/blob/a60891aea193d92e7e5c3942700eca63f9d19a5f/server/src/main/java/com/genymobile/scrcpy/device/Streamer.java"
+    },
+    "signatureVerification": "HTTPS release digests and published checksum file matched; detached signature not independently verified"
+  },
+  "SDL": {
+    "release": "https://github.com/libsdl-org/SDL/releases/tag/release-3.4.18",
+    "sourceURL": "https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz",
+    "sourceSHA256": "9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3",
+    "githubAssetDigestMatched": true,
+    "nativeLibrarySHA256": "3a01b770b437011300e189b207f3ba7e4acb5cf6295ccb2b89c19eb07b23ad4c",
+    "installation": "Mission-private prefix; no system package or shared runtime modification",
+    "features": "X11/software rendering and ALSA; optional host XTEST, Wayland, KMSDRM, OpenGL, GLES, Vulkan, GPU, PulseAudio and PipeWire disabled"
+  },
+  "termuxReference": {
+    "commit": "8629e632fcb95da272221be327db653fb24befe9",
+    "manifest": "https://github.com/termux/termux-app/blob/8629e632fcb95da272221be327db653fb24befe9/app/src/main/AndroidManifest.xml",
+    "runCommandService": "https://github.com/termux/termux-app/blob/8629e632fcb95da272221be327db653fb24befe9/app/src/main/java/com/termux/app/RunCommandService.java",
+    "scope": "Source reference only; installed app version and RUN_COMMAND permission/policy are not inferred"
+  }
+}
