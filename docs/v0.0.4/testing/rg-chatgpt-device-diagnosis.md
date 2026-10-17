@@ -388,6 +388,70 @@ bind free. A subsequent host-only observation again found no owned fixture or
 scratch helper process and no 39030 listener. No new fixture framework or
 APP/TEST build was introduced.
 
+## Bounded public style-reconciliation observation
+
+Under Manager043's explicit HOST_ONLY continuation, the existing normal-sandbox
+host structural probe was adapted to three isolated, non-secret documents. The
+unchanged production presentation script was used wherever presentation was
+enabled: 2,909 UTF-8 bytes, SHA256
+`f3d03973c192f7bb21ef1f74dd4d5062cc924719dc4f5fe036ec6d3bf13f6a1b`.
+This is the first-party literal previously fingerprinted on the device. Its
+earlier host extraction differs only by one trailing newline. The source file
+remains SHA256
+`505f111122d304bc6b92c4ad0456e9584a233af2ae4cc6b5aa6c6dba17b35c9d`.
+
+Each document has one transparent managed div. The generic page reconciler
+owns an empty inline style declaration and removes an unexpected style
+attribute; it has no knowledge of EyeBrowse's property. Its safety limit is 64
+repairs. A passive observer counts changes to that one element. No page content,
+account, network navigation, Android process or assigned fixture is involved.
+
+| Controlled host condition | Page repairs | Managed-element style mutations | Result |
+| --- | ---: | ---: | --- |
+| Production presentation alone | 0 | 1 | Settled |
+| Page reconciler alone | 0 | 0 | Settled |
+| Both, with the same production script | 64 | 129 | Hit the explicit repair cap, then settled |
+
+The combined case recorded 64 changes whose previous style contained the app
+property and 65 whose previous style did not. This demonstrates repeated
+interaction between an app observer that reinstates its inline custom property
+and a component that restores its declared inline style. The production
+observer's temporary disconnect does not prevent this bounded interaction.
+Both presentation-enabled cases retained black body presentation and the
+managed element's transparency. All 19 setup/structure/teardown assertions
+passed; the fixture observers were disconnected, targets closed, browser
+exited, and its process group was independently confirmed absent.
+
+This is a host structural counterexample, with Chrome155 rather than the
+installed Android engine158. It does not establish that ChatGPT uses this
+reconciler, that this mechanism caused the measured device stall, or that RG
+hardware is inadequate. The initial timer fired before the separate
+presentation-injection request; it provides no timer/input-starvation evidence.
+No uncapped loop, resource benchmark, private trace or product correction was
+run. Actual sidebar/composer/direct-conversation checks remain incomplete.
+
+Invocation `host-style-reconciliation043-001` used the shared host-build flock,
+fresh 10,161,772KiB available after acquisition, the pinned existing browser
+binary with its normal sandbox flags, and GOMAXPROCS2. No JVM/Gradle build was
+needed. All source, fixture inputs, probe base/adaptation, per-case observations
+and startup logs are retained. There were zero device or fixture39030 operations.
+Public Git history attributes the observed presentation block to
+`2f4c75b32ee9cf1dcea3064e6e775a444fbd91c0` (Worker42); this does not assign a
+recurring #57/#59/#61 cause or change writer ownership. The concrete structural
+finding returns through the Manager before any competing production correction.
+
+| Retained structural record | SHA256 |
+| --- | --- |
+| `host-style-reconciliation043-001/result.json` | `151454d732d058f00a9eba64f62d55fc9066ccfb0362af5c5b2859b0ec60af14` |
+| `host-style-reconciliation043-001/invocation.json` | `30c1bf138d92701035f7ba7502ca5b3c0774bf9431f4b699d291db6f40840a1a` |
+| `host-style-reconciliation043-001/post-run-qualification.json` | `6c1e3646b7705dbf4ffcd5f02cfbcc0292466a385c34336adb015818eb348f93` |
+
+Physical gate021 and the separately reported launcher-CWD qualification remain
+open. Manager043 authorizes this isolated host work while retaining operational
+reconciliation before future dependent product/device continuation. No routine
+device/recovery polling, source implementation change or attempt conclusion is
+inferred from this host result.
+
 ## Executed checks and retained evidence
 
 The unchanged existing fixture source was compiled offline with JDK17, the
