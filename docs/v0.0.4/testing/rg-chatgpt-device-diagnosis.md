@@ -584,3 +584,114 @@ hashes. Principal retained records are:
 
 I64-T01..T03 retain their original round1/failure0/lastConcluded0 history. No whole
 CANDIDATE_READY, acceptance, resource handoff, integration or release is claimed.
+
+## Qualified process CWD and resumed production comparison
+
+The Owner-approved shared Paseo cycle replaced the controller while retaining
+the same native session, history, workspace and profile. At the new actual cut,
+controller PID 3345962/start 63591743/UID 1000 and the native tool ancestor both
+had the assigned worktree as their kernel CWD, including inode equality. All 47
+qualification predicates passed. Manager051 independently verified report028
+and resumed the original mission under addendum005. The historical launch-CWD
+mismatch remains retained; its resolution applies prospectively to this actual
+replacement process. No Worker controller restart or provider edit occurred.
+
+Fresh current009 preservation preceded the resumed target lifecycle and input.
+All four BOTH-app CE/DP mutable streams, independent repeated/final hashes and
+full member/header/metadata sets qualified. Host staging verified 2,662 regular
+file payloads and 15 SQLite integrity checks; four static objects were freshly
+bound before reuse. Current two enabled sources/41 nodes, bookmarks, two saved
+locations/selection 1 and six engine objects were observed without forcing old
+values. The source DP raw tar is 855,040 bytes; its complete reassembled tar is
+860,160 bytes. These are different serializations, not source-state drift.
+Manager052 independently verified that distinction. Current009 is filesystem
+and host-restoration evidence, without on-device or process-memory restoration.
+
+One necessary ordinary wake passed fresh nonsecure HOME, Awake and display-ON
+checks. Fresh target-only launch then bound main PID 18566/UID 10076, installed
+engine 158.0.8107.0 and its actual mapped native-library inode to the freshly
+hashed file. APP `bbcb4b38…` and TEST `19f36429…` remained unchanged. Original
+two cold locations/selection 1 were observed before creating an owned third
+tab through native controls. No original private location was replayed.
+
+A passive isolated-world style counter passed 35 host semantic/privacy checks
+using the normal sandbox and shared build lock. It exports only a fixed numeric
+schema and known alpha categories, with no DOM writes, private page values,
+source, URLs or stacks. A bounded non-secret document on the actual Android158
+engine then reproduced 64 alternating transitions of the known app property on
+one transparent node. The fixture's reconciler stopped at 64 repairs; black
+body and transparent managed element remained correct. Field actions, inputs
+and submissions were zero. This qualifies the diagnostic on the current
+engine and demonstrates the generic structural interaction there.
+
+The initial controlled observation's AssertionError is retained. Its diagnostic
+validation incorrectly required nonnegative client-rect coordinates; the
+controlled element had a valid negative viewport-relative Y coordinate. A
+separate new read passed after correcting only that diagnostic bound. The
+production source was unchanged, and no failed input was replayed.
+
+The same owned WebView then opened public ChatGPT home through its native
+address controls. Its route category was CHATGPT_HOME and the isolated counter
+emitted BOOT. No transition threshold event arrived in the requested 12-second
+window; a subsequent scalar JavaScript request timed out. There was no final
+counter sample from the stalled renderer, so this does not establish that
+style churn was absent. Actual ChatGPT style feedback and the root cause remain
+unresolved. No Debugger, Profiler or Network domain was requested. Sidebar,
+composer, direct-conversation and whole interaction acceptance remain pending.
+
+The observer-stop request, future-script removal and Runtime.disable were each
+sent once and timed out; their remote outcomes remain unknown. The local
+watcher was reaped and its socket closed. Fixture005 was stopped at 11:07:28 UTC:
+the owned PID was absent, all 39030 listeners were absent and the exact bind was
+free. All fixture files and invocation artifacts remain retained.
+
+## Post-comparison current010 protection and physical gate
+
+The owned-tab close preflight sent no input. Its fresh Owner/power reads
+returned, but the captured hierarchy had four nodes in an opaque other package
+and no target HUD or tab counter. No known system, permission or ANR label was
+identified. The missing counter caused a retained KeyError before any tap;
+neither the tab's closure nor original-location restoration is claimed. The
+owned third-tab ledger still requires restoration.
+
+Current010 then attempted fresh post-test preservation. Initial process counts
+were source 0/target 2/TEST 0, with one live private socket match. Its first
+source CE gzip stream ended prematurely despite the stock command returning 0
+with empty stderr. The compressed partial is 20,783,104 bytes; decompression
+retained 28,704,768 bytes before EOFError. No complete store, target payload,
+fresh restoration or SQLite check qualified. Current010 is NOT_READY; current009
+remains only the earlier pre-test cutoff. All newer on-device writes remain
+primary, with no old overlay.
+
+The purposeful existing-primary reconciliation failed physical authentication
+before a planned native-focus read. Both selected host registrations, 5555 and
+41061, were unavailable. The still-unused Owner044 bounded bootstrap grant,
+explicitly retained by addendum005/Manager051, had zero prior post044 connect
+intents and was consumed once. The new 41061 connect timed out after 18 seconds
+with an unknown outcome; its local child was reaped. Subsequent bootstrap
+physical authentication was rejected. The older039 unknown connect remains
+separate and was not replayed. No tcpip, HOME, target stop, source-app lifecycle,
+install, account action, global policy change or further retry occurred.
+
+Device work now waits for a genuine capability event through the Manager's
+Owner route. Current foreground, power, camera, sensors, renderer and remote
+diagnostic teardown are unknown. This is no resource return, hardware-capacity
+verdict, new failure budget or actual-site acceptance. Source implementation
+and installed APP/TEST inputs were not changed. Required current preservation
+and necessary target teardown remain pending; all partials and failures remain
+retained.
+
+| New retained record | Scope |
+| --- | --- |
+| `cwd-return050-001/qualification.json` | Actual replacement controller and 47 qualified predicates |
+| `fresh-preservation-009/`, `recovery051-current-owner-store-binding-009.json` | Fresh pre-test full filesystem/host restoration/15 SQLite cut |
+| `recovery051-001/fresh-production-launch-engine.json` | Actual fresh target and mapped engine binding |
+| `host-style-counts051-001/` | 35 host privacy/semantic checks and actual sandbox teardown |
+| `recovery051-001/control-observer-bound-correction.json`, `controlled-ready-observation-002.json` | Retained diagnostic failure and separate corrected read |
+| `recovery051-001/native-style-transition-comparison.json`, `android-style-counter-comparison.json` | Actual Android control and incomplete site witness/cleanup scopes |
+| `fixture-running-005/teardown.json` | Immediate verified owned fixture teardown |
+| `recovery051-001/own-style-counts-tab-native-close.json`, `own-tab-close-retained-preflight-classification.json` | Close stopped before input; fixed native categories |
+| `fresh-preservation-010/report.json`, `recovery051-001/current010-partial-classification.json` | Incomplete fresh transfer and retained partial byte pins |
+| `recovery051-001/post-current010-primary-focus-reconcile.json` | Fresh host/native guards and actual primary authentication failure |
+| `recovery051-001/owner044-unused41061-recovery-after-current010.json` | Sole newly consumed044 connect and unknown result |
+| `recovery051-001/style-comparison031-pins.json`, `route-gate032-pins.json` | Exact safe material-report pins |
