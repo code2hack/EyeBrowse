@@ -164,17 +164,40 @@ Owner-authorized normal-PIN helper preparation is a separate private operational
 record. Manager found three concrete defects in its first candidate; corrections
 and 33 public-dummy checks cover strict window/package/UID ownership, atomic
 file/directory-synced input intent and truthful credential-consumption reporting
-through write failures. Real PIN use remained held; no real credential read,
-normal unlock or successful native PIN-keypad qualification is claimed here.
+through write failures. At that cut real PIN use remained held, and no real
+credential read, normal unlock or native PIN-keypad qualification had occurred.
 
 The later assigned native-surface check observed 33 SystemUI nodes, zero expected
 PIN entries, zero password fields and zero numeric keys. Allowlisted lockscreen
 root/indication nodes were non-clickable, and no explicit supported reveal target
 was established. Its result was **PIN screen not presented**, rather than multiple
 entries or a demonstrated OEM PIN-keypad mismatch. No reveal gesture/action or
-credential was used. If PIN use is later required, the concrete human capability
-is to present the normal native PIN screen privately; this is not a permission
-renewal. This operational limit did not pause report preparation.
+credential was used at that cut. Under operational direction 074, the Manager
+retired the clickable-affordance restriction and manual-keypad request, allowing
+one ordinary upward gesture within the freshly verified SystemUI keyguard root.
+
+The updated private helper, SHA-256
+`1a3d90e1a86173be7d5d20af473db71e878d1ac48bba7f3f3e21a4a3b5951eb6`,
+passed the earlier 33 host checks and 37 gesture/context/uncertainty/end-lock
+checks. The first preparation found an already awake/unlocked state, sent no
+reveal or credential action, and returned its retained negative before ordinary
+end sleep verified locked/Dozing. At that locked cut, another bounded preparation
+remotely woke the phone and sent one upward gesture inside current root-derived
+bounds. Fresh user0/display0/SystemUI UID10048 ownership then bound one empty,
+enabled password `pinEntry` (`android.widget.EditText`) and ten distinct enabled,
+clickable, labelled digit targets with valid geometry and no detected native
+error/lockout. The strict keypad predicates passed; no selector relaxation
+was needed. Normal end sleep verified locked/Dozing/display0 DOZE.
+
+The preparation read no credential and submitted no PIN. Actual normal unlock
+remains untested and real use remains held pending Manager exact-helper
+qualification. This operational keypad result adds no product media/input case
+or AV acceptance. Owned control teardown returned success; both owned listeners
+and server SCIDs were absent on subsequent readback. A supplemental forwarding
+table read was rejected by the existing no-global-enumeration guard, and a
+separate observer assumed a CLI-only teardown field existed in the earlier
+attempt file. Both observer negatives are retained; the shared forward table was
+not observed or treated as cleanup proof.
 
 ## Owned AV case and capture guard
 
@@ -336,11 +359,12 @@ locked end policy, not an assumed unlocked restoration or optical-off claim.
 That product-cut read already satisfied the policy, so no extra end control was
 sent at that cut. The later necessary native-surface characterization separately
 finished with actual user0 locked/Dozing/display0 DOZE and its control resources
-settled. These timestamped results do not claim continuously unchanged state.
-Sixteen player records were present, zero started players, a present recorder
-section with zero active recordings, call states 0/0, no fixture-UID process and
-no stock server. Current Samsung IME, hard-keyboard-IME setting 1, music setting 7
-and `bt_a2dp(80)` were preserved.
+settled, including the later remote-reveal preparation under direction 074.
+These timestamped results do not claim continuously unchanged state.
+At the product cut, sixteen player records were present, zero started players,
+a present recorder section with zero active recordings, call states 0/0, no
+fixture-UID process and no stock server. Current Samsung IME, hard-keyboard-IME
+setting 1, music setting 7 and `bt_a2dp(80)` were preserved.
 
 The original Phone app remained version0.0.1/code1/UID10300, with zero app-UID
 processes before/after the final read. All 610 file hashes and the exact manifest

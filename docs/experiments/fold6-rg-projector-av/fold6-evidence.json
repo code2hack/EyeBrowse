@@ -21,10 +21,11 @@
     "PhoneShellSocket": "DEMONSTRATED_LOCAL_AF_UNIX_NO_PC_FORWARD",
     "normalPINUnlock": "UNTESTED_REAL_CREDENTIAL_UNUSED",
     "originalAppData": "ALL_610_HASHES_UNCHANGED_DEVICE_ARCHIVE_RETAINED",
-    "endState": "USER0_LOCKED_DOZING_PRODUCT_CUT_DOZE_SUSPEND_LATEST_NATIVE072_CUT_DOZE",
+    "endState": "USER0_LOCKED_DOZING_PRODUCT_CUT_DOZE_SUSPEND_LATEST_NATIVE074_CUT_DOZE",
     "primaryDebugTunnel": "RETAINED_MANAGER071_CLEANUP_CUSTODY",
     "RGOrNoPCAV": "NO_RG_WORK_OR_FINAL_DATA_PATH_PROOF",
-    "nativePINSurface": "NOT_PRESENTED_NO_EXPLICIT_SUPPORTED_REVEAL_TARGET_NO_PIN_USED"
+    "nativePINSurface": "QUALIFIED_EMPTY_ENABLED_NATIVE_KEYPAD_AFTER_ONE_REMOTE_REVEAL_NO_PIN_USED",
+    "nativePINSurfaceAt072": "NOT_PRESENTED_NO_EXPLICIT_SUPPORTED_REVEAL_TARGET_NO_PIN_USED"
   },
   "records": [
     {
@@ -266,7 +267,58 @@
       "file": "final-host-owned-listener-settlement.json",
       "bytes": 714,
       "sha256": "2e0ada33d770168c3b9b0a8f56583ec364819916fc8dbc407188f73849c3d664"
+    },
+    {
+      "file": "fold6-screen-helper-host-dummy-qualification074-base.json",
+      "bytes": 5353,
+      "sha256": "e7e78a995330fda80d9d9ff4298bbaf0f1ba72c26dd250229eaff7706272253a"
+    },
+    {
+      "file": "fold6-screen-reveal074-host-qualification.json",
+      "bytes": 4556,
+      "sha256": "29162b3b6de697f209374e0dc87ebdc3f1de5bae026cb207cbdb6d8d38ae5c9c"
+    },
+    {
+      "file": "fold6-screen-reveal074-boundary.json",
+      "bytes": 547,
+      "sha256": "36989107412516de9d3d9f9572cc3c767f9eb420e367136f15aedc552d358495"
+    },
+    {
+      "file": "screen-prepare-remote-reveal074.json",
+      "bytes": 929,
+      "sha256": "c6ddd102c570ebf54d731bbf94b7dcae9b16ba493fcbd4ab5eb6c0902e0c7da0"
+    },
+    {
+      "file": "screen-prepare-remote-reveal074-locked-cut.json",
+      "bytes": 4044,
+      "sha256": "5eeadf6359cc56dcb594a50ed863dcf73533e5d0f01f6aa78e7a755b562f914e"
+    },
+    {
+      "file": "fold6-screen-reveal074-readback-negative.json",
+      "bytes": 506,
+      "sha256": "ba327b0f204da9a198d6089bafc9f1adb8f7eef858fa5ab887e908abf78bd601"
+    },
+    {
+      "file": "fold6-screen-reveal074-readback-parser-negative.json",
+      "bytes": 480,
+      "sha256": "6df8c6060ecb4b0aaf83e15338baeca33b861b69afd1272e1b5114a595f0403c"
+    },
+    {
+      "file": "fold6-screen-reveal074-observed-cli-returns.json",
+      "bytes": 648,
+      "sha256": "45f50e78a1e9984309f12e6b634e12836ff9642b6175bebed52a08f0647bc2a2"
+    },
+    {
+      "file": "fold6-screen-reveal074-settlement.json",
+      "bytes": 1174,
+      "sha256": "2e5f80d22ca5dc7d043dfb34e783e0def201b00bfc7335bcda409e87c0d321d4"
+    },
+    {
+      "file": "fold6-screen-reveal074-source-audit.json",
+      "bytes": 3471,
+      "sha256": "4f38f6bf9ee069c76b40e62e71576036b7f3e20e37e63555484f2140f5cf39ec"
     }
   ],
-  "claims": "Hashes bind retained records; neither publication nor individual checks imply recipient receipt, independent acceptance, downstream readiness or release."
+  "claims": "Hashes bind retained records; neither publication nor individual checks imply recipient receipt, independent acceptance, downstream readiness or release.",
+  "operationalHelperSHA256": "1a3d90e1a86173be7d5d20af473db71e878d1ac48bba7f3f3e21a4a3b5951eb6"
 }
