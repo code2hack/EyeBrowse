@@ -1,6 +1,6 @@
 # RG profile cache: Android slash escapes
 
-This is the controlled diagnosis for issue #59. Implementation commit `a6353428c940de202650667849581e11f9571b07` (tree `c06be3be01e5972ee3f047859022b88d2c201537`) is based on `03de921e2400147842ce6c56101b58d514dde77c` and its accepted #61 integration. The two Owner-reported subscription inputs remain unacquired and unexecuted at this checkpoint. Their relationship to this defect is not established. This record does not claim issue acceptance or candidate readiness.
+This is the historical controlled diagnosis for issue #59. Implementation commit `a6353428c940de202650667849581e11f9571b07` (tree `c06be3be01e5972ee3f047859022b88d2c201537`) is based on `03de921e2400147842ce6c56101b58d514dde77c` and its accepted #61 integration. The two Owner-reported subscription inputs remained unacquired and unexecuted at this checkpoint. Their relationship to this defect is not established. This record does not claim issue acceptance or candidate readiness. Subsequent execution with two separately bound available sources, the additional DNS startup correction and the remaining device gate are recorded in [the current subscription/pool checkpoint](rg-subscription-pool.md).
 
 ## Cause and correction
 
