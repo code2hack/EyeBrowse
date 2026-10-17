@@ -5,29 +5,42 @@ production controlled page both passed focus/edit/remove checks. ChatGPT home
 briefly answered JavaScript observations, then its renderer became unresponsive.
 The previously working controlled page also stopped answering after the owned
 ChatGPT tab closed. A second fresh production process reproduced the renderer
-stall and persistent work after both owned tabs closed. Its cause and hardware
+stall and persistent work after both owned tabs closed. A third fresh process
+produced an early source-bound profile, then reproduced the later runtime stall
+and growing renderer work after its owned tab closed. Its cause and hardware
 adequacy remain unresolved. Actual ChatGPT sidebar response, safe composer
 editing and designated direct-conversation loading have **not passed**.
 
-This checkpoint records the resumed run through 2026-10-17 07:26 UTC, including
-the second genuine Owner wake event and later incomplete preservation. The
+This checkpoint records the resumed run through 2026-10-17 08:25 UTC, including
+the newest Owner endpoint event and later incomplete preservation. The
 [previous checkpoint](https://github.com/code2hack/EyeBrowse/blob/0d1a7f861129376053d00c328dc61ec99150e735/docs/v0.0.4/testing/rg-chatgpt-device-diagnosis.md)
-retains the earlier diagnosis, failed access and original restoration cut. No
-production correction, installation or account submission was made in either
-phase.
+retains the earlier diagnosis, failed access and original restoration cut. The
+[intermediate checkpoint](https://github.com/code2hack/EyeBrowse/blob/d3dd4d388b7e21971f1fd9263f9f7cf18c131438/docs/v0.0.4/testing/rg-chatgpt-device-diagnosis.md)
+retains the second comparison and its access gate. No production correction,
+installation or account submission was made in these phases.
 
 ## Exact execution boundary
 
 The diagnosis used Worker64 mission revision 2 and exclusive reservation
 `V004-BATCH001-RG-W64-01`, on RG `1906092617103125`, user 0/API 32. The authenticated
 primary transport was 5555. Authenticated Owner direction subsequently replaced
-the 36967 bootstrap with 36687. Current issue64/P4.6 and the same-mission
+the 36967 bootstrap with 36687, then replaced 36687 with 41061. The interim
+35773 correction was never probed. Current issue64/P4.7 and the same-mission
 operational addenda retain the existing scope and acceptance; old ports remain
 historical.
 
-Source during this resumed execution was doc-only checkpoint
+The actual native header/current turn, SDK workspace and source/tool processes
+resolved to the assigned isolated worktree. A later host check found that the
+Paseo-owned Codex app-server controller's launch CWD was the home directory.
+Both values are retained and reported for Manager qualification reconciliation;
+a matching controller OS process CWD is not claimed. No controller lifecycle or
+runtime-registry change was made.
+
+Source during the first two resumed comparisons was doc-only checkpoint
 `0d1a7f861129376053d00c328dc61ec99150e735`, tree
-`fb1aacf694f6dc66ab245dbfa4f398125d277c52`. Production source remained identical
+`fb1aacf694f6dc66ab245dbfa4f398125d277c52`. The third comparison used doc-only
+`d3dd4d388b7e21971f1fd9263f9f7cf18c131438`, tree
+`2e9059329fd3f5de1914b7d8b1271434e04b596c`. Production source remained identical
 to `c7c04798b3c23e10563b061fd84fd5e22c7dd481`, tree
 `048da3b21a547a34e017bfbaad2d0c7565a3346a`. That normally merged the assigned #59
 foundation `2ca9bcd7d09c8c440054c1010a5b41b29efa683c` while preserving the
@@ -138,6 +151,63 @@ locations and saved selection 1 without replaying either location. No composer
 or sidebar input was attempted in this second phase. Persistent renderer work
 remained after both owned tabs closed.
 
+After the newest authenticated Owner endpoint event, existing 5555 again
+authenticated without a connect or tcpip. Complete cut007 and a subsequent
+whole-store equality check preceded a third fresh process. PID8854/UID10076,
+the pinned engine/loader and the executable-map device/inode were freshly bound;
+startup was 4346 ms with PSS 102573 KiB.
+
+Initializing `Debugger.enable` in the owned blank tab timed out before any site
+Open or Profiler.start. The local watcher was reaped and its socket closed.
+That result does not classify ChatGPT or hardware capacity. The same owned tab
+then opened the existing public controlled page through native address/Open;
+Inspector and scalar JavaScript answered, with complete document state, the
+expected presentation, five inputs, an empty owned field and zero input/submit
+events. Only the owned public address field was replaced.
+
+On that responding control, the profiling client independently answered a scalar
+preflight. Debugger/Profiler enable and start answered before native same-tab
+ChatGPT home navigation. Stop, Profiler.disable and Debugger.disable all answered;
+no pause or breakpoint was requested, and the child/socket were reaped/closed.
+The same owned target reached the home route. The actual profile recorded
+8.510954 seconds, 1602 samples and 2730 profile call-tree nodes. It does not
+establish continuous coverage of the requested ten-second interval or the later
+stall; the duration difference remains unclassified.
+
+In the final captured two seconds, 53.98% of sampled time was in ChatGPT-origin
+JavaScript, 6.69% in a fingerprinted public app presentation callback, and 39.33%
+in anonymous/engine categories. The app callback starts at line16 of the retained
+exact script template, the `Array.from` callback that reads computed backgrounds.
+The anonymous/engine group includes 33.44% program/root and 4.37% garbage
+collection. Function names, private URLs and sources remain private. This early
+sample does not establish or exclude later app, style/layout, site or engine
+causality.
+
+After cleanup, Inspector answered while scalar JavaScript timed out again. No
+interaction counter or composer observation executed in this phase. A distinct
+persistent-state Profiler.enable also timed out; Profiler.start was never sent.
+The browser timeline attempt yielded no useful task records: start was sent
+without a response, one necessary cleanup End answered, and tracingComplete
+confirmed completion with no data loss. Only metadata was collected. Its buffer
+was bounded to 1 MiB, with Chrome tracing and argument filtering, without system
+tracing, heap dumps, screenshots or network capture. The retained target records
+and public derivatives are separate.
+
+One timeline process-name predicate and one pre-close persistence predicate
+stopped before their intended trace/Close commands. Retained process data showed
+the isolated renderer alive under the target app's subprocess name; source showed
+tab metadata persists onStop. Both own helper corrections retain before/diff and
+original negatives; they do not demonstrate device disappearance. One subsequent
+native Close removed only the owned third tab. The original two cold locations,
+selection1, hidden custom keyboard and absent WebView were verified, with saved
+metadata equal to cut007. No original location or Owner draft was replayed/edited.
+
+The captured presentation callback writes inline custom properties, including
+transparent values already covered by its CSS fallback. Interaction with a
+site's DOM reconciliation is a hypothesis for a bounded public structural
+reproducer. No such reproducer, causal ablation or production correction has
+executed.
+
 ## Bounded resource observations
 
 The observations counted four logical CPU entries and MemTotal 1816600 KiB.
@@ -173,6 +243,8 @@ CPU percentages below normalize process/thread CPU ticks to one logical CPU:
 | All owned nonblank documents closed | 250056 to 243972 | 99.54 | 19.18 |
 | Second fresh production, actual ChatGPT home | 192044 to 185732 | 126.85 | 9.23 |
 | Second fresh production, both owned tabs closed | 145896 to 147076 | 128.54 | 10.55 |
+| Third fresh production, after warm-navigation profile | 175340 to 175568 | 118.62 | 60.95 |
+| Third fresh production, owned tab closed | 142888 to 142768 | 103.20 | 14.46 |
 
 After closure, renderer RSS was 544372 to 546884 KiB and VmSwap was 376696 to
 376660 KiB. A subsequent bounded numeric thread observation attributed 97.79%
@@ -183,6 +255,13 @@ An earlier process-name predicate stopped before thread sampling and remains
 negative evidence. In the second post-close sample, renderer RSS grew from
 624832 to 627912 KiB and VmSwap from 773800 to 781608 KiB. No debugger pause or
 usable stack was obtained; the controlled-page CPU profile remains private.
+
+In the third post-close observation, renderer RSS was 665272 to 665692 KiB and
+VmSwap 987336 to 991260 KiB. System SwapFree was 19504 to 13796 KiB, with
+MemTotal 1816600 KiB and SwapTotal 1572860 KiB. These counters show persistent
+growing renderer work and nearly exhausted swap at that cutoff. They do not
+identify the cause of the allocation, establish a normal steady-state hardware
+requirement or describe an unreachable device continuously.
 
 These observations distinguish a working fresh native/production control from
 later persistent renderer work. They do not isolate script, layout, garbage
@@ -232,6 +311,30 @@ SQLite readiness. They are not replacements for the last complete cut004, and
 no old cut was overlaid. Dependent HOME/force-stop and the prepared fresh-process
 source-attribution comparison remained unexecuted.
 
+After the newest endpoint event, complete fresh cut007 ran from 07:48:27 to
+07:50:40 UTC. Independent whole header/payload/member/metadata restoration and
+15 SQLite checks passed. Source CE/DP complete archive hashes were unchanged.
+Newer target writes were retained: CE 1050245120 bytes/1610 members, DP 440320
+bytes. Both enabled sources/41 nodes, profile XML, bookmarks, original two saved
+locations/selection1 and all six engine objects matched the earlier cut.
+
+Cut007 observed one remaining target-UID process. A fresh pre-stop read later
+found every source, target, test and associated process absent. Its cause is
+unknown, and the expected-PID predicate stopped before a lifecycle intent. No
+HOME or stop was issued. A complete new equality qualification at 07:56:40 UTC
+proved all four current stores' tar bytes, full metadata and eligible static
+objects still matched the freshly transferred/restored cut007, with all app
+processes absent and HOME/Awake/displayON/keyguardFalse. A preceding partial
+qualification and its physical-guard timeout remain retained. This established
+the preserved input for the third fresh-process comparison.
+
+After that comparison and successful owned-tab closure, new capture008 stopped
+at 08:21:15 UTC before its first process-read guard/intent/result completed.
+No mutable payload transferred; it is NOT_READY. Cut007 is the last complete
+filesystem cutoff, preceding the latest site/account/cache writes. Those newer
+writes remain primary on device, without an old overlay. Dependent target HOME,
+stop and further tests remain pending fresh preservation after restored access.
+
 At 06:36 UTC, the physical guard failed during necessary target teardown, before
 any HOME or force-stop intent. The pre-HOME Owner-state reads had succeeded;
 neither lifecycle command was issued. One targeted reconciliation found host
@@ -255,6 +358,17 @@ No tcpip, primary connect, input, server lifecycle operation or blind replay
 followed. These are separate retained outcomes from the earlier loss, not a
 continuous authenticated-access assertion.
 
+The newest Owner reply selected bootstrap41061, superseding unprobed35773 and
+historical36687. Existing 5555 initially authenticated unchanged and enabled
+cut007/the third comparison without a bootstrap connect or tcpip. After
+capture008 failed, fresh host/client/server/SDK/assignment guards passed but both
+existing selected routes failed physical authentication. The first and only
+41061 connect under that genuine event timed out after 18 seconds at 08:25 UTC;
+its outcome remains unknown, the local child was reaped, and independent
+bootstrap authentication failed. No tcpip, primary-connect replay, stale-port,
+USB, pairing, server-lifecycle or global-policy operation followed. The bounded
+grant is consumed; no routine retry is scheduled.
+
 Current foreground, power, guard, camera/sensors and renderer termination are
 unknown after loss. RG resource return and Awake/displayON are **not verified**.
 The same reservation remains held; further device work needs a genuine restored
@@ -265,6 +379,13 @@ The owned host fixture was stopped after PID/start/UID/executable/CWD/argv and
 listener ownership checks. Its PID and every 39030 listener were absent, and the
 exact IP could bind the port again. All source, artifacts and failures remain
 retained; general cleanup is deferred.
+
+The third comparison conditionally reused the same three source-bound fixture
+JARs after fresh ownership/free-port/exact-bind qualification. Fixture004 was
+stopped at 08:05:41 UTC, with its process absent, all listeners absent and exact
+bind free. A subsequent host-only observation again found no owned fixture or
+scratch helper process and no 39030 listener. No new fixture framework or
+APP/TEST build was introduced.
 
 ## Executed checks and retained evidence
 
@@ -312,6 +433,18 @@ hashes. Principal retained records are:
 | `fresh-preservation-005/`, `fresh-preservation-006/`, `recovery035-001/post-preservation006-route-reconcile.json` | Incomplete new captures and latest bounded authentication loss |
 | `bootstrap36687-current035-after-preservation-016.json` | Sole bounded connect under the second wake event; unknown outcome retained |
 | `fixture-build-001/`, `fixture-running-002/teardown.json`, `fixture-running-003/teardown.json` | Source-bound compile and actual owned-host teardowns |
+| `recovery039-001/primary-reconcile.json`, `current-owner-and-listener.json`, `current-packages.json` | Newest endpoint event, unchanged authenticated primary and fresh installed input binding |
+| `recovery039-001/guard-authority-alignment/` | Preserved old helper and current039 authority-only adaptation |
+| `fresh-preservation-007/`, `recovery039-current-owner-store-binding-007.json`, `recovery039-001/current007-post-exit-revalidation-002.json` | Last complete filesystem/restoration/15 SQLite cut and complete post-exit current equality |
+| `recovery039-001/preloaded-chatgpt-native-comparison.json`, `preloaded-chatgpt-profile.json` | Blank Debugger timeout before site Open or Profiler.start |
+| `recovery039-001/controlled-ready-observation.json` | Same fresh process's responding real controlled document |
+| `recovery039-001/warm-control-chatgpt-native-comparison.json`, `warm-control-chatgpt-profile.json`, `profile-public-source-position-analysis.json` | Bounded source-fingerprinted early profile, actual cleanup and coverage limit |
+| `recovery039-001/chatgpt-after-warm-profile-observation.json`, `chatgpt-persistent-stall-bounded-profile.json` | Later scalar and Profiler.enable timeouts; no later recording started |
+| `recovery039-001/browser-timeline-persistent-stall-002.json`, `timeline-process-guard-correction/` | No useful task records; actual timeline completion and retained pre-command negative |
+| `recovery039-001/own-diagnostic-tab-native-close-002.json`, `close-persistence-guard-correction/` | One actual owned-tab close, original state restoration and retained pre-tap negative |
+| `resource-renderer039-after-warm-profile-008.json`, `resource-renderer039-owned-tab-closed-009.json` | Changed-condition CPU/memory observations |
+| `fresh-preservation-008/report.json`, `recovery039-001/post-capture008-route-reconcile.json`, `bootstrap41061-current039-after-capture008-021.json` | New incomplete capture, physical gate and bounded unknown connect outcome |
+| `fixture-running-004/teardown.json`, `checkpoint-022/host-process-listener-teardown.json` | Actual immediate fixture teardown and later host-only absence proof |
 
 I64-T01..T03 retain their original round1/failure0/lastConcluded0 history. No whole
 CANDIDATE_READY, acceptance, resource handoff, integration or release is claimed.
