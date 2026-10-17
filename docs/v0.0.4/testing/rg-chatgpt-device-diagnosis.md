@@ -452,6 +452,77 @@ reconciliation before future dependent product/device continuation. No routine
 device/recovery polling, source implementation change or attempt conclusion is
 inferred from this host result.
 
+## Owner044 Tailscale connection preparation
+
+The new authenticated Owner event authorized bounded Tailscale connection and
+keepalive preparation while regular EyeBrowse product continuation remained
+held. Fresh native/header/current-turn/kernel tool-process CWD, Paseo workspace,
+profile, mission and exclusive W64-01 checks passed under runtime revision 120. The
+controller's different launch CWD remains explicitly unresolved. Only current
+addendum/Owner paths and pins changed in the private guard; its before/after/diff
+and every existing physical/client/server/lease/security check are retained.
+
+The existing primary 5555 connection independently authenticated the exact RG at 09:07:15
+UTC and remained unchanged. Device tcp.port was 5555 and the selected listener
+count was 1. No 41061 connect or tcpip invocation was needed; the earlier 039
+timeout remains consumed/unknown. Current Tailscale identity was independently
+bound to `com.tailscale.ipn`, UID 10069, version
+`1.101.163-t72c22667b-gd7d2cf636`, versionCode 110101630. For user 0 it was
+installed, visible, unsuspended and not stopped.
+
+| Package-scoped control | Original observation | Independent final readback |
+| --- | --- | --- |
+| Battery-optimization exemption | true | true |
+| RUN_ANY_IN_BACKGROUND | default ALLOW | default ALLOW |
+| RUN_IN_BACKGROUND | default ALLOW | default ALLOW |
+| Standby bucket | 10, ACTIVE | 10, ACTIVE |
+| Inactive | false | false |
+| Started foreground services | 1 | 1 |
+
+Deep/light idle state was ACTIVE at the original cut. The initial appops parser
+did not recognize a two-line response containing `No operations.` followed by
+`Default mode: allow`. Offline parsing of the retained raw response established
+both default modes; the original unparsed result is retained. No command retry
+or security workaround was involved. All requested ordinary keepalive states
+were already permissive, so the recorded decision retained them with **zero
+setting changes and zero change intents**. No Tailscale UI/service start,
+Always-on/lockdown, route/DNS, global power, memory, CPU or swap change was made.
+
+Package-scoped ApplicationExitInfo contained 16 records, all reason 3 LOW_MEMORY
+and importance 125. The Android definition identifies reason 3 as termination by
+the system low-memory killer. This is concrete recorded process-death evidence;
+the pressure source and exact linkage to transport loss remain unresolved.
+[Android ApplicationExitInfo](https://developer.android.com/reference/android/app/ApplicationExitInfo#REASON_LOW_MEMORY)
+
+The latest three records were device local 16:20:48.710,16:20:56.835 and
+16:21:04.054. A fresh device-clock observation returned offset +0800; using that
+offset gives 08:20:48.710,08:20:56.835 and08:21:04.054 UTC. They align in time
+with the earlier near-full-swap observation and subsequent 008 authentication
+failure. This is temporal correlation, without a measured allocation culprit.
+No crash, ANR, excessive-resource or user-stop reason appeared within the
+retained 16 records; limited history does not exclude other causes elsewhere.
+Zero PSS/RSS fields indicate missing sampling, and nonzero exit-dump display
+quantities are rounded. Raw descriptions, logs, traces and account/address
+content stay private.
+
+One bounded 1.22s sample measured Tailscale at 3.28 one-core CPU%, kernel RSS
+177764→172516KiB and VmSwap 11372KiB. A separate meminfo cut reported
+PSS 125089KiB/RSS 185052KiB. System MemAvailable was 798312→781556KiB of
+1816600KiB; SwapFree 1171476KiB of1572860KiB. These are sample cutoffs, not a
+benchmark or hardware-capacity verdict. Necessary guarded reads succeeded
+between 09:07 and 09:12 UTC; long-term, sleep/Doze and heavy-site stability were
+not tested. No ping, restart or keepalive loop was introduced.
+
+No EyeBrowse/source-app lifecycle, input, install, test, private navigation,
+account action or fresh large preservation was initiated during this scoped
+preparation.Capture 008 remains NOT_READY and 007 historical; newer Owner writes remain
+primary, with no old overlay. Fresh complete BOTH-app protection/restaging/
+SQLite checks and Manager operational reconciliation remain required before
+dependent product continuation. Actual ChatGPT cause, interaction acceptance
+and RG resource return remain unclaimed. Safe before/after, exit categories,
+numeric samples, decision and exact call guards are retained in
+`evidence/recovery044-001/`; private raw payloads remain restricted.
+
 ## Executed checks and retained evidence
 
 The unchanged existing fixture source was compiled offline with JDK17, the
