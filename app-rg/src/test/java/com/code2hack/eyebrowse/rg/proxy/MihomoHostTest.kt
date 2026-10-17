@@ -18,6 +18,31 @@ import org.junit.Test
 
 /** Native Linux qualification complements, and never substitutes for, the required RG/provider test. */
 class MihomoHostTest {
+    @Test(timeout = 60000) fun coreAcceptsNetworkDnsIncludingScopedIpv6() {
+        val binary = System.getenv("EYEBROWSE_MIHOMO_HOST_BINARY")?.let(::File)
+        assumeTrue("Pinned host binary must be supplied for native qualification", binary?.canExecute() == true)
+        val home = Files.createTempDirectory("mihomo-dns-").toFile()
+        try {
+            for (name in listOf("cn-domain.mrs", "cn-ip.mrs"))
+                File("src/main/assets/mihomo/$name").copyTo(File(home, name))
+            for (servers in listOf(listOf("fe80::53%wlan0", "192.0.2.53"), listOf("fe80::53%7"),
+                listOf("2001:db8::53"), listOf("192.0.2.53"), emptyList())) {
+                val config = ProxyPolicy.configuration(emptyList(), 18789,
+                    File(home, "control.sock").absolutePath, servers, regionalDirectory = home.absolutePath)
+                val file = File(home, "config.json").apply {
+                    writeText(ProxyPolicy.configurationText(config.toString()))
+                }
+                val log = File(home, "validation.log")
+                val process = ProcessBuilder(binary!!.absolutePath, "-t", "-d", home.absolutePath,
+                    "-f", file.absolutePath).redirectErrorStream(true).redirectOutput(log).start()
+                try {
+                    assertTrue("Native DNS configuration validation settled", process.waitFor(10, TimeUnit.SECONDS))
+                    assertEquals(log.readText(), 0, process.exitValue())
+                } finally { process.destroyForcibly(); process.waitFor(2, TimeUnit.SECONDS) }
+            }
+        } finally { home.deleteRecursively() }
+    }
+
     @Test(timeout = 90000) fun realCoreRoutesAndSelectsAcrossSourcesWithAllDownRecovery() {
         val binary = System.getenv("EYEBROWSE_MIHOMO_HOST_BINARY")?.let(::File)
         assumeTrue("Pinned host binary must be supplied for native qualification", binary?.canExecute() == true)

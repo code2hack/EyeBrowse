@@ -53,6 +53,10 @@ internal object ProxyPolicy {
     fun configuration(nodes: List<JSONObject>, port: Int, controller: String,
         dnsServers: List<String>, testUrl: String = TEST_URL, regionalDirectory: String = "."): JSONObject {
         require(port in 1..65535)
+        // Keep Android's IPv6 interface scope through the core's DNS URL parser.
+        val dns = dnsServers.map { address ->
+            if (':' in address && '%' in address) "udp://[${address.replace("%", "%25")}]:53" else address
+        }
         val regional = JSONObject()
             .put("CN-DOMAIN", JSONObject().put("type", "file").put("behavior", "domain")
                 .put("format", "mrs").put("path", "$regionalDirectory/cn-domain.mrs"))
@@ -80,7 +84,7 @@ internal object ProxyPolicy {
             .put("external-controller", "").put("external-controller-unix", controller)
             .put("profile", JSONObject().put("store-selected", false).put("store-fake-ip", false))
             .put("dns", JSONObject().put("enable", true).put("ipv6", true)
-                .put("enhanced-mode", "redir-host").put("nameserver", JSONArray(dnsServers.ifEmpty { listOf("system") })))
+                .put("enhanced-mode", "redir-host").put("nameserver", JSONArray(dns.ifEmpty { listOf("system") })))
             .put("rule-providers", regional).put("rules", JSONArray(rules))
         if (nodes.isNotEmpty()) {
             config.put("proxy-providers", JSONObject().put(PROVIDER, JSONObject().put("type", "inline")

@@ -324,6 +324,183 @@ class RealProfileImportInstrumentedTest {
         }
     }
 
+    @Test fun savedRealProfilesUseSharedMeasuredPoolAndPublicRoutes() {
+        val arguments = InstrumentationRegistry.getArguments()
+        assumeTrue(arguments.getString("realSavedPool") == "true")
+        val invocation = UUID.fromString(checkNotNull(arguments.getString("invocationId"))).toString()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val cache = context.getSharedPreferences("proxy-profiles", Context.MODE_PRIVATE)
+        val previousCache = checkNotNull(cache.getString("profiles", null))
+        val tabs = localBrowserTestPreferences(context)
+        val previousTabs = tabs.getString("local.tabs", null)
+        val bookmarkFile = File(context.filesDir, "local-browser/bookmarks.properties")
+        val previousBookmarks = bookmarkFile.readBytes()
+        val runtime = RgProxyRuntime.get(context)
+        val refresh = com.code2hack.eyebrowse.rg.proxy.RgRefresh.get(context)
+        val previousConnectivity = refresh.testConnectivity
+        check(previousConnectivity == null)
+        val report = JSONObject().put("invocation", invocation).put("phase", "SAVED_POOL")
+        fun digest(text: String) = MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        fun writeReport() = File(context.filesDir, "issue59-pool-$invocation.json")
+            .writeText(report.toString(2))
+        fun runtimeCategory() = when (runtime.status) {
+            "Running" -> "RUNNING"
+            "Starting" -> "STARTING"
+            "Stopped" -> "STOPPED"
+            "Core unavailable; browsing directly" -> "CORE_UNAVAILABLE_DIRECT"
+            "Core stopped; browsing directly" -> "CORE_STOPPED_DIRECT"
+            "WebView proxy API unavailable; browser uses direct routing" -> "WEBVIEW_PROXY_UNAVAILABLE"
+            else -> "OTHER"
+        }
+        fun await(label: String, condition: () -> Boolean) {
+            val end = SystemClock.elapsedRealtime() + 45_000
+            while (SystemClock.elapsedRealtime() < end) {
+                if (condition()) return
+                SystemClock.sleep(25)
+            }
+            report.put("runtimeStatusAtWaitFailure", runtimeCategory())
+                .put("nativePortPresentAtWaitFailure", runtime.proxyPort != null)
+                .put("webViewPortPresentAtWaitFailure", runtime.webViewPort != null)
+                .put("portsEqualAtWaitFailure", runtime.webViewPort == runtime.proxyPort)
+            fail(label)
+        }
+        try {
+            // Inspect the current pool without an automatic refresh changing the saved input.
+            refresh.testConnectivity = { false }
+            Closeable {
+                refresh.testConnectivity = previousConnectivity
+                assertTrue("Starting tab locations restored", tabs.edit().apply {
+                    if (previousTabs == null) remove("local.tabs") else putString("local.tabs", previousTabs)
+                }.commit())
+                report.put("startingTabsRestored", tabs.getString("local.tabs", null) == previousTabs)
+                report.put("profileCacheUnchanged", cache.getString("profiles", null) == previousCache)
+                report.put("bookmarksUnchanged", bookmarkFile.readBytes().contentEquals(previousBookmarks))
+                writeReport()
+                assertTrue("Saved real profiles unchanged", report.getBoolean("profileCacheUnchanged"))
+                assertTrue("Owner bookmarks unchanged", report.getBoolean("bookmarksUnchanged"))
+            }.use {
+                ActivityScenario.launch(LocalBrowserActivity::class.java).use { scene ->
+                    scene.onActivity { activity ->
+                        assertTrue("Cold recovery did not load private locations",
+                            activity.tabs.items.all { it.session.state.url.isEmpty() })
+                        assertFalse("Camera not opened", activity.cameraActive)
+                    }
+                    report.put("phase", "READ_SAVED_STORE")
+                    val disk = ProfileStore({ cache.getString("profiles", null) }) { false }
+                    assertTrue("Current real profile store readable", disk.readable)
+                    assertEquals(arguments.getString("expectedProfiles")?.toInt(), disk.profiles.size)
+                    val sourceHashes = disk.profiles.map { digest(it.source) }.toSet()
+                    assertTrue("Exact bound real sources", sourceHashes ==
+                        checkNotNull(arguments.getString("sourceHashes")).split(',').toSet())
+                    val expected = ProxyPolicy.nodes(disk.profiles.map { it.asSource() })
+                        .map { it.getString("name") }.toSet()
+                    report.put("profiles", disk.profiles.size).put("enabledNodes", expected.size)
+                    assertEquals(arguments.getString("expectedEnabledNodes")?.toInt(), expected.size)
+                    report.put("phase", "ACTIVATE_SAVED_SOURCES")
+                    RgProfiles.get(context).activate().get()
+                    report.put("phase", "WAIT_CORE_WEBVIEW_READY")
+                    await("Ordinary app core and WebView proxy ready") {
+                        runtime.status == "Running" && runtime.proxyPort != null &&
+                            runtime.webViewPort == runtime.proxyPort
+                    }
+                    CoreControl(File(context.filesDir, "mihomo/control.sock").absolutePath).use { api ->
+                        report.put("phase", "EXPLICIT_POOL_HEALTH")
+                        val healthCompleted = runtime.checkHealthNow().get()
+                        report.put("healthCallCompleted", healthCompleted).put("runtimeAfterHealth", runtimeCategory())
+                        assertTrue("Real core health request completed", healthCompleted)
+                        Thread.sleep(10_100) // Genuine core AUTO's ten-second selection cache.
+                        report.put("phase", "READ_POOL_MEMBERSHIP")
+                        val provider = api.request("GET", "/providers/proxies/ENABLED").getJSONArray("proxies")
+                        val actual = (0 until provider.length()).map { provider.getJSONObject(it) }
+                        report.put("providerNodes", actual.size)
+                        assertTrue("Every enabled source contributes to the real shared pool",
+                            actual.map { it.getString("name") }.toSet() == expected)
+                        report.put("phase", "READ_MEASURED_HEALTH")
+                        val healthy = actual.mapNotNull { node ->
+                            val health = node.optJSONObject("extra")?.optJSONObject(ProxyPolicy.TEST_URL)
+                            val history = health?.optJSONArray("history")
+                            if (health?.optBoolean("alive", false) != true || history == null || history.length() == 0) null
+                            else history.getJSONObject(history.length() - 1).optInt("delay", 0)
+                                .takeIf { it > 0 }?.let { node.getString("name") to it }
+                        }.toMap()
+                        report.put("healthyNodes", healthy.size)
+                        assertTrue("At least one real healthy candidate", healthy.isNotEmpty())
+                        report.put("phase", "ASSERT_NATIVE_LOWEST")
+                        val selected = api.request("GET", "/proxies/AUTO").getString("now")
+                        val minimum = healthy.values.minOrNull()
+                        report.put("profiles", disk.profiles.size).put("enabledNodes", expected.size)
+                            .put("providerNodes", actual.size).put("healthyNodes", healthy.size)
+                            .put("minimumMeasuredDelayMs", minimum).put("selectedDelayMs", healthy[selected])
+                            .put("selectedNodeSHA256", digest(selected))
+                            .put("selectedSourceSHA256", sourceHashes.singleOrNull { selected.startsWith("n_${it}_") })
+                            .put("healthIntervalSeconds", ProxyPolicy.HEALTH_SECONDS)
+                            .put("egressSelection", api.request("GET", "/proxies/EGRESS").getString("now"))
+                        assertEquals("Native AUTO selected lowest measured delay", minimum, healthy[selected])
+                        assertEquals("Ordinary healthy pool policy", "AUTO", report.getString("egressSelection"))
+                        fun publicConnections(): Set<String> {
+                            val connections = api.request("GET", "/connections").getJSONArray("connections")
+                            return (0 until connections.length()).mapNotNull { index ->
+                                val connection = connections.getJSONObject(index)
+                                val chains = connection.getJSONArray("chains")
+                                connection.getString("id").takeIf {
+                                    connection.getJSONObject("metadata").optString("host") == "example.com" &&
+                                        (0 until chains.length()).any { chains.getString(it) in expected }
+                                }
+                            }.toSet()
+                        }
+                        report.put("phase", "PUBLIC_NATIVE_ROUTE")
+                        val connection = runtime.openConnection(URL("https://example.com/?issue59=$invocation-native"))
+                        try {
+                            report.put("nativeHttpStatus", connection.responseCode)
+                            report.put("nativePooledConnectionObserved", publicConnections().isNotEmpty())
+                            connection.inputStream.use { input ->
+                                val buffer = ByteArray(8192)
+                                var total = 0
+                                while (true) {
+                                    val count = input.read(buffer)
+                                    if (count < 0) break
+                                    total += count
+                                    check(total <= 128 * 1024)
+                                }
+                            }
+                        } finally { connection.disconnect() }
+                        val beforeBrowser = publicConnections()
+                        val page = "https://example.com/?issue59=$invocation-browser"
+                        report.put("phase", "PUBLIC_BROWSER_ROUTE")
+                        scene.onActivity { assertTrue("Public navigation accepted", it.tabs.current.session.open(page).accepted()) }
+                        var browserPooled = false
+                        await("Public WebView response") {
+                            browserPooled = browserPooled || (publicConnections() - beforeBrowser).isNotEmpty()
+                            var loaded = false
+                            scene.onActivity { loaded = it.tabs.current.session.state.let { state ->
+                                state.url == page && state.title == "Example Domain" &&
+                                    state.phase == LocalBrowserSession.Phase.READY
+                            } }
+                            loaded
+                        }
+                        report.put("browserPooledConnectionObserved", browserPooled).put("publicBrowserLoaded", true)
+                        assertEquals("Normal TLS native public response", 200, report.getInt("nativeHttpStatus"))
+                        assertTrue("Actual native pool connection", report.getBoolean("nativePooledConnectionObserved"))
+                        assertTrue("Distinct actual WebView pool connection", browserPooled)
+                    }
+                }
+                await("Foreground runtime released") { runtime.proxyPort == null && runtime.webViewPort == null }
+                report.put("foregroundRuntimeReleased", true).put("result", "SAVED_POOL_AND_PUBLIC_ROUTES_PASSED")
+            }
+        } catch (_: AssertionError) {
+            report.put("result", "NOT_PASSED").put("failureCategory", "ASSERTION")
+            throw AssertionError("Saved real pool check failed; see fixed-category report")
+        } catch (_: Exception) {
+            report.put("result", "NOT_PASSED").put("failureCategory", "OPERATION")
+            throw AssertionError("Saved real pool operation failed; see fixed-category report")
+        } finally {
+            refresh.testConnectivity = previousConnectivity
+            writeReport()
+        }
+    }
+
     @Test fun ownerPresentedSubscriptionIsImportedThroughNormalCameraFlow() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val arguments = InstrumentationRegistry.getArguments()
