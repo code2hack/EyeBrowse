@@ -1,6 +1,6 @@
-# RG subscription and pool checkpoint
+# RG subscription import and pool verification
 
-Issue #59, current [P4.4](https://github.com/code2hack/EyeBrowse/blob/7125378fe07dda1bd5cdb7e8399ff770884edb38/docs/plans/v0.0.4-plan.md), Worker59 mission6. This is a component checkpoint awaiting device verification. It is **not CANDIDATE_READY**, independent review, acceptance or integration. The source extends `aeb463ac9f90d80b8fcbdfb622fc23b288330e37`, based on integration `03de921e2400147842ce6c56101b58d514dde77c`; main `8929241f348bae9005b9b6bc1a93fbabd47145c1` is unchanged.
+Issue #59, current [P4.4](https://github.com/code2hack/EyeBrowse/blob/7125378fe07dda1bd5cdb7e8399ff770884edb38/docs/plans/v0.0.4-plan.md), Worker59 mission6. This record supplies candidate evidence for independent review; it does not grant acceptance or integration. Product and test code match component commit `0dbe0375f52d46b16845904d39c2ceeb02b7c3c3`, which extends `aeb463ac9f90d80b8fcbdfb622fc23b288330e37`, based on integration `03de921e2400147842ce6c56101b58d514dde77c`. This documentation update requires no new APK build. Main `8929241f348bae9005b9b6bc1a93fbabd47145c1` is unchanged.
 
 The [Android JSON cache correction](rg-profile-cache.md) remains separately demonstrated. The identities of the two historical Owner-reported failed inputs, their relationship to either available source, and their original failure causes remain unknown. Neither later Owner success nor these executions retroactively identifies those inputs.
 
@@ -53,10 +53,33 @@ Complete coherent current CE/DP snapshots of both apps were retained and reconst
 
 Across the fixed APP update, the entire target CE archive, including its metadata, stayed identical. The target DP store lost two `code_cache` objects during the package update; their complete pre-update bytes remain in checkpoint011 and the actual post-update DP store is captured in checkpoint012. No old state was overlaid. Source CE/DP stayed identical. Checkpoint012 was verified at 2026-10-17 03:53:38 UTC; it is a recorded cutoff, not a continuous state or power guarantee. All current account/profile/bookmark/pairing data stays private. Account E2E is not claimed.
 
-## Remaining device gate
+## Actual fixed-APP verification
+
+Invocation `6f8ef128-b23b-4cbf-b8ef-f37e85d71fe9` executed on the actual RG with APP `bbcb4b38…` and the **same TEST `19f36429…`** as the retained failing APP `c5d1b20a…` run. JUnit passed one test in 33.515417 seconds, with no timeout. The original 45-second awaits, production health bounds and genuine ten-second AUTO selection-cache wait were unchanged.
+
+The post-run generated configuration contained two resolvers and no scoped entry. This pass establishes ordinary routing in the current environment; it is not a controlled same-network startup red/green result. The scoped-parser correction is separately bound to the retained Android four-case validation matrix and unchanged native regression. No resolver value or network policy was changed to obtain this pass.
+
+| Observation | Actual result |
+| --- | --- |
+| Ordinary runtime startup | Running; native and Chromium WebView proxy ports ready and equal. |
+| Combined real source membership | All 41 expected nodes from both enabled saved sources appeared in the real core's ENABLED provider. |
+| Common-endpoint health and AUTO | 36 healthy candidates; selected delay 524 ms equalled the lowest measured delay, 524 ms. EGRESS selected AUTO; health interval remained 300 seconds. This is latency evidence at that cutoff, not a throughput or every-site guarantee. |
+| Native public route | Normal TLS HTTPS response 200 from `example.com`, with an actual pooled core connection. |
+| Chromium WebView public route | A distinct pooled core connection and the public Example Domain page reached READY. No private tab or account page was loaded. |
+| Teardown and retained data | Profile cache and bookmarks unchanged; starting tab metadata restored; foreground runtime released. Actual subsequent state was HOME, keyguard false, with source/target/TEST and associated app processes absent. |
+
+The test froze automatic refresh only while examining the current saved inputs, then restored the test connectivity seam. It used no seeded profiles, relay, reverse connection or fixture service. The controlled native tests separately demonstrate switched delays, either source winning, OFF/deleted exclusion and unhealthy fallback/recovery; this real execution selected one actual source at its observed latency.
+
+Separate fresh-process invocation `4d7bc769-c400-47aa-b9ab-982fb31d3ac8` passed one JUnit test in a new Android process, PID 14140. Both `ProfileStore` and fresh `RgProfiles` recovered the exact canonical source, friendly name, enabled state and nodes for both profiles and all 41 enabled nodes. The private cache, complete profile XML and tab metadata stayed unchanged; this headless check did not start the core. Neither execution demonstrates account E2E or optical acquisition.
+
+## Transport history and current preservation
 
 Fixed-APP pool invocation `61ab2c03-76bc-4591-9bed-26433ded1bb3` was **not launched**: its first physical identity guard found no USB device. One authorized 5555 connection attempt and one 41887 bootstrap attempt each timed out; unknown outcomes were reconciled without replay, server restart, pairing or `tcpip` changes. USB briefly returned and authenticated, then disappeared again before current-preservation requalification013 could begin. No fixed-APP pool test or fresh-process persistence result is inferred from preparation, installation, host passes or brief transport recovery.
 
-Continuation requires stable authorized device access, fresh current-state/preservation qualification, then actual saved-pool minimum-latency selection, native/browser public routing and fresh-process persistence on the fixed APP. The two successful imported sources stay saved. No new Owner terminal, private-file or source-identity setup is required. Current power/camera/resource return is unavailable; exclusive reservation remains held pending a verified handoff. Necessary owned processes have settled at their recorded cutoffs; discretionary cleanup remains deferred.
+The later authenticated Owner event supplied wireless bootstrap port 36967 and expressly authorized enabling primary 5555. Existing 5555 was not authenticated. The worker authenticated the exact RG through 36967, persisted a single intent, invoked `tcpip 5555` once, then independently authenticated 5555 and verified physical serial/model/user/API/shell UID, TCP property 5555 and a real listening socket. No host server lifecycle, pairing, key extraction or global network policy change occurred. This actual recovery supersedes the old USB capability gate; the prior unknown outcomes remain unchanged.
+
+Fresh current-state requalification found a changed target member set and correctly remained NOT_READY. Complete new checkpoint014 captured both current apps before the actual fixed-APP test: every member and all mutable/unknown/cache data were covered, static code references were freshly verified, independent repeated streams and final cross-store checks matched, restore staging passed and all 15 database checks passed. Final post-test checkpoint015 completed the same full checks with 15 fresh database passes at 2026-10-17 04:40:41 UTC. Original source CE/DP stayed byte-identical. The changed current target state was preserved, with no old overlay; complete profile XML and bookmarks matched before and after both new test passes. No on-device restore was exercised.
+
+Actual resource-return observation completed at 2026-10-17 04:42:11 UTC: authenticated primary 5555, HOME, keyguard false, Awake, display ON, both app CAMERA permissions granted, empty active-camera client section, no owned app/associated processes or live app Unix socket paths, and all owned test/capture operations terminal. An initial camera-status reader failed to recognize the service's heading; that setup negative is retained, and a bounded current-status read reconciled the actual empty client list without capturing camera-history logs. No extra HOME, force-stop, install, clear or network change was used. These are cutoff observations, not continuous guarantees. The worker reported HANDOFF_READY and stopped device actions pending Manager transfer. Successful real imports and current APP/TEST remain installed; discretionary cleanup stays deferred.
 
 Manager retains exact source/input inventories, 66 recovered input bindings, raw invocation/XML/class/JAR/APK records, private source bindings, all negatives and restore proofs under Worker59 phase `usb-multisub-r6-001`. Private URLs, response bodies, node credentials, actual resolver addresses and account/session contents are excluded from this record and Git. #60 migration is withdrawn, not passed; #61/#64 interaction work and #62 account journeys remain separate.
