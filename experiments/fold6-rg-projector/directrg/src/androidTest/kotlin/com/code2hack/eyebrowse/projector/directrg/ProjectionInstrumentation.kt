@@ -311,8 +311,14 @@ class ProjectionInstrumentation : Instrumentation() {
                 report.put("restoredMusicVolume", audioManager.getStreamVolume(AudioManager.STREAM_MUSIC))
             }
             if (ownsRecord) file?.writeText(report.toString())
+            // The full bounded timeline stays in the app file; a ten-minute JSON exceeds Binder's reply limit.
+            val result = JSONObject().put("passed", report.getBoolean("passed"))
+                .put("reportFile", if (ownsRecord) file?.name else null)
+                .put("reportBytes", if (ownsRecord) file?.length() else 0)
+                .put("actualMeasurementMs", report.optLong("actualMeasurementMs", -1))
+                .put("errorType", report.optString("errorType"))
             finish(if (report.getBoolean("passed")) Activity.RESULT_OK else Activity.RESULT_CANCELED,
-                Bundle().apply { putString("pav67", report.toString()) })
+                Bundle().apply { putString("pav67", result.toString()) })
         }
     }
 }
