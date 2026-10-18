@@ -5,7 +5,7 @@ Issue: [#69](https://github.com/code2hack/EyeBrowse/issues/69)
 Assigned base: `077124ed21ee97f51a8c2fe15e5b165e7100f045`
 Target: `spike/fold6-rg-projector-av`
 Status: host implementation ready for a further device window; physical audio acceptance pending.
-Mission revision 2 is source-only while #68 owns both devices.
+Mission revision 3 grants exclusive audio window W69-02; actual output/timing checks are underway.
 
 ## Implemented path
 
@@ -36,8 +36,8 @@ experiment rather than leaving background audio. Stop/pause/disconnect cancels
 the socket and workers, pauses and flushes AudioTrack, releases both codecs and
 abandons focus. Reconnect creates fresh resources and a new playback clock.
 
-There is no application encoded-audio or PCM queue. Codec input waits at most
-50 ms; nonblocking AudioTrack writes have a 250 ms deadline. Track allocation
+There is no application encoded-audio or PCM queue. Audio codec input waits at most
+250 ms; nonblocking AudioTrack writes have a 250 ms deadline. Track allocation
 uses at least the platform minimum and 100 ms, rejecting a minimum above 200 ms;
 observed queued output above 300 ms fails. Host and receiver audio liveness
 limits are five seconds, with the existing bounded network-write and host
@@ -101,7 +101,7 @@ are outside these tests. No playback-duplication comparison has run.
 | Matching Phone/RG owned-package updates | Both installed and full installed APK hashes matched this pilot's build |
 | First direct pilot `audio-pilot001` | **Failed to establish a live session.** No audio/playback result |
 | Actual RG audibility / Phone suppression | Not observed |
-| Real ten-minute controlled A/V run | Not run |
+| Real ten-minute controlled A/V run | Pending after the successful short owned AV pilot |
 | Physical A/V offset / uncertainty | Unavailable; no common optical/acoustic observation |
 | Two-app mixing and focus / mute / reconnect matrix | Pending |
 
@@ -130,3 +130,35 @@ volume/routing/IME/credential/global-setting changes. One ordinary RG wake was
 sent; no forced lock was performed. The shared USB debug route was retained and
 the exclusive device window returned to the Manager for #68. Mission files and
 failed evidence remain retained; no workspace archival has occurred.
+
+## W69-02 actual pilots and bounded corrections
+
+The matching7ac builds installed through the granted USB debug route. Pilot002
+reached direct Opus capture/decode/playback, then failed at the50ms audio input
+wait. The input wait is now250ms, matching the bounded output-write wait.
+Pilot003 decoded silent VD audio for about24s, then stopped at the video-clock
+lookahead bound as a later frame arrived. Its exact clock discontinuity cause
+remains unproved. Its final23,653.5ms queue peak is a teardown artifact, not a
+qualified live queue-growth measurement: AudioTrack flush reset the playback
+head while the worker still sampled it. Metrics and flush now share a small
+lifetime lock; the original failed result remains retained.
+
+Pilot004 hit the inherited8-frame video backlog limit while audio-clock timing
+held video output. Its dependent Activity launch returned a SecurityException
+for the just-ended VD61; it does not establish a new Android privilege need.
+The fixed video inflight bound is now16, still with250ms lookahead and no
+application encoded-frame queue. The decoder reports17 native output buffers.
+Late shutdown socket errors no longer replace the first live failure category;
+clock-limit exceptions now include the actual numeric video PTS/ahead value.
+
+With those corrections, pilot005 launched the actual owned clip on VD62 and
+completed30,013ms of measured playback (30,017ms through the driver's final
+status-read boundary). Both media counters and source audio PTS advanced.
+RG output used `c2.android.opus.decoder`,48kHz/stereo/PCM16, route type2
+(built-in speaker),100ms track allocation, peak queued240.875ms and zero
+reported underruns. The receiver detected the owned1kHz pulse at approximately
+0.025 digital amplitude. The last software sample was-3.477ms video minus
+audio; this is callback/audio-clock evidence, not audibility or physical sync.
+No microphone, recording, Bluetooth route or separate media URL was used.
+The first real ten-minute run, listening observation and mixing/lifecycle
+matrix remain pending at this source cut.

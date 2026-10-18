@@ -66,7 +66,7 @@ class ProjectionSession(
             .put("renderedFps", if (seconds > 0) rendered / seconds else 0).put("touchesSent", touches)
             .put("packetReadToCallbackP95Ms", p95(renderDelayMs)).put("networkRoundTripP95Ms", p95(roundTripMs))
             .put("latencyScope", "RG System.nanoTime packet-read to render-callback receipt; network echo RTT; no optical/input end-to-end claim")
-            .put("maxEncodedPacketBytes", Wire.MAX_PAYLOAD).put("maxInflightFrames", 8).put("queuedTaps", 0)
+            .put("maxEncodedPacketBytes", Wire.MAX_PAYLOAD).put("maxInflightFrames", 16).put("queuedTaps", 0)
         stats.put("audio", audio?.snapshot() ?: stoppedAudio ?: "required-waiting")
             .put("videoLateDrops", droppedVideo).put("avSample", avSamples.lastOrNull())
             .put("avScope", "Phone source PTS compared using RG AudioTimestamp clock and RG render-callback receipt; not optical/acoustic offset")
@@ -87,6 +87,7 @@ class ProjectionSession(
     }
 
     @Synchronized private fun failure(error: Exception) {
+        if (!running.get()) return
         Log.e("Pav67Projection", "Projection failed", error)
         val causes = JSONArray()
         var cause: Throwable? = error

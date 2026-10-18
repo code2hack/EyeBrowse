@@ -70,7 +70,7 @@ class SurfaceDecoder(
                                 synchronized(received) { released.remove(info.presentationTimeUs) }
                                 codec.releaseOutputBuffer(index, false); dropped()
                             } else {
-                                check(target == null || target - now <= 250_000_000L) { "Video/audio clock diverged" }
+                                check(target == null || target - now <= 250_000_000L) { "Video/audio clock diverged: videoPtsUs=${info.presentationTimeUs}, aheadMs=${(target!! - now) / 1_000_000.0}" }
                                 // Wait only on the output worker; Stop remains bounded and cancels presentation.
                                 while (running.get() && target != null && target - System.nanoTime() > 2_000_000L) Thread.sleep(2)
                                 codec.releaseOutputBuffer(index, running.get())
@@ -94,7 +94,7 @@ class SurfaceDecoder(
         require(packet.data.size <= buffer.capacity())
         buffer.clear(); buffer.put(packet.data)
         if (!packet.config) synchronized(received) {
-            check(received.size < 8) { "Decoder backlog" }
+            check(received.size < 16) { "Decoder backlog" }
             received[packet.ptsUs] = receivedAt
         }
         codec.queueInputBuffer(index, 0, packet.data.size, packet.ptsUs,

@@ -27,6 +27,7 @@ internal class AudioDecoder(
     private val failed: (Exception) -> Unit,
 ) : Closeable {
     private val running = AtomicBoolean(true)
+    private val trackLock = Any()
     private val manager = context.getSystemService(AudioManager::class.java)
     private val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
         .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE).build()
@@ -86,7 +87,7 @@ internal class AudioDecoder(
     fun enqueue(packet: ScrcpyRecord.Packet) {
         check(running.get() && !packet.config)
         val decoder = codec ?: error("Missing audio decoder")
-        val index = decoder.dequeueInputBuffer(50_000)
+        val index = decoder.dequeueInputBuffer(250_000)
         check(index >= 0) { "Audio decoder input stalled" }
         val buffer = decoder.getInputBuffer(index) ?: error("No audio input buffer")
         require(packet.data.size <= buffer.capacity())
@@ -125,17 +126,22 @@ internal class AudioDecoder(
                             check(System.nanoTime() < deadline) { "AudioTrack stalled" }
                             if (n == 0) Thread.sleep(2)
                         }
+                        if (!running.get()) continue
                         lastPts = info.presentationTimeUs; decoded.incrementAndGet(); lastOutput.set(System.nanoTime())
-                        val now = System.nanoTime()
-                        timestampValid = audio.getTimestamp(timestamp) && clock.update(timestamp.framePosition, timestamp.nanoTime, now)
-                        if (timestampValid) lastClock.set(now)
-                        val head = if (timestampValid) minOf(writtenFrames.get(), timestamp.framePosition + (now - timestamp.nanoTime) * 48_000 / 1_000_000_000)
-                            else audio.playbackHeadPosition.toLong() and 0xffffffffL
-                        val queued = (writtenFrames.get() - head).coerceAtLeast(0)
-                        peakQueuedFrames = maxOf(peakQueuedFrames, queued)
-                        check(queued <= 14_400) { "Audio playback backlog" }
-                        underruns = audio.underrunCount; route = audio.routedDevice?.type ?: -1
-                        check(route !in listOf(7, 8, 26, 27, 30)) { "Bluetooth output is outside this experiment" }
+                        synchronized(trackLock) {
+                            if (running.get()) {
+                                val now = System.nanoTime()
+                                timestampValid = audio.getTimestamp(timestamp) && clock.update(timestamp.framePosition, timestamp.nanoTime, now)
+                                if (timestampValid) lastClock.set(now)
+                                val head = if (timestampValid) minOf(writtenFrames.get(), timestamp.framePosition + (now - timestamp.nanoTime) * 48_000 / 1_000_000_000)
+                                    else audio.playbackHeadPosition.toLong() and 0xffffffffL
+                                val queued = (writtenFrames.get() - head).coerceAtLeast(0)
+                                peakQueuedFrames = maxOf(peakQueuedFrames, queued)
+                                check(queued <= 14_400) { "Audio playback backlog" }
+                                underruns = audio.underrunCount; route = audio.routedDevice?.type ?: -1
+                                check(route !in listOf(7, 8, 26, 27, 30)) { "Bluetooth output is outside this experiment" }
+                            }
+                        }
                     } finally { decoder.releaseOutputBuffer(index, false) }
                 }
             }
@@ -157,7 +163,7 @@ internal class AudioDecoder(
     override fun close() {
         if (!running.compareAndSet(true, false)) return
         val audio = track
-        runCatching { audio?.pause() }; runCatching { audio?.flush() }
+        synchronized(trackLock) { runCatching { audio?.pause() }; runCatching { audio?.flush() } }
         var interrupted = false
         try { if (Thread.currentThread() !== worker) worker?.join(1000) }
         catch (_: InterruptedException) { interrupted = true }
