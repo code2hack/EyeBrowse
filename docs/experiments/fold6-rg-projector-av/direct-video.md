@@ -22,6 +22,9 @@ native SystemUI ownership check before credential read or product work. It is
 also consumed, with secure end-state and control teardown verified.
 The later credential-free118 diagnostic could not verify its final native
 state; current continuation also holds that end-state uncertainty.
+The read-only119 selector observation then returned one token-matched focus
+window, but exact SystemUI ownership did not qualify. No complete status or
+replacement caller was prepared; credential and product continuation remain held.
 
 ## Scope, packages and privileges
 
@@ -334,3 +337,20 @@ isolates a slow read without establishing its execution, transfer or service
 cause. Thirteen observer and three comparison host prechecks passed with zero
 production IO. No speculative status/selector correction was prepared. All
 failed records, original limits and the current guard remain unchanged.
+
+Manager119 authorized three distinct read-only purposes, each at most once.
+Installed help confirmed the window identifier selector in1.0 second. The
+focused-window qualification command completed in6.0 seconds with complete
+frames and zero command returns. A fresh strict-hex display0/user0 focus token
+matched the single returned window. The unchanged ownership validator then
+rejected its exact SystemUI binding. The observer retained the aggregate
+rejection, without the individual ownership subpredicates, so the specific
+mismatch is unknown. Raw private window output was transient and unretained.
+
+The third, complete-status purpose was not run after that rejection. No retry,
+fallback, power, control, credential, XML or product operation ran. Forty-three
+synthetic host checks passed before device reads; no source/parser guard was
+weakened. There is no status/caller correction or new native end-state claim.
+The consumed five-minute002 record retains its original bytes and full node
+metadata. The Phone/RG source/APK capsule remains unchanged, and all required
+product evidence remains pending.

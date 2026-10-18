@@ -2,7 +2,7 @@
   "schema": 1,
   "issue": 67,
   "alias": "PAV-02",
-  "status": "INCOMPLETE_COMPONENT_CHECKPOINT_NATIVE118_OBSERVATION_UNAVAILABLE_ENDSTATE_UNVERIFIED",
+  "status": "INCOMPLETE_COMPONENT_CHECKPOINT_NATIVE119_SELECTED_WINDOW_OWNER_NOT_QUALIFIED_ENDSTATE_UNVERIFIED",
   "baseline": "38cb5f7ec8d320ef9833a36840ccec3febdbc885",
   "donor": "03de921e2400147842ce6c56101b58d514dde77c",
   "target": "spike/fold6-rg-projector-av",
@@ -302,7 +302,7 @@
     "measuredMovingFPSAndLatency": "SMOKE003_FPS_OBSERVED_LEGACY_LATENCY_INVALID_RG3_METRIC_UNMEASURED",
     "audio": "DISABLED_INTERMEDIATE",
     "opticalHeadIMEAcousticAcceptance": "NOT_CLAIMED",
-    "blocker": "Consumed five-minute002 native ownership prerequisite plus118 native status timeout; exact032 context predicate and latest final native end-state unverified; no auth or product continuation",
+    "blocker": "Consumed five-minute002 native prerequisite;119 complete targeted window read did not qualify exact SystemUI ownership, specific subpredicate unretained; complete native status and current end-state unverified",
     "componentNegativesRetained": [
       "Initial RG decor/insets NullPointerException",
       "Initial API32 PKCS12 context IOException",
@@ -409,6 +409,37 @@
       "allComparisonComponentsReturned": false,
       "comparisonUsedForAuthOrFinalNativeUpgrade": false,
       "speculativeCorrectionPrepared": false
+    },
+    "nativeFocused119": {
+      "scope": "Three distinct once-only read purposes under READ_ONLY119; stopped after second purpose ownership rejection",
+      "state": "FAILED_OR_UNKNOWN_NO_REPLAY",
+      "hostCasesPassed": 43,
+      "hostCasesProductionIO": 0,
+      "installedHelp": {
+        "calls": 1,
+        "selectorHelpValidated": true,
+        "commandCoarseMs": 1000
+      },
+      "freshFocusedWindowQualification": {
+        "calls": 1,
+        "returncode": 0,
+        "commandCoarseMs": 6000,
+        "completeExpectedFrames": true,
+        "freshDisplay0User0StrictHexFocusMatchedSingleReturnedWindow": true,
+        "exactSystemUiOwnershipQualified": false,
+        "fixedRejectionCode": "CURRENT_SYSTEMUI_OWNER_NOT_EXACT",
+        "exactOwnershipSubpredicate": "NOT_RETAINED"
+      },
+      "compactCompleteNativeStatusCalls": 0,
+      "newCompleteNativeSampleObtained": false,
+      "latestNativeEndState": "UNKNOWN_RETAINED_FROM118",
+      "priorNativeClientSettlement": "UNKNOWN",
+      "powerInputControlAuthCredentialXMLMediaAppStoreOrRouteCalls": 0,
+      "rawNativePayloadRetainedOrExported": false,
+      "statusOrCallerCandidatePrepared": false,
+      "liveCallerImmutable086AndThreeGuardsUnchanged": true,
+      "originalConsumed002BytesAndFullNodeMetadataUnchanged": true,
+      "actualPurposeRetryOrFallback": false
     }
   },
   "teardown": {
@@ -1105,6 +1136,46 @@
       "record": "native-context118-readonly-comparison-host-proof.json",
       "bytes": 290,
       "sha256": "c5f55aab2a3dc3739d3a098f3384a8bc0216eed7c840064fe5d31ba079f5a983"
+    },
+    {
+      "record": "focused-native119-observer.py",
+      "bytes": 12196,
+      "sha256": "17872fa3905438092f6676a78b90c4025b646a9a2f86c843628678693fd0e771"
+    },
+    {
+      "record": "focused-native119-host-checks.py",
+      "bytes": 7871,
+      "sha256": "03abad4024dab024e20d4d2db4acb4a268d4784c5b80515cca61006f2c6dfbd1"
+    },
+    {
+      "record": "focused-native119-host-proof.json",
+      "bytes": 3819,
+      "sha256": "bbb0cc2dcfdff7d8f4389dc8d8286abd6813147e6b49de3b6759dee96396de42"
+    },
+    {
+      "record": "focused-native119-observation-intent.json",
+      "bytes": 311,
+      "sha256": "115f831b4deaf25ed23839766ec8a87e8630faef5383425b7d8c61da2e7f3730"
+    },
+    {
+      "record": "focused-native119-installedHelp-intent.json",
+      "bytes": 143,
+      "sha256": "1dddc3652638bfc0388797ec17580cda5515a48f423f36981e410f41834123e5"
+    },
+    {
+      "record": "focused-native119-freshFocusedWindowQualification-intent.json",
+      "bytes": 161,
+      "sha256": "da872cbfde2dc3c577e73eb61946a05b01972f8c5b4bd7eea71d45bb4b37403a"
+    },
+    {
+      "record": "focused-native119-observation-result.json",
+      "bytes": 1121,
+      "sha256": "d00612f428a9d36294c586ed39671fe0a2ab041f18ece4dc6ed132a6e1388661"
+    },
+    {
+      "record": "focused-native119-safe-boundary-proof.json",
+      "bytes": 3217,
+      "sha256": "d088de0a735b8de2b77ba6b5ce81afa310af058d43862c55253fa3510f75463d"
     }
   ],
   "privacy": "Only fixed-schema outcomes, counts and opaque hashes. Original paths, browser/account payloads and TLS private material remain outside Git.",
