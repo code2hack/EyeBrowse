@@ -30,7 +30,6 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.insetsController?.apply { hide(WindowInsets.Type.systemBars()); systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE }
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         screen = SurfaceView(this).apply {
             contentDescription = "Projected application; tap a visible target"
@@ -58,6 +57,9 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
         }, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END))
         root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> resize() }
         setContentView(root)
+        root.post {
+            window.insetsController?.apply { hide(WindowInsets.Type.systemBars()); systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE }
+        }
     }
 
     private fun resize() {

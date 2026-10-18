@@ -75,7 +75,12 @@ class ProjectionInstrumentation : Instrumentation() {
             ownsRecord = true
             val operation = args.getString("operation") ?: "stream"
             report.put("operation", operation)
-            if (operation == "unauthenticated") {
+            if (operation == "tls-diagnostic") {
+                report.put("phase", "LOAD_PLATFORM_TLS_CONTEXT")
+                Tls.context(File(targetContext.filesDir, "session"))
+                report.put("contextLoaded", true).put("phase", "AUTHENTICATED_HANDSHAKE")
+                Tls.connect(File(targetContext.filesDir, "session")).use { report.put("tls", it.session.protocol) }
+            } else if (operation == "unauthenticated") {
                 require(unauthenticated()); report.put("unauthenticatedRefused", true).put("mediaWelcomeReceived", false)
             } else {
                 require(operation in listOf("stream", "pause", "reconnect", "local-stop", "host-stop"))
@@ -144,7 +149,12 @@ class ProjectionInstrumentation : Instrumentation() {
                 }
             }
             report.put("passed", true)
-        } catch (error: Exception) { report.put("errorType", error.javaClass.simpleName) }
+        } catch (error: Exception) {
+            report.put("errorType", error.javaClass.simpleName)
+            val causes = JSONArray(); var cause: Throwable? = error
+            repeat(6) { cause?.let { causes.put(it.javaClass.simpleName); cause = it.cause } }
+            report.put("causeClasses", causes)
+        }
         finally {
             activity?.let { runOnMainSync { it.finish() } }
             if (ownsRecord) file?.writeText(report.toString())
