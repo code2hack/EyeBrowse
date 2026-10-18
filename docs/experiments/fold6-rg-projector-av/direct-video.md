@@ -10,9 +10,11 @@ A subsequent stream exposed stock scrcpy's self-unlink behavior: its cleanup
 process deletes the JAR from which it was started. The corrected Phone host
 keeps a pinned master and gives every authenticated session a new verified
 copy. Three focused regression tests, the Phone build and lint pass. This new
-Phone package is **not installed**: current physical qualification timed out
-before its install intent or a new credential-caller attempt. Phone operations
-are held at that capability boundary. Source/build work continues independently.
+Phone package installation is **unknown**: a failed streamed install returned
+no Android failure code, and its one read-only reconciliation stopped before
+ADB because the pinned debug tunnel PID was absent. No install was replayed or
+new credential caller admitted. Phone work is held at this concrete binding
+failure; source/build work has continued independently.
 
 ## Scope, packages and privileges
 
@@ -26,7 +28,7 @@ projection, optical readability, head input, Phone IME, acoustics or automatic
 startup. Production browser code and protected articles remain unchanged.
 
 The compiled Phone package is `com.code2hack.eyebrowse.projector.directhost.r2`;
-it is uninstalled at this cut. The original experimental `.directhost` remains
+its installation is unqualified at this cut. The original experimental `.directhost` remains
 installed. The current RG app and test are `.directrg.r3` and `.directrg.r3.test`,
 with the common prefix `com.code2hack.eyebrowse.projector`. Their installed APK
 bytes match the frozen artifacts. Earlier RG packages `.directrg`, its `.test`,
@@ -191,7 +193,7 @@ untested-on-device host fix.
 
 | Criterion | Actual result at this checkpoint |
 | --- | --- |
-| Isolated build/dependencies/install | Build/lint PASS; RG3 installed; corrected Phone r2 uninstalled |
+| Isolated build/dependencies/install | Build/lint PASS; RG3 installed; corrected Phone r2 install UNKNOWN |
 | Third-party VD content to real RG Surface | Public vendor onboarding rendered in smoke003; normal Settings page and current encoder identity incomplete |
 | Harmless touch with observed app effect | Unexecuted |
 | At least300 genuine seconds without PC media/control relay | Unexecuted |
@@ -212,8 +214,17 @@ and locked/showing/Dozing/display0OFF. Independent readback found its bridge,
 upstream process and port44367 absent after exact owned fallback TERM. Graceful
 Host Stop was not passed; VD18's final disappearance was not separately captured.
 The later status read timed out25s; one read-only reconciliation failed at the
-existing physical guard before new install/caller/input. The last secure cut is
-historical, not a continuously verified current state. No shared service was
-reset. Both-device reservation and old Worker64 tab/hook/resource-return
+existing physical guard before new install/caller/input. A correlated Manager
+capability event then allowed one bounded existing-primary qualification, which
+passed. A fresh native pre-install cut was locked/showing/Dozing/display0OFF.
+One unused Phone r2 install returned1, with no Android failure code or Success.
+The one read-only package reconciliation was rejected by the guard before ADB:
+the previously pinned debug SSH PID was absent. Independent host observation
+also found its selected listener absent. The installation outcome remains
+unknown; its failure cause and tunnel exit cause are unassigned. No install,
+connect, tunnel, input or credential action was replayed. Current route/binding
+reconciliation belongs to the Manager under existing custody. The last secure
+cut is historical, not a continuously verified state. No shared service was
+reset or signaled by this Worker. Both-device reservation and old Worker64 tab/hook/resource-return
 obligations remain; there is no old-state overlay or assumed resource return.
 Independent exact-candidate review and Manager acceptance remain pending.

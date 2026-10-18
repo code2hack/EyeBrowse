@@ -2,7 +2,7 @@
   "schema": 1,
   "issue": 67,
   "alias": "PAV-02",
-  "status": "INCOMPLETE_COMPONENT_CHECKPOINT_PHONE_PHYSICAL_GUARD_UNAVAILABLE",
+  "status": "INCOMPLETE_COMPONENT_CHECKPOINT_PHONE_INSTALL_UNKNOWN_DEBUG_TUNNEL_ABSENT",
   "baseline": "38cb5f7ec8d320ef9833a36840ccec3febdbc885",
   "donor": "03de921e2400147842ce6c56101b58d514dde77c",
   "target": "spike/fold6-rg-projector-av",
@@ -80,7 +80,8 @@
       "sha256": "84f656b53167b5cba969d50a8f27d64578fd1fecdd576abed7c60b5f64bc6b1d",
       "bytes": 2549566,
       "signatureVerified": true,
-      "installed": false
+      "installed": null,
+      "installationOutcome": "UNKNOWN_AFTER_CLIENT_EXIT1_GUARDED_RECONCILIATION_UNAVAILABLE"
     },
     {
       "package": "com.code2hack.eyebrowse.projector.directrg.r3",
@@ -242,8 +243,8 @@
     }
   ],
   "physical": {
-    "projectorPackagesInstalled": 8,
-    "correctedPhoneHostR2Installed": false,
+    "projectorPackagesInstalled": null,
+    "correctedPhoneHostR2Installed": null,
     "currentRG3InstalledAndByteBound": true,
     "screenHelperInvocations": 3,
     "credentialReads": 0,
@@ -287,15 +288,17 @@
     "measuredMovingFPSAndLatency": "SMOKE003_FPS_OBSERVED_LEGACY_LATENCY_INVALID_RG3_METRIC_UNMEASURED",
     "audio": "DISABLED_INTERMEDIATE",
     "opticalHeadIMEAcousticAcceptance": "NOT_CLAIMED",
-    "blocker": "Current Phone physical guard unavailable before new install intent, new caller or input",
+    "blocker": "After streamed install exit1, read-only reconciliation found pinned debug SSH PID/listener absent; package outcome unknown, no replay",
     "componentNegativesRetained": [
       "Initial RG decor/insets NullPointerException",
       "Initial API32 PKCS12 context IOException",
       "Smoke002 final native state contradicted earlier relock observation",
       "Smoke003 following stream zero frames after stock cleanup unlinked shared server JAR",
       "Smoke003 legacy render-delay value invalid",
-      "Read-only native status timeout25s, one reconciliation physical-guard unavailable60s"
-    ]
+      "Read-only native status timeout25s, one reconciliation physical-guard unavailable60s",
+      "Host r2 streamed install returned1 without Android failure code; package reconciliation rejected before ADB because pinned SSH PID absent"
+    ],
+    "lastKnownInstalledPackageCountBeforeUncertainInstall": 8
   },
   "teardown": {
     "ownedBridgeProcessesStarted": 3,
@@ -324,7 +327,7 @@
     "oldWorker64State": "Unresolved historical tab/hook/resource obligations retained",
     "smoke003BridgeSessionAnd44367Absent": true,
     "smoke003VD18FinalAbsence": "NOT_SEPARATELY_CAPTURED",
-    "lastNativeCut": "smoke003 final; later native and physical reads unavailable, not continuously current",
+    "lastNativeCut": "Fresh locked/showing/Dozing/display0OFF read before host r2 install; not continuously current",
     "backupClientsActive": 0,
     "backupClientSignals": 0
   },
@@ -643,6 +646,56 @@
       "record": "host-r2-encoder-observation-build.log",
       "sha256": "a2551a1bf5a2199e3570a8897a94030623c85b2b6e4632e4056150cee0fbe506",
       "bytes": 5725
+    },
+    {
+      "record": "checkpoint023-pushed-source-binding.json",
+      "sha256": "28ff1b1a98980658e54d6ed1249589495281523696061e2d8218d5d8a964d13a",
+      "bytes": 1389
+    },
+    {
+      "record": "event109-existing-primary-qualification-intent.json",
+      "sha256": "5ec7d1b449dec2c20a49e2673075d349df6d0ed9540b9096af73c627522d288d",
+      "bytes": 290
+    },
+    {
+      "record": "event109-existing-primary-qualification-result.json",
+      "sha256": "b8bf959d425389f8ebb78d679eab723b1a05b333bca6c8e2297fcc80c3a261a1",
+      "bytes": 348
+    },
+    {
+      "record": "hostr2-install-intent.json",
+      "sha256": "94580430246a229583c3f3adaae8b21238eecf3095f13ab3e472e17d8b527dd3",
+      "bytes": 657
+    },
+    {
+      "record": "hostr2-install-result.json",
+      "sha256": "892ed4df4913304803a1e4b41716a18ae354c460db34b912391527b0cdb55e6a",
+      "bytes": 343
+    },
+    {
+      "record": "hostr2-provision109-failure.json",
+      "sha256": "1a9ede7c14a022df1ab9e3fb094b2f4922c8a44f62ef282fccc0f5250b3ec206",
+      "bytes": 187
+    },
+    {
+      "record": "hostr2-install-reconciliation001-intent.json",
+      "sha256": "0a2247462fbf11a1718795595e5677fcf140928c499502674765c0d26cd7fae9",
+      "bytes": 278
+    },
+    {
+      "record": "hostr2-install-reconciliation001-result.json",
+      "sha256": "919ba0129237e5aed1e4e310783f0f8c1b511c7ae5c840cf13b769f67211b995",
+      "bytes": 315
+    },
+    {
+      "record": "device-operation-outcome-21c1726fd2014b29bc5a7627b2553ee8.json",
+      "sha256": "d68f09dad7cc10a8ea814d8e5b1284e5dfa41ec5cc30cbcab2256d80d8c8d261",
+      "bytes": 916
+    },
+    {
+      "record": "hostr2-install-unknown-tunnel-gate109.json",
+      "sha256": "b751296bafacac1c1874c6f237fb040b22545fdba18bd690163b83eb5ae486f2",
+      "bytes": 905
     }
   ],
   "privacy": "Only fixed-schema outcomes, counts and opaque hashes. Original paths, browser/account payloads and TLS private material remain outside Git.",
@@ -702,7 +755,17 @@
     "newConnectCalls": 0,
     "newBootstrapCalls": 0,
     "newTcpipCalls": 0,
-    "currentOwnerChanges": "New complete Chromium raw007 retained; original Phone/RG matched prior verified archives"
+    "currentOwnerChanges": "New complete Chromium raw007 retained; original Phone/RG matched prior verified archives",
+    "event109": {
+      "failureSpecificExistingPrimaryQualification": "PASS",
+      "newConnectBootstrapTcpipInputOrCredentialActions": 0,
+      "newUnusedPackageInstallClientExitCode": 1,
+      "AndroidFailureCode": "NOT_RECEIVED",
+      "oneReadOnlyInstallReconciliation": "Rejected before ADB; pinned SSH PID absent",
+      "installationOutcome": "UNKNOWN_NO_REPLAY",
+      "currentCapability": "Exact debug tunnel PID and selected listener absent; Manager custody reconciliation required",
+      "workerTunnelSignalsOrSharedResets": 0
+    }
   },
   "componentResults": {
     "rgR2UI": "Reached TLS path without initial decor crash",
