@@ -571,3 +571,38 @@ bridgePid29801 refers to the earlier setup stage; its bridge object and actual
 physical-ready stdout identify PID20797/VD79 for the prompted trial. The separate
 `compatibility230/old-physical-ready-capsule-annotation.json` records that stage
 correction without modifying the original evidence or replaying devices.
+
+### Live compatibility failures and bounded audio-write correction
+
+The first merged-build setup on VD81 stopped at14,468ms with video334.477ms
+ahead of the RG audio clock, beyond the unchanged250ms lookahead limit. Its AV
+fixture file still described historical VD71; that file was rejected and no
+current playback/input measurement was claimed. The next setup received EOF
+at617ms and no VD: the owned bridge had exited0 after71.310s, without its final
+status; the stock child reported a refused local socket. Its cause remains
+unproved. A fresh bridge and driver were then kept in one bounded command.
+That setup exposed the Worker's unsupported `am start --activity-new-task`
+option. Its failed output and45,021ms driver observation of the unprepared
+display are retained as a setup failure, not a controlled AV PASS. Numeric task
+flags were checked against the installed Android SDK and used subsequently.
+
+With a fresh actual owned task, VD83 played the AV clip and produced advancing
+video/audio PTS, valid RG AudioTimestamp and an approximately0.025 decoded1kHz
+peak. Software RG input changed native taps0→1, nested top0→−32 and main
+scroll0→18. The native UI then stopped at36,771ms: a fresh video frame needed
+254.408ms lookahead. The driver's26,201ms measurement therefore failed, and
+later field/Back steps were not established. Audio peak queue was247.125ms,
+with one reported underrun. These actual failures remain in
+`compatibility230/av-input001..004/`; they are not new physical-pad failures.
+
+This exposed an inconsistency between the accepted300ms audio backlog ceiling
+and250ms video lookahead when sparse UI frames arrive promptly. The existing
+nonblocking AudioTrack write loop now paces against the RG playback head with
+a200ms write-ahead allowance. It retains its250ms write deadline, native track
+allocation,300ms backlog failure,250ms video lookahead, source PTS, focus and
+lifetime handling. No PCM/application queue or new timing framework is added.
+The playback-head read shares the existing teardown lock and clock rules.
+Affected receiver checks passed34 tests, RG/probe assembly and lint in19s;
+unchanged host/protocol checks are the51-test merged run above. A corrected
+matched-pair short run is pending at this checkpoint. The old ten-minute and
+Owner audio observations remain bound to their original audio source.
