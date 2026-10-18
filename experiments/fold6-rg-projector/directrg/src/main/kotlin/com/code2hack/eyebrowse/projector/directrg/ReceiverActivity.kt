@@ -35,8 +35,9 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var screen: ProjectorSurface
     private lateinit var pointer: PointerOverlay
     private lateinit var connectionView: LinearLayout
-    private lateinit var connectButton: Button
+    private val localButtons = mutableListOf<Button>()
     private lateinit var status: TextView
+    private var connectionStatus = ""
     private lateinit var settings: LocalInputSettings
     private lateinit var gestures: PadGestureRecognizer
     private val edgeMotion = EdgeScrollMotion()
@@ -61,10 +62,15 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
         }
         root.addView(screen, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
         status = TextView(this).apply { setTextColor(Color.WHITE); textSize = 18f; gravity = Gravity.CENTER }
-        connectButton = Button(this).apply { text = getString(R.string.connect); setOnClickListener { connect() } }
+        val connectButton = Button(this).apply { text = getString(R.string.connect); setOnClickListener { connect() } }
+        localButtons.add(connectButton)
         connectionView = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setBackgroundColor(Color.BLACK)
             addView(status)
+            addView(settingsRow("Pointer", { "%.1f×".format(settings.pointerGain) },
+                { if (it < 0) settings.pointerTenths > 1 else settings.pointerTenths < 60 }, settings::stepPointer))
+            addView(settingsRow("Scroll", { "${settings.scrollSpeed} nominal px/s" },
+                { if (it < 0) settings.scrollSpeed > 10 else settings.scrollSpeed < 1200 }, settings::stepScroll))
             addView(connectButton)
         }
         root.addView(connectionView, FrameLayout.LayoutParams(-1, -1))
@@ -92,7 +98,32 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
         }
     }
 
+    private fun settingsRow(label: String, value: () -> String, enabled: (Int) -> Boolean, step: (Int) -> Boolean): LinearLayout {
+        val number = TextView(this).apply { setTextColor(Color.WHITE); gravity = Gravity.CENTER }
+        val minus = Button(this).apply { text = "−"; contentDescription = "Decrease $label" }
+        val plus = Button(this).apply { text = "+"; contentDescription = "Increase $label" }
+        fun refresh() {
+            number.text = "$label ${value()}"
+            minus.isEnabled = enabled(-1); plus.isEnabled = enabled(1)
+        }
+        for ((button, direction) in listOf(minus to -1, plus to 1)) {
+            localButtons.add(button)
+            button.setOnClickListener {
+                step(direction)
+                pointer.sensitivity(settings.pointerGain)
+                refresh()
+                showStatus(connectionStatus)
+            }
+        }
+        refresh()
+        return LinearLayout(this).apply {
+            gravity = Gravity.CENTER
+            addView(minus); addView(number, LinearLayout.LayoutParams(0, -2, 1f)); addView(plus)
+        }
+    }
+
     private fun showStatus(value: String) {
+        connectionStatus = value
         status.text = listOfNotNull(value, settings.error).joinToString("\n")
     }
 
@@ -138,9 +169,12 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
         if (!point.available) return
         if (connectionView.visibility == View.VISIBLE) {
             val rect = Rect()
-            connectButton.getDrawingRect(rect)
-            root.offsetDescendantRectToMyCoords(connectButton, rect)
-            if (connectButton.isEnabled && rect.contains(point.x.toInt(), point.y.toInt())) connectButton.performClick()
+            for (button in localButtons) {
+                if (!button.isShown || !button.isEnabled) continue
+                button.getDrawingRect(rect)
+                root.offsetDescendantRectToMyCoords(button, rect)
+                if (rect.contains(point.x.toInt(), point.y.toInt())) { button.performClick(); break }
+            }
         } else remoteTap(point.x, point.y)
     }
 
@@ -202,7 +236,7 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
     private fun connect() {
         cancelInput()
         pointer.stop(); if (resumed && hasWindowFocus()) pointer.start()
-        if (!screen.holder.surface.isValid) { status.text = getString(R.string.display_unavailable); return }
+        if (!screen.holder.surface.isValid) { showStatus(getString(R.string.display_unavailable)); return }
         session?.close()
         streaming = false; currentGeometry = null; connectionView.visibility = View.VISIBLE
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

@@ -38,9 +38,12 @@ for the actual protocol, bootstrap, limitations and acceptance evidence.
 The RG receiver draws its donor-derived local head cursor over the stream.
 Short pad taps operate the projected Phone app; double taps send Phone Android
 Back, and pad swipes use native wheel input at the visible target. There is no
-RG-local session panel or panel-opening gesture. Existing numeric preferences,
-Home transport and Disconnect lifecycle remain; non-panel user access is an
-explicit unresolved canonical design question. `directhost.InputFixtureActivity`
+RG-local session panel or panel-opening gesture. The existing disconnected
+Connect view contains the two bounded numeric pointer/scroll settings rows.
+Home/app-return uses Phone-provided projected navigation if actually available;
+RG system Home/app-exit should trigger the existing Disconnect lifecycle. Those
+platform routes and physical settings activation still need device verification.
+`directhost.InputFixtureActivity`
 supplies an owned native field, main scroll area and nested list using the actual
 Phone IME. See
 [input-ime.md](../../docs/experiments/fold6-rg-projector-av/input-ime.md) for the

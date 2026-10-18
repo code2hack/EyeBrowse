@@ -7,6 +7,9 @@ Issue [#68](https://github.com/code2hack/EyeBrowse/issues/68), experimental bran
 `077124ed21ee97f51a8c2fe15e5b165e7100f045`. Owner191 resumed work with the
 [no-panel / double-tap-to-Phone-Back decision](https://github.com/code2hack/EyeBrowse/issues/68#issuecomment-6253136662).
 The current correction removes the RG-local session panel and its invocation.
+Disposition196/198 adds two bounded numeric rows using the preserved settings
+model on the existing disconnected Connect view. It selects ordinary Phone/RG system navigation as
+the routes to assess next, without claiming that those routes are available.
 It is source-only after the actual device-window handback to the Manager;
 it has not been installed or physically tested. Historical app effects,
 Owner head/tap confirmation and IME failures below retain their old-source
@@ -37,7 +40,7 @@ size is not an admission rule. Stream pixels already carry Phone rotation;
 RG display rotation separately remaps head axes. Decoder/geometry replacement
 withdraws input until a frame from the replacement decoder is rendered.
 
-## Current interaction map and remaining binding question
+## Current interaction map and remaining physical checks
 
 | RG action | Projector result |
 | --- | --- |
@@ -48,13 +51,15 @@ withdraws input until a frame from the replacement decoder is rendered.
 | Aim into upper/lower24px strip | Repeating native wheel scroll at the same horizontal aim and visible video centerline |
 | Android Back while streaming | The same Phone Back path; it does not open an RG panel |
 | Android Back while disconnected | Ordinary local Activity exit |
-| Phone Home/app-return | Existing protocol mechanism retained; approved non-panel physical invocation unresolved |
-| Local Disconnect | Existing session/lifecycle mechanism retained; approved non-panel physical invocation unresolved |
-| Numeric pointer/scroll settings | Existing own preference values/ranges/save checks retained and loaded; replacement user access unresolved |
+| Phone Home/app-return | Aim/short-tap the Phone's own projected navigation target if actually rendered and usable; availability/effect unverified. Explicit Home transport retained |
+| Local Disconnect | Leave the receiver through the RG's existing system Home/app-exit if physically available; onPause closes the session. Actual exit invocation unverified |
+| Numeric pointer/scroll settings | Two bounded numeric −/+ rows on the existing disconnected Connect view; local head/short-tap activation shares the Connect button path. Physical activation unverified |
 
 No session panel, panel-opening gesture, permanent browser toolbar, recenter,
 mode toggle or local RG keyboard is present. The ordinary pre-existing
-connection/status screen and its Connect action remain. A touchscreen long press
+connection/status screen and its Connect action remain, with only the two numeric
+settings rows added. Controls display saved values, disable at the existing bounds,
+and preserve the prior value/show an error when saving fails. A touchscreen long press
 does not open a panel. This is not a replacement startup or app-switcher design.
 
 The physical pad mapping reuses donor `ROKID,PSOC-TP-R` keyboard-source Enter,
@@ -66,12 +71,15 @@ existing authenticated `navigate(BACK)` sender. Desktop key injection is not
 physical RG evidence. Direct touchscreen tap/drag support remains diagnostic
 software-input evidence when driven synthetically.
 
-The updated canonical ticket explicitly leaves Home and Disconnect invocation
-unselected after removing the panel. The Manager was asked one concrete
-question covering those functions and numeric-settings access. Only those
-user bindings await design disposition; Back implementation and panel removal
-proceed independently. No replacement menu/gesture/framework was invented,
-and the missing bindings are not reported as passed or physically reachable.
+Manager disposition196 resolves the narrow source-placement question: numeric
+settings use the existing disconnected view. The next assigned device window
+must assess the actual Phone-provided Home/app-navigation target and the RG's
+existing physical system exit. No fixed coordinate, launcher, assumed gesture
+or global navigation change is selected. Phone-side Stop, ADB or synthetic pause
+cannot establish physical RG exit. If either platform route is unavailable,
+that exact missing function and the actual available controls return to Manager
+before selecting a material alternate. No new Owner design gate, replacement
+menu/gesture/framework or physical reachability claim is introduced.
 
 Scroll speed is 10–1,200 **nominal** px/s, default240, step10. Wheel input uses
 64 nominal pixels per wheel detent. Android applications apply their own native
@@ -227,7 +235,7 @@ build are retained privately as `rejected-double-panel-proposal.patch` and
 by the current no-panel/Phone-Back source, not rewritten as a successful Back
 trial.
 
-Focused correction checks passed **13 receiver JVM tests** (input8, decoder5),
+The a60226d no-panel correction passed **13 receiver JVM tests** (input8, decoder5),
 receiver APK/instrumentation assembly and receiver lint in27s, recorded in
 `no-panel-back-checks191.log` and `no-panel-host-checks191.json`. Lint has the
 existing OldTargetApi warning and no errors. The unchanged host/protocol tests
@@ -235,18 +243,32 @@ above were not rerun for this receiver-only correction. New double-tap tests
 check one Back for duplicate two-tap/OEM reporting, later independent Back,
 constituent-tap suppression and canceled/held/stale sequence rejection.
 
-These newly built artifacts are **uninstalled**; they do not replace the
-historical installed pair above:
+Source-only artifacts below are **uninstalled**; they do not replace the
+historical installed pair above. The a602 artifact remains retained separately:
 
 | APK | Bytes | SHA-256 |
 | --- | --- | --- |
-| RG3, no-panel/Phone-Back | 2,607,565 | `71e0a456004a20bb8ff523f7f41a1404f1944168c0a2b23dc44144bbd5f09975` |
+| RG3, a602 no-panel/Phone-Back | 2,607,565 | `71e0a456004a20bb8ff523f7f41a1404f1944168c0a2b23dc44144bbd5f09975` |
+| RG3, settings placement196/198 | 2,607,565 | `45852fbc80cfaf3944c19ac5110abd86de0ba7928723f2e2f1a673b3549cad9f` |
 | Probe4, direct lifecycle stop | 73,010 | `fd458f817bfa21e14c6792ed7e6615c3993f3fb0de5e6b2ccfac09a26856ba83` |
+
+The numeric-row/local-hit-action change passed the affected **13 receiver
+tests**, receiver/probe assembly and receiver lint in28s. A final status-refresh
+fix preserves a prior display-unavailable message when changing settings; the
+same affected checks passed in23s with only OldTargetApi. The intermediate source,
+APK and28s results remain retained in `settings-placement-host-checks196.json`;
+the final results are in `settings-placement-final-checks196.log` and
+`settings-placement-final-host-checks196.json`. Probe bytes are unchanged. Existing model tests
+exercise numeric defaults, increments, persistence and failed-save retention;
+host build checks do not demonstrate the new buttons' physical reachability.
+Host/protocol code and tests were not changed or rerun. The settings rows are
+children of the existing connection view and disappear with it while streaming.
+Back recognition/routing and lifecycle disconnect are unchanged from a602.
 
 The source/Android test driver now exercises Disconnect directly as a lifecycle
 mechanism and explicitly does not claim physical control reachability. Fresh
-physical Back/Home/Disconnect/settings qualification requires the remaining
-design disposition and a later device window. The previous head/tap observation
+physical Back/Home/Disconnect/settings qualification requires a later assigned
+device window. The previous head/tap observation
 belongs to source b13c131 and its installed RG APK1b734b82…, not this changed
 candidate.
 
