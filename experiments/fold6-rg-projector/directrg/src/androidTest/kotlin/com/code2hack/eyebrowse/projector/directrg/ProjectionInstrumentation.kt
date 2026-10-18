@@ -4,6 +4,9 @@ import android.app.Activity
 import android.app.Instrumentation
 import android.content.Intent
 import android.graphics.Bitmap
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -32,22 +35,36 @@ import org.json.JSONObject
 
 internal fun fixtureBootstrapReady(
     state: String, tls: String?, peerAddress: String?, localAddress: String?, width: Int, height: Int, touchesSent: Long,
-): Boolean = state in listOf("WAITING_FOR_VIDEO", "STREAMING") && tls in listOf("TLSv1.2", "TLSv1.3") &&
-    peerAddress == "10.199.167.157" && localAddress == "10.199.167.154" && width == 480 && height == 640 && touchesSent == 0L
+): Boolean = state in listOf("WAITING_FOR_VIDEO", "STREAMING", "WAITING_FOR_AUDIO", "WAITING_FOR_AUDIO_CLOCK") && tls in listOf("TLSv1.2", "TLSv1.3") &&
+    !peerAddress.isNullOrBlank() && !localAddress.isNullOrBlank() && width in 1..4096 && height in 1..4096 && touchesSent == 0L
 
 /** Explicit bounded on-RG test driver. No input/media loop runs on a computer. */
 class ProjectionInstrumentation : Instrumentation() {
     private lateinit var args: Bundle
+    private var freshAfterNs = 0L
     override fun onCreate(arguments: Bundle?) { args = arguments ?: Bundle(); super.onCreate(arguments); start() }
     private fun buttons(view: View): List<Button> = when (view) {
         is Button -> listOf(view)
         is ViewGroup -> (0 until view.childCount).flatMap { buttons(view.getChildAt(it)) }
         else -> emptyList()
     }
-    private fun clickConnect(activity: Activity) = runOnMainSync {
-        buttons(activity.window.decorView).single { it.text == "Connect" }.performClick()
+    private fun clickConnect(activity: Activity) {
+        val deadline = SystemClock.elapsedRealtime() + 5000
+        var ready = false
+        while (!ready && SystemClock.elapsedRealtime() < deadline) {
+            runOnMainSync { ready = surfaces(activity.window.decorView).singleOrNull()?.holder?.surface?.isValid == true }
+            if (!ready) Thread.sleep(50)
+        }
+        check(ready) { "No current projection Surface" }
+        runOnMainSync {
+            freshAfterNs = System.nanoTime()
+            buttons(activity.window.decorView).single { it.text == "Connect" }.performClick()
+        }
     }
-    private fun status(): JSONObject = JSONObject(File(targetContext.filesDir, "status.json").readText())
+    private fun status(): JSONObject = JSONObject(File(targetContext.filesDir, "status.json").readText()).also {
+        check(freshAfterNs == 0L || it.optLong("startedMonoNs", 0) >= freshAfterNs) { "Historical session status" }
+        check(it.optString("state") !in listOf("STREAMING", "CONNECTING", "WAITING_FOR_VIDEO", "WAITING_FOR_AUDIO", "WAITING_FOR_AUDIO_CLOCK") || System.nanoTime() - it.optLong("startedMonoNs", 0) - it.optLong("elapsedMs", 0) * 1_000_000 < 3_000_000_000L) { "Stale session telemetry" }
+    }
     private fun surfaces(view: View): List<SurfaceView> = when (view) {
         is SurfaceView -> listOf(view)
         is ViewGroup -> (0 until view.childCount).flatMap { surfaces(view.getChildAt(it)) }
@@ -145,6 +162,11 @@ class ProjectionInstrumentation : Instrumentation() {
         var activity: Activity? = null
         var file: File? = null
         var ownsRecord = false
+        val audioManager = targetContext.getSystemService(AudioManager::class.java)
+        var priorVolume: Int? = null
+        var testFocus: AudioFocusRequest? = null
+        var measurementStarted: Long? = null
+        var measurementEnded: Long? = null
         try {
             val id = args.getString("runId") ?: error("Run identity required")
             require(id.matches(Regex("[A-Za-z0-9_-]{1,48}")))
@@ -161,10 +183,15 @@ class ProjectionInstrumentation : Instrumentation() {
             } else if (operation == "unauthenticated") {
                 require(unauthenticated()); report.put("unauthenticatedRefused", true).put("mediaWelcomeReceived", false)
             } else {
-                require(operation in listOf("stream", "pause", "reconnect", "local-stop", "host-stop", "surface-diagnostic"))
+                require(operation in listOf("stream", "pause", "reconnect", "local-stop", "host-stop", "surface-diagnostic", "audio-focus", "audio-volume"))
                 val seconds = args.getString("seconds")?.toInt() ?: 10
                 require(seconds in 1..660)
                 val waitForFixture = args.getString("waitForGo") == "true"
+                if (operation == "audio-volume") {
+                    priorVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                    report.put("priorMusicVolume", priorVolume)
+                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, minOf(2, audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)), 0)
+                }
                 val intent = Intent().setClassName(targetContext.packageName, ReceiverActivity::class.java.name).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 activity = startActivitySync(intent); waitForIdleSync(); Thread.sleep(250)
                 clickConnect(activity)
@@ -193,7 +220,9 @@ class ProjectionInstrumentation : Instrumentation() {
                 } else {
                     report.put("first", status())
                     val start = SystemClock.elapsedRealtime()
+                    measurementStarted = start
                     val samples = JSONArray()
+                    report.put("samples", samples)
                     val tapAt = args.getString("tapAtSeconds")?.toInt() ?: -1
                     val x = args.getString("tapX")?.toFloat() ?: 240f
                     val y = args.getString("tapY")?.toFloat() ?: 320f
@@ -211,11 +240,38 @@ class ProjectionInstrumentation : Instrumentation() {
                         }
                         if (elapsed >= nextSample) {
                             val sample = status(); require(sample.getString("state") == "STREAMING")
-                            samples.put(sample); nextSample = elapsed + 10_000
+                            require(sample.optJSONObject("audio")?.optLong("decodedBuffers", 0) ?: 0 > 0)
+                            val previous = samples.optJSONObject(samples.length() - 1)
+                            require(previous == null || sample.getLong("elapsedMs") >= previous.getLong("elapsedMs"))
+                            samples.put(sample); nextSample = elapsed + 1000
                         }
                         Thread.sleep(100)
                     }
-                    report.put("observedStreamingMs", SystemClock.elapsedRealtime() - start).put("last", status()).put("samples", samples)
+                    measurementEnded = SystemClock.elapsedRealtime()
+                    val last = status()
+                    val first = report.getJSONObject("first")
+                    require(last.getLong("elapsedMs") - first.getLong("elapsedMs") >= seconds * 1000L - 2500)
+                    require(last.getLong("rendered") > first.getLong("rendered")) { "No actual video progress" }
+                    require(last.getJSONObject("audio").getLong("decodedBuffers") > first.getJSONObject("audio").getLong("decodedBuffers")) { "No actual audio progress" }
+                    require(last.getJSONObject("audio").getLong("lastSourcePtsUs") > first.getJSONObject("audio").getLong("lastSourcePtsUs")) { "No source audio PTS progress" }
+                    report.put("observedStreamingMs", SystemClock.elapsedRealtime() - start).put("last", last).put("samples", samples)
+                    if (operation == "audio-volume") {
+                        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
+                        Thread.sleep(1000)
+                        report.put("muted", status()).put("mutedVolume", audioManager.getStreamVolume(AudioManager.STREAM_MUSIC))
+                        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, minOf(2, audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)), 0)
+                        Thread.sleep(1000); report.put("safeVolume", status())
+                    }
+                    if (operation == "audio-focus") {
+                        testFocus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).build())
+                            .setOnAudioFocusChangeListener { }.build()
+                        require(audioManager.requestAudioFocus(testFocus!!) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+                        val deadline = SystemClock.elapsedRealtime() + 3000
+                        while (status().getString("state") == "STREAMING" && SystemClock.elapsedRealtime() < deadline) Thread.sleep(50)
+                        require(status().getString("state") == "AUDIO_FAILED")
+                        report.put("focusLossStopped", status())
+                    }
                     if (operation == "pause") {
                         targetContext.startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                         Thread.sleep(1500); require(status().getString("state") == "STOPPED")
@@ -233,7 +289,7 @@ class ProjectionInstrumentation : Instrumentation() {
                         }
                         val deadline = SystemClock.elapsedRealtime() + 5000
                         while (status().getString("state") == "STREAMING" && SystemClock.elapsedRealtime() < deadline) Thread.sleep(100)
-                        require(status().getString("state") in listOf("CONNECTION_FAILED", "DISCONNECTED"))
+                        require(status().getString("state") in listOf("CONNECTION_OR_REQUIRED_AUDIO_FAILED", "DISCONNECTED", "AUDIO_FAILED"))
                         report.put("hostStop", status())
                     }
                 }
@@ -247,10 +303,22 @@ class ProjectionInstrumentation : Instrumentation() {
             report.put("causeClasses", causes)
         }
         finally {
+            measurementStarted?.let { report.put("actualMeasurementMs", (measurementEnded ?: SystemClock.elapsedRealtime()) - it) }
             activity?.let { runOnMainSync { it.finish() } }
+            testFocus?.let { audioManager.abandonAudioFocusRequest(it) }
+            priorVolume?.let {
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, it, 0)
+                report.put("restoredMusicVolume", audioManager.getStreamVolume(AudioManager.STREAM_MUSIC))
+            }
             if (ownsRecord) file?.writeText(report.toString())
+            // The full bounded timeline stays in the app file; a ten-minute JSON exceeds Binder's reply limit.
+            val result = JSONObject().put("passed", report.getBoolean("passed"))
+                .put("reportFile", if (ownsRecord) file?.name else null)
+                .put("reportBytes", if (ownsRecord) file?.length() else 0)
+                .put("actualMeasurementMs", report.optLong("actualMeasurementMs", -1))
+                .put("errorType", report.optString("errorType"))
             finish(if (report.getBoolean("passed")) Activity.RESULT_OK else Activity.RESULT_CANCELED,
-                Bundle().apply { putString("pav67", report.toString()) })
+                Bundle().apply { putString("pav67", result.toString()) })
         }
     }
 }

@@ -1,6 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <application android:theme="@android:style/Theme.Material.NoActionBar" android:label="Projector host" android:allowBackup="false" android:dataExtractionRules="@xml/no_backup" android:icon="@android:drawable/ic_media_play" android:usesCleartextTraffic="false">
+        <activity android:name=".AvFixtureActivity" android:exported="true" />
         <activity android:name=".FixtureActivity" android:exported="true" />
         <activity android:name=".HostActivity" android:exported="true">
             <intent-filter>
