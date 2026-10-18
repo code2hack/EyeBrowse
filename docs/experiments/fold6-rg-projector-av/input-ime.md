@@ -640,4 +640,68 @@ field with @JvmField, a335ms-ahead frame meaningfully failed the old250ms check
 (one expected failure,10s). The corrected tests also require excessive600ms lead
 to fail and Stop to discard a waiting frame. Manager235 confirms this bounded
 implementation choice is within revision6, with the original assessment
-targets unchanged. New checks and actual compatibility remain pending here.
+targets unchanged. The corrected receiver passed **36 tests**, receiver/probe
+assembly and lint in18s; only OldTargetApi remains. Unchanged protocol13/host4
+checks retain their earlier merged-source execution. The tested product source
+is eff0251ed86320339039888c541166985eb01712, tree162bdade231bd500b3df0adb170481fafde72c70.
+
+### Corrected matched-pair result and W03 handback
+
+`compat230-av-input007` used the matching Wire2 host/RG/test APKs below on a fresh
+owned VD86 at480×640/160dpi. Direct TLS1.3 media traveled between Phone
+10.199.167.157 and RG10.199.167.154. The computer only orchestrated debug/setup
+and explicitly software-generated RG touch/swipe/Back; no media went through it.
+No Owner wearing/listening/calibration or physical-input action was requested.
+RG media was muted0, with the actual initial8 retained for restoration.
+
+| Quantity | Actual result |
+| --- | --- |
+| Native driver result | Passed;60,006ms controlled measurement,60,011ms through final status-read boundary; command72.022s includes setup/teardown |
+| Video/audio progress | 1,334 rendered-frame delta;3,005 decoded-buffer delta;2,884,488 PCM-frame delta;60.100693s source-audio PTS advance |
+| Correct native target | Fixture display86 active; NATIVE TAP0→1; nested top0→−46; main scroll0→122 |
+| Phone IME / Back | Empty field focused; actual full-screen/cropped keyboard image; one software Phone Back returned the native page; no typing or editor action |
+| AV after native UI | Fresh owned AV fixture resumed on the same VD and actual media progression continued |
+| Controls | Two native touches (counter and field),96 wheel messages, one Back; no replayed pending controls claimed |
+| RG audio | Opus/48kHz/stereo/PCM16; builtin route type2;100ms native track;241.104ms peak estimated queue; zero reported underruns; usable timestamp |
+| Software AV samples | 54 unique samples among60 timeline snapshots; video minus clock-derived audio median−4.3435ms, range−15.022 to+19.538ms |
+| Human/physical scope | No new acoustic, optical, physical pad/head, numeric physical-offset or input-to-visible latency PASS |
+
+The on-RG report rejects historical telemetry and requires actual source PTS,
+audio and video progress. Its `hardwarePadUps` counter advanced once for the
+scripted ordinary Back; that name does not turn software injection into physical
+pad evidence. Sensor samples while the unworn RG remained still also do not
+establish head ergonomics. Existing physical confirmations retain their prior
+source bindings; all seven reused input primitive files are byte-identical to
+the physical4697521 checkpoint. The tests deliberately entered no text. The
+selected IME's cropping/full-screen limitation, missing editing/Shift/symbols/
+Backspace/Enter qualification, exact Home/browser-return and physical AV-offset
+limits remain. The RG built-in keyboard cannot yet be declared unnecessary for
+these tested layouts; no local fallback was implemented or claimed successful.
+The earlier PAV-04 ten-minute/acoustic findings remain on their original source.
+
+| Installed matching APK | Bytes | SHA-256 |
+| --- | --- | --- |
+| HostR5 | 2,778,889 | `493879dc567dc9fb20029fbb3bdeea4eacfcab621bc476f2de5e631db87e93ac` |
+| RG3, restored audio /500ms presentation ceiling | 2,761,226 | `e805103f4d445101439626a1ae678166a7f23bb79feca97cc7cfbe16f861b9c3` |
+| Probe4 | 85,802 | `68ea9844a562c34075de9dbedfab857c6b66dbbfa333b30b676d97ab50b5d8f7` |
+
+After the driver's ordinary Activity finish, RG session and audio were STOPPED.
+The current host recorded SCID3293d03e SESSION_STOPPED/CONTROL_IO at68,217ms,
+1,476 frames,3,357 audio packets, two touches and serverAlive=false. The exact
+owned bridge32117 was terminated (command143). Owned apps/probe stopped; final
+process observations matched no owned bridge, app or corresponding stock child,
+and a successful display dump contained no VD86 entry. Global port absence
+remains unobserved. Full installed APK hashes still matched. RG media restored
+8→0→8 with readback; ordinary one-shot sleep left Phone Dozing and RG Asleep.
+No Phone volume/routing/IME, credential/trust, global display/security or shared
+service change occurred. Historical r4 stayed untouched.
+
+Actual W68-03 handback was reported; no further device call is authorized by
+that returned window. `compatibility230/av-input007/{result,summary}.json`,
+`future500-host-checks.json`, `handback/handback.json`, the separate old-capsule
+annotation and retained failed cases bind the result. Images/logs stay private
+in mission evidence. Final result documentation is a subsequent docs-only
+commit over the tested product source. Independent exact-head review and
+Manager disposition remain; this compatibility check is not the final PAV-05
+lock/AV matrix, a new600s trial, acceptance or release. File/state cleanup and
+workspace archival remain deferred until experiment end.
