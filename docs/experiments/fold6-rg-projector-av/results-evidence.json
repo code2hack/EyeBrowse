@@ -226,7 +226,7 @@
       "driverPassed": true,
       "actualMeasurementMs": 150044,
       "currentSessionStopped": false,
-      "hostStopReason": "CONTROL_IO",
+      "hostStopReason": null,
       "interpretation": "See results.md for scoped outcomes; driver passed does not qualify physical AV, IME or sleep continuity."
     },
     {
