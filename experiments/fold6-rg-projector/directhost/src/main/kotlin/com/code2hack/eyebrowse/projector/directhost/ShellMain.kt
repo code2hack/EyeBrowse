@@ -1,0 +1,236 @@
+package com.code2hack.eyebrowse.projector.directhost
+
+import android.net.LocalServerSocket
+import android.net.LocalSocket
+import android.os.Build
+import android.os.Process
+import android.util.AtomicFile
+import com.code2hack.eyebrowse.projector.protocol.*
+import java.io.Closeable
+import java.io.DataInputStream
+import java.io.DataOutputStream
+import java.io.File
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.security.MessageDigest
+import java.security.SecureRandom
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.Executors
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
+import javax.net.ssl.SSLServerSocket
+import javax.net.ssl.SSLSocket
+import org.json.JSONObject
+
+/** Explicit shell bootstrap only. An ordinary installed APK never acquires shell authority. */
+object ShellMain {
+    const val SERVER_SHA256 = "764eb6f79811d5211fe9df341120882ba9994c7a61b897d7bf3fb662e53bc536"
+    @JvmStatic fun main(args: Array<String>) {
+        require(Process.myUid() == 2000 && args.size == 2)
+        val directory = File(args[0]); val jar = File(args[1])
+        require(directory.isDirectory && jar.isFile)
+        val digest = jar.inputStream().use { MessageDigest.getInstance("SHA-256").digest(it.readBytes()) }
+        require(digest.joinToString("") { "%02x".format(it) } == SERVER_SHA256)
+        Bridge(directory, jar).use { it.run() }
+    }
+}
+
+private class Bridge(private val directory: File, private val jar: File) : Closeable {
+    private val running = AtomicBoolean(true)
+    private val active = AtomicReference<Session?>()
+    private val timer = Executors.newSingleThreadScheduledExecutor()
+    private val workers = ThreadPoolExecutor(2, 2, 0, TimeUnit.SECONDS, ArrayBlockingQueue(2))
+    private val settings = Tls.settings(directory)
+    private val listener = Tls.context(directory).serverSocketFactory.createServerSocket() as SSLServerSocket
+    private val refused = AtomicLong()
+    private val unauthenticatedRefused = AtomicLong()
+    private var boundPort = 0
+
+    @Synchronized private fun status(state: String) {
+        val data = JSONObject().put("state", state).put("model", Build.MODEL)
+            .put("pid", Process.myPid()).put("shellUid", Process.myUid()).put("refused", refused.get())
+            .put("unauthenticatedRefused", unauthenticatedRefused.get())
+            .put("bind", settings.getProperty("host")).put("port", boundPort)
+            .put("scrcpy", Wire.SCRCPY_VERSION).put("audio", "disabled-intermediate")
+        val file = AtomicFile(File(directory, "bridge-status.json"))
+        val out = file.startWrite()
+        try { out.write(data.toString().toByteArray()); file.finishWrite(out) }
+        catch (error: Exception) { file.failWrite(out); throw error }
+        println(data.toString())
+    }
+
+    fun run() {
+        val address = InetAddress.getByName(settings.getProperty("host"))
+        require(!address.isAnyLocalAddress && !address.isLoopbackAddress && address.isSiteLocalAddress)
+        val port = settings.getProperty("port").toInt().also { require(it in 1024..65535) }
+        listener.reuseAddress = false
+        listener.needClientAuth = true
+        listener.enabledProtocols = listener.supportedProtocols.filter { it in listOf("TLSv1.3", "TLSv1.2") }.toTypedArray()
+        listener.bind(InetSocketAddress(address, port), 2)
+        boundPort = listener.localPort
+        listener.soTimeout = 1000
+        // This explicit bootstrap is finite. Nothing installs a boot service or keeps the Phone awake.
+        timer.schedule({ close() }, 15, TimeUnit.MINUTES)
+        status("HOST_READY")
+        while (running.get()) {
+            val socket = try { listener.accept() as SSLSocket }
+            catch (_: java.net.SocketTimeoutException) { continue }
+            catch (error: Exception) { if (running.get()) throw error else break }
+            try { workers.execute { serve(socket) } }
+            catch (_: java.util.concurrent.RejectedExecutionException) { socket.close() }
+        }
+    }
+
+    private fun serve(socket: SSLSocket) {
+        var session: Session? = null
+        var authenticated = false
+        try {
+            socket.soTimeout = 3500; socket.tcpNoDelay = true
+            socket.sendBufferSize = 65536; socket.receiveBufferSize = 4096
+            socket.startHandshake() // No scrcpy process, display, media or input exists before mTLS.
+            authenticated = true
+            val input = DataInputStream(socket.inputStream)
+            when (Wire.readRequest(input)) {
+                Wire.STOP_HOST -> { status("HOST_STOPPING"); close() }
+                Wire.STREAM -> {
+                    session = Session(socket, input, directory, jar, timer)
+                    if (!active.compareAndSet(null, session)) return
+                    status("STREAMING")
+                    session.run()
+                }
+            }
+        } catch (_: Exception) {
+            refused.incrementAndGet() // Fixed status only; never log private config/payload/exception text.
+            if (!authenticated) unauthenticatedRefused.incrementAndGet()
+            if (running.get()) status(if (active.get() == null) "HOST_READY" else "STREAMING")
+        } finally {
+            session?.close(); socket.close()
+            if (session != null && active.compareAndSet(session, null) && running.get()) status("DISCONNECTED")
+        }
+    }
+
+    override fun close() {
+        if (!running.compareAndSet(true, false)) return
+        listener.close(); active.getAndSet(null)?.close()
+        workers.shutdownNow(); timer.shutdownNow()
+        status("HOST_STOPPED")
+    }
+}
+
+private class Session(
+    private val peer: SSLSocket,
+    private val input: DataInputStream,
+    private val directory: File,
+    private val jar: File,
+    private val timer: java.util.concurrent.ScheduledExecutorService,
+) : Closeable {
+    private val running = AtomicBoolean(true)
+    private val geometry = AtomicReference<Geometry?>()
+    private val writeStarted = AtomicLong()
+    private val output = DataOutputStream(peer.outputStream)
+    private var localListener: LocalServerSocket? = null
+    private var video: LocalSocket? = null
+    private var control: LocalSocket? = null
+    private var server: java.lang.Process? = null
+    private var inputThread: Thread? = null
+    private var watchdog: java.util.concurrent.ScheduledFuture<*>? = null
+    private val frames = AtomicLong()
+    private val touches = AtomicLong()
+    private val begin = System.nanoTime()
+    private val scid = SecureRandom().nextInt(Int.MAX_VALUE)
+    private val tlsProtocol = peer.session.protocol
+    private val localAddress = peer.localAddress.hostAddress
+    private val localPort = peer.localPort
+    private val peerAddress = peer.inetAddress.hostAddress
+    private val peerPort = peer.port
+
+    @Synchronized private fun send(frame: Frame) {
+        check(running.get())
+        writeStarted.set(System.nanoTime())
+        try { Wire.writeFrame(output, frame) } finally { writeStarted.set(0) }
+    }
+
+    fun run() {
+        val socketName = "scrcpy_%08x".format(scid)
+        // Reverse local sockets avoid a retry race. These AF_UNIX sockets are never network listeners.
+        localListener = LocalServerSocket(socketName)
+        val startup = timer.schedule({ close() }, 8, TimeUnit.SECONDS)
+        val command = listOf("/system/bin/app_process", "/", "com.genymobile.scrcpy.Server", Wire.SCRCPY_VERSION,
+            "scid=%08x".format(scid), "log_level=info", "tunnel_forward=false", "send_dummy_byte=false",
+            "send_device_meta=false", "send_codec_meta=true", "send_frame_meta=true", "video=true", "audio=false",
+            "control=true", "video_codec=h264", "video_bit_rate=2000000", "max_fps=30", "new_display=480x640/240",
+            "display_ime_policy=local", "vd_destroy_content=true", "clipboard_autosync=false", "power_on=false", "cleanup=true")
+        server = ProcessBuilder(command).apply {
+            environment()["CLASSPATH"] = jar.absolutePath
+            redirectErrorStream(true); redirectOutput(File(directory, "scrcpy-%08x.log".format(scid)))
+        }.start()
+        if (!running.get()) { server!!.destroyForcibly(); error("Session stopped during startup") }
+        video = localListener!!.accept().also { if (!running.get()) { it.close(); error("Session stopped") } }
+        control = localListener!!.accept().also { if (!running.get()) { it.close(); error("Session stopped") } }
+        localListener!!.close(); localListener = null; startup.cancel(false)
+        watchdog = timer.scheduleWithFixedDelay({
+            val since = writeStarted.get()
+            if (since != 0L && System.nanoTime() - since > 2_000_000_000L) close()
+        }, 250, 250, TimeUnit.MILLISECONDS)
+        Wire.writeWelcome(output)
+        val videoInput = DataInputStream(video!!.inputStream)
+        require(videoInput.readInt() == Wire.H264)
+        inputThread = Thread({
+            try {
+                while (running.get()) {
+                    val frame = Wire.readFrame(input)
+                    when (frame.channel) {
+                        Wire.PING -> send(Frame(Wire.PONG, frame.stamp))
+                        Wire.TAP -> {
+                            val tap = Tap.from(frame.payload)
+                            require(tap.geometry == geometry.get())
+                            control!!.outputStream.write(Scrcpy.tap(tap)); touches.incrementAndGet()
+                        }
+                        Wire.END -> break
+                        else -> error("Unsupported control")
+                    }
+                }
+            } catch (_: Exception) { /* Any loss/protocol failure terminates this session. */ }
+            finally { close() }
+        }, "pav67-control").apply { start() }
+        try {
+            while (running.get()) {
+                when (val record = Scrcpy.readRecord(videoInput)) {
+                    is ScrcpyRecord.Session -> {
+                        geometry.set(record.geometry)
+                        send(Frame(Wire.GEOMETRY, payload = record.geometry.bytes()))
+                    }
+                    is ScrcpyRecord.Packet -> {
+                        send(Frame(Wire.VIDEO, record.stamp, record.data))
+                        if (!record.config) frames.incrementAndGet()
+                    }
+                }
+            }
+        } finally { close() }
+    }
+
+    override fun close() {
+        if (!running.compareAndSet(true, false)) return
+        watchdog?.cancel(false)
+        runCatching { peer.close() }; runCatching { localListener?.close() }
+        runCatching { video?.close() }; runCatching { control?.close() }
+        server?.let { process ->
+            runCatching {
+                if (!process.waitFor(2, TimeUnit.SECONDS)) {
+                    process.destroy()
+                    if (!process.waitFor(2, TimeUnit.SECONDS)) process.destroyForcibly()
+                }
+            }
+        }
+        if (inputThread !== Thread.currentThread()) runCatching { inputThread?.join(1000) }
+        val data = JSONObject().put("state", "SESSION_STOPPED").put("frames", frames.get()).put("touches", touches.get())
+            .put("elapsedMs", (System.nanoTime() - begin) / 1_000_000).put("serverAlive", server?.isAlive ?: false)
+            .put("tls", tlsProtocol).put("localAddress", localAddress).put("localPort", localPort)
+            .put("peerAddress", peerAddress).put("peerPort", peerPort).put("scid", "%08x".format(scid))
+        File(directory, "last-session.json").writeText(data.toString())
+        println(data.toString())
+    }
+}

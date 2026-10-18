@@ -1,0 +1,298 @@
+{
+  "schema": 1,
+  "issue": 67,
+  "alias": "PAV-02",
+  "status": "INCOMPLETE_IMPLEMENTATION_CHECKPOINT_RG_CAPABILITY_GATE",
+  "baseline": "38cb5f7ec8d320ef9833a36840ccec3febdbc885",
+  "donor": "03de921e2400147842ce6c56101b58d514dde77c",
+  "target": "spike/fold6-rg-projector-av",
+  "scrcpy": {
+    "version": "5.0.1",
+    "source": "a60891aea193d92e7e5c3942700eca63f9d19a5f",
+    "serverSHA256": "764eb6f79811d5211fe9df341120882ba9994c7a61b897d7bf3fb662e53bc536"
+  },
+  "build": {
+    "jdk": 17,
+    "sdk": 35,
+    "agp": "8.7.3",
+    "kotlin": "2.2.21",
+    "gradle": "8.11.1",
+    "compileAndLint": "PASS",
+    "lintErrors": 0,
+    "lintWarnings": [
+      "OldTargetApi in each new application; assigned targetSdk35 retained"
+    ],
+    "unitTests": [
+      {
+        "suite": "com.code2hack.eyebrowse.projector.protocol.TlsTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSHA256": "fe9670763a5b0b54aee814690f3e1910841433bb832f740f4e9249cd75f5b292"
+      },
+      {
+        "suite": "com.code2hack.eyebrowse.projector.protocol.WireTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSHA256": "f69c3ce7ddec6d98253d5ee01acf0a5ae57e25392f8f451eddb3107477c70d53"
+      }
+    ],
+    "runtimeDependencies": [
+      "project :protocol",
+      "org.jetbrains.kotlin:kotlin-stdlib:2.2.21",
+      "org.jetbrains:annotations:13.0"
+    ]
+  },
+  "APKs": [
+    {
+      "path": "experiments/fold6-rg-projector/directhost/build/outputs/apk/debug/directhost-debug.apk",
+      "sha256": "3f048357d4a1fb084ff85474fc6e7800ad52d237caa2ca7e24b2b798fb371fc6",
+      "bytes": 2541326,
+      "signerReportSHA256": "146a7bbd405568e07fa1c44820d7de7cf4714f14d1cd2be5c6da5be5db076d21"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/build/outputs/apk/debug/directrg-debug.apk",
+      "sha256": "37873c57ee59098616afb8af4746b5debfffde47772d93a619558a91852407a4",
+      "bytes": 2550070,
+      "signerReportSHA256": "146a7bbd405568e07fa1c44820d7de7cf4714f14d1cd2be5c6da5be5db076d21"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/build/outputs/apk/androidTest/debug/directrg-debug-androidTest.apk",
+      "sha256": "977ab800f0064849990be31ac372fe038971872f5eeeee294ab05d693aced1f8",
+      "bytes": 48358,
+      "signerReportSHA256": "146a7bbd405568e07fa1c44820d7de7cf4714f14d1cd2be5c6da5be5db076d21"
+    }
+  ],
+  "compiledSources": [
+    {
+      "path": "experiments/fold6-rg-projector/protocol/src/main/AndroidManifest.xml",
+      "sha256": "571f2735faf5e857752ee057ac8ef63425576a721616c60b86ee5d4c0a2d682f",
+      "bytes": 13
+    },
+    {
+      "path": "experiments/fold6-rg-projector/protocol/src/main/kotlin/com/code2hack/eyebrowse/projector/protocol/Tls.kt",
+      "sha256": "b440f88c8f52100ec317e2adea7d9335959fec590d957010b5d678dcc903877a",
+      "bytes": 2685
+    },
+    {
+      "path": "experiments/fold6-rg-projector/protocol/src/main/kotlin/com/code2hack/eyebrowse/projector/protocol/Wire.kt",
+      "sha256": "06b8c5ed27a35c0bbeb0c606cb5bb3b3ee09e4bde9a98f24d0ad2c565539e657",
+      "bytes": 6068
+    },
+    {
+      "path": "experiments/fold6-rg-projector/protocol/src/test/kotlin/com/code2hack/eyebrowse/projector/protocol/TlsTest.kt",
+      "sha256": "ee44fc84fda1062089a6988592535ea69d821b6da504ce72b22634ededbf77b3",
+      "bytes": 5618
+    },
+    {
+      "path": "experiments/fold6-rg-projector/protocol/src/test/kotlin/com/code2hack/eyebrowse/projector/protocol/WireTest.kt",
+      "sha256": "df5f8328c5b89cabcdf7bc4aa7d6c5ee811d582fda0851c8f5c450c83dbd673c",
+      "bytes": 3808
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directhost/src/main/AndroidManifest.xml",
+      "sha256": "f9bf3e867598107954702201bb44eaaf33127912b146a8dcef7b6edad8df5ecc",
+      "bytes": 804
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directhost/src/main/kotlin/com/code2hack/eyebrowse/projector/directhost/FixtureActivity.kt",
+      "sha256": "21470c6067702406cc2c410f8efcfbb89805e9976ad307d6fa39eb71b29b1ad7",
+      "bytes": 2414
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directhost/src/main/kotlin/com/code2hack/eyebrowse/projector/directhost/HostActivity.kt",
+      "sha256": "d198ad8bfdcc9777cd2471cde41c39b421df2ab8c8d919b977b057961f2d49f8",
+      "bytes": 1822
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directhost/src/main/kotlin/com/code2hack/eyebrowse/projector/directhost/ShellMain.kt",
+      "sha256": "e049161b6b56c902c3f879c6a9ccb840508fac8578cabe49cdd89ef32d50263d",
+      "bytes": 11760
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directhost/src/main/res/values/strings.xml",
+      "sha256": "e3d62975aea53e8b6c67bf921750179df51800ce00a135380885f85f4ad8f396",
+      "bytes": 294
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directhost/src/main/res/xml/no_backup.xml",
+      "sha256": "4fb44914d317d8badcea48574f45c90ad0dcc65ba15d986fa32afdd9d29919b7",
+      "bytes": 305
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/androidTest/kotlin/com/code2hack/eyebrowse/projector/directrg/ProjectionInstrumentation.kt",
+      "sha256": "2a3aae7e74e6e1bbec666a0acc9ed5273dcd1110f724d89b0bd5e7a0444dccec",
+      "bytes": 8844
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/main/AndroidManifest.xml",
+      "sha256": "c9958c4b3ed4be80dfa0fbff6dd19b0dda2b14edbdf9a8c0a2b504c4f98c21ab",
+      "bytes": 726
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/main/kotlin/com/code2hack/eyebrowse/projector/directrg/ProjectionSession.kt",
+      "sha256": "71275e336fbf3b5f3d2f2de86a118d5b5dfe425fb92c3e47c4d0a975f3fa6373",
+      "bytes": 8388
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/main/kotlin/com/code2hack/eyebrowse/projector/directrg/ReceiverActivity.kt",
+      "sha256": "e56eda7f501eb53869fab69769966a192b32f8b1ea94197ab251102c388d2e6a",
+      "bytes": 5622
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/main/kotlin/com/code2hack/eyebrowse/projector/directrg/SurfaceDecoder.kt",
+      "sha256": "f13233b47b45fe5b6657887b1621618097f4165d420f34f6ecf677f1b84bbadd",
+      "bytes": 4098
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/main/res/values/strings.xml",
+      "sha256": "6432976bec7df93d0fec72b14f746bda5ce47f185604e7b72853335ab7ffe1dc",
+      "bytes": 369
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/main/res/xml/no_backup.xml",
+      "sha256": "4fb44914d317d8badcea48574f45c90ad0dcc65ba15d986fa32afdd9d29919b7",
+      "bytes": 305
+    }
+  ],
+  "preservationCuts": [
+    {
+      "package": "com.code2hack.eyebrowse.phone",
+      "state": "PRESERVED_AND_HOST_RESTORE_VERIFIED",
+      "archiveSHA256": "9f2915cb5a3d7f93d9196d1d0923da4c2aeea5f4ad1f22955b61277514bc15e5",
+      "archiveBytes": 17326574,
+      "regularFiles": 612,
+      "socketMetadataOnly": 0,
+      "stableBeforeAfter": true,
+      "archiveReturncode": 0,
+      "sqliteChecksOK": 4
+    },
+    {
+      "package": "com.code2hack.eyebrowse.rg",
+      "state": "PRESERVED_AND_HOST_RESTORE_VERIFIED",
+      "archiveSHA256": "33ad15676bef22f7fce79c458fd7285abb8df6756def2bd7703a0e99bc76b0c7",
+      "archiveBytes": 38898176,
+      "regularFiles": 1129,
+      "socketMetadataOnly": 1,
+      "stableBeforeAfter": true,
+      "archiveReturncode": 1,
+      "sqliteChecksOK": 4
+    },
+    {
+      "package": "com.code2hack.eyebrowse.rg.chromium",
+      "state": "PRESERVED_AND_HOST_RESTORE_VERIFIED",
+      "archiveSHA256": "7d2591b650e8f4f1805762b28768714450c6e88441b5536e7896d5257c8701c3",
+      "archiveBytes": 1046209024,
+      "regularFiles": 1542,
+      "socketMetadataOnly": 1,
+      "stableBeforeAfter": true,
+      "archiveReturncode": 1,
+      "sqliteChecksOK": 11
+    }
+  ],
+  "physical": {
+    "projectorPackagesInstalled": 0,
+    "realCredentialInvocations": 0,
+    "thirdPartyVideo": "UNEXECUTED",
+    "rgSurfaceDecode": "UNEXECUTED",
+    "harmlessVisibleTapEffect": "UNEXECUTED",
+    "fiveMinuteNoPCGateway": "UNEXECUTED",
+    "onDeviceAuthenticationRefusal": "UNEXECUTED",
+    "onDeviceLifecycle": "UNEXECUTED",
+    "measuredMovingFPSAndLatency": "UNEXECUTED",
+    "audio": "DISABLED_INTERMEDIATE",
+    "opticalHeadIMEAcousticAcceptance": "NOT_CLAIMED",
+    "blocker": "Selected RG5555 transport became offline during read-only current-view check; authorized44235 bootstrap timed out, unknown result retained without replay",
+    "technicalNegative": false
+  },
+  "teardown": {
+    "ownedProjectorProcessesStarted": 0,
+    "ownedProjectorSocketsOrDisplaysCreated": 0,
+    "sharedDebugServicesReset": false,
+    "lastReadOnlyFold6Wakefulness": "Dozing",
+    "lastReadOnlyFold6KeyguardShowing": true,
+    "rgCurrentReturn": "UNAVAILABLE_OFFLINE",
+    "oldWorker64State": "Unresolved historical tab/hook/resource obligations retained; no overlay/assumed return"
+  },
+  "privateEvidenceHashes": [
+    {
+      "record": "preservation-fold6-phone.json",
+      "sha256": "8284de682d2c83be184ed564eeafc898fcece5d47385debcd9babbaf8a62c6bc",
+      "bytes": 1545
+    },
+    {
+      "record": "preservation-rg-rg-raw003.json",
+      "sha256": "a6676ef46dc7660f657479c5b282107f933c525eb0b1efd078ddbf03b8b2cc60",
+      "bytes": 1670
+    },
+    {
+      "record": "preservation-rg-chromium-current005.json",
+      "sha256": "69da9637de7aa96b502819105b8cc6134ee122a7c74d3a8087fb6a8130eda096",
+      "bytes": 3078
+    },
+    {
+      "record": "chromium004-archive-vs-current-view.json",
+      "sha256": "5bcbb213af717b96a227470ca2a7e945145d208e77255e2a56b532a9b908b1f0",
+      "bytes": 183
+    },
+    {
+      "record": "preinstall-current006-mismatch.json",
+      "sha256": "3c66508c92025d886b5f5480352fd1b572d16abe56e5912559af8fbba8c43096",
+      "bytes": 964
+    },
+    {
+      "record": "current006-to008-classification.json",
+      "sha256": "ddeb9a2eaa864ef01df6410441c58731a82d80f7a43311fe2e6339ddf4486786",
+      "bytes": 937
+    },
+    {
+      "record": "rg-current008-route-status.json",
+      "sha256": "e54f67a81548beb2d3304bd601f54d42f7a41e198a6fe06765a7f481b9a8201f",
+      "bytes": 268
+    },
+    {
+      "record": "rg44235-bootstrap-connect009-intent.json",
+      "sha256": "0f4f48ee153f50dc2b49dfe75a72bab7a804b0361fe416867508612736f02239",
+      "bytes": 414
+    },
+    {
+      "record": "rg44235-bootstrap-connect009-result.json",
+      "sha256": "0de829677a47aef56f68d0182f626f2b975d9f714c49f584fcbc22dc25e94b25",
+      "bytes": 487
+    },
+    {
+      "record": "rg-current010-after-bootstrap-reconciliation.json",
+      "sha256": "e5b82ca7ef1ca54cb43cc68361b762b075af27b27d8ecbc5f9e10759151afa76",
+      "bytes": 425
+    },
+    {
+      "record": "checkpoint-readonly-end-state.json",
+      "sha256": "c4fcea28fe7a5f7c389c0d8ebe6a6a9984bf2c1929b3d449211eb85fbac7fc8e",
+      "bytes": 509
+    },
+    {
+      "record": "device-candidate-build008.log",
+      "sha256": "9b74e2e11a804737dc92ae44a994e4ca2d512ddf732a6c5ab3aa748af869eb37",
+      "bytes": 10777
+    },
+    {
+      "record": "rg-runtime-dependencies.txt",
+      "sha256": "8ef3cd6f24fbf9763a9e0298b84259ff93d61e3d210530fe273a13642584a1bf",
+      "bytes": 1047
+    },
+    {
+      "record": "first-physical-source-apk-capsule.json",
+      "sha256": "a55ca83a6dcc7f306ee78dbb865e3855a30eadddb14b0067d0e6af968461902d",
+      "bytes": 8121
+    },
+    {
+      "record": "first-physical-source-files.tar.gz",
+      "sha256": "31a82988f3a5cc11716dc52a20841bbf0188d8a3360c6830bf41b7c838a76337",
+      "bytes": 165978
+    }
+  ],
+  "privacy": "Only fixed-schema outcomes, counts and opaque hashes. Original paths, browser/account payloads and TLS private material remain outside Git."
+}
