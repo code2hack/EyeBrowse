@@ -21,8 +21,9 @@ bindings. Owner subsequently confirmed a native tap and reported launching apps 
 the Phone’s bottom-left control. No known RG system exit was available. The
 latest explicit Owner direction selects **three taps for local Disconnect**,
 retaining two taps for Phone Back and no RG panel; earlier four-tap/double-tap
-exit proposals are superseded. Independent review, changed-gesture physical
-verification and integration remain outstanding.
+exit proposals are superseded. On the contact-corrected source4697521, the Owner
+confirmed one native tap followed by physical three-tap Disconnect. Independent
+review and integration remain outstanding.
 
 ## Implementation and provenance
 
@@ -55,7 +56,7 @@ withdraws input until a frame from the replacement decoder is rendered.
 | Aim with head | One RG-local cursor over the video |
 | Ordinary short pad tap | One touch DOWN/UP at the current visible cursor target |
 | Two taps / OEM double | Android Back to the projected Phone app after one bounded continuation interval; constituent short taps and duplicate OEM reporting suppressed |
-| Three quick pad taps | Local Disconnect through the existing lifecycle method, with no constituent touch or Phone Back; changed physical binding pending verification |
+| Three quick pad taps | Local Disconnect through the existing lifecycle method; Owner confirmed on4697521/RG33297e0b…, with one prior native tap and no constituent touch or Phone Back in session counters |
 | Pad forward/backward swipe | Native wheel scroll at the current visible target, ±160 nominal pixels |
 | Aim into upper/lower24px strip | Repeating native wheel scroll at the same horizontal aim and visible video centerline |
 | Android Back while streaming | The same Phone Back path; it does not open an RG panel |
@@ -72,7 +73,9 @@ and preserve the prior value/show an error when saving fails. A touchscreen long
 does not open a panel. This is not a replacement startup or app-switcher design.
 
 The physical pad mapping reuses donor `ROKID,PSOC-TP-R` keyboard-source Enter,
-OEM291 and D-pad/OEM292/293. The latest selected binding extends only the existing
+OEM291 and D-pad/OEM292/293. The contact correction also handles this pad's
+NOTIFICATION contact markers and suppresses its subsequent firmware summaries.
+The latest selected binding extends only the existing
 bounded recognizer: one tap is a remote touch, two taps are Phone Back, and three
 are local Disconnect. A tap pair waits one Android `getDoubleTapTimeout()`
 interval after its final UP for a possible third tap; a third DOWN within that
@@ -81,7 +84,7 @@ clears the sequence and calls the existing `disconnect()` method once. It sends
 neither a constituent remote tap nor Back. Swipe, cancel, held/repeated/stale key,
 focus loss and pause discard unfinished work. Raw-pair plus OEM-summary,
 OEM-only and raw-single followed by OEM-pair forms are covered in host tests;
-actual hardware reporting remains a required physical check.
+the actual native contact path is confirmed by the later physical trial below.
 
 An ordinary Android Back from a non-pad source sends one Phone Back and cannot
 count toward three pad taps. A Back report from the identified native pad may
@@ -273,6 +276,7 @@ Correction artifacts are retained separately from the historical pair above:
 | RG3, sign-only correction | Installed; Owner reports both axes still reversed | 2,607,565 | `6a26ea8c0c57c5fe6c47803fbbde24376c64c1322d6167b1a34ab464ac12fbe9` |
 | RG3, current-head-frame correction | Installed; Owner confirmed both directions | 2,607,565 | `8911c4a3dcc78cc45a8a3dd1a77711fe2eb0ea50a6045dc8045c17c236eaf43d` |
 | RG3, first three-tap Disconnect | Installed; keyboard Back confirmed, Disconnect failed | 2,607,565 | `efd47666c3ec0ae250dfdbf47286fed5aff348c804c178fdf8fc256e86daa312` |
+| RG3, native-contact correction4697521 | Installed; native tap and physical triple Disconnect confirmed | 2,728,290 | `33297e0b23cd3f962a5e42ca8b75bdf4fa8e02849d7a3e95f10fd50defefa7c5` |
 | Probe4, direct lifecycle stop | Installed W68-02; unchanged by direction/gesture changes | 73,010 | `fd458f817bfa21e14c6792ed7e6615c3993f3fb0de5e6b2ccfac09a26856ba83` |
 
 The numeric-row/local-hit-action change passed the affected **13 receiver
@@ -387,7 +391,8 @@ claimed. Matching PAV-04 integration remains a later coordinated step.
 
 ## Latest three-tap Disconnect correction
 
-The explicit latest Owner instruction is “use triple-tap to exit/disconnect.”
+The explicit latest Owner instruction is “use triple-tap to exit/disconnect,”
+recorded in the [canonical three-tap disposition](https://github.com/code2hack/EyeBrowse/issues/68#issuecomment-6254328045).
 Manager221 supersedes the four-tap count only, retaining the same mission,
 resources and attempt history. The recognizer now defers the two-tap Back
 callback through one configured continuation interval and invokes the existing
@@ -452,9 +457,9 @@ keylayout lines, original failure and source snapshot remain retained. Host
 regressions also cover delayed classification summaries, cancellation, retired
 burst tails, missing completion and ordinary Back. Up to64 text-free native key
 UP diagnostics in the debug receiver distinguish actual Activity delivery from
-kernel visibility. The corrected mapping still requires affected host checks,
-matched installation and physical verification; no physical Disconnect PASS is
-inferred from a kernel trace or a host assertion.
+kernel visibility. Kernel traces and host assertions alone do not establish
+physical Disconnect. The later installed trial separately records actual
+Activity delivery and the Owner's visible result.
 
 The contact replay and first retirement checks passed28 receiver tests/builds/lint;
 final missing-completion replacement and raw-swipe checks bring the affected
@@ -463,4 +468,70 @@ assembly and lint in23s. Only OldTargetApi remains. Host/protocol are unchanged.
 The final contact-corrected RG artifact is `33297e0b23cd3f962a5e42ca8b75bdf4fa8e02849d7a3e95f10fd50defefa7c5`;
 Probe bytes remain `fd458f817bfa21e14c6792ed7e6615c3993f3fb0de5e6b2ccfac09a26856ba83`.
 `native-contact-correction221/host-checks.json` binds source, tests and artifacts.
-Physical application delivery and Disconnect on this new artifact remain pending.
+
+On source4697521/tree3f356bc4 and the matching installed RG33297e0b…, a fresh
+owned native fixture ran on VD79 at480×640/160dpi. Software only pressed the
+existing RG Connect button and launched the fixture; no Phone tap, scroll or
+navigation was injected into the observed trial. The Owner was asked to
+short-tap NATIVE TAP once, wait for1, then tap three times quickly once and pause.
+The Owner answered “it succeded.” The fixture recorded taps1 and later
+active=false, with empty text. Receiver counters stopped at one touch and zero
+navigations, with no constituent Back or extra touch from the triple. The RG
+image showed Disconnected/Connect, pointer3.0× and scroll240. The actual Activity
+log recorded three Android83 contact UPs followed by firmware4/66 summaries;
+this establishes delivery beyond the earlier kernel-only diagnostic.
+
+The receiver's final counter snapshot was STOPPED at17,506ms with84 rendered
+frames. The host recorded SESSION_STOPPED/CONTROL_EOF at17,294ms,84 frames,
+one touch and serverAlive=false. These are session counters, not continuous
+optical measurements or input-to-visible timing. The bridge remained available
+for the final affected Back/scroll check. Evidence is retained in
+`native-contact-correction221/physical-result.json`, the text-free Activity log,
+owned fixture/session snapshots and the RG image. This success does not replace
+the failed19c5/efd trial or qualify the full-screen/cropped Phone IME for typing.
+
+A fresh VD80 on the same installed build then checked the contact correction's
+remaining affected physical paths. The Owner reported that nested scrolling,
+main scrolling and field focus followed by double-tap keyboard dismissal “all
+worked.” Software setup only connected and launched the owned fixture. The
+post-action receiver snapshot remained STREAMING at84,988ms with624 rendered
+frames, one touch,83 scroll messages and one navigation. The native fixture
+showed nested row8 (first index7/top−14), focused empty text and no editor action;
+the RG image showed the keyboard dismissed. Its final mainScrollY was0 after the
+full sequence, so this snapshot does not independently measure the earlier main
+scroll displacement. Main-scroll success here is the Owner's visible report;
+the earlier852 native main-scroll measurement remains separate. Actual pad
+contact/swipe and contact-pair/Back reports are retained in the text-free app
+log. The evidence is `native-contact-correction221/back-scroll-regression/`.
+The prior Phone-IME typing/layout and browser-return limitations remain.
+
+## Final W68-02 teardown and candidate boundary
+
+After those physical results, necessary software teardown stopped only the owned
+RG client/probe and Phone fixture/probe. SCID7b2c0220 ended through CONTROL_EOF
+at126,454ms with1,076 frames, one touch and serverAlive=false. The owned bridge
+PID20797 was identified by its exact namespace command line, then terminated.
+Final process observations matched no owned apps, namespace bridge or current
+stock child on either device; the successful display dump contained no VD80
+entry. The namespace and evidence remain retained. No independent global-port
+absence check was available; the earlier socket-table/netlink limitation remains.
+
+Installed full APK hashes still matched the input-only HostR5 `0a28d6ae…`,
+RG3 `33297e0b…` and Probe4 `fd458f81…` pair above. Ordinary one-shot sleep left
+Phone Dozing and RG Asleep. Local gain3.0×/scroll240 were left as found; no global
+IME, volume/routing, display/security or shared-service setting changed. The
+unassigned historical r4 process was untouched. The owned host shell ended143
+after TERM; the bounded raw capture ended124 at its timeout, without a usable
+kernel trace for this trial. Neither command outcome is a product failure;
+actual Activity logs and Owner observations establish the reported contact
+effects. Detailed actions and observations are retained in
+`native-contact-correction221/handback/`.
+
+Both devices were handed back to the Manager; this Worker makes no further
+device calls without a new grant. This is an input-only capability candidate,
+with30 receiver tests/build/lint on the final product source and a subsequent
+documentation-only result update. It requires independent exact-head review,
+Manager disposition and later mandatory-audio source integration. Full Phone-IME
+editing, exact Home/browser return, quantified head smoothness and optical
+input latency are not claimed. Deferred file/state cleanup and workspace
+archival remain at the experiment-end boundary.
