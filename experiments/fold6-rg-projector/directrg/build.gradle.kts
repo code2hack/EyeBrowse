@@ -12,7 +12,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.0.1-pav67"
-        testApplicationId = "com.code2hack.eyebrowse.projector.directrg.r3.probe2"
+        testApplicationId = "com.code2hack.eyebrowse.projector.directrg.r3.probe3"
         testInstrumentationRunner = "com.code2hack.eyebrowse.projector.directrg.ProjectionInstrumentation"
     }
     compileOptions {

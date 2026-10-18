@@ -1,32 +1,38 @@
 # Direct Fold6 video and control — PAV-02 / issue 67
 
-Component checkpoint, **not CANDIDATE_READY**. Credential-free product003 and
-004 rendered the experiment's moving fixture on RG. Both devices' exact owned
-component, user, UID, window, display and geometry checks passed. The actual RG
-images showed the public title and `Visible taps: 0`; no tap was released.
-Product003's matching closed-session record reports TLS1.3, direct Phone/RG LAN
-socket endpoints, 2,379 transmitted frames over a 114,688ms session and zero
-touches. This is owned-fixture evidence; third-party application acceptance,
-the genuine five-minute interval, harmless touch, Host Stop and the remaining
-security/lifecycle criteria are still pending.
+Component checkpoint, **not CANDIDATE_READY**. Host4 now records fixed session
+termination categories, startup stage and Phone monotonic child/first-frame/stop
+milestones. Probe3 separates authenticated geometry bootstrap from rendered
+video qualification so the owned fixture can be launched before the first
+frame. The ordinary rendered/input guards and genuine310-second interval remain.
+Both APKs compile, the affected unit test passes and Phone lint has zero errors.
+The RG main APK remains byte-identical.
 
-Product003 stopped before Go at an insufficiently reported socket observation.
-Its owned teardown and two locked/secure/showing/Dozing cuts passed after one
-ordinary sleep. Product004 retained the socket rejection precisely: both Phone
-queries returned0 with captured-empty stderr, but each contained an unclassified
-source/format line and its selected endpoint predicates rejected. Actual raw
-values and causes remain unknown. Neither case started the scheduled touch or
-measurement interval.
+Host4's first install returned0, but its strict response classifier rejected
+stdout which was then lost. The old transaction remains **UNKNOWN**, consumed
+and unreplayed. Distinct read-only corrections handled an unsupported `whence`
+option and the documented Android16 `appId` metadata label. A new complete
+package/version/user0/UID/full-APK read matches the frozen signed Host4 build.
+Probe3 then installed once into its unused ID with retained explicit Success
+and matching complete installed bytes. Video014 then qualified the owned fixture
+and actual RG image, but timed out before a completed Go/start observation.
+Its owned teardown and current native end state remain **UNKNOWN**. Both debug
+SSH PIDs were absent at a later local host cut; the underlying cause is unassigned.
+Dependent device work stopped without command replay or route recovery.
 
-Product004's RG stop completed, then Phone teardown checks timed out and both
-final native reads failed before capture. A separate local observation found
-the previously bound Manager-owned Phone SSH process absent; its exit cause is
-unassigned. Phone bridge/child/listener/display settlement and current native
-end-state are **UNKNOWN**. The Worker-owned RG tunnel process still matched its
-binding at that local cut. Further device/route/product actions stopped, with
-the exact owned bindings reported to the Manager. All consumed records remain
-unchanged; authentication remains held. Independent source and host work can
-continue while that concrete capability is unavailable.
+The earlier144 read-only reconciliation separately observed a secure user0 Awake/unlocked
+Phone, sent one durably recorded ordinary sleep223, and obtained two complete
+locked/secure/showing/Dozing native cuts. These are sampled observations only.
+Those earlier cuts do not establish the end state after video014. All
+authentication consumers remain held; no PIN, reveal or caller was used.
+
+Earlier owned-fixture video reached the RG Surface over direct TLS1.3. The one
+automated on-RG touch in product007 produced a transport write but **no observed
+app effect**: the actual after-image and fixture counter remained0. It was
+software-generated input, with no Owner touchpad test. Security009 separately
+observed actual RG certificate-absent TLS refusal before media on the previous
+Host3 build. Genuine>=300s, third-party rendering, touch effect, Host Stop and
+remaining lifecycle/timing evidence are pending.
 
 ## Scope, packages and privileges
 
@@ -39,14 +45,16 @@ audio, lock and sensory limitations. This checkpoint does not complete AV
 projection, optical readability, head input, Phone IME, acoustics or automatic
 startup. Production browser code and protected articles remain unchanged.
 
-The current Phone package is `com.code2hack.eyebrowse.projector.directhost.r3`;
-its installed bytes match the frozen artifact. The original experimental
-`.directhost` remains installed, and r2's old transaction remains UNKNOWN. The
-current RG app and test are `.directrg.r3` and `.directrg.r3.probe2`,
-with the common prefix `com.code2hack.eyebrowse.projector`. Their installed APK
-bytes match the frozen artifacts. Earlier RG packages `.directrg`, its `.test`,
-`.directrg.r2`, `.r2.test`, `.r2.diag1` and `.r3.test` remain retained. Every installation used
-an unused ID; no existing app was updated, cleared or uninstalled.
+The current build targets `com.code2hack.eyebrowse.projector.directhost.r4`;
+its original installation transaction remains UNKNOWN. A distinct read-only
+query qualified its current whole installed APK, package, UID, version and user0. The previous
+`.directhost.r3` artifact had a matching installed-byte cut and remains retained,
+as do the original `.directhost` and r2's unknown old transaction. RG main
+`.directrg.r3` had a fresh matching installed-byte cut before the uncertain Host4
+install; its new test package `.directrg.r3.probe3` was installed once into an unused ID
+and its complete installed APK matches the frozen build. Earlier test
+and RG experiment packages remain retained. Every installation targets an unused
+ID; no existing app was updated, cleared or uninstalled.
 
 The installed Phone application is sandboxed. Its Stop screen does not acquire
 capture/input privileges. An explicitly authorized shell-UID2000 `app_process`
@@ -159,8 +167,8 @@ CLASSPATH="$HOST_APK" app_process / \
 The APK is a dex container for the explicit shell process. It does not give the
 installed app shell authority. Observe the exact owned server PID/SCID and its
 new display ID before launching the harmless target. Keep the existing debug
-SSH/ADB service; remove only the test's own desktop control forward before the
-no-PC interval.
+SSH/ADB service. The current credential-free path creates no desktop control
+forward; actual direct endpoint/process evidence is still required.
 
 Owner decision106 retired repeated full old-store backups/equality/reconstruction
 and restoration checks as prerequisites for these isolated tests. Existing cuts
@@ -179,9 +187,11 @@ interval, an optical latency measurement or cross-device input-to-visible time.
 
 The current credential-free orchestration launches the shell bridge and its own
 virtual-display fixture without a Phone display0 Activity, unlock or screen
-caller. The on-RG driver waits at most180 seconds for Go, then measures310
-genuine seconds, schedules one focused synthetic tap at interval start and
-requests authenticated Host Stop. In product003/004, Go was never released.
+caller. The on-RG driver first qualifies authenticated geometry for fixture bootstrap,
+waits at most180 seconds for Go, then separately demands real streaming before
+starting310 genuine seconds. It supports a scheduled software-generated tap or
+a zero-touch video case, followed by authenticated Host Stop. Product007 sent one
+generated event; the new zero-touch video014 has not run.
 No experimental desktop control forward was created. Debug SSH/ADB remains
 separate from the direct media/control connection. A scheduled tap can establish
 controlled-path app effect only; it cannot establish physical head/IME or
@@ -210,11 +220,11 @@ untested-on-device host fix.
 
 | Criterion | Actual result at this checkpoint |
 | --- | --- |
-| Isolated build/dependencies/install | Build/lint PASS; Phone r3 and RG3 installed with matching APK bytes; old r2 transaction UNKNOWN |
+| Isolated build/dependencies/install | Build/affected checks PASS; current Host4/RG3/Probe3 whole installed bytes match; old Host4 transaction remains UNKNOWN |
 | Third-party VD content to real RG Surface | Owned moving fixture rendered in product003/004 with exact encoder/decoder/VD bindings; ordinary third-party app still pending |
-| Harmless touch with observed app effect | Unexecuted |
+| Harmless touch with observed app effect | Product007 generated one on-RG event; actual fixture counter/image stayed0; NOT_PASSED |
 | At least300 genuine seconds without PC media/control relay | Unexecuted |
-| On-device unauthorized peer refusal before media/input | Unexecuted acceptance case; four JVM mTLS cases passed |
+| On-device unauthorized peer refusal before media/input | Actual security009 no-client-certificate refusal before media on Host3; Host4 live verification pending |
 | Reconnect/Host Stop/RG pause/no stale input | Unexecuted for current host; old second-stream failure retained |
 | Moving FPS, codec/crop and latency | Current encoder/decoder/fit and scoped setup metrics observed; genuine moving interval pending; old smoke003 latency remains invalid |
 | Audio/head/IME/optical/acoustic behavior | Not claimed |
@@ -226,10 +236,13 @@ binding checks before product004. It kept unknown/source-error data negative;
 its actual rejection does not identify product003's old cause. A separate pure
 validator now checks the existing platform `SSLSocket` endpoint metadata and
 exact closed-session SCID, with36 affected public host cases and six prepared
-orchestration cases. That alternative has not run on-device. It does not
-whitelist the rejected socket output, change
-the product APKs or authorize authentication. No new device action follows
-while the Phone transport and owned settlement remain unresolved.
+orchestration cases. Later product007 observed the actual authenticated direct
+endpoints. The original rejected socket data remains negative. Manager137
+replaced the exited debug route; a distinct137c reconciliation independently
+settled product004's owned resources and sampled end state. Its initial unknown
+teardown outcome remains retained.
+
+## Historical operational observations
 
 Earlier negatives remain: initial RG decor/insets crash, original PKCS12 loader
 failure, smoke002 final native end-state contradiction, corrupt/failed/partial
@@ -391,3 +404,79 @@ rejecting any nonempty stderr. Eleven new host cases passed; earlier functions
 and their53-case proof remain AST-bound without a rerun. This prepared correction
 has not run on the device or replaced the live caller. The consumed records,
 native end-state uncertainty and all pending product criteria remain unchanged.
+
+
+## Current correction and evidence boundary
+
+The Host4 termination record retains the first winning close category and the
+startup stage at that point. Milestones use the same Phone `System.nanoTime()`
+origin, with-1 for an unobserved milestone. These diagnose future sessions;
+they do not recover the cause of the earlier closed zero-frame session.
+Startup8s, write2s and bridge15-minute limits are unchanged. No exception text,
+UI payload or key material enters those categories.
+
+Probe3's corrected bootstrap accepts only authenticated direct geometry with
+zero queued touches. It authorizes fixture setup, while the existing actual
+rendered/changing-frame, exact owned focus/geometry and public-pixel guards
+continue to gate Go and input. The prior ordering had a source-proven circular
+precondition on an otherwise empty virtual display. That public counterexample
+does not assign the cause of actual008 or012. Twelve cases compiled from the
+exact Kotlin predicate passed. The new session-category unit test passed;
+Host4 build/lint and Probe3 assembly passed without rerunning unchanged suites.
+
+Actual008's fixture launch returned a Permission Denial/SecurityException;
+its individual predicate/cause was not retained. Actual012 stopped before the
+Activity command at a current owned-process guard. Neither released Go, a tap,
+measurement or Host Stop. Both retained their own teardown and two secure native
+cuts. No power, codec, protocol or keyguard cause is inferred from those failures.
+Actual007's generated touch still lacks Android injection/app-effect proof.
+The optional one-wake comparison remains unused.
+
+Actual security009 sent one no-client-certificate connection from RG. It was
+refused before media welcome; the same bridge's refusal counter changed0->1,
+stock children stayed0, and previous session bytes stayed unchanged. Only-owned
+teardown and two secure end cuts passed. This is scoped certificate-absent
+refusal evidence on Host3, separate from Host4 verification and broader security
+or lifecycle acceptance.
+
+The original Host4 installer also recorded a false/true/false lock sequence
+after its one final sleep. That contradiction remains unassigned. Reconciliation144
+obtained a new complete unlocked/Awake before cut, one newly journaled sleep,
+and two complete locked/secure/showing/Dozing cuts. It does not repair history or
+prove continuous state. Its package query returned70 before package data because
+the wrapper used an unsupported `whence` option. Twenty-three affected host cases
+preceded that run; a separate known-builtin-guard correction passed five mode
+cases and remains unexecuted. The original installer is never reentered.
+
+Normal, nonzero and timeout install buffers now have a separate prepared
+CREATE_NEW/file-and-directory-fsynced retention helper. Six affected host cases
+cover availability, existing records/symlinks, privacy and fsync failure. The lost
+original normal stdout remains unrecoverable. Probe3 installation used a
+separate RG-only helper after positive current Host4 bytes and completed144
+sampled end-state reconciliation. Its normal250B response was retained before
+classification and its full installed bytes match. The distinct145 read-only
+format correction accepts either supported UID label exactly once, still
+requiring equality to the independently queried user0 UID; duplicates and
+conflicts remain rejected. Video014 later passed setup and stopped before a completed Go/start observation;
+its measurement and necessary owned teardown did not pass.
+Owner106 continues to retire repeated original-store backups and scans.
+
+
+Video014's source-bound setup rendered the actual public moving fixture on RG,
+with strict resumed/focus/UID/window/display/geometry checks, VD28 and the
+`c2.qti.avc.encoder` / `c2.qti.avc.decoder` pair. The agent inspected the exact
+new image and observed `Visible taps: 0`. Current direct authenticated socket
+and owned producer checks passed before Go. The next operation raised
+`TimeoutExpired`. Its exact geometry-versus-Go boundary was not separately
+journaled, so remote Go/start outcome is UNKNOWN; no completed interval or
+Host Stop is claimed. Zero touches were scheduled and zero Phone power input
+was sent in this case.
+
+All attempted only-owned teardown checks then failed or were unavailable.
+Bridge/stock child/fixture/VD/listener settlement and current native end state
+remain UNKNOWN. A later local host cut found both previously bound SSH PIDs
+absent. No old stop/Go command, connect, route recovery or producer signal was
+replayed. Exact owned bindings and partial outcomes were returned to the Manager.
+A separate host-only orchestration correction records each pre-Go stage and
+an exclusive durable Go intent/result; five actual injected timeout seams pass.
+It has not run on-device and does not recover video014's lost boundary.

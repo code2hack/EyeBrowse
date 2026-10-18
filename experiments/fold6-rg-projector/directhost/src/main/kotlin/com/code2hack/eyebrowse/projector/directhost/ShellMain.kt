@@ -9,9 +9,12 @@ import com.code2hack.eyebrowse.projector.protocol.*
 import java.io.Closeable
 import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.io.EOFException
 import java.io.File
+import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.SocketTimeoutException
 import java.nio.file.Files
 import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
@@ -26,6 +29,22 @@ import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.SSLServerSocket
 import javax.net.ssl.SSLSocket
 import org.json.JSONObject
+
+internal enum class SessionStopReason {
+    OWNER_CLOSE, SESSION_ERROR, HOST_STOP, HOST_LIFETIME, STARTUP_DEADLINE, WRITE_DEADLINE,
+    CONTROL_END, CONTROL_EOF, CONTROL_TIMEOUT, CONTROL_IO, CONTROL_ERROR,
+    VIDEO_END, VIDEO_EOF, VIDEO_TIMEOUT, VIDEO_IO, VIDEO_ERROR,
+}
+
+private enum class StartupStage { CREATED, COPY_JAR, START_SERVER, ACCEPT_VIDEO, ACCEPT_CONTROL, READ_CODEC, VIDEO_STREAM }
+
+/** Fixed categories only; exception messages and private payloads never enter telemetry. */
+internal fun sessionFailureReason(error: Exception, control: Boolean): SessionStopReason = when (error) {
+    is EOFException -> if (control) SessionStopReason.CONTROL_EOF else SessionStopReason.VIDEO_EOF
+    is SocketTimeoutException -> if (control) SessionStopReason.CONTROL_TIMEOUT else SessionStopReason.VIDEO_TIMEOUT
+    is IOException -> if (control) SessionStopReason.CONTROL_IO else SessionStopReason.VIDEO_IO
+    else -> if (control) SessionStopReason.CONTROL_ERROR else SessionStopReason.VIDEO_ERROR
+}
 
 /** Explicit shell bootstrap only. An ordinary installed APK never acquires shell authority. */
 object ShellMain {
@@ -90,7 +109,7 @@ private class Bridge(private val directory: File, private val jar: File) : Close
         boundPort = listener.localPort
         listener.soTimeout = 1000
         // This explicit bootstrap is finite. Nothing installs a boot service or keeps the Phone awake.
-        timer.schedule({ close() }, 15, TimeUnit.MINUTES)
+        timer.schedule({ close(SessionStopReason.HOST_LIFETIME) }, 15, TimeUnit.MINUTES)
         status("HOST_READY")
         while (running.get()) {
             val socket = try { listener.accept() as SSLSocket }
@@ -104,6 +123,7 @@ private class Bridge(private val directory: File, private val jar: File) : Close
     private fun serve(socket: SSLSocket) {
         var session: Session? = null
         var authenticated = false
+        var reason = SessionStopReason.OWNER_CLOSE
         try {
             socket.soTimeout = 3500; socket.tcpNoDelay = true
             socket.sendBufferSize = 65536; socket.receiveBufferSize = 4096
@@ -111,7 +131,7 @@ private class Bridge(private val directory: File, private val jar: File) : Close
             authenticated = true
             val input = DataInputStream(socket.inputStream)
             when (Wire.readRequest(input)) {
-                Wire.STOP_HOST -> { status("HOST_STOPPING"); close() }
+                Wire.STOP_HOST -> { status("HOST_STOPPING"); close(SessionStopReason.HOST_STOP) }
                 Wire.STREAM -> {
                     session = Session(socket, input, directory, jar, timer)
                     if (!active.compareAndSet(null, session)) return
@@ -120,18 +140,21 @@ private class Bridge(private val directory: File, private val jar: File) : Close
                 }
             }
         } catch (_: Exception) {
+            reason = SessionStopReason.SESSION_ERROR
             refused.incrementAndGet() // Fixed status only; never log private config/payload/exception text.
             if (!authenticated) unauthenticatedRefused.incrementAndGet()
             if (running.get()) status(if (active.get() == null) "HOST_READY" else "STREAMING")
         } finally {
-            session?.close(); socket.close()
+            session?.close(reason); socket.close()
             if (session != null && active.compareAndSet(session, null) && running.get()) status("DISCONNECTED")
         }
     }
 
-    override fun close() {
+    override fun close() = close(SessionStopReason.OWNER_CLOSE)
+
+    private fun close(reason: SessionStopReason) {
         if (!running.compareAndSet(true, false)) return
-        listener.close(); active.getAndSet(null)?.close()
+        listener.close(); active.getAndSet(null)?.close(reason)
         workers.shutdownNow(); timer.shutdownNow()
         status("HOST_STOPPED")
     }
@@ -157,6 +180,9 @@ private class Session(
     private val frames = AtomicLong()
     private val touches = AtomicLong()
     private val begin = System.nanoTime()
+    private val startupStage = AtomicReference(StartupStage.CREATED)
+    private val childStartedMs = AtomicLong(-1)
+    private val firstVideoFrameMs = AtomicLong(-1)
     private val scid = SecureRandom().nextInt(Int.MAX_VALUE)
     private val tlsProtocol = peer.session.protocol
     private val localAddress = peer.localAddress.hostAddress
@@ -174,7 +200,7 @@ private class Session(
         val socketName = "scrcpy_%08x".format(scid)
         // Reverse local sockets avoid a retry race. These AF_UNIX sockets are never network listeners.
         localListener = LocalServerSocket(socketName)
-        val startup = timer.schedule({ close() }, 8, TimeUnit.SECONDS)
+        val startup = timer.schedule({ close(SessionStopReason.STARTUP_DEADLINE) }, 8, TimeUnit.SECONDS)
         val command = listOf("/system/bin/app_process", "/", "com.genymobile.scrcpy.Server", Wire.SCRCPY_VERSION,
             "scid=%08x".format(scid), "log_level=debug", "tunnel_forward=false", "send_dummy_byte=false",
             "send_device_meta=false", "send_codec_meta=true", "send_frame_meta=true", "video=true", "audio=false",
@@ -183,23 +209,30 @@ private class Session(
         // Stock cleanup unlinks its own CLASSPATH JAR. Keep the pinned master for
         // reconnects and let each stock session consume its own verified copy.
         val sessionJar = File(directory, "scrcpy-%08x.jar".format(scid))
+        startupStage.set(StartupStage.COPY_JAR)
         ShellMain.copySessionJar(jar, sessionJar)
+        startupStage.set(StartupStage.START_SERVER)
         server = ProcessBuilder(command).apply {
             environment()["CLASSPATH"] = sessionJar.absolutePath
             redirectErrorStream(true); redirectOutput(File(directory, "scrcpy-%08x.log".format(scid)))
         }.start()
+        childStartedMs.set((System.nanoTime() - begin) / 1_000_000)
         if (!running.get()) { server!!.destroyForcibly(); error("Session stopped during startup") }
+        startupStage.set(StartupStage.ACCEPT_VIDEO)
         video = localListener!!.accept().also { if (!running.get()) { it.close(); error("Session stopped") } }
+        startupStage.set(StartupStage.ACCEPT_CONTROL)
         control = localListener!!.accept().also { if (!running.get()) { it.close(); error("Session stopped") } }
         localListener!!.close(); localListener = null; startup.cancel(false)
         watchdog = timer.scheduleWithFixedDelay({
             val since = writeStarted.get()
-            if (since != 0L && System.nanoTime() - since > 2_000_000_000L) close()
+            if (since != 0L && System.nanoTime() - since > 2_000_000_000L) close(SessionStopReason.WRITE_DEADLINE)
         }, 250, 250, TimeUnit.MILLISECONDS)
         Wire.writeWelcome(output)
         val videoInput = DataInputStream(video!!.inputStream)
+        startupStage.set(StartupStage.READ_CODEC)
         require(videoInput.readInt() == Wire.H264)
         inputThread = Thread({
+            var reason = SessionStopReason.CONTROL_END
             try {
                 while (running.get()) {
                     val frame = Wire.readFrame(input)
@@ -214,9 +247,11 @@ private class Session(
                         else -> error("Unsupported control")
                     }
                 }
-            } catch (_: Exception) { /* Any loss/protocol failure terminates this session. */ }
-            finally { close() }
+            } catch (error: Exception) { reason = sessionFailureReason(error, control = true) }
+            finally { close(reason) }
         }, "pav67-control").apply { start() }
+        startupStage.set(StartupStage.VIDEO_STREAM)
+        var reason = SessionStopReason.VIDEO_END
         try {
             while (running.get()) {
                 when (val record = Scrcpy.readRecord(videoInput)) {
@@ -226,15 +261,24 @@ private class Session(
                     }
                     is ScrcpyRecord.Packet -> {
                         send(Frame(Wire.VIDEO, record.stamp, record.data))
-                        if (!record.config) frames.incrementAndGet()
+                        if (!record.config && frames.incrementAndGet() == 1L) {
+                            firstVideoFrameMs.set((System.nanoTime() - begin) / 1_000_000)
+                        }
                     }
                 }
             }
-        } finally { close() }
+        } catch (error: Exception) {
+            reason = sessionFailureReason(error, control = false)
+            throw error
+        } finally { close(reason) }
     }
 
-    override fun close() {
+    override fun close() = close(SessionStopReason.OWNER_CLOSE)
+
+    fun close(reason: SessionStopReason) {
         if (!running.compareAndSet(true, false)) return
+        val stopStartedMs = (System.nanoTime() - begin) / 1_000_000
+        val lastStartupStage = startupStage.get()
         watchdog?.cancel(false)
         runCatching { peer.close() }; runCatching { localListener?.close() }
         runCatching { video?.close() }; runCatching { control?.close() }
@@ -249,6 +293,8 @@ private class Session(
         if (inputThread !== Thread.currentThread()) runCatching { inputThread?.join(1000) }
         val data = JSONObject().put("state", "SESSION_STOPPED").put("frames", frames.get()).put("touches", touches.get())
             .put("elapsedMs", (System.nanoTime() - begin) / 1_000_000).put("serverAlive", server?.isAlive ?: false)
+            .put("stopReason", reason.name).put("startupStage", lastStartupStage.name).put("stopStartedMs", stopStartedMs)
+            .put("childStartedMs", childStartedMs.get()).put("firstVideoFrameMs", firstVideoFrameMs.get())
             .put("tls", tlsProtocol).put("localAddress", localAddress).put("localPort", localPort)
             .put("peerAddress", peerAddress).put("peerPort", peerPort).put("scid", "%08x".format(scid))
         File(directory, "last-session.json").writeText(data.toString())

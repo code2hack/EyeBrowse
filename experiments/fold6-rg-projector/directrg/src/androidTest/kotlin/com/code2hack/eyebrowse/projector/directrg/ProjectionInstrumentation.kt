@@ -22,6 +22,11 @@ import javax.net.ssl.TrustManagerFactory
 import org.json.JSONArray
 import org.json.JSONObject
 
+internal fun fixtureBootstrapReady(
+    state: String, tls: String?, peerAddress: String?, localAddress: String?, width: Int, height: Int, touchesSent: Long,
+): Boolean = state in listOf("WAITING_FOR_VIDEO", "STREAMING") && tls in listOf("TLSv1.2", "TLSv1.3") &&
+    peerAddress == "10.199.167.157" && localAddress == "10.199.167.154" && width == 480 && height == 640 && touchesSent == 0L
+
 /** Explicit bounded on-RG test driver. No input/media loop runs on a computer. */
 class ProjectionInstrumentation : Instrumentation() {
     private lateinit var args: Bundle
@@ -42,6 +47,19 @@ class ProjectionInstrumentation : Instrumentation() {
             Thread.sleep(100)
         }
         error("No rendered stream")
+    }
+    private fun waitFixtureGeometry() {
+        val deadline = SystemClock.elapsedRealtime() + 15_000
+        while (SystemClock.elapsedRealtime() < deadline) {
+            val ready = runCatching {
+                val value = status()
+                fixtureBootstrapReady(value.getString("state"), value.optString("tls"), value.optString("peerAddress"),
+                    value.optString("localAddress"), value.getInt("width"), value.getInt("height"), value.getLong("touchesSent"))
+            }.getOrDefault(false)
+            if (ready) return
+            Thread.sleep(100)
+        }
+        error("No authenticated fixture geometry")
     }
     private fun unauthenticated(): Boolean {
         val directory = File(targetContext.filesDir, "session")
@@ -86,25 +104,30 @@ class ProjectionInstrumentation : Instrumentation() {
                 require(operation in listOf("stream", "pause", "reconnect", "local-stop", "host-stop"))
                 val seconds = args.getString("seconds")?.toInt() ?: 10
                 require(seconds in 1..660)
+                val waitForFixture = args.getString("waitForGo") == "true"
                 val intent = Intent().setClassName(targetContext.packageName, ReceiverActivity::class.java.name).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 activity = startActivitySync(intent); waitForIdleSync(); Thread.sleep(250)
-                clickConnect(activity); waitStreaming()
-                report.put("first", status())
+                clickConnect(activity)
+                if (waitForFixture) waitFixtureGeometry() else waitStreaming()
+                report.put("connected", status())
                 if (operation == "reconnect") {
                     runOnMainSync { activity!!.finish() }; Thread.sleep(1500)
                     require(status().getString("state") == "STOPPED")
                     activity = startActivitySync(intent); waitForIdleSync(); Thread.sleep(250)
-                    clickConnect(activity); waitStreaming()
+                    clickConnect(activity)
+                    if (waitForFixture) waitFixtureGeometry() else waitStreaming()
                     require(status().getLong("touchesSent") == 0L)
                     report.put("reconnected", status())
                 }
-                if (args.getString("waitForGo") == "true") {
+                if (waitForFixture) {
                     val go = File(targetContext.filesDir, "probe-$id.go")
                     val deadline = SystemClock.elapsedRealtime() + 180_000
                     while (!go.isFile && SystemClock.elapsedRealtime() < deadline) Thread.sleep(100)
                     require(go.isFile) { "Bounded fixture setup did not complete" }
                     report.put("fixtureSetupBeforeMeasurement", true)
+                    waitStreaming()
                 }
+                report.put("first", status())
                 val start = SystemClock.elapsedRealtime()
                 val samples = JSONArray()
                 val tapAt = args.getString("tapAtSeconds")?.toInt() ?: -1
