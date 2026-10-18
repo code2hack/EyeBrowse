@@ -596,9 +596,9 @@ with one reported underrun. These actual failures remain in
 `compatibility230/av-input001..004/`; they are not new physical-pad failures.
 
 This exposed an inconsistency between the accepted300ms audio backlog ceiling
-and250ms video lookahead when sparse UI frames arrive promptly. The existing
-nonblocking AudioTrack write loop now paces against the RG playback head with
-a200ms write-ahead allowance. It retains its250ms write deadline, native track
+and250ms video lookahead when sparse UI frames arrive promptly. The first
+correction cf137ac paced the existing nonblocking AudioTrack write loop against
+the RG playback head with a200ms write-ahead allowance. It retained its250ms write deadline, native track
 allocation,300ms backlog failure,250ms video lookahead, source PTS, focus and
 lifetime handling. No PCM/application queue or new timing framework is added.
 The playback-head read shares the existing teardown lock and clock rules.
@@ -606,3 +606,14 @@ Affected receiver checks passed34 tests, RG/probe assembly and lint in19s;
 unchanged host/protocol checks are the51-test merged run above. A corrected
 matched-pair short run is pending at this checkpoint. The old ten-minute and
 Owner audio observations remain bound to their original audio source.
+
+On cf137ac/VD84 the queue cap held at199.979ms, but compatibility still failed:
+video lookahead285.023ms at42,088ms, with a24,175ms driver measurement and one
+underrun. Native tap reached1; later scroll/Back were not established. At failure
+the video PTS was97.814ms ahead of the latest decoded audio PTS; the earlier
+idle failure had131.617ms of that source lead. Those observed gaps consume
+additional lookahead beyond queued PCM. The write-ahead allowance is therefore
+now100ms (4,800 frames at48kHz, matching the tested native track allocation),
+leaving150ms within the unchanged250ms video bound for this observed lead.
+No other timing/failure/queue limits changed. The full200ms failure remains in
+`compatibility230/av-input005/`; it is not represented as a successful repair.

@@ -123,9 +123,9 @@ internal class AudioDecoder(
                             val allowance = synchronized(trackLock) {
                                 if (!running.get()) 0 else {
                                     val queued = writtenFrames.get() - playedFrames(audio, timestamp, System.nanoTime())
-                                    // Sparse UI video can arrive ahead of a full audio buffer. Pace the
-                                    // existing write loop below the unchanged 250ms video lookahead bound.
-                                    (9_600L - queued).coerceIn(0, 9_600).toInt() * 4
+                                    // Keep 100ms of PCM ahead: observed sparse UI PTS can lead the
+                                    // latest decoded audio by another 132ms of the 250ms video budget.
+                                    (4_800L - queued).coerceIn(0, 4_800).toInt() * 4
                                 }
                             }
                             val n = if (allowance == 0) 0 else audio.write(buffer, minOf(buffer.remaining(), allowance), AudioTrack.WRITE_NON_BLOCKING)
