@@ -1,0 +1,742 @@
+{
+  "kind": "PAV70_RESULTS_EVIDENCE",
+  "worker": "Worker: Worker-#70",
+  "issue": 70,
+  "baseline": "9477976678862dda27ccd4fbbe4a66276d8588bf",
+  "baselineTree": "1ab0c6618cc7935035e729107d4bb0010e643d1a",
+  "target": "spike/fold6-rg-projector-av",
+  "missionSHA256": "796a5255c0af1812f3cd8b182f4cc0ace35876f2da3e873f4b884c774619cafb",
+  "productSourceChangedInFinalCandidate": false,
+  "productTrackedFiles": 57,
+  "installedArtifacts": {
+    "HostR5": {
+      "bytes": 2778889,
+      "sha256": "493879dc567dc9fb20029fbb3bdeea4eacfcab621bc476f2de5e631db87e93ac"
+    },
+    "RG3": {
+      "bytes": 2761226,
+      "sha256": "e805103f4d445101439626a1ae678166a7f23bb79feca97cc7cfbe16f861b9c3"
+    },
+    "Probe4": {
+      "bytes": 85802,
+      "sha256": "68ea9844a562c34075de9dbedfab857c6b66dbbfa333b30b676d97ab50b5d8f7"
+    }
+  },
+  "server": {
+    "version": "5.0.1",
+    "source": "a60891aea193d92e7e5c3942700eca63f9d19a5f",
+    "jarSHA256": "764eb6f79811d5211fe9df341120882ba9994c7a61b897d7bf3fb662e53bc536"
+  },
+  "temporaryComparison": {
+    "finalDisposition": "REJECTED_AND_REVERTED",
+    "argument": "keep_active=true",
+    "power_on": false,
+    "apkSHA256": "0feaaba8eeca6c19217d807f6416fd032970622667d411db7767374ce5aa4b2b",
+    "sourceSHA256": "e5915d55c72cb6fbbd3da02c56220289b24a21f967181a079e8fd100a03dd92f",
+    "affectedTests": 4,
+    "buildLintPassed": true
+  },
+  "verification": {
+    "baselineTests": 53,
+    "baselineFailures": 0,
+    "baselineErrors": 0,
+    "baselineBuildLint": "PASS",
+    "comparisonHostTestsBuildLint": "PASS",
+    "restoredHostTestsBuildLint": "PASS",
+    "restoredHostTests": 4,
+    "toolchain": {
+      "Gradle": "8.11.1",
+      "JVM": "21.0.11",
+      "sourceTarget": "17",
+      "KotlinPlugin": "2.2.21",
+      "SDK": 35
+    }
+  },
+  "tenMinute": {
+    "scope": "Current software run; no optical/acoustic/input latency PASS",
+    "driverPassed": true,
+    "actualMeasurementMs": 600100,
+    "observedStreamingMs": 600104,
+    "statusIntervalSeconds": 599.925,
+    "renderedDelta": 17189,
+    "renderedFPS": 28.65191482268617,
+    "changingPacketDelta": 17189,
+    "audioWrittenFramesDelta": 28792968,
+    "audioSourcePTSAdvanceSeconds": 599.873357,
+    "softwareAV": {
+      "uniqueSampleCount": 586,
+      "minimumMs": -24.372,
+      "maximumMs": 24.248,
+      "medianMs": -3.4370000000000003,
+      "absoluteP95NearestRankMs": 17.98,
+      "first60SampleMedianMs": -3.3535,
+      "last60SampleMedianMs": -3.8265000000000002,
+      "sampleGroupDeltaMs": -0.4730000000000003,
+      "OLSmsPerMinute": -0.04354868172764986,
+      "scope": "At-most1Hz snapshots of latest callback/audio-clock sample; sample groups are not exact60s windows and this is not physical drift"
+    },
+    "audio": {
+      "codec": "c2.android.opus.decoder",
+      "sampleRate": 48000,
+      "channels": 2,
+      "pcmEncoding": "PCM16",
+      "routeType": 2,
+      "trackBufferMs": 100,
+      "peakQueuedMs": 247.8125,
+      "underruns": 3,
+      "timestampValid": true,
+      "fixture1000Peak1s": 0.02523072107864259,
+      "fixture440Peak1s": 0.00043769000593003204
+    },
+    "initialUnderruns": 0,
+    "videoLateDrops": 0,
+    "reportedFinalRolling256": {
+      "packetReadToCallbackP95Ms": 305.396406,
+      "networkRoundTripP95Ms": 82.283386
+    },
+    "endpoint": {
+      "tls": "TLSv1.3",
+      "peerAddress": "10.199.167.157",
+      "localAddress": "10.199.167.154"
+    },
+    "inputBefore": {
+      "sensor": "Game Rotation Vector  Non-wakeup (QTI, type=15)",
+      "sourceRegistered": true,
+      "acceptedSensorSamples": 486,
+      "localCursorDraws": 10,
+      "lastSensorReceiptNs": 21482784289459,
+      "lastCursorDrawNs": 21475139297639,
+      "cursorX": 240,
+      "cursorY": 320,
+      "pointerAvailable": true,
+      "hardwarePadUps": 0,
+      "tapContinuationMs": 300,
+      "pointerGain": 3,
+      "nominalScrollPixelsPerSecond": 240,
+      "streaming": true,
+      "opticalOrErgonomicPass": false
+    },
+    "inputAfter": {
+      "sensor": "Game Rotation Vector  Non-wakeup (QTI, type=15)",
+      "sourceRegistered": true,
+      "acceptedSensorSamples": 30791,
+      "localCursorDraws": 10,
+      "lastSensorReceiptNs": 22082880391678,
+      "lastCursorDrawNs": 21475139297639,
+      "cursorX": 240,
+      "cursorY": 320,
+      "pointerAvailable": true,
+      "hardwarePadUps": 0,
+      "tapContinuationMs": 300,
+      "pointerGain": 3,
+      "nominalScrollPixelsPerSecond": 240,
+      "streaming": true,
+      "opticalOrErgonomicPass": false
+    }
+  },
+  "strictControlledWindow": {
+    "latestStatusUniqueSampleCount": 586,
+    "controlledWindowUniqueCount": 585,
+    "onePreWindowSampleAgeMs": 231,
+    "maximumStatusSampleAgeMs": 1047,
+    "controlledWindow": {
+      "minimumMs": -24.372,
+      "maximumMs": 24.248,
+      "medianMs": -3.432,
+      "absoluteP95NearestRankMs": 17.98,
+      "first60MedianMs": -3.3535,
+      "last60MedianMs": -3.8265000000000002,
+      "sampleGroupDeltaMs": -0.4730000000000003,
+      "OLSmsPerMinute": -0.052678082172555984
+    },
+    "scope": "Exclude one latest-status callback231ms before first status; all retained original586-sample analysis and raw data remain. All current600s saved sample ages<=1047ms. Default-sleep stale offset separately excluded from live lock claims."
+  },
+  "cases": [
+    {
+      "label": "pilot002",
+      "VD": 87,
+      "SCID": "760fc593",
+      "passed": true,
+      "driverPassed": true,
+      "actualMeasurementMs": 30100,
+      "currentSessionStopped": true,
+      "hostStopReason": "CONTROL_IO",
+      "interpretation": "See results.md for scoped outcomes; driver passed does not qualify physical AV, IME or sleep continuity."
+    },
+    {
+      "label": "tenminute001",
+      "VD": 88,
+      "SCID": "102f2859",
+      "passed": true,
+      "driverPassed": true,
+      "actualMeasurementMs": 600100,
+      "currentSessionStopped": true,
+      "hostStopReason": "CONTROL_EOF",
+      "interpretation": "See results.md for scoped outcomes; driver passed does not qualify physical AV, IME or sleep continuity."
+    },
+    {
+      "label": "native-matrix001",
+      "VD": 89,
+      "SCID": "08261a6b",
+      "passed": true,
+      "driverPassed": true,
+      "actualMeasurementMs": 180021,
+      "currentSessionStopped": true,
+      "hostStopReason": "CONTROL_EOF",
+      "interpretation": "See results.md for scoped outcomes; driver passed does not qualify physical AV, IME or sleep continuity."
+    },
+    {
+      "label": "mix001",
+      "VD": 90,
+      "SCID": "0e64c3b0",
+      "passed": true,
+      "driverPassed": true,
+      "actualMeasurementMs": 45060,
+      "currentSessionStopped": true,
+      "hostStopReason": "CONTROL_EOF",
+      "interpretation": "See results.md for scoped outcomes; driver passed does not qualify physical AV, IME or sleep continuity."
+    },
+    {
+      "label": "default-continue001",
+      "VD": 91,
+      "SCID": "466222eb",
+      "passed": false,
+      "driverPassed": true,
+      "actualMeasurementMs": 150042,
+      "currentSessionStopped": true,
+      "hostStopReason": "CONTROL_IO",
+      "interpretation": "See results.md for scoped outcomes; driver passed does not qualify physical AV, IME or sleep continuity."
+    },
+    {
+      "label": "default-start-off001",
+      "VD": 92,
+      "SCID": "6e656390",
+      "passed": false,
+      "driverPassed": false,
+      "actualMeasurementMs": null,
+      "currentSessionStopped": true,
+      "hostStopReason": "CONTROL_IO",
+      "interpretation": "See results.md for scoped outcomes; driver passed does not qualify physical AV, IME or sleep continuity."
+    },
+    {
+      "label": "keep-active-continue001",
+      "VD": 93,
+      "SCID": "1903d14e",
+      "passed": false,
+      "driverPassed": true,
+      "actualMeasurementMs": 150044,
+      "currentSessionStopped": false,
+      "hostStopReason": "CONTROL_IO",
+      "interpretation": "See results.md for scoped outcomes; driver passed does not qualify physical AV, IME or sleep continuity."
+    },
+    {
+      "label": "keep-active-start-off001",
+      "VD": 94,
+      "SCID": "1abc3489",
+      "passed": false,
+      "driverPassed": false,
+      "actualMeasurementMs": 35057,
+      "currentSessionStopped": true,
+      "hostStopReason": "CONTROL_IO",
+      "interpretation": "See results.md for scoped outcomes; driver passed does not qualify physical AV, IME or sleep continuity."
+    },
+    {
+      "label": "lifecycle-reconnect001",
+      "VD": 96,
+      "SCID": "5e4af8d5",
+      "passed": true,
+      "driverPassed": true,
+      "actualMeasurementMs": 20031,
+      "currentSessionStopped": true,
+      "hostStopReason": "AUDIO_ERROR",
+      "interpretation": "See results.md for scoped outcomes; driver passed does not qualify physical AV, IME or sleep continuity."
+    },
+    {
+      "label": "lifecycle-pause001",
+      "VD": 97,
+      "SCID": "3e976fc1",
+      "passed": true,
+      "driverPassed": true,
+      "actualMeasurementMs": 20070,
+      "currentSessionStopped": true,
+      "hostStopReason": "CONTROL_EOF",
+      "interpretation": "See results.md for scoped outcomes; driver passed does not qualify physical AV, IME or sleep continuity."
+    },
+    {
+      "label": "lifecycle-host-stop001",
+      "VD": 98,
+      "SCID": "452dd69f",
+      "passed": true,
+      "driverPassed": true,
+      "actualMeasurementMs": 20075,
+      "currentSessionStopped": true,
+      "hostStopReason": "HOST_STOP",
+      "interpretation": "See results.md for scoped outcomes; driver passed does not qualify physical AV, IME or sleep continuity."
+    },
+    {
+      "label": "final-default-check",
+      "VD": 99,
+      "SCID": "232c9ab4",
+      "passed": true,
+      "driverPassed": true,
+      "actualMeasurementMs": 20041,
+      "currentSessionStopped": true,
+      "hostStopReason": "CONTROL_EOF",
+      "interpretation": "See results.md for scoped outcomes; driver passed does not qualify physical AV, IME or sleep continuity."
+    }
+  ],
+  "dispositions": {
+    "nativeSoftwareTapScrollAndSampledBack": "DEMONSTRATED",
+    "ChromeCustomTabAndSettingsDisplay": "DEMONSTRATED_WITH_LIMITS",
+    "PhoneIMEEditing": "INSUFFICIENT_RETAINED_CROPPING_AND_EDITING_FAILURE",
+    "visibleDifferentAppOnPhysicalPanel": "UNAVAILABLE_SECURE_KEYGUARD",
+    "defaultSleepContinuation": "NEGATIVE_DOZE_STATE_NOT_STRICT_OFF",
+    "defaultFreshStartPanelsOff": "NEGATIVE",
+    "sameSessionWakeAndOwnedRelaunch": "DEMONSTRATED_WITH_LIMITS",
+    "keepActiveContinuationAndFreshStart": "NEGATIVE_FOR_TESTED_SETUP",
+    "normallyUnlockedOrDeepDeviceIdle": "UNAVAILABLE_UNTESTED",
+    "newOpticalAcousticPhysicalHeadPadTiming": "UNTESTED",
+    "freshTwoSimultaneousAudioSources": "UNAVAILABLE_SECOND_SOURCE_STOPPED",
+    "wholePhoneOutputCaptureIsolation": "NOT_TARGET_APP_ISOLATED",
+    "computerMediaControlGateway": "NONE_OBSERVED_IN_DIRECT_DATA_PATH",
+    "selfContainedRebootStartup": "NOT_IMPLEMENTED_OR_DEMONSTRATED"
+  },
+  "handback": {
+    "window": "PAV-BATCH004-FOLD6-RG-W70-01",
+    "state": "RETURNED",
+    "at": "2026-10-18T21:40:38.192162+00:00",
+    "RGMediaInitial": 8,
+    "RGMediaTest": 0,
+    "RGMediaFinal": 8,
+    "ownedProcessesAbsent": true,
+    "ownedVDsAbsent": [
+      87,
+      88,
+      89,
+      90,
+      91,
+      92,
+      93,
+      94,
+      95,
+      96,
+      97,
+      98,
+      99
+    ],
+    "globalPortAbsence": "UNOBSERVED",
+    "Phone": {
+      "physical0": "OFF",
+      "physical1": "OFF",
+      "globalWakefulness": "Dozing",
+      "keyguard": "secure/showing/locked",
+      "deepAndLightDeviceIdle": "ACTIVE"
+    },
+    "RG": {
+      "physical0": "OFF",
+      "globalWakefulness": "Asleep",
+      "deepAndLightDeviceIdle": "ACTIVE"
+    },
+    "sharedDebugRoute": "RETAINED_NO_RESET",
+    "cleanup": "DEFERRED_UNTIL_WHOLE_EXPERIMENT_END"
+  },
+  "privateEvidenceRoot": "/home/code2hack/.local/state/eyebrowse/experiments/fold6-rg-projector-av/runs/run-001/issue-70/worker-70-001/evidence",
+  "artifactHashes": [
+    {
+      "path": "evidence/accepted-rg-inventory.json",
+      "bytes": 156,
+      "sha256": "8eb8a93dbc990bd5c6d6d217b468c52645a94495b8ddfb1fd9d5dd77805e9bdf"
+    },
+    {
+      "path": "evidence/accepted-source-binding.json",
+      "bytes": 8784,
+      "sha256": "a8ea702338d26f66abf528c908b8b8cca57ae63e36e368aa3778ee3509b2770e"
+    },
+    {
+      "path": "evidence/app-inventory.json",
+      "bytes": 608,
+      "sha256": "a82a2e7e0b5181d0b51dd8a953c864d8cc76c097b97efec8b541efe743b64680"
+    },
+    {
+      "path": "evidence/baseline-checks-summary.json",
+      "bytes": 1994,
+      "sha256": "fe5eb0978e454e6d639fde2e02d1ce266277dab4086acec8501eb781a9d9cba1"
+    },
+    {
+      "path": "evidence/baseline-checks.log",
+      "bytes": 10646,
+      "sha256": "7630a504b450bb1fe2b95f0e80e6c65968d2b484b9205a929be6f754d1777608"
+    },
+    {
+      "path": "evidence/brief-idle-RG-only.json",
+      "bytes": 4625,
+      "sha256": "907c318e9d561a269ae7d197dbf57b8a21ff0f49945fb49c8b8283caced33da4"
+    },
+    {
+      "path": "evidence/current-direct-LAN-route.json",
+      "bytes": 952,
+      "sha256": "bb019f334fa0d2405cf0b872246b3b7182d2c1d41ddc5044b67a4ae9e6b6baa8"
+    },
+    {
+      "path": "evidence/default-continue001/ordinary-wake-recovery.json",
+      "bytes": 10976,
+      "sha256": "9bb90389001c8215d0bc584ed429bb1341f63cef49ea691c9d8a808704cbe7d2"
+    },
+    {
+      "path": "evidence/default-continue001/result.json",
+      "bytes": 31655,
+      "sha256": "ff59779794c89401aff098458566858332f0218aa1957ddb4e8f48c5a775f925"
+    },
+    {
+      "path": "evidence/default-continue001/sleep-sample-scope-clarification.json",
+      "bytes": 485,
+      "sha256": "7068b76025bb6352d7f91b41c53d6d569010845069bbcbdda7b5e815fba47e07"
+    },
+    {
+      "path": "evidence/default-start-off001/result.json",
+      "bytes": 15163,
+      "sha256": "8be128789aae883e03ff6b0bf402100aeae2ceb7328b93409503d28f9e9e0a4b"
+    },
+    {
+      "path": "evidence/display-identity-annotation.json",
+      "bytes": 716,
+      "sha256": "715ca41b5a3e418d3f28f7c78535786a125a38c133910ac9d770f2b205129d2a"
+    },
+    {
+      "path": "evidence/final-default-check/result.json",
+      "bytes": 7257,
+      "sha256": "e10ff59ee2e511da9255133c89bdfac211a151f78c6f538345dab035d10d00f3"
+    },
+    {
+      "path": "evidence/final-product-source-manifest.json",
+      "bytes": 14826,
+      "sha256": "17189a08c1b181ebf4d54d9b04f2a4f374edb6834f701e16ecfdd6dd33f344f1"
+    },
+    {
+      "path": "evidence/handback/handback.json",
+      "bytes": 7994,
+      "sha256": "a7b53b5c3c9720e252d79a1c51200aa8c95843b0691c427bcdeca91c215a2c93"
+    },
+    {
+      "path": "evidence/idle-RG-field-annotation.json",
+      "bytes": 327,
+      "sha256": "0df71ca46f6dc69098eb1d26241a9acacd868b91ced83fde7088157d28f23a15"
+    },
+    {
+      "path": "evidence/installed-artifacts.json",
+      "bytes": 878,
+      "sha256": "bc89dab842e6b2baa17ba82491f314ad58dd34c84442eee14afc7c26625714f8"
+    },
+    {
+      "path": "evidence/keep-active-built-binding.json",
+      "bytes": 2380,
+      "sha256": "3b511b7a6284f17278418a7080c70420a85468c4182ba536a1e03db7af84ddb1"
+    },
+    {
+      "path": "evidence/keep-active-comparison-proposed.patch",
+      "bytes": 1189,
+      "sha256": "1fffc390163f50b7b78b9230850e93137d6ed502b39fad9ff1b3eee6f3241604"
+    },
+    {
+      "path": "evidence/keep-active-continue001/actual-stock-option-binding.json",
+      "bytes": 1160,
+      "sha256": "b116db259fdf3a0b543d2dd6d276dd8486db2151a0308aa0fe2ccbbdcaa0b1d4"
+    },
+    {
+      "path": "evidence/keep-active-continue001/result.json",
+      "bytes": 46605,
+      "sha256": "927d45dcaf24434ba3681a8643811ec610deb8e49ee9d74d57eed949f63e61c4"
+    },
+    {
+      "path": "evidence/keep-active-continue001/sleep-outcome-summary.json",
+      "bytes": 501,
+      "sha256": "ce057b5d53708893de4bf6b0fc6d345b5f863fda2527396642a2fcd46ba8350c"
+    },
+    {
+      "path": "evidence/keep-active-continue001/stock-log-summary.json",
+      "bytes": 130,
+      "sha256": "512121839b6cd37dd3ee0324200c20513d8bdca275732372186b4d7f14df8060"
+    },
+    {
+      "path": "evidence/keep-active-continue001/teardown-reconciliation.json",
+      "bytes": 1616,
+      "sha256": "a4c0ecbcff2b18e69199a55cbd470fd1acf2612e28089017912db447de6b57ee"
+    },
+    {
+      "path": "evidence/keep-active-host-checks.log",
+      "bytes": 6048,
+      "sha256": "b671afbc9b897c11d169d9a8fcd27cf4ef7affa9d387f32ae1f5d3190372688c"
+    },
+    {
+      "path": "evidence/keep-active-host.apk",
+      "bytes": 2789200,
+      "sha256": "0feaaba8eeca6c19217d807f6416fd032970622667d411db7767374ce5aa4b2b"
+    },
+    {
+      "path": "evidence/keep-active-installed-binding.json",
+      "bytes": 911,
+      "sha256": "7bd3607f5a284eca7b1fde22477d8d2f1d7c227673f54722607d2ce0fb764b77"
+    },
+    {
+      "path": "evidence/keep-active-pinned-source-verification.json",
+      "bytes": 1234,
+      "sha256": "b63e508f34ba78031834f7076381dcf85c758977582c0735a34c821a34309872"
+    },
+    {
+      "path": "evidence/keep-active-proposed-binding.json",
+      "bytes": 621,
+      "sha256": "09eff26bc69c7838c6802798e2ecb86c3f4b3c81c2251f16585236c0375b41f6"
+    },
+    {
+      "path": "evidence/keep-active-start-off001/result.json",
+      "bytes": 28967,
+      "sha256": "8afecaf24f4fdfc1547008fc23378fd6b5609b48cff67011ea70e0b953643273"
+    },
+    {
+      "path": "evidence/lifecycle-host-stop001/result.json",
+      "bytes": 7020,
+      "sha256": "4e4e451c01894de523e9be29ee0b0656aed2f2b5d0a0df67555bc0a918e2cee8"
+    },
+    {
+      "path": "evidence/lifecycle-pause001/result.json",
+      "bytes": 7240,
+      "sha256": "f5486d6f972f6c9c83ce34f0981127537d49680355c55744eddce2c9e40161f9"
+    },
+    {
+      "path": "evidence/lifecycle-reconnect001/result.json",
+      "bytes": 7384,
+      "sha256": "0fc5af321bf88a27865c208fe982f2f713e542271ceb783fef21ee9cea32c95e"
+    },
+    {
+      "path": "evidence/mission-hash-verification.json",
+      "bytes": 246,
+      "sha256": "9a28e06dd2dbafacf326df4730c3824370d96e46a32796fba8a554d49af5e2f5"
+    },
+    {
+      "path": "evidence/mix001/result.json",
+      "bytes": 18253,
+      "sha256": "8fb354219385eb9eef70e1236130653ff747d0aa95121af6b759dfbdc03ce83a"
+    },
+    {
+      "path": "evidence/native-matrix001/Phone-IME.png",
+      "bytes": 77766,
+      "sha256": "c0a714a6f64aa114800d75fc3ea2c761dd8b4fa97ccd097cdd37b35c00ef2b17"
+    },
+    {
+      "path": "evidence/native-matrix001/native-app-summary.json",
+      "bytes": 851,
+      "sha256": "b08c62d2242fb3f2a058c6c8fe4d4c1d31e854cba90a3038e32035577979091b"
+    },
+    {
+      "path": "evidence/native-matrix001/ordinary-app-actions.json",
+      "bytes": 1567,
+      "sha256": "8d4711862f18c5f405397863e1d4215c32effe5615936124cf53ea6b8b411f7d"
+    },
+    {
+      "path": "evidence/native-matrix001/result.json",
+      "bytes": 23654,
+      "sha256": "02fe3a7e1cd7113e281b4a9b6f115fbefb33875a510d150f623734b1fa5c0034"
+    },
+    {
+      "path": "evidence/pilot001/setup-failure.json",
+      "bytes": 298,
+      "sha256": "a341c6a1d1876c5029993085c7691a6a1a0ac4d44807aeaa3445c6f85ee3376b"
+    },
+    {
+      "path": "evidence/pilot002-group-detail.json",
+      "bytes": 5873,
+      "sha256": "343a87bf81a2f2dd963e1caff7301ffedcafed5e6c28a3060e67c7cf092254c5"
+    },
+    {
+      "path": "evidence/rebuilt-baseline-artifacts.json",
+      "bytes": 546,
+      "sha256": "709500b83e9cf4ce8a288e0a3bbe6dd99354e195ad76c47d8a78506f7ea55798"
+    },
+    {
+      "path": "evidence/restored-accepted-binding.json",
+      "bytes": 734,
+      "sha256": "66e32d0c9a0b1055e33121bd4da6f0dfb1126c9181f33abb98f3d0a8b4065fe3"
+    },
+    {
+      "path": "evidence/restored-host-checks-summary.json",
+      "bytes": 322,
+      "sha256": "0ebd6166e22dddb17a4924cdaf47f96cbe4741102435f1654394c1e5379b4898"
+    },
+    {
+      "path": "evidence/restored-host-checks.log",
+      "bytes": 6048,
+      "sha256": "f7db0c80a611a82bcc02d97edd9ef7d504e3b20d530c1fe914884d7e46309cdd"
+    },
+    {
+      "path": "evidence/retained-artifact-index.json",
+      "bytes": 134781,
+      "sha256": "0f52a2748a68d687c05c523e3cfe36a2214343c4448c7b8230e58dd1209c071d"
+    },
+    {
+      "path": "evidence/spark-media-endpoint-sockets.json",
+      "bytes": 95,
+      "sha256": "f74053179a5603b66442392c360875043608555950c96cc28ad037a21d73f2bb"
+    },
+    {
+      "path": "evidence/state-default-continue001-after-sleep.json",
+      "bytes": 3570,
+      "sha256": "7bcda268f79f9a1281cfa5564eff7a4784d1aeecfbcf11fc097125c1dd10dff1"
+    },
+    {
+      "path": "evidence/state-default-continue001-before-sleep.json",
+      "bytes": 3559,
+      "sha256": "b3b5292f83283960cffd22e384e76dc9a1b3d1925b1cbfdbd9d0b55d4b325234"
+    },
+    {
+      "path": "evidence/state-default-continue001-before-start.json",
+      "bytes": 2839,
+      "sha256": "320b8801a72d01905f0d605a94defcddc1c58cb9fa5b27ef91bfcc381032d13f"
+    },
+    {
+      "path": "evidence/state-default-continue001-fixture.json",
+      "bytes": 3553,
+      "sha256": "750c970459c3f50c435e5878ed4d7b75c06ac53b16eb0b57ca79df5aa2a13610"
+    },
+    {
+      "path": "evidence/state-default-continue001-new-VD.json",
+      "bytes": 3551,
+      "sha256": "8b8d75493d25109e1775cb006739f860a56e63ba07a80cb4e595f6a27d377f95"
+    },
+    {
+      "path": "evidence/state-default-continue001-recovery-wake.json",
+      "bytes": 3558,
+      "sha256": "92e240856d12dd88ece3d1699544b341bac1df54043f47d945d9018b42242509"
+    },
+    {
+      "path": "evidence/state-default-start-off001-before-start.json",
+      "bytes": 2847,
+      "sha256": "948f3ffae275bea3f07919d5a6366f2b3a2450d7f0528bff516713d850560e59"
+    },
+    {
+      "path": "evidence/state-default-start-off001-fixture.json",
+      "bytes": 3562,
+      "sha256": "c4062102bcc8314f6d96587138102145e8ad46336e3a99d699a619641b9a2ee4"
+    },
+    {
+      "path": "evidence/state-default-start-off001-new-VD.json",
+      "bytes": 3561,
+      "sha256": "3f7dbf1dd1e9be7effdd82f4832f4e641867ac3741f8fa9140cb61e289840616"
+    },
+    {
+      "path": "evidence/state-final-handback.json",
+      "bytes": 2829,
+      "sha256": "0b56546b5b015c307912363ddc3fa6c795b62fd6500b769ac1f028ab68c18835"
+    },
+    {
+      "path": "evidence/state-keep-active-continue001-after-sleep.json",
+      "bytes": 3569,
+      "sha256": "92c387338e5d19a25bf53b74399cfcfe951b8e8e97d80c142bb1f9d12428a3fb"
+    },
+    {
+      "path": "evidence/state-keep-active-continue001-after-wake.json",
+      "bytes": 3561,
+      "sha256": "3c1324607a0de01e97388a07fc0194101f3779199b665d26c925e3586a3291ed"
+    },
+    {
+      "path": "evidence/state-keep-active-continue001-before-sleep.json",
+      "bytes": 3563,
+      "sha256": "84b9ff5efb7935bb6a2e86927c06083132f369b08967e57726861b17bba7038e"
+    },
+    {
+      "path": "evidence/state-keep-active-continue001-before-start.json",
+      "bytes": 2850,
+      "sha256": "1c26f034b3a8015ead6555574282fadf04aa04b32a017741e6741ae58741efaa"
+    },
+    {
+      "path": "evidence/state-keep-active-continue001-fixture.json",
+      "bytes": 3558,
+      "sha256": "80a3116bea5859be6cd9473a571cd2d818f79e4c711907e1ea5b318ceab9e97f"
+    },
+    {
+      "path": "evidence/state-keep-active-continue001-new-VD.json",
+      "bytes": 3555,
+      "sha256": "bc7c686734613023284761c8e72eac00255f9bb22373c8036c7acfc68689913a"
+    },
+    {
+      "path": "evidence/state-keep-active-continue001-pre-wake.json",
+      "bytes": 3566,
+      "sha256": "fb98eace4be74c46c57be69ad73626cd079cfbc7d817c2d0af893e6ea07b0124"
+    },
+    {
+      "path": "evidence/state-keep-active-start-off001-before-start.json",
+      "bytes": 2851,
+      "sha256": "4f589957350bffa2284df50ffe17e1a8ed6d50cb960c5b219564c9cf6ccbaf84"
+    },
+    {
+      "path": "evidence/state-keep-active-start-off001-fixture.json",
+      "bytes": 3566,
+      "sha256": "7cd43a0c4e68b82d65263a7856a9211fcd82c106b98de9ae695aac0d990ce454"
+    },
+    {
+      "path": "evidence/state-keep-active-start-off001-new-VD.json",
+      "bytes": 3565,
+      "sha256": "27fe8e13e82afc105de39847ab422a55a4e33bd86b9568f7484bf0badb68311a"
+    },
+    {
+      "path": "evidence/state-keep-active-start-off001-start-observed.json",
+      "bytes": 3573,
+      "sha256": "9cd6a4c37ea961b4a35e5d6c6c7be60e1ace5d321ed975256c08deae602e6805"
+    },
+    {
+      "path": "evidence/state-mixed-sources.json",
+      "bytes": 3540,
+      "sha256": "e1abaf4e3d192d5108abdefd9710b289bdeec0f70a17ca06caf9702383a8c8ad"
+    },
+    {
+      "path": "evidence/state-native-physical-app.json",
+      "bytes": 3546,
+      "sha256": "b7d6983d95ff318408b0989c8767583f17c56a811882d816c65cfe7c243713ce"
+    },
+    {
+      "path": "evidence/state-pilot-current.json",
+      "bytes": 1956,
+      "sha256": "3c68c917f6603f4418fbc4797ba10015784008c3f261e5aa986f918aa9efd2ba"
+    },
+    {
+      "path": "evidence/state-pilot002-active.json",
+      "bytes": 2329,
+      "sha256": "c4054dd0188c8aca696abe706089c0f7b482da08b9949c5b8aed0bf6a0a30ea6"
+    },
+    {
+      "path": "evidence/state-tenminute-active.json",
+      "bytes": 2330,
+      "sha256": "acacd6d461d92d626babdf85576523c20592e580d9bd6d9540bdcb791f33fcbb"
+    },
+    {
+      "path": "evidence/tenminute001/driver-report.stdout",
+      "bytes": 1055395,
+      "sha256": "0a35cba64149e41ef1bd6d17281168eb9eccace6bc7e1f0ec1368348cd1c96fc"
+    },
+    {
+      "path": "evidence/tenminute001/measurement-summary.json",
+      "bytes": 2540,
+      "sha256": "a805be254493ef0e7e8a4f353c21880b8dca314f00e13fb5c7c9a84f3d6bc1dc"
+    },
+    {
+      "path": "evidence/tenminute001/measurement-window-summary.json",
+      "bytes": 709,
+      "sha256": "b521f5481d0b56dbb3621a146948cdf2dbda263c0bfd24ad632bb0a28d5b2787"
+    },
+    {
+      "path": "evidence/tenminute001/result.json",
+      "bytes": 9700,
+      "sha256": "3117bf7c9bbc1a65d631ebc5a8093cc37a5554e75d62637049ef9b813aaa7f75"
+    },
+    {
+      "path": "evidence/verification-declaration.json",
+      "bytes": 1152,
+      "sha256": "e587e5133a5cc7cd5fcaf7248ea379033e99cd54d6519eccce190b45e08141c5"
+    },
+    {
+      "path": "evidence/volume-restoration-result.json",
+      "bytes": 94,
+      "sha256": "22768d32e0a249bf398099c3a86490619c1473e70f350a205c3e821c0aa0bda4"
+    }
+  ],
+  "review": "Independent exact-candidate review and Manager acceptance pending; no main/v004/release authority."
+}
