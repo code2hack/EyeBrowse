@@ -56,9 +56,9 @@ class ProjectorInputTest {
         motion.stop()
         assertEquals(0, motion.step(outside, bounds, Long.MAX_VALUE, 6_000_000_000, 240))
     }
-    @Test fun oneShortTapDoubleSuppressionSwipeAndCancel() {
-        var taps = 0; val scrolls = mutableListOf<Int>()
-        val gestures = PadGestureRecognizer(300, 500, { taps++ }, { scrolls.add(it) })
+    @Test fun oneShortTapDoubleBackSwipeAndCancel() {
+        var taps = 0; var backs = 0; val scrolls = mutableListOf<Int>()
+        val gestures = PadGestureRecognizer(300, 500, { taps++ }, { backs++ }, { scrolls.add(it) })
         fun press(key: PadGestureRecognizer.Key, start: Long, duration: Long = 30) {
             gestures.accept(PadGestureRecognizer.Event(key, PadGestureRecognizer.Phase.DOWN, start, start), start)
             gestures.accept(PadGestureRecognizer.Event(key, PadGestureRecognizer.Phase.UP, start + duration, start), start + duration)
@@ -67,12 +67,46 @@ class ProjectorInputTest {
         gestures.confirm(1330); assertEquals(1, taps)
         press(PadGestureRecognizer.Key.TAP, 1500); press(PadGestureRecognizer.Key.TAP, 1600)
         gestures.confirm(2000); assertEquals(1, taps)
+        assertEquals(1, backs)
         press(PadGestureRecognizer.Key.FORWARD, 2100); press(PadGestureRecognizer.Key.BACKWARD, 2500)
         assertEquals(listOf(160, -160), scrolls)
         press(PadGestureRecognizer.Key.TAP, 3000); gestures.cancel(); gestures.confirm(4000)
         assertEquals(1, taps)
         press(PadGestureRecognizer.Key.TAP, 5000, 600); gestures.confirm(6000)
         assertEquals(1, taps)
+    }
+    @Test fun vendorDoubleAndTwoTapReportingSendOneBackWithoutLeakingATap() {
+        var taps = 0; var backs = 0
+        val gestures = PadGestureRecognizer(300, 500, { taps++ }, { backs++ }, {})
+        fun press(key: PadGestureRecognizer.Key, start: Long) {
+            gestures.accept(PadGestureRecognizer.Event(key, PadGestureRecognizer.Phase.DOWN, start, start), start)
+            gestures.accept(PadGestureRecognizer.Event(key, PadGestureRecognizer.Phase.UP, start + 20, start), start + 20)
+        }
+        press(PadGestureRecognizer.Key.TAP, 1000)
+        press(PadGestureRecognizer.Key.TAP, 1100)
+        gestures.cancel() // Sending Back cancels pending input.
+        press(PadGestureRecognizer.Key.DOUBLE, 1140)
+        gestures.confirm(1500)
+        assertEquals(1, backs); assertEquals(0, taps)
+        press(PadGestureRecognizer.Key.DOUBLE, 1800)
+        assertEquals(2, backs); assertEquals(0, taps)
+        press(PadGestureRecognizer.Key.TAP, 2300); gestures.confirm(2700)
+        assertEquals(1, taps)
+    }
+    @Test fun canceledHeldAndRetiredDoubleSequencesDoNotReplayBack() {
+        var backs = 0
+        val gestures = PadGestureRecognizer(300, 500, {}, { backs++ }, {})
+        fun event(phase: PadGestureRecognizer.Phase, at: Long, down: Long) =
+            PadGestureRecognizer.Event(PadGestureRecognizer.Key.DOUBLE, phase, at, down)
+        gestures.accept(event(PadGestureRecognizer.Phase.DOWN, 1000, 1000), 1000)
+        gestures.cancel()
+        gestures.accept(event(PadGestureRecognizer.Phase.UP, 1020, 1000), 1020)
+        gestures.accept(event(PadGestureRecognizer.Phase.DOWN, 2000, 2000), 2000)
+        gestures.accept(event(PadGestureRecognizer.Phase.UP, 2600, 2000), 2600)
+        gestures.accept(event(PadGestureRecognizer.Phase.DOWN, 3000, 3000), 3500)
+        gestures.accept(event(PadGestureRecognizer.Phase.UP, 3020, 3000), 3500)
+        gestures.confirm(4000)
+        assertEquals(0, backs)
     }
     @Test fun settingsUseOwnNumericValuesAndRetainValueOnSaveFailure() {
         val saved = mutableMapOf<String, String>(); var writable = true

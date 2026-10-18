@@ -35,14 +35,16 @@ for the actual protocol, bootstrap, limitations and acceptance evidence.
 
 ## PAV-03 input
 
-The RG receiver now draws its donor-derived local head cursor over the stream.
-Android Back opens the on-demand session menu; short pad taps operate the Phone
-and pad swipes use native wheel input at the visible target. Numeric pointer and
-scroll controls stay local. `directhost.InputFixtureActivity` supplies an owned
-native field, main scroll area and nested list; it uses the actual Phone IME.
-There is no RG keyboard or permanent browser bar. See
+The RG receiver draws its donor-derived local head cursor over the stream.
+Short pad taps operate the projected Phone app; double taps send Phone Android
+Back, and pad swipes use native wheel input at the visible target. There is no
+RG-local session panel or panel-opening gesture. Existing numeric preferences,
+Home transport and Disconnect lifecycle remain; non-panel user access is an
+explicit unresolved canonical design question. `directhost.InputFixtureActivity`
+supplies an owned native field, main scroll area and nested list using the actual
+Phone IME. See
 [input-ime.md](../../docs/experiments/fold6-rg-projector-av/input-ime.md) for the
-interaction map, control payloads and the exact current evidence limitations.
+current source-only status, actual old-source findings and remaining limits.
 
 ## PAV66 owned fixture
 

@@ -16,7 +16,6 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
 import android.view.ViewConfiguration
-import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
@@ -35,8 +34,8 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var root: FrameLayout
     private lateinit var screen: ProjectorSurface
     private lateinit var pointer: PointerOverlay
-    private lateinit var panel: LinearLayout
-    private lateinit var menu: LinearLayout
+    private lateinit var connectionView: LinearLayout
+    private lateinit var connectButton: Button
     private lateinit var status: TextView
     private lateinit var settings: LocalInputSettings
     private lateinit var gestures: PadGestureRecognizer
@@ -56,24 +55,19 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
         screen = ProjectorSurface(this,
             { x, y -> remoteTap(x + screen.left, y + screen.top) },
             { x, y, pixels -> remoteScroll(x + screen.left, y + screen.top, pixels) },
-            { showMenu(true) },
         ).apply {
             contentDescription = "Projected Phone application and Phone keyboard"
             holder.addCallback(this@ReceiverActivity)
         }
         root.addView(screen, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
         status = TextView(this).apply { setTextColor(Color.WHITE); textSize = 18f; gravity = Gravity.CENTER }
-        panel = LinearLayout(this).apply {
+        connectButton = Button(this).apply { text = getString(R.string.connect); setOnClickListener { connect() } }
+        connectionView = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setBackgroundColor(Color.BLACK)
             addView(status)
-            addView(button(getString(R.string.connect)) { connect() })
+            addView(connectButton)
         }
-        root.addView(panel, FrameLayout.LayoutParams(-1, -1))
-        menu = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setBackgroundColor(0xee000000.toInt())
-            visibility = View.GONE
-        }
-        root.addView(menu, FrameLayout.LayoutParams(-1, -1))
+        root.addView(connectionView, FrameLayout.LayoutParams(-1, -1))
         pointer = PointerOverlay(this).apply {
             sensitivity(settings.pointerGain)
             onPositionChanged = { updateEdgeScroll() }
@@ -82,13 +76,13 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
         gestures = PadGestureRecognizer(
             ViewConfiguration.getDoubleTapTimeout().toLong().coerceIn(100, 600),
             ViewConfiguration.getLongPressTimeout().toLong().coerceIn(200, 2000),
-            { if (usable()) activatePointer() }, { pixels ->
+            { if (usable()) activatePointer() }, { remoteBack() }, { pixels ->
                 if (usable()) pointer.inputPosition().let { remoteScroll(it.x, it.y, pixels) }
             },
         )
         root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> resize() }
         setContentView(root)
-        status.text = getString(R.string.disconnected)
+        showStatus(getString(R.string.disconnected))
         root.post {
             window.insetsController?.apply {
                 hide(WindowInsets.Type.systemBars())
@@ -98,36 +92,14 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
         }
     }
 
-    private fun button(label: String, action: () -> Unit) = Button(this).apply {
-        text = label; setOnClickListener { action() }
+    private fun showStatus(value: String) {
+        status.text = listOfNotNull(value, settings.error).joinToString("\n")
     }
 
-    private fun showMenu(show: Boolean) {
+    private fun remoteBack() {
+        if (!usable() || !streaming) return
         cancelInput()
-        menu.visibility = if (show) View.VISIBLE else View.GONE
-        if (show) {
-            menu.removeAllViews()
-            menu.addView(TextView(this).apply {
-                text = "Projector · Android Back opens/closes this menu"
-                setTextColor(Color.WHITE); gravity = Gravity.CENTER
-            })
-            menu.addView(button("Phone Back") { session?.navigate(Navigation.BACK); showMenu(false) }.apply { isEnabled = streaming })
-            menu.addView(button("Phone Home") { session?.navigate(Navigation.HOME); showMenu(false) }.apply { isEnabled = streaming })
-            fun row(label: String, value: String, down: Boolean, up: Boolean, change: (Int) -> Unit) {
-                menu.addView(LinearLayout(this).apply {
-                    gravity = Gravity.CENTER
-                    addView(button("−") { change(-1); pointer.sensitivity(settings.pointerGain); showMenu(true) }.apply { isEnabled = down })
-                    addView(TextView(this@ReceiverActivity).apply { text = "$label $value"; setTextColor(Color.WHITE) })
-                    addView(button("+") { change(1); pointer.sensitivity(settings.pointerGain); showMenu(true) }.apply { isEnabled = up })
-                })
-            }
-            row("Pointer", "%.1f×".format(settings.pointerGain), settings.pointerTenths > 1, settings.pointerTenths < 60) { settings.stepPointer(it) }
-            row("Scroll", "${settings.scrollSpeed} nominal px/s", settings.scrollSpeed > 10, settings.scrollSpeed < 1200) { settings.stepScroll(it) }
-            settings.error?.let { message -> menu.addView(TextView(this).apply { text = message; setTextColor(Color.YELLOW) }) }
-            menu.addView(button("Resume") { showMenu(false) })
-            menu.addView(button("Disconnect") { stop() })
-        }
-        resize()
+        session?.navigate(Navigation.BACK)
     }
 
     private fun resize() {
@@ -142,20 +114,20 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
             val old = screen.layoutParams
             if (old.width != fit.width || old.height != fit.height) screen.layoutParams = FrameLayout.LayoutParams(fit.width, fit.height, Gravity.CENTER)
         }
-        if (fit != null && menu.visibility != View.VISIBLE && streaming) {
+        if (fit != null && streaming) {
             pointer.bounds(fit.left.toFloat(), fit.top.toFloat(), (fit.left + fit.width).toFloat(), (fit.top + fit.height).toFloat(), display?.rotation ?: 0)
         } else pointer.bounds(0f, 0f, root.width.toFloat(), root.height.toFloat(), display?.rotation ?: 0)
     }
 
     private fun usable() = resumed && hasWindowFocus()
     private fun remoteTap(x: Float, y: Float): Boolean {
-        if (!usable() || !streaming || menu.visibility == View.VISIBLE) return false
+        if (!usable() || !streaming) return false
         val size = currentGeometry ?: return false
         val target = Fit.inside(root.width, root.height, size).touch(x, y, size) ?: return false
         return session?.tap(target) == true
     }
     private fun remoteScroll(x: Float, y: Float, pixels: Int): Boolean {
-        if (!usable() || !streaming || menu.visibility == View.VISIBLE || pixels == 0) return false
+        if (!usable() || !streaming || pixels == 0) return false
         val size = currentGeometry ?: return false
         val target = Fit.inside(root.width, root.height, size).touch(x, y, size) ?: return false
         return session?.scroll(Scroll(target, pixels)) == true
@@ -164,24 +136,16 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
     private fun activatePointer() {
         val point = pointer.inputPosition()
         if (!point.available) return
-        val local = when {
-            menu.visibility == View.VISIBLE -> menu
-            panel.visibility == View.VISIBLE -> panel
-            else -> null
-        }
-        if (local != null) {
-            fun hit(view: View): Boolean {
-                if (!view.isShown) return false
-                if (view is ViewGroup) for (i in view.childCount - 1 downTo 0) if (hit(view.getChildAt(i))) return true
-                val rect = Rect(); view.getDrawingRect(rect); root.offsetDescendantRectToMyCoords(view, rect)
-                return view is Button && view.isEnabled && rect.contains(point.x.toInt(), point.y.toInt()) && view.performClick()
-            }
-            hit(local)
+        if (connectionView.visibility == View.VISIBLE) {
+            val rect = Rect()
+            connectButton.getDrawingRect(rect)
+            root.offsetDescendantRectToMyCoords(connectButton, rect)
+            if (connectButton.isEnabled && rect.contains(point.x.toInt(), point.y.toInt())) connectButton.performClick()
         } else remoteTap(point.x, point.y)
     }
 
     private fun updateEdgeScroll() {
-        if (!usable() || !streaming || menu.visibility == View.VISIBLE ||
+        if (!usable() || !streaming ||
             edgeMotion.direction(pointer.position, pointer.visibleBounds, pointer.expiresAtNs, SystemClock.elapsedRealtimeNanos()) == 0) {
             root.removeCallbacks(edgeTick); edgeScheduled = false; edgeMotion.stop()
         } else if (!edgeScheduled) { edgeScheduled = true; root.post(edgeTick) }
@@ -190,7 +154,7 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
         override fun run() {
             edgeScheduled = false
             val point = pointer.inputPosition()
-            if (!usable() || !streaming || menu.visibility == View.VISIBLE) { edgeMotion.stop(); return }
+            if (!usable() || !streaming) { edgeMotion.stop(); return }
             val now = SystemClock.elapsedRealtimeNanos()
             val bounds = pointer.visibleBounds
             if (edgeMotion.direction(point, bounds, pointer.expiresAtNs, now) == 0) { edgeMotion.stop(); return }
@@ -209,11 +173,9 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.keyCode == KeyEvent.KEYCODE_BACK) {
-            if (event.action == KeyEvent.ACTION_UP && !event.isCanceled && usable()) showMenu(menu.visibility != View.VISIBLE)
-            return true
-        }
-        val key = nativePadKey(event.device?.name, event.source, event.keyCode) ?: return super.dispatchKeyEvent(event)
+        if (event.keyCode == KeyEvent.KEYCODE_BACK && !streaming) return super.dispatchKeyEvent(event)
+        val key = if (event.keyCode == KeyEvent.KEYCODE_BACK) PadGestureRecognizer.Key.DOUBLE
+            else nativePadKey(event.device?.name, event.source, event.keyCode) ?: return super.dispatchKeyEvent(event)
         if (!usable() || event.metaState != 0) { cancelInput(); return true }
         val phase = when {
             event.isCanceled || event.isLongPress -> PadGestureRecognizer.Phase.CANCEL
@@ -233,7 +195,7 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
         .put("acceptedSensorSamples", pointer.acceptedSamples).put("localCursorDraws", pointer.drawCount)
         .put("lastSensorReceiptNs", pointer.lastSampleReceiptNs).put("lastCursorDrawNs", pointer.lastDrawElapsedNs)
         .put("cursorX", pointer.position.x).put("cursorY", pointer.position.y).put("pointerAvailable", pointer.position.available)
-        .put("hardwarePadUps", padUps).put("menuVisible", menu.visibility == View.VISIBLE)
+        .put("hardwarePadUps", padUps)
         .put("pointerGain", settings.pointerGain).put("nominalScrollPixelsPerSecond", settings.scrollSpeed)
         .put("streaming", streaming).put("opticalOrErgonomicPass", false)
 
@@ -242,18 +204,18 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
         pointer.stop(); if (resumed && hasWindowFocus()) pointer.start()
         if (!screen.holder.surface.isValid) { status.text = getString(R.string.display_unavailable); return }
         session?.close()
-        streaming = false; currentGeometry = null; panel.visibility = View.VISIBLE; menu.visibility = View.GONE
+        streaming = false; currentGeometry = null; connectionView.visibility = View.VISIBLE
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val next = ProjectionSession(File(filesDir, "session"), screen.holder.surface,
             { source, state -> runOnUiThread {
                 if (session === source) {
                     streaming = state == "STREAMING"
-                    panel.visibility = if (streaming) View.GONE else View.VISIBLE
-                    status.text = when (state) {
+                    connectionView.visibility = if (streaming) View.GONE else View.VISIBLE
+                    showStatus(when (state) {
                         "STREAMING" -> getString(R.string.connected)
                         "CONNECTING", "WAITING_FOR_VIDEO" -> getString(R.string.connecting)
                         else -> getString(R.string.disconnected)
-                    }
+                    })
                     if (!streaming) cancelInput()
                     if (state !in listOf("STREAMING", "CONNECTING", "WAITING_FOR_VIDEO")) window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     resize()
@@ -267,11 +229,11 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
         session = next; next.start()
     }
 
-    private fun stop() {
+    internal fun disconnect() {
         cancelInput()
         val old = session; session = null; old?.close()
-        streaming = false; currentGeometry = null; panel.visibility = View.VISIBLE; menu.visibility = View.GONE
-        status.text = getString(R.string.disconnected)
+        streaming = false; currentGeometry = null; connectionView.visibility = View.VISIBLE
+        showStatus(getString(R.string.disconnected))
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         resize()
     }
@@ -283,11 +245,11 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
             else if (resumed) pointer.start()
         }
     }
-    override fun onPause() { resumed = false; pointer.stop(); stop(); super.onPause() }
-    override fun onDestroy() { stop(); super.onDestroy() }
+    override fun onPause() { resumed = false; pointer.stop(); disconnect(); super.onPause() }
+    override fun onDestroy() { disconnect(); super.onDestroy() }
     override fun surfaceCreated(holder: SurfaceHolder) = Unit
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) { resize() }
-    override fun surfaceDestroyed(holder: SurfaceHolder) { stop() }
+    override fun surfaceDestroyed(holder: SurfaceHolder) { disconnect() }
 }
 
 /** Same hardware mapping as the pinned donor; desktop keyboards do not masquerade as RG pad input. */
@@ -308,7 +270,6 @@ private class ProjectorSurface(
     context: Context,
     private val tap: (Float, Float) -> Unit,
     private val scroll: (Float, Float, Int) -> Unit,
-    menu: () -> Unit,
 ) : SurfaceView(context) {
     private var clickX: Float? = null
     private var clickY: Float? = null
@@ -319,7 +280,6 @@ private class ProjectorSurface(
             try { performClick() } finally { clickX = null; clickY = null }
             return true
         }
-        override fun onLongPress(e: MotionEvent) { menu() }
         override fun onScroll(e1: MotionEvent?, e2: MotionEvent, distanceX: Float, distanceY: Float): Boolean {
             scroll(e2.x, e2.y, distanceY.toInt().coerceIn(-1200, 1200))
             return true

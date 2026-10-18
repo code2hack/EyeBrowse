@@ -4,11 +4,14 @@ Worker: Worker-#68
 
 Issue [#68](https://github.com/code2hack/EyeBrowse/issues/68), experimental branch
 `work/issue-68-projector-input-ime`, accepted PAV-02 base
-`077124ed21ee97f51a8c2fe15e5b165e7100f045`. This is an experimental capability finding in progress. The exclusive PAV-03
-window was granted in mission revision2. Software-driven native effects and
-actual Phone-keyboard images are demonstrated; physical head/touchpad operation
-and successful Phone typing are **not yet established**. Independent review and
-acceptance remain separate.
+`077124ed21ee97f51a8c2fe15e5b165e7100f045`. Owner191 resumed work with the
+[no-panel / double-tap-to-Phone-Back decision](https://github.com/code2hack/EyeBrowse/issues/68#issuecomment-6253136662).
+The current correction removes the RG-local session panel and its invocation.
+It is source-only after the actual device-window handback to the Manager;
+it has not been installed or physically tested. Historical app effects,
+Owner head/tap confirmation and IME failures below retain their old-source
+bindings. Independent review, complete physical acceptance and integration
+remain outstanding.
 
 ## Implementation and provenance
 
@@ -34,26 +37,41 @@ size is not an admission rule. Stream pixels already carry Phone rotation;
 RG display rotation separately remaps head axes. Decoder/geometry replacement
 withdraws input until a frame from the replacement decoder is rendered.
 
-## Minimal interaction map
+## Current interaction map and remaining binding question
 
 | RG action | Projector result |
 | --- | --- |
 | Aim with head | One RG-local cursor over the video |
 | Ordinary short pad tap | One touch DOWN/UP at the current visible cursor target |
-| Double tap / OEM double | No remote action; constituent short taps suppressed |
+| Double tap / OEM double | Android Back to the projected Phone app; constituent short taps and duplicate OEM reporting suppressed |
 | Pad forward/backward swipe | Native wheel scroll at the current visible target, ±160 nominal pixels |
-| Aim into upper/lower 24px strip | Repeating native wheel scroll at the same horizontal aim and the visible video centerline |
-| Android Back | Open/close the local session menu |
-| Touchscreen long press, where available | Open the same local menu |
-| Local menu | Phone Back, Phone Home, numeric pointer/scroll controls, Resume, Disconnect |
+| Aim into upper/lower24px strip | Repeating native wheel scroll at the same horizontal aim and visible video centerline |
+| Android Back while streaming | The same Phone Back path; it does not open an RG panel |
+| Android Back while disconnected | Ordinary local Activity exit |
+| Phone Home/app-return | Existing protocol mechanism retained; approved non-panel physical invocation unresolved |
+| Local Disconnect | Existing session/lifecycle mechanism retained; approved non-panel physical invocation unresolved |
+| Numeric pointer/scroll settings | Existing own preference values/ranges/save checks retained and loaded; replacement user access unresolved |
 
-There is no permanent toolbar. The hardware mapping reuses the donor's
-`ROKID,PSOC-TP-R` keyboard source (Enter, OEM291, D-pad/OEM292/293). Desktop
-keyboard injection is not evidence of physical RG input. A direct touchscreen
-tap/drag is also supported, but a synthetic MotionEvent remains software-driver
-evidence. Local menu buttons can be aimed at and tapped by the head/pad route.
-Android Back opens the menu under software-generated RG key input; physical
-touchpad ergonomics await the Owner observation requested at the ready setup.
+No session panel, panel-opening gesture, permanent browser toolbar, recenter,
+mode toggle or local RG keyboard is present. The ordinary pre-existing
+connection/status screen and its Connect action remain. A touchscreen long press
+does not open a panel. This is not a replacement startup or app-switcher design.
+
+The physical pad mapping reuses donor `ROKID,PSOC-TP-R` keyboard-source Enter,
+OEM291 and D-pad/OEM292/293. Both an OEM double event and two reported short taps
+produce one Back callback within the bounded double-tap interval. A later,
+distinct double tap produces another Back. Android Back also uses that path
+while streaming. The callback cancels pending tap/touch/edge work and calls the
+existing authenticated `navigate(BACK)` sender. Desktop key injection is not
+physical RG evidence. Direct touchscreen tap/drag support remains diagnostic
+software-input evidence when driven synthetically.
+
+The updated canonical ticket explicitly leaves Home and Disconnect invocation
+unselected after removing the panel. The Manager was asked one concrete
+question covering those functions and numeric-settings access. Only those
+user bindings await design disposition; Back implementation and panel removal
+proceed independently. No replacement menu/gesture/framework was invented,
+and the missing bindings are not reported as passed or physically reachable.
 
 Scroll speed is 10–1,200 **nominal** px/s, default240, step10. Wheel input uses
 64 nominal pixels per wheel detent. Android applications apply their own native
@@ -97,7 +115,7 @@ is not preset. The original moving PAV-02 fixture remains available unchanged.
 The instrumentation's `input-observation` case observes live sensor/pad counts
 without synthesizing them; it does not declare human ergonomics passed.
 
-## Actual device findings
+## Historical actual device findings — b13c131 / original installed pair
 
 Both target identities were checked at test start: Fold6 SM-F956N/API36 and
 RG-glasses/API32, user0/shell2000, through the Manager's USB173 debug server.
@@ -123,7 +141,7 @@ credential, shared service or global display setting was changed.
 | Browser | Existing owned hostprobe launched an ordinary Chrome CustomTab for public example.com on VD58; its actual page rendered on RG |
 | App return | Phone Back did not establish return from that CustomTab. A HOT own-fixture launch also did not bring its image visibly forward; a cold owned-fixture launch restored the native test target. No cause or successful app-return qualification is assigned |
 | Phone Home | Encoded and unit-tested; actual effect/physical reachability unexecuted |
-| Physical head/touchpad | Real hardware name/source matched donor (`ROKID,PSOC-TP-R`,0x101); local cursor visible. Owner asked to test head aiming, actual pad tap/main+nested scrolling, Back menu and Disconnect. Result pending; screenshots/raw sensor availability do not establish ergonomics |
+| Physical head/touchpad | Owner replied “the first two succeeded” to head aiming and short-tapping Native Tap. The owned fixture reached taps2. Smoothness details, physical main/nested scroll, menu/Disconnect were not confirmed. Owner could not identify Android Back, then reported double-tapping; the installed b13 recognizer ignored that event. No broader physical/ergonomic PASS is inferred |
 
 The 160dpi choice is only the owned stock `new_display=480x640/160` bootstrap
 option. It changes neither physical Phone dimensions nor a global display or
@@ -151,7 +169,8 @@ The Manager can bind them through `evidence-index.json`:
 | `rg-keyboard160-01.png` | `b6914cfd1c1f5255d98589d179d2b316a7294936d961f089b788608e64077777` |
 | `rg-browser160-01.png` | `0f984b11597e7222b3040256a9bbad9736a13d255d62cf6af330ba96d33a58ee` |
 
-Current artifacts, with source/installed bindings in mission-private records:
+Historical installed pair, freshly re-hashed at actual window handback191. The
+current source-only correction has not replaced these device artifacts:
 
 | APK | Bytes | SHA-256 |
 | --- | --- | --- |
@@ -176,8 +195,60 @@ without catch-up, settings write failure, pre-render/post-Stop rejection of all
 three control kinds, and existing codec/TLS/server lifetime behavior. These are
 host assertions, not physical, optical, IME or audible AV acceptance.
 
-Necessary final teardown/window return is pending the actual Owner observation.
-The first case's stock child ended; bridge1 was stopped before the160dpi host
-update. Bridge2/current VD58 remain owned for the ready physical trial. No
-independent review, integration, release or mandatory-audio experiment PASS is
-claimed. PAV-04 audio remains separate until matching combined integration.
+## Actual teardown and resource return191
+
+The preserved bridge23864 ended through its existing HOST_LIFETIME. A fresh
+process observation found no exact mission bridge/stock child before teardown;
+no TERM signal was needed. Bridge status was HOST_STOPPED; last-session was
+SESSION_STOPPED/serverAlive=false, with session elapsed888,328ms,6,210 encoded
+frames and5 touches. These are host-session counters, not a continuous optical
+or mandatory-audio measurement. Prior partial/failed outcomes remain retained.
+
+Owned HostR5/RG3/used-hostprobe force-stops returned0. Final scoped process reads
+showed no owned app/bridge/stock child, and a fresh display dump had no VD58 or
+scrcpy match. One normal sleep/check per device observed Phone Dozing and RG
+Asleep. There was no PIN/forced-lock loop, global setting change, original-store
+operation, shared service reset, new input installation/session or discretionary
+file cleanup. The USB173 route remains under Manager custody.
+
+Independent socket-table port absence was not observed; the prior netlink
+limitation remains a limitation. Process/VD settlement is not promoted to a
+global listener-absence claim. The Manager received actual window handback and
+the exact installed pair in `handback191/handback.json` and
+`handback191/settlement-final.json`. Subsequent work is source-only until another
+physical resource grant. Required evidence/worktree cleanup is deferred to
+experiment end.
+
+## Current correction verification
+
+The rejected double-tap-to-panel edit and its bounded27-second passing host
+build are retained privately as `rejected-double-panel-proposal.patch` and
+`rejected-double-panel-retained.json`. It was never installed. It is superseded
+by the current no-panel/Phone-Back source, not rewritten as a successful Back
+trial.
+
+Focused correction checks passed **13 receiver JVM tests** (input8, decoder5),
+receiver APK/instrumentation assembly and receiver lint in27s, recorded in
+`no-panel-back-checks191.log` and `no-panel-host-checks191.json`. Lint has the
+existing OldTargetApi warning and no errors. The unchanged host/protocol tests
+above were not rerun for this receiver-only correction. New double-tap tests
+check one Back for duplicate two-tap/OEM reporting, later independent Back,
+constituent-tap suppression and canceled/held/stale sequence rejection.
+
+These newly built artifacts are **uninstalled**; they do not replace the
+historical installed pair above:
+
+| APK | Bytes | SHA-256 |
+| --- | --- | --- |
+| RG3, no-panel/Phone-Back | 2,607,565 | `71e0a456004a20bb8ff523f7f41a1404f1944168c0a2b23dc44144bbd5f09975` |
+| Probe4, direct lifecycle stop | 73,010 | `fd458f817bfa21e14c6792ed7e6615c3993f3fb0de5e6b2ccfac09a26856ba83` |
+
+The source/Android test driver now exercises Disconnect directly as a lifecycle
+mechanism and explicitly does not claim physical control reachability. Fresh
+physical Back/Home/Disconnect/settings qualification requires the remaining
+design disposition and a later device window. The previous head/tap observation
+belongs to source b13c131 and its installed RG APK1b734b82…, not this changed
+candidate.
+
+No independent acceptance, mandatory-audio result, integration or release is
+claimed. Matching PAV-04 integration remains a later coordinated step.

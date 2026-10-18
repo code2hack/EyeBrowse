@@ -228,11 +228,8 @@ class ProjectionInstrumentation : Instrumentation() {
                         report.put("paused", status())
                     }
                     if (operation == "local-stop") {
-                        runOnMainSync {
-                            val now = SystemClock.uptimeMillis()
-                            activity!!.dispatchKeyEvent(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_BACK, 0))
-                            buttons(activity!!.window.decorView).single { it.text == "Disconnect" }.performClick()
-                        }
+                        runOnMainSync { (activity as ReceiverActivity).disconnect() }
+                        report.put("localStopInvocation", "Direct Disconnect method; physical control binding not qualified")
                         Thread.sleep(1000); require(status().getString("state") == "STOPPED")
                         report.put("localStop", status())
                     }

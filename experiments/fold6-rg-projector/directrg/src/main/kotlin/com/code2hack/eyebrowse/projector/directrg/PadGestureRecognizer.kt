@@ -7,6 +7,7 @@ internal class PadGestureRecognizer(
     val doubleTapMs: Long,
     private val longPressMs: Long,
     private val single: ()->Unit,
+    private val back: ()->Unit,
     private val scroll: (Int)->Unit,
 ) {
     enum class Key { TAP, DOUBLE, FORWARD, BACKWARD }
@@ -17,6 +18,7 @@ internal class PadGestureRecognizer(
     private var pending: Long?=null
     private var lastEventMs=0L
     private var suppressTapsUntil=0L
+    private var doubleDedupUntil=0L
     val deadline get() = pending
     val hasWork get() = press!=null || pending!=null
 
@@ -44,9 +46,9 @@ internal class PadGestureRecognizer(
         press=null
         if (event.timeMs-old.downTimeMs>=longPressMs) { cancel();return }
         when(event.key) {
-            Key.TAP -> if(old.second) suppressDouble(event.timeMs)
+            Key.TAP -> if(old.second) emitDouble(event.timeMs)
                 else pending=event.timeMs+doubleTapMs
-            Key.DOUBLE -> suppressDouble(event.timeMs)
+            Key.DOUBLE -> emitDouble(event.timeMs)
             Key.FORWARD,Key.BACKWARD -> {
                 pending=null;suppressTapsUntil=event.timeMs+doubleTapMs
                 scroll(if(event.key==Key.FORWARD) 160 else -160)
@@ -59,12 +61,16 @@ internal class PadGestureRecognizer(
         pending=null // Remove before calling out, including when the callback changes the surface.
         single()
     }
-    private fun suppressDouble(timeMs: Long) {
+    private fun emitDouble(timeMs: Long) {
         pending=null;suppressTapsUntil=timeMs+doubleTapMs
+        if (timeMs >= doubleDedupUntil) {
+            doubleDedupUntil=timeMs+doubleTapMs
+            back()
+        }
     }
     fun cancel() {
         // Do not reinterpret the remaining tail of an invalidated physical sequence as a fresh tap
-        // after a pause, focus loss, menu opening or geometry change.
+        // after a pause, focus loss or geometry change.
         if(hasWork) suppressTapsUntil=maxOf(suppressTapsUntil,pending ?: (lastEventMs+doubleTapMs))
         press=null;pending=null
     }
