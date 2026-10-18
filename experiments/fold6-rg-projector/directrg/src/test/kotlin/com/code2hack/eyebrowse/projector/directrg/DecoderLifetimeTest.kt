@@ -3,6 +3,9 @@ package com.code2hack.eyebrowse.projector.directrg
 import android.media.MediaCodec
 import android.view.Surface
 import com.code2hack.eyebrowse.projector.protocol.Geometry
+import com.code2hack.eyebrowse.projector.protocol.Navigation
+import com.code2hack.eyebrowse.projector.protocol.Scroll
+import com.code2hack.eyebrowse.projector.protocol.Tap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -18,6 +21,20 @@ class DecoderLifetimeTest {
     private val size = Geometry(480, 640)
     private fun session() = ProjectionSession(temporary.root.resolve("session"), Surface(), { _, _ -> }, { _, _ -> })
     private fun decoder() = SurfaceDecoder(Surface(), size, {}, {}, {}, {})
+
+    @Test fun everyInputKindIsRejectedBeforeRenderedVideoAndAfterStop() {
+        val session = session()
+        val target = Tap(240, 320, size)
+        try {
+            assertFalse(session.tap(target))
+            assertFalse(session.scroll(Scroll(target, 160)))
+            assertFalse(session.navigate(Navigation.BACK))
+            session.close()
+            assertFalse(session.tap(target))
+            assertFalse(session.scroll(Scroll(target, -160)))
+            assertFalse(session.navigate(Navigation.HOME))
+        } finally { session.close() }
+    }
 
     @Test fun stopDuringConstructionReleasesUnpublishedDecoder() {
         val codec = MediaCodec().also { MediaCodec.created = it }

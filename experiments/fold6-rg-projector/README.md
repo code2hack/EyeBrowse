@@ -33,6 +33,17 @@ untouched. Owner decision106 retired repeated old-store backups and scans.
 See [direct-video.md](../../docs/experiments/fold6-rg-projector-av/direct-video.md)
 for the actual protocol, bootstrap, limitations and acceptance evidence.
 
+## PAV-03 input
+
+The RG receiver now draws its donor-derived local head cursor over the stream.
+Android Back opens the on-demand session menu; short pad taps operate the Phone
+and pad swipes use native wheel input at the visible target. Numeric pointer and
+scroll controls stay local. `directhost.InputFixtureActivity` supplies an owned
+native field, main scroll area and nested list; it uses the actual Phone IME.
+There is no RG keyboard or permanent browser bar. See
+[input-ime.md](../../docs/experiments/fold6-rg-projector-av/input-ime.md) for the
+interaction map, control payloads and the exact current evidence limitations.
+
 ## PAV66 owned fixture
 
 This separate Phone package provides an ordinary editable field and a 12-second

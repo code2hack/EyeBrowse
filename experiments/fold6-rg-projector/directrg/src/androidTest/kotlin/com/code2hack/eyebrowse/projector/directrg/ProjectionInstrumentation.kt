@@ -161,7 +161,7 @@ class ProjectionInstrumentation : Instrumentation() {
             } else if (operation == "unauthenticated") {
                 require(unauthenticated()); report.put("unauthenticatedRefused", true).put("mediaWelcomeReceived", false)
             } else {
-                require(operation in listOf("stream", "pause", "reconnect", "local-stop", "host-stop", "surface-diagnostic"))
+                require(operation in listOf("stream", "pause", "reconnect", "local-stop", "host-stop", "surface-diagnostic", "input-observation"))
                 val seconds = args.getString("seconds")?.toInt() ?: 10
                 require(seconds in 1..660)
                 val waitForFixture = args.getString("waitForGo") == "true"
@@ -192,6 +192,9 @@ class ProjectionInstrumentation : Instrumentation() {
                     readSurface(activity, id, report)
                 } else {
                     report.put("first", status())
+                    if (operation == "input-observation") runOnMainSync {
+                        report.put("inputBefore", (activity as ReceiverActivity).inputSnapshot())
+                    }
                     val start = SystemClock.elapsedRealtime()
                     val samples = JSONArray()
                     val tapAt = args.getString("tapAtSeconds")?.toInt() ?: -1
@@ -215,6 +218,9 @@ class ProjectionInstrumentation : Instrumentation() {
                         }
                         Thread.sleep(100)
                     }
+                    if (operation == "input-observation") runOnMainSync {
+                        report.put("inputAfter", (activity as ReceiverActivity).inputSnapshot())
+                    }
                     report.put("observedStreamingMs", SystemClock.elapsedRealtime() - start).put("last", status()).put("samples", samples)
                     if (operation == "pause") {
                         targetContext.startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -222,7 +228,11 @@ class ProjectionInstrumentation : Instrumentation() {
                         report.put("paused", status())
                     }
                     if (operation == "local-stop") {
-                        runOnMainSync { buttons(activity!!.window.decorView).single { it.text == "Stop" }.performClick() }
+                        runOnMainSync {
+                            val now = SystemClock.uptimeMillis()
+                            activity!!.dispatchKeyEvent(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_BACK, 0))
+                            buttons(activity!!.window.decorView).single { it.text == "Disconnect" }.performClick()
+                        }
                         Thread.sleep(1000); require(status().getString("state") == "STOPPED")
                         report.put("localStop", status())
                     }

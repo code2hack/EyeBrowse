@@ -27,7 +27,7 @@ class ProjectionSession(
 ) : Closeable {
     private val running = AtomicBoolean(true)
     private val timer = Executors.newScheduledThreadPool(2)
-    private val taps = ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, SynchronousQueue())
+    private val controls = ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, SynchronousQueue())
     private val outputLock = Any()
     private val lifecycleLock = Any()
     private val writing = AtomicLong()
@@ -43,6 +43,8 @@ class ProjectionSession(
     private var changes = 0L
     private var rendered = 0L
     private var touches = 0L
+    private var scrolls = 0L
+    private var navigations = 0L
     private var lastHash: ByteArray? = null
     private val renderDelayMs = ArrayDeque<Double>()
     private val roundTripMs = ArrayDeque<Double>()
@@ -54,6 +56,7 @@ class ProjectionSession(
         stats.put("elapsedMs", (seconds * 1000).toLong()).put("packets", packets).put("changingPackets", changes)
             .put("rendered", rendered).put("receivedFps", if (seconds > 0) packets / seconds else 0)
             .put("renderedFps", if (seconds > 0) rendered / seconds else 0).put("touchesSent", touches)
+            .put("scrollsSent", scrolls).put("navigationsSent", navigations)
             .put("packetReadToCallbackP95Ms", p95(renderDelayMs)).put("networkRoundTripP95Ms", p95(roundTripMs))
             .put("latencyScope", "RG System.nanoTime packet-read to render-callback receipt; network echo RTT; no optical/input end-to-end claim")
             .put("maxEncodedPacketBytes", Wire.MAX_PAYLOAD).put("maxInflightFrames", 8).put("queuedTaps", 0)
@@ -156,6 +159,7 @@ class ProjectionSession(
             decoder.also { decoder = null }
         }
         old?.close()
+        state("WAITING_FOR_VIDEO")
         geometry = size
         onGeometry(this, size)
         synchronized(this) { stats.put("width", size.width).put("height", size.height) }
@@ -173,14 +177,26 @@ class ProjectionSession(
         if (!installed) next.close()
     }
 
-    fun tap(tap: Tap): Boolean {
-        if (!running.get() || !readyForTouch || tap.geometry != geometry) return false
+    fun tap(tap: Tap): Boolean = input(Wire.TAP, tap.geometry, tap.bytes())
+    fun scroll(scroll: Scroll): Boolean = input(Wire.SCROLL, scroll.target.geometry, scroll.bytes())
+    fun navigate(action: Navigation): Boolean {
+        val size = geometry ?: return false
+        return input(Wire.NAVIGATE, size, Navigate(action, size).bytes())
+    }
+
+    private fun input(channel: Int, size: Geometry, payload: ByteArray): Boolean {
+        if (!running.get() || !readyForTouch || size != geometry) return false
         return try {
             // SynchronousQueue retains no command. Pause/loss closes the socket and rejects later work.
-            taps.execute {
+            controls.execute {
                 try {
-                    if (running.get() && readyForTouch && tap.geometry == geometry) {
-                        send(Frame(Wire.TAP, payload = tap.bytes())); synchronized(this) { touches++ }
+                    if (running.get() && readyForTouch && size == geometry) {
+                        send(Frame(channel, payload = payload))
+                        synchronized(this) { when (channel) {
+                            Wire.TAP -> touches++
+                            Wire.SCROLL -> scrolls++
+                            Wire.NAVIGATE -> navigations++
+                        } }
                     }
                 } catch (_: Exception) { closeWithState("DISCONNECTED") }
             }
@@ -194,7 +210,7 @@ class ProjectionSession(
             readyForTouch = false
             decoder.also { decoder = null }
         }
-        runCatching { socket?.close() }; timer.shutdownNow(); taps.shutdownNow()
+        runCatching { socket?.close() }; timer.shutdownNow(); controls.shutdownNow()
         runCatching { old?.close() }
         state(value)
     }
