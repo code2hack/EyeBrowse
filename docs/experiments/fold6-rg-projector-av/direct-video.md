@@ -25,6 +25,10 @@ state; current continuation also holds that end-state uncertainty.
 The read-only119 selector observation then returned one token-matched focus
 window, but exact SystemUI ownership did not qualify. No complete status or
 replacement caller was prepared; credential and product continuation remain held.
+The120 observer correction separates complete read data from authentication
+eligibility in host cases. Its one actual capture returned nonempty stderr and
+was rejected before native diagnostics were parsed. A separate response-diagnostic
+correction is prepared only; the current native end-state remains unknown.
 
 ## Scope, packages and privileges
 
@@ -354,3 +358,23 @@ weakened. There is no status/caller correction or new native end-state claim.
 The consumed five-minute002 record retains its original bytes and full node
 metadata. The Phone/RG source/APK capsule remains unchanged, and all required
 product evidence remains pending.
+
+Manager120 identified a host classification flaw: the119 observer demanded
+SystemUI ownership before parsing otherwise complete native state. The separate
+120 observer accepts complete unlocked or locked foreign-focus observations as
+read data while the unchanged authentication predicates reject them. Missing,
+duplicate, inconsistent or ambiguous native fields still fail. Its fixed
+diagnostics contain counts and booleans for each required ownership check;
+private titles, packages, UIDs and tokens remain unexported. Fifty-three affected
+synthetic host cases passed before the single new capture.
+
+That actual capture returned0 in2.9 seconds with nonempty stderr. The observer
+rejected it before parsing framed stdout, losing the requested diagnostics on
+that error path. Raw buffers were transient and are now unrecoverable. The
+stderr cause and actual native predicates remain unknown; no read was retried
+and no power, authentication or product operation ran. A separate prepared
+response correction retains safe stderr and framed-native diagnostics before
+rejecting any nonempty stderr. Eleven new host cases passed; earlier functions
+and their53-case proof remain AST-bound without a rerun. This prepared correction
+has not run on the device or replaced the live caller. The consumed records,
+native end-state uncertainty and all pending product criteria remain unchanged.

@@ -2,7 +2,7 @@
   "schema": 1,
   "issue": 67,
   "alias": "PAV-02",
-  "status": "INCOMPLETE_COMPONENT_CHECKPOINT_NATIVE119_SELECTED_WINDOW_OWNER_NOT_QUALIFIED_ENDSTATE_UNVERIFIED",
+  "status": "INCOMPLETE_COMPONENT_CHECKPOINT_NATIVE120_STDERR_UNCLASSIFIED_ENDSTATE_UNKNOWN",
   "baseline": "38cb5f7ec8d320ef9833a36840ccec3febdbc885",
   "donor": "03de921e2400147842ce6c56101b58d514dde77c",
   "target": "spike/fold6-rg-projector-av",
@@ -302,7 +302,7 @@
     "measuredMovingFPSAndLatency": "SMOKE003_FPS_OBSERVED_LEGACY_LATENCY_INVALID_RG3_METRIC_UNMEASURED",
     "audio": "DISABLED_INTERMEDIATE",
     "opticalHeadIMEAcousticAcceptance": "NOT_CLAIMED",
-    "blocker": "Consumed five-minute002 native prerequisite;119 complete targeted window read did not qualify exact SystemUI ownership, specific subpredicate unretained; complete native status and current end-state unverified",
+    "blocker": "Consumed five-minute002 auth hold; one120 read rejected before native parsing on nonempty stderr, actual stderr/native predicates and latest end-state unknown; separate host-only diagnostic correction unactivated",
     "componentNegativesRetained": [
       "Initial RG decor/insets NullPointerException",
       "Initial API32 PKCS12 context IOException",
@@ -440,6 +440,37 @@
       "liveCallerImmutable086AndThreeGuardsUnchanged": true,
       "originalConsumed002BytesAndFullNodeMetadataUnchanged": true,
       "actualPurposeRetryOrFallback": false
+    },
+    "nativeReadClassification120": {
+      "scope": "Separate read-data completeness and unchanged authentication eligibility; one new read-only capture",
+      "hostClassificationCasesPassed": 53,
+      "newPreparedResponseCasesPassed": 11,
+      "earlier53CaseProofPreservedAndFunctionsASTBoundWithoutRerun": true,
+      "hostCasesProductionImportsSDKDeviceNetworkCredentialInputCalls": 0,
+      "completeForeignFocusIsReadDataAndAuthIneligible": true,
+      "missingDuplicateOrAmbiguousDataStillFails": true,
+      "actualSelectedCaptureCalls": 1,
+      "actualCaptureSourceSHA256": "4cf747a168aaeb3924472e2e54d38877b192741acb2b0d7e11f2f48cda99ded3",
+      "actualSelectedCommandCoarseMs": 2900,
+      "actualSelectedCommandReturncode": 0,
+      "actualStderrPresent": true,
+      "actualStderrCause": "UNKNOWN_UNRECOVERABLE_RAW_CONTENT",
+      "actualStdoutFramesAndNativePredicatesParsed": false,
+      "actualFixedRejectionCode": "SELECTED_COMMAND_STDERR_NOT_EMPTY",
+      "completeCurrentNativeCutQualified": false,
+      "actualOwnershipSubpredicates": "UNKNOWN_UNRETAINED_AFTER_EARLY_STDERR_REJECTION",
+      "latestNativeEndState": "UNKNOWN",
+      "olderNativeProducerSettlement": "UNKNOWN",
+      "powerControlAuthCredentialInputXMLAppMediaVDStoreOrRouteCalls": 0,
+      "rawPayloadRetainedOrExported": false,
+      "preparedResponseObserverSHA256": "4a573f108f4a05150ac7e4043c56b72242cb4a484432cd8b7189568ffa97b585",
+      "preparedResponseDelta": "Retain fixed safe stderr and framed-native diagnostics before final rejection; all nonempty stderr still rejects qualification",
+      "preparedObserverActualCaptures": 0,
+      "preparedObserverInstalledOrActivated": false,
+      "liveCallerImmutable086AndThreeGuardsUnchanged": true,
+      "originalConsumed002BytesAndFullNodeMetadataUnchangedAt039": true,
+      "actualCaptureRetry": false,
+      "actual037CauseEstablished": false
     }
   },
   "teardown": {
@@ -1176,6 +1207,66 @@
       "record": "focused-native119-safe-boundary-proof.json",
       "bytes": 3217,
       "sha256": "d088de0a735b8de2b77ba6b5ce81afa310af058d43862c55253fa3510f75463d"
+    },
+    {
+      "record": "complete-native120-observer.py",
+      "bytes": 15471,
+      "sha256": "4cf747a168aaeb3924472e2e54d38877b192741acb2b0d7e11f2f48cda99ded3"
+    },
+    {
+      "record": "complete-native120-host-checks.py",
+      "bytes": 9993,
+      "sha256": "775a5ebf39b88164d5df4e0b61af4f237e9603832bb6e53ff9063471f01cd89e"
+    },
+    {
+      "record": "complete-native120-host-proof.json",
+      "bytes": 5426,
+      "sha256": "9d2c4105555d41f76181795ad504d3fcbb583c741a25783fcaf29f1b982b1e9c"
+    },
+    {
+      "record": "complete-native120-observer.diff",
+      "bytes": 26679,
+      "sha256": "cc9e659f0670dac52e0f28ebe96cbedda05fec1abd2158c83ce3123f85618a85"
+    },
+    {
+      "record": "complete-native120-capture-intent.json",
+      "bytes": 344,
+      "sha256": "a87473b5848f4ab34404002ff00dc4e627fa205e897c7d4318cccfdccc64689e"
+    },
+    {
+      "record": "complete-native120-capture-result.json",
+      "bytes": 850,
+      "sha256": "a5e7edd193e9849ed337b317549f612cdc78f4cfc9b26576b303fea0924b0833"
+    },
+    {
+      "record": "complete-native120-safe-boundary-proof.json",
+      "bytes": 2199,
+      "sha256": "ed351d02e073c57a93ccffc06337a1f61fa3ce6b962ab779ed6b06156cbb3167"
+    },
+    {
+      "record": "complete-native120-observer-prepared.py",
+      "bytes": 16944,
+      "sha256": "4a573f108f4a05150ac7e4043c56b72242cb4a484432cd8b7189568ffa97b585"
+    },
+    {
+      "record": "complete-native120-prepared-host-checks.py",
+      "bytes": 6307,
+      "sha256": "308ce382d60fcef64624d9a2ad65e5f67b7af6a04066aa5ee05681721ce937b3"
+    },
+    {
+      "record": "complete-native120-prepared-host-proof.json",
+      "bytes": 1697,
+      "sha256": "1ac410016ddbd876706de02e1216f5622005010216fb54dba77f2aceec165658"
+    },
+    {
+      "record": "complete-native120-prepared-observer.diff",
+      "bytes": 4787,
+      "sha256": "baa3119f6df318f4b87ce93e8f7e614123ad8428242b1ff4f3e4ea1970d7463a"
+    },
+    {
+      "record": "complete-native120-prepared-package.json",
+      "bytes": 1719,
+      "sha256": "54ca6e6f56297d8769c64257c968ff85909a878c880ff4269ccc067788e9c183"
     }
   ],
   "privacy": "Only fixed-schema outcomes, counts and opaque hashes. Original paths, browser/account payloads and TLS private material remain outside Git.",
