@@ -1,5 +1,6 @@
 package com.code2hack.eyebrowse.projector.directrg
 
+import android.content.Context
 import android.util.AtomicFile
 import android.util.Log
 import android.view.Surface
@@ -24,6 +25,7 @@ class ProjectionSession(
     private val surface: Surface,
     private val onState: (ProjectionSession, String) -> Unit,
     private val onGeometry: (ProjectionSession, Geometry) -> Unit,
+    private val context: Context? = null,
 ) : Closeable {
     private val running = AtomicBoolean(true)
     private val timer = Executors.newScheduledThreadPool(2)
@@ -34,11 +36,19 @@ class ProjectionSession(
     @Volatile private var socket: SSLSocket? = null
     @Volatile private var output: DataOutputStream? = null
     @Volatile private var decoder: SurfaceDecoder? = null
+    @Volatile private var audio: AudioDecoder? = null
+    private val playbackClock = PlaybackClock()
+    private var audioCodec = 0
+    private val avSamples = ArrayDeque<JSONObject>()
+    private var lastAvSampleNs = 0L
+    private var droppedVideo = 0L
+    private var mediaStartedNs = 0L
+    private var stoppedAudio: JSONObject? = null
     @Volatile var geometry: Geometry? = null
         private set
     @Volatile private var readyForTouch = false
     private val started = System.nanoTime()
-    private val stats = JSONObject().put("state", "CONNECTING").put("audio", "disabled-intermediate")
+    private val stats = JSONObject().put("state", "CONNECTING").put("audio", "required-waiting")
     private var packets = 0L
     private var changes = 0L
     private var rendered = 0L
@@ -51,12 +61,15 @@ class ProjectionSession(
         if (state != null) stats.put("state", state)
         val seconds = (System.nanoTime() - started) / 1e9
         fun p95(values: ArrayDeque<Double>): Double = values.sorted().let { if (it.isEmpty()) 0.0 else it[((it.size - 1) * .95).toInt()] }
-        stats.put("elapsedMs", (seconds * 1000).toLong()).put("packets", packets).put("changingPackets", changes)
+        stats.put("startedMonoNs", started).put("elapsedMs", (seconds * 1000).toLong()).put("packets", packets).put("changingPackets", changes)
             .put("rendered", rendered).put("receivedFps", if (seconds > 0) packets / seconds else 0)
             .put("renderedFps", if (seconds > 0) rendered / seconds else 0).put("touchesSent", touches)
             .put("packetReadToCallbackP95Ms", p95(renderDelayMs)).put("networkRoundTripP95Ms", p95(roundTripMs))
             .put("latencyScope", "RG System.nanoTime packet-read to render-callback receipt; network echo RTT; no optical/input end-to-end claim")
             .put("maxEncodedPacketBytes", Wire.MAX_PAYLOAD).put("maxInflightFrames", 8).put("queuedTaps", 0)
+        stats.put("audio", audio?.snapshot() ?: stoppedAudio ?: "required-waiting")
+            .put("videoLateDrops", droppedVideo).put("avSample", avSamples.lastOrNull())
+            .put("avScope", "Phone source PTS compared using RG AudioTimestamp clock and RG render-callback receipt; not optical/acoustic offset")
         val writeBegin = System.nanoTime()
         val file = AtomicFile(File(directory.parentFile, "status.json"))
         val out = file.startWrite()
@@ -68,7 +81,10 @@ class ProjectionSession(
         }
     }
 
-    private fun state(value: String) { record(value); onState(this, value) }
+    @Synchronized private fun state(value: String) {
+        if (!running.get() && value in listOf("CONNECTING", "WAITING_FOR_VIDEO", "WAITING_FOR_AUDIO", "WAITING_FOR_AUDIO_CLOCK", "STREAMING")) return
+        record(value); onState(this, value)
+    }
 
     @Synchronized private fun failure(error: Exception) {
         Log.e("Pav67Projection", "Projection failed", error)
@@ -96,13 +112,27 @@ class ProjectionSession(
                 Wire.writeRequest(output!!, Wire.STREAM)
                 val input = DataInputStream(peer.inputStream)
                 Wire.readWelcome(input)
+                mediaStartedNs = System.nanoTime()
                 synchronized(this) {
                     stats.put("tls", peer.session.protocol).put("peerAddress", peer.inetAddress.hostAddress)
                         .put("localAddress", peer.localAddress.hostAddress).put("scrcpy", Wire.SCRCPY_VERSION)
                 }
                 state("WAITING_FOR_VIDEO")
                 timer.scheduleWithFixedDelay({
-                    try { send(Frame(Wire.PING, System.nanoTime())); record() }
+                    try {
+                        send(Frame(Wire.PING, System.nanoTime()))
+                        val current = audio
+                        if ((current == null && System.nanoTime() - mediaStartedNs > 5_000_000_000L) || current?.stalled() == true) {
+                            closeWithState("AUDIO_STALLED")
+                        } else if (current != null) {
+                            val audioStatus = current.snapshot()
+                            if (current.clockStalled()) {
+                                closeWithState("AUDIO_CLOCK_UNAVAILABLE")
+                            } else if (readyForTouch && audioStatus.optLong("decodedBuffers", 0) > 0 && audioStatus.optBoolean("timestampValid")) {
+                                state("STREAMING")
+                            } else record()
+                        } else record()
+                    }
                     catch (_: Exception) { closeWithState("DISCONNECTED") }
                 }, 0, 1, TimeUnit.SECONDS)
                 timer.scheduleWithFixedDelay({
@@ -133,6 +163,25 @@ class ProjectionSession(
                             }
                             (decoder ?: error("Missing geometry")).enqueue(packet, System.nanoTime())
                         }
+                        Wire.AUDIO_CODEC -> {
+                            require(audioCodec == 0) { "Repeated audio codec" }
+                            audioCodec = DataInputStream(frame.payload.inputStream()).readInt()
+                            check(audioCodec == Wire.OPUS) { "Required audio capture unavailable: $audioCodec" }
+                        }
+                        Wire.AUDIO -> {
+                            require(audioCodec == Wire.OPUS && frame.stamp >= 0)
+                            val packet = ScrcpyRecord.Packet(frame.stamp, frame.payload)
+                            if (packet.config) {
+                                check(audio == null) { "Repeated audio config" }
+                                val next = AudioDecoder(context ?: error("Audio context unavailable"), packet.data, playbackClock) { error ->
+                                    failure(error); closeWithState("AUDIO_FAILED")
+                                }
+                                val installed = synchronized(lifecycleLock) {
+                                    if (running.get()) { audio = next; true } else false
+                                }
+                                if (!installed) next.close()
+                            } else (audio ?: error("Missing audio configuration")).enqueue(packet)
+                        }
                         Wire.PONG -> synchronized(this) {
                             val delay = (System.nanoTime() - frame.stamp) / 1e6
                             require(delay in 0.0..5000.0)
@@ -146,7 +195,7 @@ class ProjectionSession(
                     }
                 }
                 closeWithState("DISCONNECTED")
-            } catch (error: Exception) { failure(error); closeWithState("CONNECTION_FAILED") }
+            } catch (error: Exception) { failure(error); closeWithState("CONNECTION_OR_REQUIRED_AUDIO_FAILED") }
         }, "pav67-receiver").start()
     }
 
@@ -164,9 +213,20 @@ class ProjectionSession(
                 rendered++; renderDelayMs.addLast(delay)
                 if (renderDelayMs.size > 256) renderDelayMs.removeFirst()
             }
-            if (!readyForTouch && running.get()) { readyForTouch = true; state("STREAMING") }
+            if (!readyForTouch && running.get()) { readyForTouch = true; state(if (audio != null) "WAITING_FOR_AUDIO_CLOCK" else "WAITING_FOR_AUDIO") }
         }, { name -> synchronized(this) { stats.put("decoder", name) } },
-            { format -> synchronized(this) { stats.put("decoderFormat", format) } }, { error -> failure(error); closeWithState("DECODE_FAILED") })
+            { format -> synchronized(this) { stats.put("decoderFormat", format) } }, { error -> failure(error); closeWithState("DECODE_FAILED") },
+            { pts -> playbackClock.videoTimeNs(pts, System.nanoTime()) },
+            { pts, now -> synchronized(this) {
+                if (now - lastAvSampleNs >= 1_000_000_000L) {
+                    playbackClock.ptsAt(now)?.let { audioPts ->
+                        avSamples.addLast(JSONObject().put("elapsedMs", (now - started) / 1_000_000)
+                            .put("videoPtsUs", pts).put("audioPtsUs", audioPts).put("videoMinusAudioMs", (pts - audioPts) / 1000.0))
+                        if (avSamples.size > 2) avSamples.removeFirst()
+                        lastAvSampleNs = now
+                    }
+                }
+            } }, { synchronized(this) { droppedVideo++ } })
         val installed = synchronized(lifecycleLock) {
             if (running.get()) { decoder = next; true } else false
         }
@@ -194,7 +254,10 @@ class ProjectionSession(
             readyForTouch = false
             decoder.also { decoder = null }
         }
+        val oldAudio = synchronized(lifecycleLock) { audio.also { audio = null } }
         runCatching { socket?.close() }; timer.shutdownNow(); taps.shutdownNow()
+        runCatching { oldAudio?.close() }
+        stoppedAudio = oldAudio?.snapshot()
         runCatching { old?.close() }
         state(value)
     }

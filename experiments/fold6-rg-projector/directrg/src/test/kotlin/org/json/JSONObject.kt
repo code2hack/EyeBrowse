@@ -8,6 +8,7 @@ class JSONObject {
     fun put(key: String, value: Long) = put(key, value as Any)
     fun put(key: String, value: Double) = put(key, value as Any)
     fun put(key: String, value: Boolean) = put(key, value as Any)
+    fun optLong(key: String, fallback: Long) = (values[key] as? Number)?.toLong() ?: fallback
     override fun toString() = values.toString()
 }
 class JSONArray { fun put(value: Any?) = this }

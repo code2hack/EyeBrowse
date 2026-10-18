@@ -86,13 +86,13 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
                     panel.visibility = if (state == "STREAMING") View.GONE else View.VISIBLE
                     status.text = when (state) {
                         "STREAMING" -> getString(R.string.connected)
-                        "CONNECTING", "WAITING_FOR_VIDEO" -> getString(R.string.connecting)
-                        else -> getString(R.string.disconnected)
+                        "CONNECTING", "WAITING_FOR_VIDEO", "WAITING_FOR_AUDIO", "WAITING_FOR_AUDIO_CLOCK" -> getString(R.string.connecting)
+                        else -> "Projection stopped: $state"
                     }
-                    if (state !in listOf("STREAMING", "CONNECTING", "WAITING_FOR_VIDEO")) window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    if (state !in listOf("STREAMING", "CONNECTING", "WAITING_FOR_VIDEO", "WAITING_FOR_AUDIO", "WAITING_FOR_AUDIO_CLOCK")) window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 }
             } },
-            { source, geometry -> runOnUiThread { if (session === source) { currentGeometry = geometry; resize() } } })
+            { source, geometry -> runOnUiThread { if (session === source) { currentGeometry = geometry; resize() } } }, applicationContext)
         session = next; next.start()
     }
 
