@@ -2,7 +2,7 @@
   "schema": 1,
   "issue": 67,
   "alias": "PAV-02",
-  "status": "INCOMPLETE_COMPONENT_CHECKPOINT_PHONE_INSTALL_UNKNOWN_DEBUG_TUNNEL_ABSENT",
+  "status": "INCOMPLETE_COMPONENT_CHECKPOINT_REPLACEMENT_PRIMARY_REGISTRATION_FAILED",
   "baseline": "38cb5f7ec8d320ef9833a36840ccec3febdbc885",
   "donor": "03de921e2400147842ce6c56101b58d514dde77c",
   "target": "spike/fold6-rg-projector-av",
@@ -288,7 +288,7 @@
     "measuredMovingFPSAndLatency": "SMOKE003_FPS_OBSERVED_LEGACY_LATENCY_INVALID_RG3_METRIC_UNMEASURED",
     "audio": "DISABLED_INTERMEDIATE",
     "opticalHeadIMEAcousticAcceptance": "NOT_CLAIMED",
-    "blocker": "After streamed install exit1, read-only reconciliation found pinned debug SSH PID/listener absent; package outcome unknown, no replay",
+    "blocker": "Replacement tunnel host binding qualified; one authorized selected host-connect returned failure text, physical/package reconciliation not reached; install UNKNOWN",
     "componentNegativesRetained": [
       "Initial RG decor/insets NullPointerException",
       "Initial API32 PKCS12 context IOException",
@@ -296,7 +296,9 @@
       "Smoke003 following stream zero frames after stock cleanup unlinked shared server JAR",
       "Smoke003 legacy render-delay value invalid",
       "Read-only native status timeout25s, one reconciliation physical-guard unavailable60s",
-      "Host r2 streamed install returned1 without Android failure code; package reconciliation rejected before ADB because pinned SSH PID absent"
+      "Host r2 streamed install returned1 without Android failure code; package reconciliation rejected before ADB because pinned SSH PID absent",
+      "Replacement112 selected registration absent; one host-connect return0 but explicit failed-to-connect text; no retry",
+      "Private event112 intent lacked explicit file/directory fsync before connect; gap retained, helper corrected with host-only cases"
     ],
     "lastKnownInstalledPackageCountBeforeUncertainInstall": 8
   },
@@ -696,6 +698,36 @@
       "record": "hostr2-install-unknown-tunnel-gate109.json",
       "sha256": "b751296bafacac1c1874c6f237fb040b22545fdba18bd690163b83eb5ae486f2",
       "bytes": 905
+    },
+    {
+      "record": "event112-route-package-intent.json",
+      "sha256": "736227864a638a89d23b2ad609d14d9ce5679611ad07883c1b1f8082292ada81",
+      "bytes": 202
+    },
+    {
+      "record": "event112-route-package-result.json",
+      "sha256": "0b180790ae0a7760b1386b1d7d84dbcda77ce887e2d8d55d40b3624944cff2b8",
+      "bytes": 511
+    },
+    {
+      "record": "event112-new-host-connect-intent.json",
+      "sha256": "9279e5dccadba93c82d21b1db2e080f41650efc0a76174a7cb59a3eadfb47ebd",
+      "bytes": 250
+    },
+    {
+      "record": "event112-new-host-connect-result.json",
+      "sha256": "9165831ca79696c44027d864c8af442798ec2209bd7b8d0da1e8c3ecf4663fb7",
+      "bytes": 258
+    },
+    {
+      "record": "five-minute001-runner-pin112.json",
+      "sha256": "ed7e4b59bbe6f707f072e6f650dd09ce5984062227fb925d191c8056f9987991",
+      "bytes": 461
+    },
+    {
+      "record": "record-durability112-host-proof.json",
+      "sha256": "e0c402e066b40f68781ae8044b53f5d40f260b75159e92407d633297f0d222a0",
+      "bytes": 820
     }
   ],
   "privacy": "Only fixed-schema outcomes, counts and opaque hashes. Original paths, browser/account payloads and TLS private material remain outside Git.",
@@ -765,6 +797,19 @@
       "installationOutcome": "UNKNOWN_NO_REPLAY",
       "currentCapability": "Exact debug tunnel PID and selected listener absent; Manager custody reconciliation required",
       "workerTunnelSignalsOrSharedResets": 0
+    },
+    "event112": {
+      "exactReplacementHostBindingAndActorSDKKernelClientServerGuards": "PASS",
+      "initialSelectedRegistration": "ABSENT",
+      "newHostConnectCalls": 1,
+      "clientReturncode": 0,
+      "clientText": "FAILED_TO_CONNECT",
+      "physicalPackageOrCallerWorkReached": false,
+      "additionalRegistrationProbeOrReplay": false,
+      "bootstrapTcpipDisconnectOrSharedResetCalls": 0,
+      "installationOutcome": "UNKNOWN_UNCHANGED",
+      "currentCapability": "EXISTING_PRIMARY_REGISTRATION_NOT_QUALIFIED",
+      "backup106StillActive": true
     }
   },
   "componentResults": {
@@ -987,5 +1032,13 @@
     "old002RemainsFailedConsumedAndUnchanged": true,
     "allOtherHoldsRetained": true,
     "newCallerAfterSmoke003": "NOT_EXECUTED"
+  },
+  "privateRecordDurabilityCorrection": {
+    "initial112IntentExplicitFsyncBeforeConnect": false,
+    "priorIntentRetainedWithoutUpgrade": true,
+    "correctedHelper": "file flush/fsync then parent directory fsync before return",
+    "hostCasesPassed": 3,
+    "hostCaseDeviceNetworkCredentialOrLoaderCalls": 0,
+    "qualifiedCallerAndGuardsUnchanged": true
   }
 }

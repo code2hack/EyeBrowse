@@ -12,9 +12,11 @@ keeps a pinned master and gives every authenticated session a new verified
 copy. Three focused regression tests, the Phone build and lint pass. This new
 Phone package installation is **unknown**: a failed streamed install returned
 no Android failure code, and its one read-only reconciliation stopped before
-ADB because the pinned debug tunnel PID was absent. No install was replayed or
-new credential caller admitted. Phone work is held at this concrete binding
-failure; source/build work has continued independently.
+ADB because the old debug tunnel PID was absent. A qualified replacement
+subsequently matched its host process/listener, but the one authorized selected
+registration failed. No install/connect was replayed or new credential caller
+admitted. Phone work is held at that concrete transport capability boundary;
+source/build work has continued independently.
 
 ## Scope, packages and privileges
 
@@ -227,4 +229,18 @@ reconciliation belongs to the Manager under existing custody. The last secure
 cut is historical, not a continuously verified state. No shared service was
 reset or signaled by this Worker. Both-device reservation and old Worker64 tab/hook/resource-return
 obligations remain; there is no old-state overlay or assumed resource return.
-Independent exact-candidate review and Manager acceptance remain pending.
+
+The Manager's replacement tunnel/pin handback changed only operational record
+references and source digests; credential/admission/end-lock logic remained
+unchanged. Fresh actor/SDK/kernel/client/server and replacement tunnel checks
+passed. The exact selected transport was absent. One newly authorized host-connect
+returned0 but printed **failed to connect**. That is a failure, not authentication.
+Execution stopped before physical/package reconciliation or credential work,
+with no further registration query or replay. Host r2 remains UNKNOWN. An
+exclusive private intent had been closed before the connect, but the helper
+lacked explicit fsync. This durability gap is retained without retroactive PASS.
+The corrected private helper syncs the file and parent directory before return;
+three host-only cases verify ordering, existing-record preservation and abort
+on sync failure. No production device, network or credential calls ran in those
+cases. All failed112 records remain intact. Independent exact-candidate review
+and Manager acceptance remain pending.
