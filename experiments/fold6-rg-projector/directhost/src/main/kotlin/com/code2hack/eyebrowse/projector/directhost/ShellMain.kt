@@ -208,7 +208,7 @@ private class Session(
         val command = listOf("/system/bin/app_process", "/", "com.genymobile.scrcpy.Server", Wire.SCRCPY_VERSION,
             "scid=%08x".format(scid), "log_level=debug", "tunnel_forward=false", "send_dummy_byte=false",
             "send_device_meta=false", "send_codec_meta=true", "send_frame_meta=true", "video=true", "audio=true", "audio_source=output", "audio_codec=opus", "audio_bit_rate=128000",
-            "control=true", "video_codec=h264", "video_bit_rate=2000000", "max_fps=30", "new_display=480x640/240",
+            "control=true", "video_codec=h264", "video_bit_rate=2000000", "max_fps=30", "new_display=480x640/160",
             "display_ime_policy=local", "vd_destroy_content=true", "clipboard_autosync=false", "power_on=false", "cleanup=true")
         // Stock cleanup unlinks its own CLASSPATH JAR. Keep the pinned master for
         // reconnects and let each stock session consume its own verified copy.
@@ -266,6 +266,16 @@ private class Session(
                             val tap = Tap.from(frame.payload)
                             require(tap.geometry == geometry.get())
                             control!!.outputStream.write(Scrcpy.tap(tap)); touches.incrementAndGet()
+                        }
+                        Wire.SCROLL -> {
+                            val scroll = Scroll.from(frame.payload)
+                            require(scroll.target.geometry == geometry.get())
+                            control!!.outputStream.write(Scrcpy.scroll(scroll))
+                        }
+                        Wire.NAVIGATE -> {
+                            val navigate = Navigate.from(frame.payload)
+                            require(navigate.geometry == geometry.get())
+                            control!!.outputStream.write(Scrcpy.navigate(navigate))
                         }
                         Wire.END -> break
                         else -> error("Unsupported control")

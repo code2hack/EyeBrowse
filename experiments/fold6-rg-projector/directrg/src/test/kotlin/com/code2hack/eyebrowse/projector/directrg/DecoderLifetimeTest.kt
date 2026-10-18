@@ -3,6 +3,9 @@ package com.code2hack.eyebrowse.projector.directrg
 import android.media.MediaCodec
 import android.view.Surface
 import com.code2hack.eyebrowse.projector.protocol.Geometry
+import com.code2hack.eyebrowse.projector.protocol.Navigation
+import com.code2hack.eyebrowse.projector.protocol.Scroll
+import com.code2hack.eyebrowse.projector.protocol.Tap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -18,6 +21,61 @@ class DecoderLifetimeTest {
     private val size = Geometry(480, 640)
     private fun session() = ProjectionSession(temporary.root.resolve("session"), Surface(), { _, _ -> }, { _, _ -> })
     private fun decoder() = SurfaceDecoder(Surface(), size, {}, {}, {}, {})
+
+    @Test fun nativeUiFrameWithObserved335msLeadWaitsForTheAudioClock() {
+        val codec = MediaCodec().also { MediaCodec.created = it }
+        val delivered = CountDownLatch(1)
+        val once = AtomicBoolean()
+        val failure = AtomicReference<Exception>()
+        codec.output = { info ->
+            if (once.compareAndSet(false, true)) { info.presentationTimeUs = 1_000_000; 0 } else -1
+        }
+        codec.releasedOutput = { if (it) delivered.countDown() }
+        val decoder = SurfaceDecoder(Surface(), size, {}, {}, {}, { failure.set(it) },
+            { System.nanoTime() + 335_000_000L })
+        try {
+            val rendered = delivered.await(1, TimeUnit.SECONDS)
+            assertNull("A native UI update must fit the bounded future-frame wait", failure.get())
+            assertTrue(rendered)
+        } finally { decoder.close() }
+    }
+
+    @Test fun excessiveFutureFrameStillFailsAndStopCancelsAnAdmittedWait() {
+        for (aheadMs in listOf(335L, 600L)) {
+            val codec = MediaCodec().also { MediaCodec.created = it }
+            val entered = CountDownLatch(1)
+            val failed = CountDownLatch(1)
+            val once = AtomicBoolean()
+            val rendered = AtomicBoolean()
+            codec.output = { info ->
+                if (once.compareAndSet(false, true)) { info.presentationTimeUs = 1_000_000; 0 } else -1
+            }
+            codec.releasedOutput = { if (it) rendered.set(true) }
+            val decoder = SurfaceDecoder(Surface(), size, {}, {}, {}, { failed.countDown() },
+                { entered.countDown(); System.nanoTime() + aheadMs * 1_000_000 })
+            try {
+                assertTrue(entered.await(1, TimeUnit.SECONDS))
+                if (aheadMs > 500) assertTrue(failed.await(1, TimeUnit.SECONDS))
+                decoder.close()
+                assertFalse("Stop must not present a waiting frame", rendered.get())
+                assertEquals(1, codec.releases.get())
+            } finally { decoder.close() }
+        }
+    }
+
+    @Test fun everyInputKindIsRejectedBeforeRenderedVideoAndAfterStop() {
+        val session = session()
+        val target = Tap(240, 320, size)
+        try {
+            assertFalse(session.tap(target))
+            assertFalse(session.scroll(Scroll(target, 160)))
+            assertFalse(session.navigate(Navigation.BACK))
+            session.close()
+            assertFalse(session.tap(target))
+            assertFalse(session.scroll(Scroll(target, -160)))
+            assertFalse(session.navigate(Navigation.HOME))
+        } finally { session.close() }
+    }
 
     @Test fun stopDuringConstructionReleasesUnpublishedDecoder() {
         val codec = MediaCodec().also { MediaCodec.created = it }

@@ -1,0 +1,707 @@
+# PAV-03: local RG input and the projected Phone IME
+
+Worker: Worker-#68
+
+Issue [#68](https://github.com/code2hack/EyeBrowse/issues/68), experimental branch
+`work/issue-68-projector-input-ime`, accepted PAV-02 base
+`077124ed21ee97f51a8c2fe15e5b165e7100f045`. Owner191 resumed work with the
+[no-panel / double-tap-to-Phone-Back decision](https://github.com/code2hack/EyeBrowse/issues/68#issuecomment-6253136662).
+The current correction removes the RG-local session panel and its invocation.
+Disposition196/198 adds two bounded numeric rows using the preserved settings
+model on the existing disconnected Connect view. It selects ordinary Phone/RG system navigation as
+the routes to assess next, without claiming that those routes are available.
+The W68-02 device window207 installed the matching input pair and obtained the
+physical results below on852e1de. That trial exposed reversed head-pointer
+directions on both axes. A two-sign correction also failed physically. The
+current correction changes the relative orientation to the current head frame;
+Owner subsequently confirmed both corrected directions on RG8911c4a3… .
+Historical
+app effects, Owner confirmations and IME failures retain their exact source/APK
+bindings. Owner subsequently confirmed a native tap and reported launching apps through
+the Phone’s bottom-left control. No known RG system exit was available. The
+latest explicit Owner direction selects **three taps for local Disconnect**,
+retaining two taps for Phone Back and no RG panel; earlier four-tap/double-tap
+exit proposals are superseded. On the contact-corrected source4697521, the Owner
+confirmed one native tap followed by physical three-tap Disconnect. Independent
+review remains outstanding. Revision6 merges the accepted audio target into this
+branch for the current-target compatibility checks below; earlier physical
+results keep their original source bindings.
+
+## Implementation and provenance
+
+Only `experiments/fold6-rg-projector` changes. HeadPointerModel, HeadOrientation,
+SensorHeadPoseSource, PointerOverlay, EdgeScrollMotion, PadGestureRecognizer and
+numeric settings originate at donor
+`v0.0.4@03de921e2400147842ce6c56101b58d514dde77c`. The experimental copies use
+their own package/preferences; the recenter method, browser mode callback, unused pointer telemetry/test seams and
+legacy preference migration are removed. No browser, WebView, DOM, proxy, tabs,
+bookmarks or local RG keyboard is linked or started.
+
+One local overlay follows rotation-vector samples, smoothing on RG display
+frames independently of decoded video. Sensor silence expires at 250ms; pause
+unregisters the sensor and stops drawing callbacks. The first fresh sample after
+restart establishes a neutral head pose. Pointer gain is 0.1–6.0×, default 2.0×,
+with 0.1 steps. A 24-rendered-pixel strip beyond either video edge extends logical
+vertical travel without changing visible-span gain. Outside-video taps have no
+remote target. Inward motion reverses from the saturated strip immediately.
+
+The Surface preserves the current stream aspect ratio. Input maps against its
+current fitted rectangle and current encoded dimensions; physical Fold6 panel
+size is not an admission rule. Stream pixels already carry Phone rotation;
+RG display rotation separately remaps head axes. Decoder/geometry replacement
+withdraws input until a frame from the replacement decoder is rendered.
+
+## Current interaction map and remaining physical checks
+
+| RG action | Projector result |
+| --- | --- |
+| Aim with head | One RG-local cursor over the video |
+| Ordinary short pad tap | One touch DOWN/UP at the current visible cursor target |
+| Two taps / OEM double | Android Back to the projected Phone app after one bounded continuation interval; constituent short taps and duplicate OEM reporting suppressed |
+| Three quick pad taps | Local Disconnect through the existing lifecycle method; Owner confirmed on4697521/RG33297e0b…, with one prior native tap and no constituent touch or Phone Back in session counters |
+| Pad forward/backward swipe | Native wheel scroll at the current visible target, ±160 nominal pixels |
+| Aim into upper/lower24px strip | Repeating native wheel scroll at the same horizontal aim and visible video centerline |
+| Android Back while streaming | The same Phone Back path; it does not open an RG panel |
+| Android Back while disconnected | Ordinary local Activity exit |
+| Phone Home/app-return | Owner reports the projected bottom-left app control can launch apps. Exact Home destination and browser-return behavior remain unqualified; explicit Home transport retained |
+| Local Disconnect | Latest Owner instruction selects three quick pad taps; no known RG system exit was reported. Existing onPause disconnect remains |
+| Numeric pointer/scroll settings | Two bounded numeric −/+ rows on the existing disconnected Connect view; local head/short-tap activation shares the Connect button path. Owner confirmed both rows on852e1de and restored2.0×/240 |
+
+No session panel, panel-opening gesture, permanent browser toolbar, recenter,
+mode toggle or local RG keyboard is present. The ordinary pre-existing
+connection/status screen and its Connect action remain, with only the two numeric
+settings rows added. Controls display saved values, disable at the existing bounds,
+and preserve the prior value/show an error when saving fails. A touchscreen long press
+does not open a panel. This is not a replacement startup or app-switcher design.
+
+The physical pad mapping reuses donor `ROKID,PSOC-TP-R` keyboard-source Enter,
+OEM291 and D-pad/OEM292/293. The contact correction also handles this pad's
+NOTIFICATION contact markers and suppresses its subsequent firmware summaries.
+The latest selected binding extends only the existing
+bounded recognizer: one tap is a remote touch, two taps are Phone Back, and three
+are local Disconnect. A tap pair waits one Android `getDoubleTapTimeout()`
+interval after its final UP for a possible third tap; a third DOWN within that
+interval defers completion until its valid short UP. The three-tap callback
+clears the sequence and calls the existing `disconnect()` method once. It sends
+neither a constituent remote tap nor Back. Swipe, cancel, held/repeated/stale key,
+focus loss and pause discard unfinished work. Raw-pair plus OEM-summary,
+OEM-only and raw-single followed by OEM-pair forms are covered in host tests;
+the actual native contact path is confirmed by the later physical trial below.
+
+An ordinary Android Back from a non-pad source sends one Phone Back and cannot
+count toward three pad taps. A Back report from the identified native pad may
+represent the same pair as OEM291 and uses that path. The callback cancels
+pending tap/touch/edge work and calls the existing authenticated
+`navigate(BACK)` sender. Desktop key injection is software evidence. Direct
+Touchscreen tap/drag support remains diagnostic when driven synthetically.
+
+Disposition196/198 originally chose existing Phone/RG navigation for assessment.
+In the later VD75 test, the Owner confirmed native tap0→1 and reported using the
+Phone’s bottom-left app control to launch apps, without identifying an exact
+Home destination or proving the earlier browser-return case. The Owner reported
+“no known RG exit other than double-tap.” The latest explicit instruction then
+selected three taps for local Disconnect, superseding intervening double/four-
+tap exit proposals; Manager221 records that count change. No earlier proposed
+exit gesture was installed or committed. A Phone Stop, ADB or synthetic pause
+still does not establish physical RG Disconnect. There is no replacement menu,
+startup/app chooser or general gesture framework.
+
+Scroll speed is 10–1,200 **nominal** px/s, default240, step10. Wheel input uses
+64 nominal pixels per wheel detent. Android applications apply their own native
+scroll factor, so this is not a promise of exact content pixels per second.
+Pad swipes aim at the actual main/nested widget; strips aim at the visible centerline,
+not hidden padding. No JavaScript chooses a scroll target or assigns scrollY.
+
+Input adds control channels8/9 to the authenticated protocol without changing
+channels0–7. The original input checkpoints used matching Wire1 binaries.
+The revision6 compatibility merge now retains accepted PAV-04 Wire2 mandatory
+audio and its true welcome flag; Wire1 peers remain incompatible. Scroll8 carries five int32 values:
+x/y/current video width/current video height/nominal pixels (nonzero, ±1,200
+maximum). Navigate9 carries current width/height/keycode, whitelisted to Back4
+and Home3. The host validates payload lengths, coordinates, dimensions and key
+before forwarding to pinned scrcpy5.0.1. Upstream
+[ControlMessageReader](https://github.com/Genymobile/scrcpy/blob/a60891aea193d92e7e5c3942700eca63f9d19a5f/server/src/main/java/com/genymobile/scrcpy/control/ControlMessageReader.java)
+defines wheel/key encoding;
+[Controller](https://github.com/Genymobile/scrcpy/blob/a60891aea193d92e7e5c3942700eca63f9d19a5f/server/src/main/java/com/genymobile/scrcpy/control/Controller.java)
+selects the new virtual display for native touch, scroll and key events.
+
+The receiver uses the existing zero-backlog executor for all controls. Pause,
+Disconnect, focus loss, geometry change and stream loss cancel pending gesture
+confirmation/repeating scroll. Pause/Disconnect close the socket/decoder;
+reconnect never replays input. No frame ordinal, original-target identity or ABA
+framework is introduced. Focus loss stops the sensor; regain/reconnect/geometry replacement requires
+a fresh neutral pose. Touch GestureDetector state is explicitly canceled too. The same bounded socket/write deadlines as PAV-02 apply.
+
+## Phone keyboard and native fixture
+
+The unchanged stock option is `display_ime_policy=local`. Field focus is sent as
+a native touch. The selected Phone IME must render on the virtual display and
+its actual keys must be operated through RG pointer/taps; neither clipboard nor
+text/key injection is implemented as a keyboard substitute. No IME selection,
+security setting or original application data is changed.
+
+The owned HostR5 `InputFixtureActivity` contains an ordinary multiline EditText,
+a main ScrollView and a 40-row nested ListView. Native counter/text/selection/
+scroll observations are written only for this harmless owned fixture. Its text
+is not preset. The original moving PAV-02 fixture remains available unchanged.
+The instrumentation's `input-observation` case observes live sensor/pad counts
+without synthesizing them; it does not declare human ergonomics passed.
+
+## Historical actual device findings — b13c131 / original installed pair
+
+Both target identities were checked at test start: Fold6 SM-F956N/API36 and
+RG-glasses/API32, user0/shell2000, through the Manager's USB173 debug server.
+Media/control used direct TLS1.3 RG10.199.167.154 → Phone10.199.167.157:44367.
+There was no computer media/control gateway. Matching HostR5/RG3/Probe4 builds
+were installed with ordinary same-ID updates; full installed bytes matched.
+No original EyeBrowse/Chromium installation/data, IME selection, volume/routing,
+credential, shared service or global display setting was changed.
+
+| Case | Observed result and limit |
+| --- | --- |
+| VD57, 480×640/240dpi, owned native fixture | Actual RG screenshot showed the fixture; its recorded displayId was57 |
+| Software RG tap | Fixture counter0→1 |
+| Software RG drag over nested list | Native firstVisiblePosition0→1, first-row top−18; main scroll remained0 |
+| Software RG drag over main rows | Main ScrollView scrollY0→110; nested position retained |
+| Effect-command interval | 6,808ms for those commands/reads; not optical or end-to-end latency |
+| Real Phone IME | Selected `com.bytedance.android.doubaoime/.ImeService`, unchanged; owned field focus true; actual keyboard pixels projected |
+| 240dpi layout | Keyboard covered the app and cropped the bottom Space/Enter row |
+| Three visible-key software taps at240dpi | H, I and Backspace attempted from the actual keyboard image; the owned field stayed empty after each. Receiver had sent5 total touches including app/field focus. Delivery alone is not a key-effect PASS |
+| Local menu / Phone Back | Software RG Back opened the local menu; its Phone Back action dismissed the real keyboard. IME diagnostic after dismissal: display57, window visibility0, inputShown=false |
+| Local Disconnect | Software menu activation stopped the stock session; host session elapsed119,082ms,1,228 encoded frames, CONTROL_EOF, serverAlive=false. This elapsed value includes session setup, not a separate continuous-stream measurement |
+| VD58, 480×640/160dpi | The charter's one lower-density trial also showed the same cropped keyboard. Full phrase/Shift/symbols/Enter/dismiss-reopen editing sequence remains unproved |
+| Browser | Existing owned hostprobe launched an ordinary Chrome CustomTab for public example.com on VD58; its actual page rendered on RG |
+| App return | Phone Back did not establish return from that CustomTab. A HOT own-fixture launch also did not bring its image visibly forward; a cold owned-fixture launch restored the native test target. No cause or successful app-return qualification is assigned |
+| Phone Home | Encoded and unit-tested; actual effect/physical reachability unexecuted |
+| Physical head/touchpad | Owner replied “the first two succeeded” to head aiming and short-tapping Native Tap. The owned fixture reached taps2. Smoothness details, physical main/nested scroll, menu/Disconnect were not confirmed. Owner could not identify Android Back, then reported double-tapping; the installed b13 recognizer ignored that event. No broader physical/ergonomic PASS is inferred |
+
+The 160dpi choice is only the owned stock `new_display=480x640/160` bootstrap
+option. It changes neither physical Phone dimensions nor a global display or
+IME setting. The initial240dpi outcome remains retained. No custom keyboard,
+text injection, paste, DOM text, alternate field renderer or speculative
+workaround chain was introduced.
+
+Phone-IME compatibility is **limited for the selected IME and tested layout**.
+No successful character insertion, meaningful Backspace, Shift/symbols, Enter,
+or same-field continuation is claimed. The keyboard's minimum usable size and
+the cause of failed key effects are not established. There is no basis to delete
+RG's built-in keyboard or call it unnecessary; a labeled fallback might need a
+future trial. This issue does not implement or validate that fallback, and makes
+no arbitrary-language/IME or Samsung-policy claim.
+
+## Artifacts and host checks
+
+Private native-size480×640 RG frames and scoped own-fixture records are retained
+under run-001/issue-68/worker-68-001/evidence; raw images/logs are not published.
+The Manager can bind them through `evidence-index.json`:
+
+| Private frame | SHA-256 |
+| --- | --- |
+| `rg-keyboard01.png` (240dpi) | `b6248af5a270885f56df4f635f6939266ec1e333b4feea38ab169e9326d5a145` |
+| `rg-keyboard160-01.png` | `b6914cfd1c1f5255d98589d179d2b316a7294936d961f089b788608e64077777` |
+| `rg-browser160-01.png` | `0f984b11597e7222b3040256a9bbad9736a13d255d62cf6af330ba96d33a58ee` |
+
+Historical installed pair, freshly re-hashed at actual window handback191,
+before the later audio69 and input68 W02 updates. These are retained bindings,
+not the current installed pair:
+
+| APK | Bytes | SHA-256 |
+| --- | --- | --- |
+| HostR5,160dpi | 2,543,674 | `0a28d6ae10222ebce75e07c92675fb222fb4e1c113411ce21cfe83e2a7393197` |
+| RG3 | 2,607,565 | `1b734b82033673baebbe6502ce92bce712c88a1301a8ce1bc582c72dae79229e` |
+| Probe4 | 73,438 | `944863658b787fb84ddae82d61aa020e75a3f3a2612786bd2865d6196a0976b9` |
+
+Initial host check01 passed25 JVM tests, both APK builds, instrumentation build
+and lint in42s. Check02/03/04 addressed actual UI/gesture/lifecycle changes;
+their logs remain retained. Final host check passed **26 JVM tests**
+(protocol11, receiver11, host4), all three APK assemblies and host/receiver
+lint in27s. The later owned160dpi host change passed affected host4 tests,
+assembly and lint in17s. Only the existing OldTargetApi warning remains on
+each app. The code-built Surface delegates confirmed short taps/accessibility
+activation through performClick; its two narrowly explained lint suppressions
+cover XML-constructor and GestureDetector static-analysis limitations.
+
+Checks cover current aspect/rotation/keyboard-area mapping, border rejection,
+pinned wheel/key bytes and payload validation, pointer gain/rotation, bounded
+strips/inward reversal, sensor expiry, gesture/double cancellation, scroll stop
+without catch-up, settings write failure, pre-render/post-Stop rejection of all
+three control kinds, and existing codec/TLS/server lifetime behavior. These are
+host assertions, not physical, optical, IME or audible AV acceptance.
+
+## Actual teardown and resource return191
+
+The preserved bridge23864 ended through its existing HOST_LIFETIME. A fresh
+process observation found no exact mission bridge/stock child before teardown;
+no TERM signal was needed. Bridge status was HOST_STOPPED; last-session was
+SESSION_STOPPED/serverAlive=false, with session elapsed888,328ms,6,210 encoded
+frames and5 touches. These are host-session counters, not a continuous optical
+or mandatory-audio measurement. Prior partial/failed outcomes remain retained.
+
+Owned HostR5/RG3/used-hostprobe force-stops returned0. Final scoped process reads
+showed no owned app/bridge/stock child, and a fresh display dump had no VD58 or
+scrcpy match. One normal sleep/check per device observed Phone Dozing and RG
+Asleep. There was no PIN/forced-lock loop, global setting change, original-store
+operation, shared service reset, new input installation/session or discretionary
+file cleanup. The USB173 route remains under Manager custody.
+
+Independent socket-table port absence was not observed; the prior netlink
+limitation remains a limitation. Process/VD settlement is not promoted to a
+global listener-absence claim. The Manager received actual window handback and
+the exact installed pair in `handback191/handback.json` and
+`handback191/settlement-final.json`. Work then remained source-only through the
+settings checkpoint196/198; mission207 subsequently granted W68-02. Required evidence/worktree cleanup is deferred to
+experiment end.
+
+## Current correction verification
+
+The rejected double-tap-to-panel edit and its bounded27-second passing host
+build are retained privately as `rejected-double-panel-proposal.patch` and
+`rejected-double-panel-retained.json`. It was never installed. It is superseded
+by the current no-panel/Phone-Back source, not rewritten as a successful Back
+trial.
+
+The a60226d no-panel correction passed **13 receiver JVM tests** (input8, decoder5),
+receiver APK/instrumentation assembly and receiver lint in27s, recorded in
+`no-panel-back-checks191.log` and `no-panel-host-checks191.json`. Lint has the
+existing OldTargetApi warning and no errors. The unchanged host/protocol tests
+above were not rerun for this receiver-only correction. New double-tap tests
+check one Back for duplicate two-tap/OEM reporting, later independent Back,
+constituent-tap suppression and canceled/held/stale sequence rejection.
+
+Correction artifacts are retained separately from the historical pair above:
+
+| APK | Status | Bytes | SHA-256 |
+| --- | --- | --- | --- |
+| RG3, a602 no-panel/Phone-Back | Never installed | 2,607,565 | `71e0a456004a20bb8ff523f7f41a1404f1944168c0a2b23dc44144bbd5f09975` |
+| RG3,852e1de settings placement196/198 | Installed/tested W68-02; reversed axes retained | 2,607,565 | `45852fbc80cfaf3944c19ac5110abd86de0ba7928723f2e2f1a673b3549cad9f` |
+| RG3, sign-only correction | Installed; Owner reports both axes still reversed | 2,607,565 | `6a26ea8c0c57c5fe6c47803fbbde24376c64c1322d6167b1a34ab464ac12fbe9` |
+| RG3, current-head-frame correction | Installed; Owner confirmed both directions | 2,607,565 | `8911c4a3dcc78cc45a8a3dd1a77711fe2eb0ea50a6045dc8045c17c236eaf43d` |
+| RG3, first three-tap Disconnect | Installed; keyboard Back confirmed, Disconnect failed | 2,607,565 | `efd47666c3ec0ae250dfdbf47286fed5aff348c804c178fdf8fc256e86daa312` |
+| RG3, native-contact correction4697521 | Installed; native tap and physical triple Disconnect confirmed | 2,728,290 | `33297e0b23cd3f962a5e42ca8b75bdf4fa8e02849d7a3e95f10fd50defefa7c5` |
+| Probe4, direct lifecycle stop | Installed W68-02; unchanged by direction/gesture changes | 73,010 | `fd458f817bfa21e14c6792ed7e6615c3993f3fb0de5e6b2ccfac09a26856ba83` |
+
+The numeric-row/local-hit-action change passed the affected **13 receiver
+tests**, receiver/probe assembly and receiver lint in28s. A final status-refresh
+fix preserves a prior display-unavailable message when changing settings; the
+same affected checks passed in23s with only OldTargetApi. The intermediate source,
+APK and28s results remain retained in `settings-placement-host-checks196.json`;
+the final results are in `settings-placement-final-checks196.log` and
+`settings-placement-final-host-checks196.json`. Probe bytes are unchanged. Existing model tests
+exercise numeric defaults, increments, persistence and failed-save retention;
+host build checks do not demonstrate the new buttons' physical reachability.
+Host/protocol code and tests were not changed or rerun. The settings rows are
+children of the existing connection view and disappear with it while streaming.
+Back recognition/routing and lifecycle disconnect are unchanged from a602.
+
+The source/Android test driver exercises Disconnect directly as a lifecycle
+mechanism and explicitly does not claim physical RG exit. The earlier head/tap
+observation belongs to source b13c131/RG1b734b82…; the later physical input and
+direction findings below belong to852e1de/RG45852fbc… .
+
+## W68-02 physical input and direction correction
+
+Mission207 granted both devices. Phone debug used TCP192.168.0.193:5555 through
+the Manager's existing15037 ADB server; RG remained on USB. Actual physical
+identities were confirmed once at test start. Matching v1 HostR5, RG3 and Probe4
+installed bytes matched the case artifacts. Media remained direct TLS1.3
+RG10.199.167.154 → Phone10.199.167.157:44367; no computer media gateway.
+
+| Observation on852e1de/RG45852fbc… | Result and limit |
+| --- | --- |
+| Disconnected numeric controls | Owner confirmed both rows worked using head aiming/short pad taps, with values restored. Own preferences read back pointer.tenths20 and scroll240 |
+| Native fixture on VD72,480×640/160dpi | Owner confirmed Native Tap, nested scrolling and main scrolling. Own records show taps0→1, nested first0→2/top−21 and main scroll0→661 |
+| Phone keyboard and Back | Owner confirmed field tap opened the actual Phone keyboard and physical double-tap dismissed it. Receiver recorded one navigation command. No text was requested or entered; this is not a full typing/Shift/symbols/Enter trial |
+| Keyboard layout | Owner reports the popup Phone keyboard occupied the full RG screen. Earlier selected-IME cropping and failed key effects remain, without a fallback or layout workaround claim |
+| Head direction | Owner explicitly reports cursor motion exactly opposite to head motion in both x and y. Successful target activation does not establish correct aiming ergonomics; this bug is retained |
+| Phone Home/app-return | Phone-provided desktop/taskbar actually rendered before the native fixture launch and remained visible below it. An exact Home/app-return target and its physical effect remain unqualified |
+| Session end | SCID5c1e17a6 ended by HOST_LIFETIME; elapsed735,570ms,6,421 encoded frames,3 touches, serverAlive=false. These are host-session counters, not continuous optical/audio measurements or physical RG exit |
+
+The receiver's871 total scroll commands include repeating edge-scroll work;
+they are not a physical pad-swipe count or a per-gesture timing measurement.
+
+The first software Connect tap had not established a new session; its copied
+status file was an old69 audio result and was not counted as fresh evidence.
+Normal wake/Connect subsequently produced the fresh v1 session above. No cause
+is assigned beyond these observations. The old fixed waitForGo/bootstrap
+geometry predicate was not used. After the finite host ended, its11207 process
+was absent and the owned HostR5/RG3 force-stops returned0 before the correction.
+Unassigned r4/shared resources were not touched.
+
+The first correction reversed the two inherited angular signs after display-axis
+remapping. Its synthetic direction regression failed against the original signs
+(one expected failure,8-second build), then **14 receiver tests** (input9,
+decoder5), receiver/probe assemblies and receiver lint passed in23s. Owner
+subsequently reported **both axes still reversed** on installed RG6a26ea8c… .
+Those tests assumed raw-axis signs from an identity reference; their green
+result did not reproduce the worn input path. APK disassembly confirmed the
+sign change was actually present. This failed physical correction remains in
+`window207/owner-direction-fix-still-reversed.json` and is not relabeled a PASS.
+Owner briefly paused work and then explicitly resumed with “go ahead and fix it.”
+
+The source comparison exposed a reference-frame error: `reference.inverse() *
+current` expresses the relative pose in the startup axes. Rolling after startup
+can reverse or exchange the local aiming axes. A synthetic roll regression
+reproduced that behavior. A bounded worn neutral/right measurement also captured
+an Owner-observed rightward head turn/circle-left result: the installed math
+projects −28.78° horizontally, while the corrected transform projects +29.26°.
+The sensor dump rounds components to two decimals; these are diagnostic angles,
+not precise timing, ergonomic or optical measurements. No physical roll history
+is inferred from this reproduction.
+
+The correction uses `current.inverse() * reference`, expressing the reference
+ray in the current head frame, and projects movement opposite that ray. Gain,
+bounds, smoothing, settings, pad gestures and Phone Back routing retain their
+existing mechanisms. Tests now cover the captured worn pose, both axis signs
+and all display rotations, plus ±90°/±180° roll since startup. Before the
+composition change, the captured-pose and roll tests both failed (two expected
+failures,12-second build). The original sign-only, roll and measured-pose failures
+remain retained separately. The final affected checks passed **16 receiver tests** (input11, decoder5),
+receiver/probe assembly and receiver lint in26s, with only the existing
+OldTargetApi warning. Results/source hashes are retained in
+`window207/current-frame-host-checks.json`. Installed RG8911c4a3… matches the
+built artifact; Probe4 bytes are unchanged. Owner then confirmed **“Both axes
+correct”** on the disconnected Connect view,
+bound to source26d8e5d/RG8911c4a3… in
+`window207/owner-current-frame-directions-confirmed.json`. This establishes
+physical direction on that build; it is not an optical latency or sustained
+ergonomic measurement. No streaming session was started for that direction
+check. The current saved pointer gain is4.0× and
+scroll240; the earlier2.0× restoration remains scoped to its earlier observation.
+
+A subsequent fresh case reused the same matching v1 pair and owned namespace.
+Bridge21415 started successfully; its current stock log identified VD73 at
+480×640/160, and the native fixture cold-launched there. Live stream counters
+advanced. The software Connect setup had touchesSent1 before Owner interaction;
+that count is not a physical tap result. The current receiver image has the
+native fixture and a bottom Phone system bar. Narrow window observations show
+NavigationBar73 visible at [0,592][480,640], but no confidently identifiable
+Home/app-switch target has been established from the rendered image. A window
+record does not prove a usable control. The Owner was asked at this ready setup
+for one native tap with corrected aiming, any recognizable Phone navigation
+target, and an already-known RG system Home/app-exit action/effect or “no known
+RG exit.” Owner subsequently confirmed native tap0→1, and the owned record independently
+read taps1/text empty on VD75. The receiver observed one touch and zero navigation
+commands;224 scroll commands include edge repeats and are not a pad-swipe count.
+The Owner reported the bottom-left app control could launch apps and no known
+RG exit. These scopes remain bound to RG8911c4a3… . The later selected three-tap
+Disconnect binding requires its own changed-source physical check.
+
+No independent acceptance, mandatory-audio result, integration or release is
+claimed. Matching PAV-04 integration remains a later coordinated step.
+
+
+## Latest three-tap Disconnect correction
+
+The explicit latest Owner instruction is “use triple-tap to exit/disconnect,”
+recorded in the [canonical three-tap disposition](https://github.com/code2hack/EyeBrowse/issues/68#issuecomment-6254328045).
+Manager221 supersedes the four-tap count only, retaining the same mission,
+resources and attempt history. The recognizer now defers the two-tap Back
+callback through one configured continuation interval and invokes the existing
+local Disconnect on three taps. No RG panel or panel-opening gesture returns.
+The partial four-tap work was callback plumbing and an expected-red host test;
+it was never installed, committed, or a physical failure. Its exact test output
+and source snapshot remain in `four-tap220/` as superseded design evidence.
+The first three-tap host check passed20 receiver JVM tests, receiver/probe builds
+and lint in19s. A focused follow-up also covers held-third-tap tails and keeps
+ordinary non-pad Android Back separate from counted pad reports. Final affected
+checks passed **22 receiver JVM tests** (input17, decoder5), receiver/probe builds
+and lint in20s, with only the existing OldTargetApi warning. The unchanged
+host/protocol suites were not rerun. Results and source/APK hashes are retained
+in `three-tap221/host-checks.json`. RGefd47666… is installed and its bytes match
+the built artifact; Probe4 is unchanged. There is no physical Disconnect PASS
+at this checkpoint.
+
+Two-tap Back waits one system double-tap timeout, bounded to100–600ms by the
+existing receiver configuration, after the second short UP. A third DOWN inside
+that window defers completion until its short UP; held/canceled input cancels
+the unfinished sequence. Host timing tests use300ms and check both sides of the
+deadline. This is a recognizer timing assertion, not a measured physical
+input-to-visible latency. Three taps invoke local Disconnect immediately after
+the final valid UP, without first sending Phone Back.
+
+
+## Native contact correction after the first physical three-tap failure
+
+On source19c5ebc/RGefd47666…/VD77 the Owner reported: “keyboard dismissed
+correctly; Disconnected screen didn't return.” Double-tap Phone Back therefore
+worked on that build; physical three-tap Disconnect failed. The failure is
+retained in `three-tap221/retry-20261018T194847Z/` with its actual receiver and
+owned fixture observations. Later counters include unqualified repeated attempts
+and edge scrolling, so they do not assign a separate effect to each burst.
+
+The bounded native-pad capture showed many groups of three short
+`KEY_DASHBOARD` contacts with roughly132–192ms intervals, without an Enter/Back
+summary. The actual RG input configuration identifies `ROKID,PSOC-TP-R` on
+`/dev/input/event1`, using `/system/usr/keylayout/Generic.kl`. Its Linux key204
+maps to Android NOTIFICATION; key28 maps to ENTER and158 to BACK. The first
+three-tap receiver handled the classified Enter/Back/OEM events but did not map
+NOTIFICATION. Grouped kernel records are diagnostic, not an attribution of every
+burst or proof of application delivery. No conclusion that the Owner tapped too
+slowly is drawn.
+
+The narrow correction maps NOTIFICATION only for the already identified native
+pad and keyboard source. Once that contact path is observed by the Activity, the
+existing recognizer counts those contacts and ignores later native Enter/Back/
+OEM classifications instead of counting them again. Other devices' notification
+keys are not consumed. Ordinary non-pad Android Back stays independent. A
+retired native burst remains suppressed until an actual quiet continuation
+boundary; additional contacts extend retirement and cannot click the disconnected
+settings/Connect view. Native firmware Back tails are consumed before the
+receiver's default disconnected Back path. Missing UP completes no action and
+expires at the existing hold bound; an invalid third press never falls back to
+Back. These are extensions of the same bounded recognizer, with no global
+keylayout change, new panel or gesture framework.
+
+A regression replaying the captured Android-mapped contacts failed against the
+first mapping (one expected failure,15-second host build). The raw trace, actual
+keylayout lines, original failure and source snapshot remain retained. Host
+regressions also cover delayed classification summaries, cancellation, retired
+burst tails, missing completion and ordinary Back. Up to64 text-free native key
+UP diagnostics in the debug receiver distinguish actual Activity delivery from
+kernel visibility. Kernel traces and host assertions alone do not establish
+physical Disconnect. The later installed trial separately records actual
+Activity delivery and the Owner's visible result.
+
+The contact replay and first retirement checks passed28 receiver tests/builds/lint;
+final missing-completion replacement and raw-swipe checks bring the affected
+receiver suite to **30 tests** (input25, decoder5), all passed with receiver/probe
+assembly and lint in23s. Only OldTargetApi remains. Host/protocol are unchanged.
+The final contact-corrected RG artifact is `33297e0b23cd3f962a5e42ca8b75bdf4fa8e02849d7a3e95f10fd50defefa7c5`;
+Probe bytes remain `fd458f817bfa21e14c6792ed7e6615c3993f3fb0de5e6b2ccfac09a26856ba83`.
+`native-contact-correction221/host-checks.json` binds source, tests and artifacts.
+
+On source4697521/tree3f356bc4 and the matching installed RG33297e0b…, a fresh
+owned native fixture ran on VD79 at480×640/160dpi. Software only pressed the
+existing RG Connect button and launched the fixture; no Phone tap, scroll or
+navigation was injected into the observed trial. The Owner was asked to
+short-tap NATIVE TAP once, wait for1, then tap three times quickly once and pause.
+The Owner answered “it succeded.” The fixture recorded taps1 and later
+active=false, with empty text. Receiver counters stopped at one touch and zero
+navigations, with no constituent Back or extra touch from the triple. The RG
+image showed Disconnected/Connect, pointer3.0× and scroll240. The actual Activity
+log recorded three Android83 contact UPs followed by firmware4/66 summaries;
+this establishes delivery beyond the earlier kernel-only diagnostic.
+
+The receiver's final counter snapshot was STOPPED at17,506ms with84 rendered
+frames. The host recorded SESSION_STOPPED/CONTROL_EOF at17,294ms,84 frames,
+one touch and serverAlive=false. These are session counters, not continuous
+optical measurements or input-to-visible timing. The bridge remained available
+for the final affected Back/scroll check. Evidence is retained in
+`native-contact-correction221/physical-result.json`, the text-free Activity log,
+owned fixture/session snapshots and the RG image. This success does not replace
+the failed19c5/efd trial or qualify the full-screen/cropped Phone IME for typing.
+
+A fresh VD80 on the same installed build then checked the contact correction's
+remaining affected physical paths. The Owner reported that nested scrolling,
+main scrolling and field focus followed by double-tap keyboard dismissal “all
+worked.” Software setup only connected and launched the owned fixture. The
+post-action receiver snapshot remained STREAMING at84,988ms with624 rendered
+frames, one touch,83 scroll messages and one navigation. The native fixture
+showed nested row8 (first index7/top−14), focused empty text and no editor action;
+the RG image showed the keyboard dismissed. Its final mainScrollY was0 after the
+full sequence, so this snapshot does not independently measure the earlier main
+scroll displacement. Main-scroll success here is the Owner's visible report;
+the earlier852 native main-scroll measurement remains separate. Actual pad
+contact/swipe and contact-pair/Back reports are retained in the text-free app
+log. The evidence is `native-contact-correction221/back-scroll-regression/`.
+The prior Phone-IME typing/layout and browser-return limitations remain.
+
+## Final W68-02 teardown and candidate boundary
+
+After those physical results, necessary software teardown stopped only the owned
+RG client/probe and Phone fixture/probe. SCID7b2c0220 ended through CONTROL_EOF
+at126,454ms with1,076 frames, one touch and serverAlive=false. The owned bridge
+PID20797 was identified by its exact namespace command line, then terminated.
+Final process observations matched no owned apps, namespace bridge or current
+stock child on either device; the successful display dump contained no VD80
+entry. The namespace and evidence remain retained. No independent global-port
+absence check was available; the earlier socket-table/netlink limitation remains.
+
+Installed full APK hashes still matched the input-only HostR5 `0a28d6ae…`,
+RG3 `33297e0b…` and Probe4 `fd458f81…` pair above. Ordinary one-shot sleep left
+Phone Dozing and RG Asleep. Local gain3.0×/scroll240 were left as found; no global
+IME, volume/routing, display/security or shared-service setting changed. The
+unassigned historical r4 process was untouched. The owned host shell ended143
+after TERM; the bounded raw capture ended124 at its timeout, without a usable
+kernel trace for this trial. Neither command outcome is a product failure;
+actual Activity logs and Owner observations establish the reported contact
+effects. Detailed actions and observations are retained in
+`native-contact-correction221/handback/`.
+
+Both devices were handed back to the Manager; this Worker makes no further
+device calls without a new grant. This is an input-only capability candidate,
+with30 receiver tests/build/lint on the final product source and a subsequent
+documentation-only result update. It requires independent exact-head review,
+Manager disposition and later mandatory-audio source integration. Full Phone-IME
+editing, exact Home/browser return, quantified head smoothness and optical
+input latency are not claimed. Deferred file/state cleanup and workspace
+archival remain at the experiment-end boundary.
+
+## Current-target audio/input compatibility230
+
+Manager revision6 grants a new W68-03 reservation and directs ordinary merge
+compatibility with accepted audio target0bce1ea0, preserving the input ancestry.
+The Owner requested unattended completion: no new wearing, listening, calibration
+or approval questions are sent. W02 remains returned; its source-bound physical
+observations are reused as historical evidence, not a new merged-build physical
+PASS. This is not the final PAV-05 lock/AV matrix.
+
+The six shared conflicts retain both native fixtures; Wire2 required audio on
+channels2/7 and input on8/9; upstream video/audio/control socket order; Opus
+focus/playback clock and teardown; and no-panel head/contact/settings controls.
+The stock virtual display remains480×640/160dpi from the input trial, with
+actual current stream geometry still governing input. The audio receiver now
+receives applicationContext. Disconnect closes both audio and the unified input
+executor. Its periodic STREAMING telemetry does not call resize/cancel on each
+unchanged state; actual streaming transitions and geometry changes still cancel
+pending input. The existing test driver retains current-session freshness and
+audio/video progress checks alongside input observation and direct Disconnect.
+
+The merged shared code passed **51 JVM tests** (protocol13, host4, receiver34),
+host/RG/Probe4/second-source APK assembly and host/RG lint in28s (29.077s command
+elapsed). Only the existing OldTargetApi warnings remain. A new protocol
+regression requires Wire2, rejects Wire1 and round-trips interleaved mandatory
+audio metadata/packets, touch, scroll and Back without changing payloads or PTS.
+Results/artifacts are retained in `compatibility230/host-checks.json`.
+The short matched-pair device compatibility check is pending at this source
+checkpoint; no new acoustic/optical or600s result is inferred.
+
+The old physical-ready capsule is retained byte-for-byte. Its top-level
+bridgePid29801 refers to the earlier setup stage; its bridge object and actual
+physical-ready stdout identify PID20797/VD79 for the prompted trial. The separate
+`compatibility230/old-physical-ready-capsule-annotation.json` records that stage
+correction without modifying the original evidence or replaying devices.
+
+### Live compatibility failures and bounded audio-write correction
+
+The first merged-build setup on VD81 stopped at14,468ms with video334.477ms
+ahead of the RG audio clock, beyond the unchanged250ms lookahead limit. Its AV
+fixture file still described historical VD71; that file was rejected and no
+current playback/input measurement was claimed. The next setup received EOF
+at617ms and no VD: the owned bridge had exited0 after71.310s, without its final
+status; the stock child reported a refused local socket. Its cause remains
+unproved. A fresh bridge and driver were then kept in one bounded command.
+That setup exposed the Worker's unsupported `am start --activity-new-task`
+option. Its failed output and45,021ms driver observation of the unprepared
+display are retained as a setup failure, not a controlled AV PASS. Numeric task
+flags were checked against the installed Android SDK and used subsequently.
+
+With a fresh actual owned task, VD83 played the AV clip and produced advancing
+video/audio PTS, valid RG AudioTimestamp and an approximately0.025 decoded1kHz
+peak. Software RG input changed native taps0→1, nested top0→−32 and main
+scroll0→18. The native UI then stopped at36,771ms: a fresh video frame needed
+254.408ms lookahead. The driver's26,201ms measurement therefore failed, and
+later field/Back steps were not established. Audio peak queue was247.125ms,
+with one reported underrun. These actual failures remain in
+`compatibility230/av-input001..004/`; they are not new physical-pad failures.
+
+This suggested an inconsistency between the accepted300ms audio backlog ceiling
+and250ms video lookahead when sparse UI frames arrive promptly. The first
+correction cf137ac paced the existing nonblocking AudioTrack write loop against
+the RG playback head with a200ms write-ahead allowance. It retained its250ms write deadline, native track
+allocation,300ms backlog failure,250ms video lookahead, source PTS, focus and
+lifetime handling. No PCM/application queue or new timing framework is added.
+The playback-head read shares the existing teardown lock and clock rules.
+Affected receiver checks passed34 tests, RG/probe assembly and lint in19s;
+unchanged host/protocol checks are the51-test merged run above. A corrected
+matched-pair short run is pending at this checkpoint. The old ten-minute and
+Owner audio observations remain bound to their original audio source.
+
+On cf137ac/VD84 the queue cap held at199.979ms, but compatibility still failed:
+video lookahead285.023ms at42,088ms, with a24,175ms driver measurement and one
+underrun. Native tap reached1; later scroll/Back were not established. At failure
+the video PTS was97.814ms ahead of the latest decoded audio PTS; the earlier
+idle failure had131.617ms of that source lead. Those observed gaps consume
+additional lookahead beyond queued PCM. The write-ahead allowance is therefore
+now100ms (4,800 frames at48kHz, matching the tested native track allocation),
+leaving150ms within the unchanged250ms video bound for this observed lead.
+No other timing/failure/queue limits changed in that intermediate candidate. The full200ms failure remains in
+`compatibility230/av-input005/`; it is not represented as a successful repair.
+
+The100ms candidate b65f744/VD85 was also a failure: peak queue100ms,436 underruns,
+echo RTT4,108ms and CONNECTION_OR_REQUIRED_AUDIO_FAILED at19,412ms, with12,081ms
+driver measurement and no native input. Those results are retained in
+`compatibility230/av-input006/`. Lowering accepted audio buffering was a
+regression; no further queue-cap tuning is retained. **AudioDecoder is restored
+byte-for-byte from accepted target0bce1ea0.** Both failed pacing commits stay in
+the ancestry and their artifacts remain retained.
+
+The current correction instead changes only the existing video worker's maximum
+future-frame wait from250 to500ms, accommodating the measured334ms sparse UI
+lead with the original audio path. The existing500ms clock freshness,16-frame
+inflight cap and30fps source cap remain. Those source bounds are context, not
+a measured hardware-capacity guarantee. It adds no queue, changes no
+late-frame100ms drop/audio backlog/write/focus/watchdog behavior, and does not
+relax the100ms AV-offset assessment target. Stop still cancels the same2ms wait
+loop. The first9s regression run and12s follow-up exposed a JVM double ABI
+error (a private BufferInfo field) and are invalid as lookahead regression
+evidence. Their raw failures remain retained. After matching Android's public
+field with @JvmField, a335ms-ahead frame meaningfully failed the old250ms check
+(one expected failure,10s). The corrected tests also require excessive600ms lead
+to fail and Stop to discard a waiting frame. Manager235 confirms this bounded
+implementation choice is within revision6, with the original assessment
+targets unchanged. The corrected receiver passed **36 tests**, receiver/probe
+assembly and lint in18s; only OldTargetApi remains. Unchanged protocol13/host4
+checks retain their earlier merged-source execution. The tested product source
+is eff0251ed86320339039888c541166985eb01712, tree162bdade231bd500b3df0adb170481fafde72c70.
+
+### Corrected matched-pair result and W03 handback
+
+`compat230-av-input007` used the matching Wire2 host/RG/test APKs below on a fresh
+owned VD86 at480×640/160dpi. Direct TLS1.3 media traveled between Phone
+10.199.167.157 and RG10.199.167.154. The computer only orchestrated debug/setup
+and explicitly software-generated RG touch/swipe/Back; no media went through it.
+No Owner wearing/listening/calibration or physical-input action was requested.
+RG media was muted0, with the actual initial8 retained for restoration.
+
+| Quantity | Actual result |
+| --- | --- |
+| Native driver result | Passed;60,006ms controlled measurement,60,011ms through final status-read boundary; command72.022s includes setup/teardown |
+| Video/audio progress | 1,334 rendered-frame delta;3,005 decoded-buffer delta;2,884,488 PCM-frame delta;60.100693s source-audio PTS advance |
+| Correct native target | Fixture display86 active; NATIVE TAP0→1; nested top0→−46; main scroll0→122 |
+| Phone IME / Back | Empty field focused; actual full-screen/cropped keyboard image; one software Phone Back returned the native page; no typing or editor action |
+| AV after native UI | Fresh owned AV fixture resumed on the same VD and actual media progression continued |
+| Controls | Two native touches (counter and field),96 wheel messages, one Back; no replayed pending controls claimed |
+| RG audio | Opus/48kHz/stereo/PCM16; builtin route type2;100ms native track;241.104ms peak estimated queue; zero reported underruns; usable timestamp |
+| Software AV samples | 54 unique samples among60 timeline snapshots; video minus clock-derived audio median−4.3435ms, range−15.022 to+19.538ms |
+| Human/physical scope | No new acoustic, optical, physical pad/head, numeric physical-offset or input-to-visible latency PASS |
+
+The on-RG report rejects historical telemetry and requires actual source PTS,
+audio and video progress. Its `hardwarePadUps` counter advanced once for the
+scripted ordinary Back; that name does not turn software injection into physical
+pad evidence. Sensor samples while the unworn RG remained still also do not
+establish head ergonomics. Existing physical confirmations retain their prior
+source bindings; all seven reused input primitive files are byte-identical to
+the physical4697521 checkpoint. The tests deliberately entered no text. The
+selected IME's cropping/full-screen limitation, missing editing/Shift/symbols/
+Backspace/Enter qualification, exact Home/browser-return and physical AV-offset
+limits remain. The RG built-in keyboard cannot yet be declared unnecessary for
+these tested layouts; no local fallback was implemented or claimed successful.
+The earlier PAV-04 ten-minute/acoustic findings remain on their original source.
+
+| Installed matching APK | Bytes | SHA-256 |
+| --- | --- | --- |
+| HostR5 | 2,778,889 | `493879dc567dc9fb20029fbb3bdeea4eacfcab621bc476f2de5e631db87e93ac` |
+| RG3, restored audio /500ms presentation ceiling | 2,761,226 | `e805103f4d445101439626a1ae678166a7f23bb79feca97cc7cfbe16f861b9c3` |
+| Probe4 | 85,802 | `68ea9844a562c34075de9dbedfab857c6b66dbbfa333b30b676d97ab50b5d8f7` |
+
+After the driver's ordinary Activity finish, RG session and audio were STOPPED.
+The current host recorded SCID3293d03e SESSION_STOPPED/CONTROL_IO at68,217ms,
+1,476 frames,3,357 audio packets, two touches and serverAlive=false. The exact
+owned bridge32117 was terminated (command143). Owned apps/probe stopped; final
+process observations matched no owned bridge, app or corresponding stock child,
+and a successful display dump contained no VD86 entry. Global port absence
+remains unobserved. Full installed APK hashes still matched. RG media restored
+8→0→8 with readback; ordinary one-shot sleep left Phone Dozing and RG Asleep.
+No Phone volume/routing/IME, credential/trust, global display/security or shared
+service change occurred. Historical r4 stayed untouched.
+
+Actual W68-03 handback was reported; no further device call is authorized by
+that returned window. `compatibility230/av-input007/{result,summary}.json`,
+`future500-host-checks.json`, `handback/handback.json`, the separate old-capsule
+annotation and retained failed cases bind the result. Images/logs stay private
+in mission evidence. Final result documentation is a subsequent docs-only
+commit over the tested product source. Independent exact-head review and
+Manager disposition remain; this compatibility check is not the final PAV-05
+lock/AV matrix, a new600s trial, acceptance or release. File/state cleanup and
+workspace archival remain deferred until experiment end.

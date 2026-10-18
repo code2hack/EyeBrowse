@@ -183,7 +183,7 @@ class ProjectionInstrumentation : Instrumentation() {
             } else if (operation == "unauthenticated") {
                 require(unauthenticated()); report.put("unauthenticatedRefused", true).put("mediaWelcomeReceived", false)
             } else {
-                require(operation in listOf("stream", "pause", "reconnect", "local-stop", "host-stop", "surface-diagnostic", "audio-focus", "audio-volume"))
+                require(operation in listOf("stream", "pause", "reconnect", "local-stop", "host-stop", "surface-diagnostic", "input-observation", "audio-focus", "audio-volume"))
                 val seconds = args.getString("seconds")?.toInt() ?: 10
                 require(seconds in 1..660)
                 val waitForFixture = args.getString("waitForGo") == "true"
@@ -219,6 +219,9 @@ class ProjectionInstrumentation : Instrumentation() {
                     readSurface(activity, id, report)
                 } else {
                     report.put("first", status())
+                    if (operation == "input-observation") runOnMainSync {
+                        report.put("inputBefore", (activity as ReceiverActivity).inputSnapshot())
+                    }
                     val start = SystemClock.elapsedRealtime()
                     measurementStarted = start
                     val samples = JSONArray()
@@ -246,6 +249,9 @@ class ProjectionInstrumentation : Instrumentation() {
                             samples.put(sample); nextSample = elapsed + 1000
                         }
                         Thread.sleep(100)
+                    }
+                    if (operation == "input-observation") runOnMainSync {
+                        report.put("inputAfter", (activity as ReceiverActivity).inputSnapshot())
                     }
                     measurementEnded = SystemClock.elapsedRealtime()
                     val last = status()
@@ -278,7 +284,8 @@ class ProjectionInstrumentation : Instrumentation() {
                         report.put("paused", status())
                     }
                     if (operation == "local-stop") {
-                        runOnMainSync { buttons(activity!!.window.decorView).single { it.text == "Stop" }.performClick() }
+                        runOnMainSync { (activity as ReceiverActivity).disconnect() }
+                        report.put("localStopInvocation", "Direct Disconnect method; physical control binding not qualified")
                         Thread.sleep(1000); require(status().getString("state") == "STOPPED")
                         report.put("localStop", status())
                     }

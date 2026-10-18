@@ -61,6 +61,35 @@ class WireTest {
         }
     }
 
+    @Test fun versionTwoKeepsRequiredAudioAndNativeInputOnTheSameStream() {
+        assertEquals(2, Wire.VERSION)
+        assertThrows(Exception::class.java) { Wire.readRequest(input {
+            writeInt(Wire.MAGIC); writeInt(1); writeByte(Wire.STREAM)
+        }) }
+        assertThrows(Exception::class.java) { Wire.readWelcome(input {
+            writeInt(Wire.MAGIC); writeInt(1); writeUTF(Wire.SCRCPY_VERSION)
+            writeInt(Wire.H264); writeBoolean(false)
+        }) }
+        val size = Geometry(480, 640)
+        val frames = listOf(
+            Frame(Wire.AUDIO_CODEC, payload = bytes { writeInt(Wire.OPUS) }),
+            Frame(Wire.AUDIO, Scrcpy.CONFIG, byteArrayOf(1, 2)),
+            Frame(Wire.TAP, payload = Tap(25, 40, size).bytes()),
+            Frame(Wire.SCROLL, payload = Scroll(Tap(25, 40, size), 160).bytes()),
+            Frame(Wire.NAVIGATE, payload = Navigate(Navigation.BACK, size).bytes()),
+            Frame(Wire.AUDIO, 9_000_123_456L, byteArrayOf(3, 4)),
+        )
+        val stream = input { Wire.writeWelcome(this); frames.forEach { Wire.writeFrame(this, it) } }
+        Wire.readWelcome(stream)
+        for (expected in frames) {
+            val actual = Wire.readFrame(stream)
+            assertEquals(expected.channel, actual.channel)
+            assertEquals(expected.stamp, actual.stamp)
+            assertArrayEquals(expected.payload, actual.payload)
+        }
+        assertEquals(-1, stream.read())
+    }
+
     @Test fun coordinateMappingRejectsLetterboxAndUsesCurrentGeometry() {
         val fit = Fit.inside(480, 640, Geometry(640, 480))
         assertEquals(140, fit.top); assertEquals(360, fit.height)
@@ -82,5 +111,43 @@ class WireTest {
             assertEquals(0, stream.readInt()); assertEquals(0, stream.readInt())
         }
         assertThrows(Exception::class.java) { Tap(-1, 20, Geometry(480, 640)) }
+    }
+
+    @Test fun scrollAndNavigationAreBoundedAndUsePinnedNativeFormats() {
+        val target = Tap(25, 40, Geometry(640, 480))
+        val scroll = Scroll(target, 160)
+        assertEquals(scroll, Scroll.from(scroll.bytes()))
+        val frame = Wire.readFrame(input { Wire.writeFrame(this, Frame(Wire.SCROLL, payload = scroll.bytes())) })
+        assertEquals(scroll, Scroll.from(frame.payload))
+        val wheel = DataInputStream(Scrcpy.scroll(scroll).inputStream())
+        assertEquals(3, wheel.readUnsignedByte())
+        assertEquals(25, wheel.readInt()); assertEquals(40, wheel.readInt())
+        assertEquals(640, wheel.readUnsignedShort()); assertEquals(480, wheel.readUnsignedShort())
+        assertEquals(0, wheel.readShort().toInt()); assertEquals(-5120, wheel.readShort().toInt())
+        assertEquals(0, wheel.readInt()); assertEquals(-1, wheel.read())
+        for (action in Navigation.entries) {
+            val navigation = Navigate(action, target.geometry)
+            assertEquals(navigation, Navigate.from(navigation.bytes()))
+            val keys = DataInputStream(Scrcpy.navigate(navigation).inputStream())
+            for (phase in 0..1) {
+                assertEquals(0, keys.readUnsignedByte()); assertEquals(phase, keys.readUnsignedByte())
+                assertEquals(action.keycode, keys.readInt()); assertEquals(0, keys.readInt()); assertEquals(0, keys.readInt())
+            }
+            assertEquals(-1, keys.read())
+        }
+        for (pixels in listOf(0, -1201, 1201)) assertThrows(Exception::class.java) { Scroll(target, pixels) }
+        assertThrows(Exception::class.java) { Scroll.from(scroll.bytes().copyOf(19)) }
+        assertThrows(Exception::class.java) { Navigate.from(target.geometry.bytes() + bytes { writeInt(26) }) }
+        assertThrows(Exception::class.java) { Wire.writeFrame(DataOutputStream(ByteArrayOutputStream()), Frame(Wire.NAVIGATE, payload = byteArrayOf(4))) }
+    }
+
+    @Test fun resizedRotatedStreamAndKeyboardLayoutKeepMappingInCurrentBounds() {
+        for (size in listOf(Geometry(480, 640), Geometry(640, 480), Geometry(1080, 2160), Geometry(640, 640))) {
+            val fit = Fit.inside(480, 640, size)
+            assertEquals(Tap(size.width / 2, size.height / 2, size), fit.touch(fit.left + fit.width / 2f, fit.top + fit.height / 2f, size))
+            assertNull(fit.touch(fit.left - 1f, fit.top + 1f, size))
+            assertNull(fit.touch(fit.left + 1f, (fit.top + fit.height).toFloat(), size))
+            assertNull(fit.touch(Float.POSITIVE_INFINITY, 50f, size))
+        }
     }
 }

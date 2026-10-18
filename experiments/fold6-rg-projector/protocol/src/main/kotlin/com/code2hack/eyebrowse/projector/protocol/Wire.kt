@@ -24,6 +24,33 @@ data class Tap(val x: Int, val y: Int, val geometry: Geometry) {
     }
 }
 
+/** Native wheel input at a visible target; positive pixels move content toward the top. */
+data class Scroll(val target: Tap, val pixels: Int) {
+    init { require(pixels in -1200..1200 && pixels != 0) }
+    fun bytes(): ByteArray = target.bytes() + bytes { writeInt(pixels) }
+    companion object {
+        fun from(payload: ByteArray): Scroll {
+            require(payload.size == 20)
+            return Scroll(Tap.from(payload.copyOfRange(0, 16)), DataInputStream(payload.inputStream()).run { skipBytes(16); readInt() })
+        }
+    }
+}
+
+enum class Navigation(val keycode: Int) { BACK(4), HOME(3) }
+
+data class Navigate(val action: Navigation, val geometry: Geometry) {
+    fun bytes(): ByteArray = geometry.bytes() + bytes { writeInt(action.keycode) }
+    companion object {
+        fun from(payload: ByteArray): Navigate {
+            require(payload.size == 12)
+            val input = DataInputStream(payload.inputStream())
+            val geometry = Geometry(input.readInt(), input.readInt())
+            val key = input.readInt()
+            return Navigate(Navigation.entries.single { it.keycode == key }, geometry)
+        }
+    }
+}
+
 data class Fit(val left: Int, val top: Int, val width: Int, val height: Int) {
     fun touch(x: Float, y: Float, geometry: Geometry): Tap? {
         if (!x.isFinite() || !y.isFinite() || x < left || y < top || x >= left + width || y >= top + height) return null
@@ -63,6 +90,8 @@ object Wire {
     const val PONG = 5
     const val END = 6
     const val AUDIO_CODEC = 7 // Exact four-byte upstream codec ID (0/1 are explicit capture/config failure).
+    const val SCROLL = 8
+    const val NAVIGATE = 9
     const val STREAM = 1
     const val STOP_HOST = 2
 
@@ -84,11 +113,13 @@ object Wire {
         require(input.readBoolean()) { "Required audio is unavailable" }
     }
     private fun validate(channel: Int, length: Int) {
-        require(channel in GEOMETRY..AUDIO_CODEC && length in 0..MAX_PAYLOAD)
+        require(channel in GEOMETRY..NAVIGATE && length in 0..MAX_PAYLOAD)
         when (channel) {
             GEOMETRY -> require(length == 8)
             TAP -> require(length == 16)
             AUDIO_CODEC -> require(length == 4)
+            SCROLL -> require(length == 20)
+            NAVIGATE -> require(length == 12)
             VIDEO, AUDIO -> require(length > 0)
             PING, PONG, END -> require(length == 0)
         }
@@ -133,6 +164,21 @@ object Scrcpy {
             writeByte(2); writeByte(action); writeLong(-2)
             writeInt(tap.x); writeInt(tap.y); writeShort(tap.geometry.width); writeShort(tap.geometry.height)
             writeShort(if (action == 0) 0xffff else 0); writeInt(0); writeInt(0)
+        }
+    }
+    fun scroll(scroll: Scroll): ByteArray = bytes {
+        val target = scroll.target
+        writeByte(3)
+        writeInt(target.x); writeInt(target.y)
+        writeShort(target.geometry.width); writeShort(target.geometry.height)
+        writeShort(0)
+        // Android apps apply their own scroll factor. 64 nominal pixels = one wheel detent.
+        writeShort((-scroll.pixels.toDouble() / 64 / 16 * 32768).toInt().coerceIn(-32768, 32767))
+        writeInt(0)
+    }
+    fun navigate(navigate: Navigate): ByteArray = bytes {
+        for (action in listOf(0, 1)) {
+            writeByte(0); writeByte(action); writeInt(navigate.action.keycode); writeInt(0); writeInt(0)
         }
     }
 }
