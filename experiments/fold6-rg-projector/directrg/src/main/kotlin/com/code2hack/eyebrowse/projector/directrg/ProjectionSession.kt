@@ -15,6 +15,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import javax.net.ssl.SSLSocket
+import org.json.JSONArray
 import org.json.JSONObject
 
 class ProjectionSession(
@@ -51,8 +52,8 @@ class ProjectionSession(
         stats.put("elapsedMs", (seconds * 1000).toLong()).put("packets", packets).put("changingPackets", changes)
             .put("rendered", rendered).put("receivedFps", if (seconds > 0) packets / seconds else 0)
             .put("renderedFps", if (seconds > 0) rendered / seconds else 0).put("touchesSent", touches)
-            .put("readToRenderP95Ms", p95(renderDelayMs)).put("networkRoundTripP95Ms", p95(roundTripMs))
-            .put("latencyScope", "RG local packet-read to Surface callback; network echo RTT; no optical/input end-to-end claim")
+            .put("packetReadToCallbackP95Ms", p95(renderDelayMs)).put("networkRoundTripP95Ms", p95(roundTripMs))
+            .put("latencyScope", "RG System.nanoTime packet-read to render-callback receipt; network echo RTT; no optical/input end-to-end claim")
             .put("maxEncodedPacketBytes", Wire.MAX_PAYLOAD).put("maxInflightFrames", 8).put("queuedTaps", 0)
         val file = AtomicFile(File(directory.parentFile, "status.json"))
         val out = file.startWrite()
@@ -61,6 +62,13 @@ class ProjectionSession(
     }
 
     private fun state(value: String) { record(value); onState(this, value) }
+
+    @Synchronized private fun failure(error: Exception) {
+        val causes = JSONArray()
+        var cause: Throwable? = error
+        repeat(6) { cause?.let { causes.put(it.javaClass.simpleName); cause = it.cause } }
+        stats.put("errorType", error.javaClass.simpleName).put("causeClasses", causes)
+    }
 
     private fun send(frame: Frame) = synchronized(outputLock) {
         check(running.get())
@@ -110,7 +118,7 @@ class ProjectionSession(
                                 }
                                 if (!readyForTouch && running.get()) { readyForTouch = true; state("STREAMING") }
                             }, { name -> synchronized(this) { stats.put("decoder", name) } },
-                                { format -> synchronized(this) { stats.put("decoderFormat", format) } }, { closeWithState("DECODE_FAILED") })
+                                { format -> synchronized(this) { stats.put("decoderFormat", format) } }, { error -> failure(error); closeWithState("DECODE_FAILED") })
                         }
                         Wire.VIDEO -> {
                             require(frame.stamp >= 0)
@@ -133,7 +141,7 @@ class ProjectionSession(
                     }
                 }
                 closeWithState("DISCONNECTED")
-            } catch (_: Exception) { closeWithState("CONNECTION_FAILED") }
+            } catch (error: Exception) { failure(error); closeWithState("CONNECTION_FAILED") }
         }, "pav67-receiver").start()
     }
 

@@ -115,6 +115,8 @@ class ProjectionInstrumentation : Instrumentation() {
                 while (SystemClock.elapsedRealtime() - start < seconds * 1000L) {
                     val elapsed = SystemClock.elapsedRealtime() - start
                     if (tapAt >= 0 && !tapped && elapsed >= tapAt * 1000L) {
+                        require(status().getString("state") == "STREAMING")
+                        runOnMainSync { require(activity!!.hasWindowFocus() && !activity!!.isFinishing) }
                         val now = SystemClock.uptimeMillis()
                         sendPointerSync(MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0))
                         sendPointerSync(MotionEvent.obtain(now, now + 30, MotionEvent.ACTION_UP, x, y, 0))
@@ -151,6 +153,7 @@ class ProjectionInstrumentation : Instrumentation() {
             report.put("passed", true)
         } catch (error: Exception) {
             report.put("errorType", error.javaClass.simpleName)
+            if (activity != null) runCatching { report.put("failureStatus", status()) }
             val causes = JSONArray(); var cause: Throwable? = error
             repeat(6) { cause?.let { causes.put(it.javaClass.simpleName); cause = it.cause } }
             report.put("causeClasses", causes)

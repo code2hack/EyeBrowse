@@ -17,7 +17,7 @@ class SurfaceDecoder(
     private val rendered: (Double) -> Unit,
     name: (String) -> Unit,
     private val format: (String) -> Unit,
-    private val failed: () -> Unit,
+    private val failed: (Exception) -> Unit,
 ) : Closeable {
     private val running = AtomicBoolean(true)
     private val codec = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
@@ -30,9 +30,11 @@ class SurfaceDecoder(
         codec.configure(MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, geometry.width, geometry.height).apply {
             setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 1024 * 1024)
         }, surface, null, 0)
-        codec.setOnFrameRenderedListener({ _, pts, nano ->
+        codec.setOnFrameRenderedListener({ _, pts, _ ->
             val readAt = synchronized(received) { released.remove(pts) }
-            if (running.get() && readAt != null) rendered((nano - readAt) / 1e6)
+            // Use one local clock. The vendor render timestamp was incompatible with
+            // System.nanoTime() on the RG; callback receipt is the measured endpoint.
+            if (running.get() && readAt != null) rendered((System.nanoTime() - readAt) / 1e6)
         }, Handler(Looper.getMainLooper()))
         codec.start()
         outputThread = Thread({
@@ -58,7 +60,7 @@ class SurfaceDecoder(
                         codec.releaseOutputBuffer(index, true)
                     }
                 }
-            } catch (_: Exception) { if (running.get()) failed() }
+            } catch (error: Exception) { if (running.get()) failed(error) }
         }, "pav67-decoder").apply { start() }
     }
 

@@ -12,6 +12,8 @@ import java.io.DataOutputStream
 import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.nio.file.Files
+import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.concurrent.ArrayBlockingQueue
@@ -28,6 +30,21 @@ import org.json.JSONObject
 /** Explicit shell bootstrap only. An ordinary installed APK never acquires shell authority. */
 object ShellMain {
     const val SERVER_SHA256 = "764eb6f79811d5211fe9df341120882ba9994c7a61b897d7bf3fb662e53bc536"
+    internal fun copySessionJar(master: File, target: File, expectedSHA256: String = SERVER_SHA256) {
+        val digest = MessageDigest.getInstance("SHA-256")
+        Files.newOutputStream(target.toPath(), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE).use { output ->
+            master.inputStream().use { input ->
+                val buffer = ByteArray(65536)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    digest.update(buffer, 0, count); output.write(buffer, 0, count)
+                }
+            }
+        }
+        require(digest.digest().joinToString("") { "%02x".format(it) } == expectedSHA256) { "Unqualified session server" }
+    }
+
     @JvmStatic fun main(args: Array<String>) {
         require(Process.myUid() == 2000 && args.size == 2)
         val directory = File(args[0]); val jar = File(args[1])
@@ -159,12 +176,16 @@ private class Session(
         localListener = LocalServerSocket(socketName)
         val startup = timer.schedule({ close() }, 8, TimeUnit.SECONDS)
         val command = listOf("/system/bin/app_process", "/", "com.genymobile.scrcpy.Server", Wire.SCRCPY_VERSION,
-            "scid=%08x".format(scid), "log_level=info", "tunnel_forward=false", "send_dummy_byte=false",
+            "scid=%08x".format(scid), "log_level=debug", "tunnel_forward=false", "send_dummy_byte=false",
             "send_device_meta=false", "send_codec_meta=true", "send_frame_meta=true", "video=true", "audio=false",
             "control=true", "video_codec=h264", "video_bit_rate=2000000", "max_fps=30", "new_display=480x640/240",
             "display_ime_policy=local", "vd_destroy_content=true", "clipboard_autosync=false", "power_on=false", "cleanup=true")
+        // Stock cleanup unlinks its own CLASSPATH JAR. Keep the pinned master for
+        // reconnects and let each stock session consume its own verified copy.
+        val sessionJar = File(directory, "scrcpy-%08x.jar".format(scid))
+        ShellMain.copySessionJar(jar, sessionJar)
         server = ProcessBuilder(command).apply {
-            environment()["CLASSPATH"] = jar.absolutePath
+            environment()["CLASSPATH"] = sessionJar.absolutePath
             redirectErrorStream(true); redirectOutput(File(directory, "scrcpy-%08x.log".format(scid)))
         }.start()
         if (!running.get()) { server!!.destroyForcibly(); error("Session stopped during startup") }
