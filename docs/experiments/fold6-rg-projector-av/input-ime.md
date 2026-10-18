@@ -272,7 +272,7 @@ Correction artifacts are retained separately from the historical pair above:
 | RG3,852e1de settings placement196/198 | Installed/tested W68-02; reversed axes retained | 2,607,565 | `45852fbc80cfaf3944c19ac5110abd86de0ba7928723f2e2f1a673b3549cad9f` |
 | RG3, sign-only correction | Installed; Owner reports both axes still reversed | 2,607,565 | `6a26ea8c0c57c5fe6c47803fbbde24376c64c1322d6167b1a34ab464ac12fbe9` |
 | RG3, current-head-frame correction | Installed; Owner confirmed both directions | 2,607,565 | `8911c4a3dcc78cc45a8a3dd1a77711fe2eb0ea50a6045dc8045c17c236eaf43d` |
-| RG3, three-tap Disconnect | Installed; physical Disconnect pending | 2,607,565 | `efd47666c3ec0ae250dfdbf47286fed5aff348c804c178fdf8fc256e86daa312` |
+| RG3, first three-tap Disconnect | Installed; keyboard Back confirmed, Disconnect failed | 2,607,565 | `efd47666c3ec0ae250dfdbf47286fed5aff348c804c178fdf8fc256e86daa312` |
 | Probe4, direct lifecycle stop | Installed W68-02; unchanged by direction/gesture changes | 73,010 | `fd458f817bfa21e14c6792ed7e6615c3993f3fb0de5e6b2ccfac09a26856ba83` |
 
 The numeric-row/local-hit-action change passed the affected **13 receiver
@@ -412,3 +412,55 @@ the unfinished sequence. Host timing tests use300ms and check both sides of the
 deadline. This is a recognizer timing assertion, not a measured physical
 input-to-visible latency. Three taps invoke local Disconnect immediately after
 the final valid UP, without first sending Phone Back.
+
+
+## Native contact correction after the first physical three-tap failure
+
+On source19c5ebc/RGefd47666…/VD77 the Owner reported: “keyboard dismissed
+correctly; Disconnected screen didn't return.” Double-tap Phone Back therefore
+worked on that build; physical three-tap Disconnect failed. The failure is
+retained in `three-tap221/retry-20261018T194847Z/` with its actual receiver and
+owned fixture observations. Later counters include unqualified repeated attempts
+and edge scrolling, so they do not assign a separate effect to each burst.
+
+The bounded native-pad capture showed many groups of three short
+`KEY_DASHBOARD` contacts with roughly132–192ms intervals, without an Enter/Back
+summary. The actual RG input configuration identifies `ROKID,PSOC-TP-R` on
+`/dev/input/event1`, using `/system/usr/keylayout/Generic.kl`. Its Linux key204
+maps to Android NOTIFICATION; key28 maps to ENTER and158 to BACK. The first
+three-tap receiver handled the classified Enter/Back/OEM events but did not map
+NOTIFICATION. Grouped kernel records are diagnostic, not an attribution of every
+burst or proof of application delivery. No conclusion that the Owner tapped too
+slowly is drawn.
+
+The narrow correction maps NOTIFICATION only for the already identified native
+pad and keyboard source. Once that contact path is observed by the Activity, the
+existing recognizer counts those contacts and ignores later native Enter/Back/
+OEM classifications instead of counting them again. Other devices' notification
+keys are not consumed. Ordinary non-pad Android Back stays independent. A
+retired native burst remains suppressed until an actual quiet continuation
+boundary; additional contacts extend retirement and cannot click the disconnected
+settings/Connect view. Native firmware Back tails are consumed before the
+receiver's default disconnected Back path. Missing UP completes no action and
+expires at the existing hold bound; an invalid third press never falls back to
+Back. These are extensions of the same bounded recognizer, with no global
+keylayout change, new panel or gesture framework.
+
+A regression replaying the captured Android-mapped contacts failed against the
+first mapping (one expected failure,15-second host build). The raw trace, actual
+keylayout lines, original failure and source snapshot remain retained. Host
+regressions also cover delayed classification summaries, cancellation, retired
+burst tails, missing completion and ordinary Back. Up to64 text-free native key
+UP diagnostics in the debug receiver distinguish actual Activity delivery from
+kernel visibility. The corrected mapping still requires affected host checks,
+matched installation and physical verification; no physical Disconnect PASS is
+inferred from a kernel trace or a host assertion.
+
+The contact replay and first retirement checks passed28 receiver tests/builds/lint;
+final missing-completion replacement and raw-swipe checks bring the affected
+receiver suite to **30 tests** (input25, decoder5), all passed with receiver/probe
+assembly and lint in23s. Only OldTargetApi remains. Host/protocol are unchanged.
+The final contact-corrected RG artifact is `33297e0b23cd3f962a5e42ca8b75bdf4fa8e02849d7a3e95f10fd50defefa7c5`;
+Probe bytes remain `fd458f817bfa21e14c6792ed7e6615c3993f3fb0de5e6b2ccfac09a26856ba83`.
+`native-contact-correction221/host-checks.json` binds source, tests and artifacts.
+Physical application delivery and Disconnect on this new artifact remain pending.

@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Rect
 import android.os.Bundle
 import android.os.SystemClock
+import android.util.Log
 import android.view.GestureDetector
 import android.view.Gravity
 import android.view.InputDevice
@@ -201,14 +202,17 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
         if (usable()) gestures.confirm(SystemClock.uptimeMillis()) else gestures.cancel()
     }
     private fun cancelInput() {
-        if (::gestures.isInitialized) gestures.cancel()
+        if (::gestures.isInitialized) gestures.cancel(SystemClock.uptimeMillis())
         if (::screen.isInitialized) screen.cancelTouch()
         root.removeCallbacks(confirmTap); root.removeCallbacks(edgeTick); edgeScheduled = false; edgeMotion.stop()
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.keyCode == KeyEvent.KEYCODE_BACK && !streaming) return super.dispatchKeyEvent(event)
-        val key = nativePadKey(event.device?.name, event.source, event.keyCode)
+        val padKey = nativePadKey(event.device?.name, event.source, event.keyCode)
+        // Retired pad summaries must be consumed even after Disconnect. Only an
+        // ordinary non-pad Back falls through to the disconnected Activity.
+        if (event.keyCode == KeyEvent.KEYCODE_BACK && !streaming && padKey == null) return super.dispatchKeyEvent(event)
+        val key = padKey
             ?: if (event.keyCode == KeyEvent.KEYCODE_BACK) PadGestureRecognizer.Key.BACK
             else return super.dispatchKeyEvent(event)
         if (!usable() || event.metaState != 0) { cancelInput(); return true }
@@ -218,7 +222,12 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
             event.action == KeyEvent.ACTION_UP -> PadGestureRecognizer.Phase.UP
             else -> PadGestureRecognizer.Phase.CANCEL
         }
-        if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) padUps++
+        if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) {
+            padUps++
+            // Bounded, text-free experiment diagnostic: prove which native reports
+            // actually reach this Activity, rather than assuming kernel delivery.
+            if (padKey != null && padUps <= 64) Log.d("PAV68Pad", "key=${event.keyCode} up=${event.eventTime} down=${event.downTime}")
+        }
         gestures.accept(PadGestureRecognizer.Event(key, phase, event.eventTime, event.downTime, event.repeatCount), SystemClock.uptimeMillis())
         root.removeCallbacks(confirmTap)
         gestures.deadline?.let { root.postDelayed(confirmTap, (it - SystemClock.uptimeMillis()).coerceAtLeast(0)) }
@@ -291,6 +300,7 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
 internal fun nativePadKey(deviceName: String?, source: Int, keyCode: Int): PadGestureRecognizer.Key? {
     if (deviceName != "ROKID,PSOC-TP-R" || source and InputDevice.SOURCE_KEYBOARD != InputDevice.SOURCE_KEYBOARD) return null
     return when (keyCode) {
+        KeyEvent.KEYCODE_NOTIFICATION -> PadGestureRecognizer.Key.CONTACT
         KeyEvent.KEYCODE_ENTER -> PadGestureRecognizer.Key.TAP
         291, KeyEvent.KEYCODE_BACK -> PadGestureRecognizer.Key.DOUBLE
         KeyEvent.KEYCODE_DPAD_RIGHT, 292 -> PadGestureRecognizer.Key.FORWARD

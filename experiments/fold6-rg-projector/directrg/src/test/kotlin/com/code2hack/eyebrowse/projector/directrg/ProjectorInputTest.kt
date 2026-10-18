@@ -246,6 +246,106 @@ class ProjectorInputTest {
         assertNull(nativePadKey("Virtual", 0x101, 4))
         assertNull(nativePadKey("ROKID,PSOC-TP-R", 0, 4))
     }
+    private fun nativePress(gestures: PadGestureRecognizer, code: Int, down: Long, up: Long = down + 20) {
+        val key = nativePadKey("ROKID,PSOC-TP-R", 0x101, code)
+        assertNotNull("Observed native key $code must reach the recognizer", key)
+        gestures.accept(PadGestureRecognizer.Event(key!!, PadGestureRecognizer.Phase.DOWN, down, down), down)
+        gestures.accept(PadGestureRecognizer.Event(key, PadGestureRecognizer.Phase.UP, up, down), up)
+    }
+    @Test fun capturedNativeNotificationContactsDisconnectWithoutConstituentActions() {
+        var taps = 0; var backs = 0; var exits = 0
+        val gestures = PadGestureRecognizer(300, 500, { taps++ }, { backs++ }, {}, { exits++ })
+        assertNull(nativePadKey("Virtual", 0x101, 83))
+        assertNull(nativePadKey("ROKID,PSOC-TP-R", 0, 83))
+        // Actual KEY_DASHBOARD/key204 -> NOTIFICATION83, rounded to uptime ms.
+        // These observed three contacts had no Enter/Back classification afterward.
+        nativePress(gestures, 83, 17048181, 17048204)
+        nativePress(gestures, 83, 17048371, 17048392)
+        assertEquals(0, taps); assertEquals(0, backs); assertEquals(0, exits)
+        nativePress(gestures, 83, 17048524, 17048548)
+        gestures.confirm(17049000)
+        assertEquals(1, exits); assertEquals(0, taps); assertEquals(0, backs)
+    }
+    @Test fun contactModeSuppressesLateFirmwareSingleAndDoubleSummaries() {
+        var taps = 0; var backs = 0; var exits = 0
+        lateinit var gestures: PadGestureRecognizer
+        gestures = PadGestureRecognizer(300, 500, { taps++ }, { backs++; gestures.cancel() }, {}, { exits++; gestures.cancel() })
+        nativePress(gestures, 83, 1000); gestures.confirm(1320)
+        assertEquals(1, taps)
+        nativePress(gestures, 66, 1500, 1524) // Observed firmware Enter can arrive about500ms later.
+        gestures.confirm(1900); assertEquals(1, taps)
+        nativePress(gestures, 83, 2000); nativePress(gestures, 83, 2180)
+        nativePress(gestures, 4, 2420) // Firmware Back summary must not fire before the raw pair's deadline.
+        assertEquals(0, backs)
+        gestures.confirm(2500); assertEquals(1, backs)
+        nativePress(gestures, 291, 2600); gestures.confirm(3000)
+        assertEquals(1, backs); assertEquals(1, taps); assertEquals(0, exits)
+        nativePress(gestures, 83, 3500); nativePress(gestures, 83, 3670); nativePress(gestures, 83, 3840)
+        nativePress(gestures, 66, 4400); nativePress(gestures, 4, 4700); gestures.confirm(5200)
+        assertEquals(1, exits); assertEquals(1, backs); assertEquals(1, taps)
+    }
+    @Test fun canceledContactsAndTheirFirmwareTailCannotReplayAfterPause() {
+        var taps = 0; var backs = 0; var exits = 0
+        val gestures = PadGestureRecognizer(300, 500, { taps++ }, { backs++ }, {}, { exits++ })
+        nativePress(gestures, 83, 1000); nativePress(gestures, 83, 1170)
+        gestures.cancel(); nativePress(gestures, 83, 1320)
+        nativePress(gestures, 66, 1850); nativePress(gestures, 4, 2100); gestures.confirm(2600)
+        assertEquals(0, taps); assertEquals(0, backs); assertEquals(0, exits)
+        nativePress(gestures, 83, 3000); nativePress(gestures, 83, 3170); nativePress(gestures, 83, 3340)
+        assertEquals(1, exits); assertEquals(0, taps); assertEquals(0, backs)
+    }
+    @Test fun contactModeStillHonorsOrdinaryNonPadAndroidBack() {
+        var taps = 0; var backs = 0; var exits = 0
+        val gestures = PadGestureRecognizer(300, 500, { taps++ }, { backs++ }, {}, { exits++ })
+        nativePress(gestures, 83, 1000)
+        gestures.accept(PadGestureRecognizer.Event(PadGestureRecognizer.Key.BACK, PadGestureRecognizer.Phase.DOWN, 1100, 1100), 1100)
+        gestures.accept(PadGestureRecognizer.Event(PadGestureRecognizer.Key.BACK, PadGestureRecognizer.Phase.UP, 1120, 1100), 1120)
+        nativePress(gestures, 4, 1350); gestures.confirm(1700)
+        assertEquals(1, backs); assertEquals(0, taps); assertEquals(0, exits)
+    }
+    @Test fun contactBurstTailIsRetiredAcrossDisconnectUntilAQuietBoundary() {
+        var taps = 0; var backs = 0; var exits = 0
+        lateinit var gestures: PadGestureRecognizer
+        gestures = PadGestureRecognizer(300, 500, { taps++ }, { backs++ }, {}, { exits++; gestures.cancel() })
+        for (at in listOf(1000L, 1170L, 1340L, 1510L, 1680L, 1850L)) nativePress(gestures, 83, at)
+        gestures.confirm(2200)
+        nativePress(gestures, 66, 2350); nativePress(gestures, 4, 2600); gestures.confirm(2950)
+        assertEquals(1, exits); assertEquals(0, taps); assertEquals(0, backs)
+        nativePress(gestures, 83, 3200); gestures.confirm(3520)
+        assertEquals(1, taps); assertEquals(1, exits); assertEquals(0, backs)
+    }
+    @Test fun missingThirdUpExpiresAtExistingHoldBoundWithoutFallbackBack() {
+        var taps = 0; var backs = 0; var exits = 0
+        val gestures = PadGestureRecognizer(300, 500, { taps++ }, { backs++ }, {}, { exits++ })
+        nativePress(gestures, 83, 1000); nativePress(gestures, 83, 1170)
+        gestures.accept(PadGestureRecognizer.Event(PadGestureRecognizer.Key.CONTACT, PadGestureRecognizer.Phase.DOWN, 1340, 1340), 1340)
+        assertEquals(1840L, gestures.deadline)
+        gestures.confirm(1839); assertTrue(gestures.hasWork)
+        gestures.confirm(1840); assertFalse(gestures.hasWork)
+        gestures.accept(PadGestureRecognizer.Event(PadGestureRecognizer.Key.CONTACT, PadGestureRecognizer.Phase.UP, 1850, 1340), 1850)
+        nativePress(gestures, 83, 2000); nativePress(gestures, 66, 2500); gestures.confirm(2900)
+        assertEquals(0, taps); assertEquals(0, backs); assertEquals(0, exits)
+        nativePress(gestures, 83, 3200); gestures.confirm(3520)
+        assertEquals(1, taps); assertEquals(0, backs); assertEquals(0, exits)
+    }
+    @Test fun newContactDownCannotReplaceAMissingThirdUp() {
+        var taps = 0; var backs = 0; var exits = 0
+        val gestures = PadGestureRecognizer(300, 500, { taps++ }, { backs++ }, {}, { exits++ })
+        nativePress(gestures, 83, 1000); nativePress(gestures, 83, 1170)
+        gestures.accept(PadGestureRecognizer.Event(PadGestureRecognizer.Key.CONTACT, PadGestureRecognizer.Phase.DOWN, 1340, 1340), 1340)
+        nativePress(gestures, 83, 1510); gestures.confirm(2000)
+        assertEquals(0, taps); assertEquals(0, backs); assertEquals(0, exits)
+        nativePress(gestures, 83, 3000); gestures.confirm(3320)
+        assertEquals(1, taps); assertEquals(0, backs); assertEquals(0, exits)
+    }
+    @Test fun nativeSwipeSupersedesContactWithoutAnExtraTap() {
+        var taps = 0; var backs = 0; var exits = 0; val scrolls = mutableListOf<Int>()
+        val gestures = PadGestureRecognizer(300, 500, { taps++ }, { backs++ }, { scrolls.add(it) }, { exits++ })
+        nativePress(gestures, 83, 1000); nativePress(gestures, 21, 1100)
+        nativePress(gestures, 83, 1200); nativePress(gestures, 66, 1700); gestures.confirm(2100)
+        assertEquals(listOf(-160), scrolls)
+        assertEquals(0, taps); assertEquals(0, backs); assertEquals(0, exits)
+    }
     @Test fun settingsUseOwnNumericValuesAndRetainValueOnSaveFailure() {
         val saved = mutableMapOf<String, String>(); var writable = true
         val settings = LocalInputSettings(saved::get) { k, v -> if (writable) { saved[k] = v; true } else false }

@@ -11,7 +11,7 @@ internal class PadGestureRecognizer(
     private val scroll: (Int)->Unit,
     private val disconnect: ()->Unit,
 ) {
-    enum class Key { TAP, DOUBLE, BACK, FORWARD, BACKWARD }
+    enum class Key { CONTACT, TAP, DOUBLE, BACK, FORWARD, BACKWARD }
     enum class Phase { DOWN, UP, CANCEL }
     data class Event(val key: Key, val phase: Phase, val timeMs: Long, val downTimeMs: Long, val repeat: Int=0)
     private data class Press(val key: Key, val downTimeMs: Long)
@@ -22,14 +22,19 @@ internal class PadGestureRecognizer(
     private var lastTapUpMs=0L
     private var lastDoubleDownMs=-1L
     private var lastDoubleUpMs=0L
+    private var contactReports=false
     private var lastEventMs=0L
     private var suppressTapsUntil=0L
-    val deadline get() = pending
+    val deadline get() = pending ?: press?.let { it.downTimeMs+longPressMs }
     val hasWork get() = press!=null || pending!=null || taps!=0
 
     init { require(doubleTapMs in 100..600 && longPressMs in 200..2_000) }
 
     fun accept(event: Event, receiptUptimeMs: Long) {
+        // The identified pad emits per-contact NOTIFICATION markers, then delayed
+        // Enter/Back classifications. Once contacts are available, summaries must
+        // never add another tap/action, including after Disconnect changes the UI.
+        if (contactReports && (event.key==Key.TAP || event.key==Key.DOUBLE)) return
         // An identical OEM report is not another physical pair, including after a callback.
         if (event.key==Key.DOUBLE && event.downTimeMs==lastDoubleDownMs &&
             event.timeMs<=lastDoubleUpMs && event.repeat==0) return
@@ -39,9 +44,19 @@ internal class PadGestureRecognizer(
         }
         lastEventMs=event.timeMs
         if (event.phase==Phase.CANCEL || event.repeat!=0) { cancel();return }
-        if ((event.key==Key.TAP || event.key==Key.DOUBLE) && event.timeMs<suppressTapsUntil) return
+        if (event.key==Key.CONTACT && !contactReports) { clear();contactReports=true }
+        if ((event.key==Key.CONTACT || event.key==Key.TAP || event.key==Key.DOUBLE) && event.timeMs<suppressTapsUntil) {
+            // Wait for an actual quiet boundary, rather than reusing a burst's fourth
+            // or later contact as a new click on the disconnected settings/Connect UI.
+            suppressTapsUntil=event.timeMs+doubleTapMs
+            return
+        }
         if (event.phase==Phase.DOWN) {
             if (press?.let { it.key==event.key && it.downTimeMs==event.downTimeMs }==true) return
+            if (press!=null) {
+                cancel(event.timeMs) // A new tap cannot complete an earlier missing UP.
+                if (event.key!=Key.BACK && event.key!=Key.FORWARD && event.key!=Key.BACKWARD) return
+            }
             confirm(event.timeMs)
             // A press within the continuation interval defers the old action until its UP.
             if (event.key==Key.FORWARD || event.key==Key.BACKWARD || event.key==Key.BACK) { taps=0;rawPairNeedsOem=false }
@@ -51,10 +66,10 @@ internal class PadGestureRecognizer(
         }
         val old=press ?: return
         if (old.key!=event.key || old.downTimeMs!=event.downTimeMs) { cancel();return }
-        press=null
         if (event.timeMs-old.downTimeMs>=longPressMs) { cancel();return }
+        press=null
         when(event.key) {
-            Key.TAP -> {
+            Key.CONTACT,Key.TAP -> {
                 taps++;lastTapUpMs=event.timeMs
                 rawPairNeedsOem=taps==2
                 if (taps==3) {
@@ -84,6 +99,10 @@ internal class PadGestureRecognizer(
         }
     }
     fun confirm(nowUptimeMs: Long) {
+        press?.let {
+            if (nowUptimeMs>=it.downTimeMs+longPressMs) cancel(nowUptimeMs)
+            return
+        }
         val old=pending ?: return
         if(nowUptimeMs<old) return
         val count=taps
@@ -91,10 +110,10 @@ internal class PadGestureRecognizer(
         when(count) { 1->single();2->back() }
     }
     private fun clear() { press=null;pending=null;taps=0;rawPairNeedsOem=false }
-    fun cancel() {
+    fun cancel(nowUptimeMs: Long = lastEventMs) {
         // Do not reinterpret the remaining tail of an invalidated physical sequence as a fresh tap
         // after a pause, focus loss or geometry change.
-        if(hasWork) suppressTapsUntil=maxOf(suppressTapsUntil,pending ?: (lastEventMs+doubleTapMs))
+        if(hasWork) suppressTapsUntil=maxOf(suppressTapsUntil,pending ?: 0L,nowUptimeMs+doubleTapMs)
         clear()
     }
     companion object { const val MAX_EVENT_AGE_MS=250L }
