@@ -87,8 +87,16 @@ class SurfaceDecoder(
 
     override fun close() {
         if (!running.compareAndSet(true, false)) return
-        if (Thread.currentThread() !== outputThread) outputThread.join(1000)
-        runCatching { codec.stop() }; codec.release()
-        synchronized(received) { received.clear(); released.clear() }
+        var interrupted = false
+        try {
+            if (Thread.currentThread() !== outputThread) outputThread.join(1000)
+        } catch (_: InterruptedException) { interrupted = true }
+        finally {
+            try { runCatching { codec.stop() }; codec.release() }
+            finally {
+                synchronized(received) { received.clear(); released.clear() }
+                if (interrupted) Thread.currentThread().interrupt()
+            }
+        }
     }
 }

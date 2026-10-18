@@ -2,7 +2,7 @@
   "schema": 1,
   "issue": 67,
   "alias": "PAV-02",
-  "status": "DECODER_REVIEW_CORRECTED_HOST_AND_CURRENT_USB_LIFECYCLE_VERIFIED_READY_FOR_REVIEW",
+  "status": "INTERRUPTED_DECODER_CLEANUP_CORRECTED_HOST_AND_CURRENT_SHORT_USB_LIFECYCLE_READY_FOR_REVIEW",
   "baseline": "38cb5f7ec8d320ef9833a36840ccec3febdbc885",
   "donor": "03de921e2400147842ce6c56101b58d514dde77c",
   "target": "spike/fold6-rg-projector-av",
@@ -179,6 +179,21 @@
         "bytes": 1891,
         "sha256": "0a87e91fc2b9bdaa03466decd5a7ceb8c7d5fb7116f9d346683200161eac85aa"
       }
+    },
+    "affectedRGInterruptedCleanup176": {
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "lintErrors": 0,
+      "lintWarnings": [
+        "OldTargetApi"
+      ],
+      "proof": {
+        "record": "review176-host-proof.json",
+        "bytes": 2531,
+        "sha256": "1e14dd218742fe4d0e4b3c50ee60ac895157741776be1cd5593dbc0354cb1af2"
+      },
+      "unrelatedSuitesRerun": false
     }
   },
   "APKs": [
@@ -192,10 +207,10 @@
     },
     {
       "package": "com.code2hack.eyebrowse.projector.directrg.r3",
-      "bytes": 2559234,
-      "sha256": "c18e228eb8acd85a6cd4c5dc800c25341f1294d0d570bcde3ab57a3863d356ab",
+      "bytes": 2559958,
+      "sha256": "fb0d2036af77ba2d4cb1bfecc403659613041113837d8f40c829135ac979e35b",
       "signatureVerified": true,
-      "installationState": "USB173_CURRENT_INSTALLED_FULL_BYTES_MATCH_F_G_H_I_LIFECYCLE_PASSED",
+      "installationState": "REVIEW176_FULL_INSTALLED_BYTES_MATCH_SHORT_STOP_RECONNECT_PASSED",
       "signerCertificateSHA256": "e372f80243affb0fd2462d4c90f8aede64a9ffb683cebad6c517d73eacc6a963"
     },
     {
@@ -2483,6 +2498,186 @@
       "record": "usb173i_hoststop-stderr.txt",
       "bytes": 0,
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "review176-apk-check.json",
+      "bytes": 1190,
+      "sha256": "07eb3b1f01982ca733e09a5f95f42115c890d81ef2b8178ca1d12f5dfb50f16f"
+    },
+    {
+      "record": "review176-apk-signature.txt",
+      "bytes": 955,
+      "sha256": "02d8f4f72ed962b6259477423590005cd8e6229181d24caa61748c232515e47c"
+    },
+    {
+      "record": "review176-bridge-start.json",
+      "bytes": 112,
+      "sha256": "5e9b3761bdce783303c31aae9af4dd605a9e8c0cc7c672f60e4139f2194b36f8"
+    },
+    {
+      "record": "review176-build-lint.log",
+      "bytes": 5913,
+      "sha256": "75c649d5005084241c1f83312336c4db8e366e02b815c503bcfabd47cb70caf4"
+    },
+    {
+      "record": "review176-end-phone.json",
+      "bytes": 217,
+      "sha256": "b15e35762252cf22094f98ba3cd51b06b61c4645ddebcffc562bfaeb6b5273cd"
+    },
+    {
+      "record": "review176-end-rg.json",
+      "bytes": 171,
+      "sha256": "5f907e17f8a1b510bbad8a0e2122b17a995b9587fed28f38274624f7c28861f4"
+    },
+    {
+      "record": "review176-host-green.xml",
+      "bytes": 978,
+      "sha256": "387d10ed9c9e28521daddc8d47280675bba7c5d46320c5049459729f6e963685"
+    },
+    {
+      "record": "review176-host-log.json",
+      "bytes": 3522,
+      "sha256": "34f6b997466b1563b5581e79a467df101d7962496fd5e97bef8d14a60dcebf26"
+    },
+    {
+      "record": "review176-host-proof.json",
+      "bytes": 2531,
+      "sha256": "1e14dd218742fe4d0e4b3c50ee60ac895157741776be1cd5593dbc0354cb1af2"
+    },
+    {
+      "record": "review176-host-red-test.log",
+      "bytes": 3257,
+      "sha256": "2c0bb82d7f0a27d878b9f2be701d2a1384910eeda63ed4de41729d30cd2b4cbf"
+    },
+    {
+      "record": "review176-host-red-test.xml",
+      "bytes": 5077,
+      "sha256": "e8e0b818fd2175ae6abadb862647e4dff71f8f1841ff002976b6b0149ce5ef76"
+    },
+    {
+      "record": "review176-host-red.log",
+      "bytes": 56,
+      "sha256": "28ff1423400075f11d7aaba043f586b2ca6be0cc62f4840e2ed0cdd0787b15ea"
+    },
+    {
+      "record": "review176-host-red.xml",
+      "bytes": 820,
+      "sha256": "1ad925290b3693a8b5fbb3e065f4766d073aaf5019a9a89adb123985d780bcbf"
+    },
+    {
+      "record": "review176-lint.xml",
+      "bytes": 1891,
+      "sha256": "0a87e91fc2b9bdaa03466decd5a7ceb8c7d5fb7116f9d346683200161eac85aa"
+    },
+    {
+      "record": "review176-phone-identity.json",
+      "bytes": 389,
+      "sha256": "e942371b9bd42e767088f0c04bdf1f33d78fc55523b15d815e6577722cf904ae"
+    },
+    {
+      "record": "review176-rg-identity.json",
+      "bytes": 391,
+      "sha256": "8ff344f0e930d867a0b74897d76b60b35aa8d0c6c1804a7d709480801c566b61"
+    },
+    {
+      "record": "review176-rg-installed.json",
+      "bytes": 297,
+      "sha256": "46d89891625f5d89dcb1b2097d9af7839a38f53471ff0626418a0fb1cb9ba60d"
+    },
+    {
+      "record": "review176-rg-own-logcat.json",
+      "bytes": 20644,
+      "sha256": "82d297d46d13ecf39118c82a36b62d04d798f51dfd5f601b88724d70fd314fc8"
+    },
+    {
+      "record": "review176-rg-start.json",
+      "bytes": 112,
+      "sha256": "2aef8e9ae4e93754f24013a5021c71ebc4f40dc55747960163ac0ee725676ff5"
+    },
+    {
+      "record": "review176-rg-update.json",
+      "bytes": 133,
+      "sha256": "e95a31b6e2ddc4667f88dc9931e6a380e4d72a6796bdf5fe1f61458916e71419"
+    },
+    {
+      "record": "review176-source-apk-capsule.json",
+      "bytes": 9918,
+      "sha256": "bc5b91f6aea2f8595f3ab32970736b47070892573ae983f3de7f0456fff3f4ff"
+    },
+    {
+      "record": "review176-source.patch",
+      "bytes": 4950,
+      "sha256": "6e1788cb40f0757122ed4188173d846dc4a38b0bbedcb7703ac8f4cac6c81a96"
+    },
+    {
+      "record": "review176-verification-summary.json",
+      "bytes": 5460,
+      "sha256": "0dfb6bf10e8d724600f5c65d0cb0b9cef0bdc49676b931c95b6d7d79ec3ecf18"
+    },
+    {
+      "record": "review176a-connected.json",
+      "bytes": 1173,
+      "sha256": "bd50bba3d959104e7126c7107941282c84a0e1ae38c2f23658e5a79e7190b1c3"
+    },
+    {
+      "record": "review176a-fixture-launch.json",
+      "bytes": 230,
+      "sha256": "0471f4e2ec0557904c1a610b1315da3684ede8277f6d3daf560184c8ffc432e9"
+    },
+    {
+      "record": "review176a-go.json",
+      "bytes": 95,
+      "sha256": "4db9079788799b559c69697bc404b6fc0da05f6369e39e0cc7a00ea6c339764f"
+    },
+    {
+      "record": "review176a-probe-read.json",
+      "bytes": 5788,
+      "sha256": "a39135423b7f18ed489772d6f8bcb771e12591df03f40d059d86c4ace1b421ee"
+    },
+    {
+      "record": "review176a-stock-start.json",
+      "bytes": 668,
+      "sha256": "213db767fb6b11f0d0e94dac02c7083105796b4014057650261987381459a0f0"
+    },
+    {
+      "record": "review176b-connected.json",
+      "bytes": 1171,
+      "sha256": "672286a0ab01d1f0c25b06ac23beb46886244de3d0153b69be621cbda81f436a"
+    },
+    {
+      "record": "review176b-driver-start.json",
+      "bytes": 112,
+      "sha256": "2099e296c83c98f8d8a1ee9f38debba257671a4901b8e43a5b9200cbcbcda2dd"
+    },
+    {
+      "record": "review176b-fixture-launch.json",
+      "bytes": 230,
+      "sha256": "6e99f73134254f209ea0e26cf3e9a866dc730df1bd1f244d69e1cea82c451055"
+    },
+    {
+      "record": "review176b-go.json",
+      "bytes": 95,
+      "sha256": "98eb3b33f763b479ce7e498e95e1ea386fcb5b099e80bbcbd2ad1401ba5f6e42"
+    },
+    {
+      "record": "review176b-image-result.json",
+      "bytes": 70,
+      "sha256": "3107513da44d14a54c5641d05871dc24c45e8c72861d8347e38936f5f237d317"
+    },
+    {
+      "record": "review176b-probe-read.json",
+      "bytes": 5698,
+      "sha256": "c50a300fcb2cc099563d10ab77be07a9f6d2c766f8960372f396047c9ce385a8"
+    },
+    {
+      "record": "review176b-stock-start.json",
+      "bytes": 668,
+      "sha256": "98dce7beef7560f1a84c9c77b5798ce814185646449466809edcfcb68fb1c81e"
+    },
+    {
+      "record": "review176b-visible.png",
+      "bytes": 21131,
+      "sha256": "b58ee04326ccf9c606523c318e7c9e90aaab3c9a8cbdf650e2b2432db1184809"
     }
   ],
   "privacy": "Original browser/account/TLS private material remains outside Git. Actual owned experiment logs/images stay private with hashes; direct167 publishes scoped metrics, explicit limits and outcomes.",
@@ -2988,12 +3183,12 @@
     "currentCandidate": false
   },
   "currentSourceCapsule": {
-    "record": "usb173-source-apk-capsule.json",
-    "bytes": 9844,
-    "sha256": "dc8dcde6d8b5af0d2146679946d88a4f9b3d86a8c73729a7ff79cd8d72d31fc1",
+    "record": "review176-source-apk-capsule.json",
+    "bytes": 9918,
+    "sha256": "bc5b91f6aea2f8595f3ab32970736b47070892573ae983f3de7f0456fff3f4ff",
     "sourceFiles": 25,
     "testSourceFiles": 8,
-    "binding": "Current corrected RG3 APK with own error/slow-operation logs, installed full bytes matched; HostR5/Probe4 unchanged. Current short reconnect/Stop/pause/HostStop pass; prior310s remains capsule159."
+    "binding": "Current R67-3 finally/interrupt correction; full installed RG3 bytes match; short local Stop/reconnect passed; unchanged HostR5/Probe4. Prior long-run and lifecycle capsules retain original bindings."
   },
   "previousRGTestAPK": {
     "package": "com.code2hack.eyebrowse.projector.directrg.r3.test",
@@ -3980,5 +4175,253 @@
       "bytes": 7105,
       "sha256": "2b2be2f2c30771e4d2c4a845398e00ecd96d373f62203835e9bd5e0f89e34a12"
     }
+  },
+  "historicalSourceCapsuleUSB173": {
+    "record": "usb173-source-apk-capsule.json",
+    "bytes": 9844,
+    "sha256": "dc8dcde6d8b5af0d2146679946d88a4f9b3d86a8c73729a7ff79cd8d72d31fc1",
+    "sourceFiles": 25,
+    "testSourceFiles": 8,
+    "binding": "Current corrected RG3 APK with own error/slow-operation logs, installed full bytes matched; HostR5/Probe4 unchanged. Current short reconnect/Stop/pause/HostStop pass; prior310s remains capsule159."
+  },
+  "historicalRGAPKUSB173": {
+    "package": "com.code2hack.eyebrowse.projector.directrg.r3",
+    "bytes": 2559234,
+    "sha256": "c18e228eb8acd85a6cd4c5dc800c25341f1294d0d570bcde3ab57a3863d356ab",
+    "signatureVerified": true,
+    "installationState": "USB173_CURRENT_INSTALLED_FULL_BYTES_MATCH_F_G_H_I_LIFECYCLE_PASSED",
+    "signerCertificateSHA256": "e372f80243affb0fd2462d4c90f8aede64a9ffb683cebad6c517d73eacc6a963"
+  },
+  "reviewCorrection176": {
+    "reviewedHead": "693ee1981fd8e1ed00380c75e45648684f58a9ae",
+    "review": "https://github.com/code2hack/EyeBrowse/pull/72#pullrequestreview-5563892317",
+    "finding": "R67-3",
+    "priorFindings": "R67-1/R67-2 independently RESOLVED in review2",
+    "todoHistory": "I67-T03 correction attempt3/failure2 per Manager176; no Worker conclusion",
+    "summary": {
+      "state": "R67_3_CORRECTED_HOST_REGRESSION_AND_SHORT_CURRENT_DEVICE_LIFECYCLE_VERIFIED_READY_FOR_REVIEW",
+      "reviewedBase": "693ee1981fd8e1ed00380c75e45648684f58a9ae",
+      "finding": "R67-3",
+      "todoHistory": "I67-T03 correction attempt3/failure2 per Manager176; no Worker conclusion",
+      "productionDelta": "Only SurfaceDecoder.close; finally releases native codec after bounded join, restores caught interrupt after cleanup; initialization/publication remain unchanged",
+      "hostProof": {
+        "record": "review176-host-proof.json",
+        "bytes": 2531,
+        "sha256": "1e14dd218742fe4d0e4b3c50ee60ac895157741776be1cd5593dbc0354cb1af2"
+      },
+      "build": {
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "lintErrors": 0,
+        "lintWarnings": [
+          "OldTargetApi"
+        ],
+        "JDK": 17,
+        "Gradle": "8.11.1",
+        "AGP": "8.7.3",
+        "Kotlin": "2.2.21"
+      },
+      "APK": {
+        "record": "rg3-interrupted-close.apk",
+        "bytes": 2559958,
+        "sha256": "fb0d2036af77ba2d4cb1bfecc403659613041113837d8f40c829135ac979e35b"
+      },
+      "sameIDUpdate": {
+        "returncode": 0,
+        "explicitSuccess": true,
+        "fullInstalledHashAndSizeMatch": true,
+        "proof": {
+          "record": "review176-rg-installed.json",
+          "bytes": 297,
+          "sha256": "46d89891625f5d89dcb1b2097d9af7839a38f53471ff0626418a0fb1cb9ba60d"
+        }
+      },
+      "route": "Owner173 selected USB devices via existing Manager server15037; no emulator or old route",
+      "cases": [
+        {
+          "record": "review176a-probe-read.json",
+          "passed": true,
+          "operation": "local-stop",
+          "observedStreamingMs": 3009,
+          "connectedState": "STREAMING",
+          "reconnectedState": null,
+          "firstRendered": 156,
+          "lastRendered": 231,
+          "renderedDelta": 75,
+          "touchesSent": 0,
+          "localStopState": "STOPPED",
+          "TLS": "TLSv1.3",
+          "peerAddress": "10.199.167.157",
+          "localAddress": "10.199.167.154",
+          "decoder": "c2.qti.avc.decoder",
+          "geometry": [
+            480,
+            640
+          ]
+        },
+        {
+          "record": "review176b-probe-read.json",
+          "passed": true,
+          "operation": "reconnect",
+          "observedStreamingMs": 5015,
+          "connectedState": "STREAMING",
+          "reconnectedState": "STREAMING",
+          "firstRendered": 168,
+          "lastRendered": 290,
+          "renderedDelta": 122,
+          "touchesSent": 0,
+          "localStopState": null,
+          "TLS": "TLSv1.3",
+          "peerAddress": "10.199.167.157",
+          "localAddress": "10.199.167.154",
+          "decoder": "c2.qti.avc.decoder",
+          "geometry": [
+            480,
+            640
+          ]
+        }
+      ],
+      "image": {
+        "record": "review176b-visible.png",
+        "inspected": true,
+        "observed": "Public owned motion fixture/Visible taps0/Stop button; no unrelated overlay in this image",
+        "opticalClaim": false
+      },
+      "hostSessionStopped": [
+        {
+          "state": "SESSION_STOPPED",
+          "frames": 255,
+          "touches": 0,
+          "elapsedMs": 26366,
+          "serverAlive": false,
+          "stopReason": "CONTROL_EOF",
+          "startupStage": "VIDEO_STREAM",
+          "stopStartedMs": 26042,
+          "childStartedMs": 8,
+          "firstVideoFrameMs": 1380,
+          "tls": "TLSv1.3",
+          "localAddress": "10.199.167.157",
+          "localPort": 44367,
+          "peerAddress": "10.199.167.154",
+          "peerPort": 33310,
+          "scid": "1701ef74"
+        },
+        {
+          "state": "SESSION_STOPPED",
+          "frames": 10,
+          "touches": 0,
+          "elapsedMs": 2161,
+          "serverAlive": false,
+          "stopReason": "CONTROL_EOF",
+          "startupStage": "VIDEO_STREAM",
+          "stopStartedMs": 1954,
+          "childStartedMs": 23,
+          "firstVideoFrameMs": 1733,
+          "tls": "TLSv1.3",
+          "localAddress": "10.199.167.157",
+          "localPort": 44367,
+          "peerAddress": "10.199.167.154",
+          "peerPort": 47976,
+          "scid": "1d724cdb"
+        },
+        {
+          "state": "SESSION_STOPPED",
+          "frames": 304,
+          "touches": 0,
+          "elapsedMs": 35823,
+          "serverAlive": false,
+          "stopReason": "CONTROL_EOF",
+          "startupStage": "VIDEO_STREAM",
+          "stopStartedMs": 35620,
+          "childStartedMs": 11,
+          "firstVideoFrameMs": 665,
+          "tls": "TLSv1.3",
+          "localAddress": "10.199.167.157",
+          "localPort": 44367,
+          "peerAddress": "10.199.167.154",
+          "peerPort": 47982,
+          "scid": "2010b920"
+        }
+      ],
+      "ownLogScope": "Owned RG UID10083 logger includes historical records; current9244/9670 cancellation SocketClosed and slow frame-read warnings retained; no retroactive old cause assigned",
+      "teardown": {
+        "bridge7913": "One ordinary TERM after all3 stock sessions closed; exact current command matched",
+        "stockSessionsAlive": false,
+        "ownedBridgeStockPSRows": 0,
+        "testedVD54_55_56Remaining": [],
+        "physicalDisplayIDsAfter": [
+          0
+        ],
+        "listener44367Rows": 0,
+        "ownAppsForceStopped": true,
+        "normalFinal223PerDevice": 1,
+        "PhoneWakefulness": "Dozing",
+        "RGWakefulness": "Asleep",
+        "RGOwnAppPIDCount": 0,
+        "Manager173DebugCustodyAndBothLeasesRetained": true,
+        "noContinuousStateOrOldWorker64ReturnClaim": true
+      },
+      "limits": [
+        "Interrupted-close release is proven by focused JVM regression, not live hardware fault injection.",
+        "Current short checks do not repeat prior310s/app-effect/security/Settings; their earlier source bindings remain.",
+        "Old173c/e failures and all unknown historical outcomes unchanged.",
+        "No PIN/held caller/original apps or stores/backups touched.",
+        "Independent review/Manager acceptance/merge/release remain pending."
+      ]
+    },
+    "summaryPin": {
+      "record": "review176-verification-summary.json",
+      "bytes": 5460,
+      "sha256": "0dfb6bf10e8d724600f5c65d0cb0b9cef0bdc49676b931c95b6d7d79ec3ecf18"
+    },
+    "sourceCapsule": {
+      "record": "review176-source-apk-capsule.json",
+      "bytes": 9918,
+      "sha256": "bc5b91f6aea2f8595f3ab32970736b47070892573ae983f3de7f0456fff3f4ff"
+    },
+    "testSources": [
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/media/MediaCodec.kt",
+        "bytes": 1663,
+        "sha256": "234c3528ebdc54b76253b5e4836cfd445cfebe9900807c480604a27700c1a332"
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/media/MediaFormat.kt",
+        "bytes": 483,
+        "sha256": "571817590ca8cb87d4fa0914ef79aff0bfc6b9b2aefb0cabd69f44d5cb278d89"
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/os/Handler.kt",
+        "bytes": 130,
+        "sha256": "d729e840567259f6fa4a99cbb20396ff0daca3354486848c4eec9ca7be6688f8"
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/util/AtomicFile.kt",
+        "bytes": 290,
+        "sha256": "f6b92c296e2fef32bc73e80c925da6d082b1a7ab1b43b13e5bd604741d645d86"
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/util/Log.kt",
+        "bytes": 165,
+        "sha256": "bff601eaaad0c847926f9c42b14200dff121ee6a85b0fa1ae0e933f00e376b0a"
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/view/Surface.kt",
+        "bytes": 36,
+        "sha256": "328209b71807a2630282a46391f9e4a74305957aa8bb7378c303d05d8896bcac"
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/com/code2hack/eyebrowse/projector/directrg/DecoderLifetimeTest.kt",
+        "bytes": 4326,
+        "sha256": "6246e20e79617981cde0573dacefe03d407f13983a37ee44e3abb15c8059640a"
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/org/json/JSONObject.kt",
+        "bytes": 617,
+        "sha256": "2fbc68aada636456f69353a19fc50203e23669cbc463affdf792e87fa6667a8e"
+      }
+    ],
+    "limits": "Prior310s retains capsule159; current interrupted cleanup is JVM-reproduced, not live fault injection; exact-head independent review/acceptance pending"
   }
 }

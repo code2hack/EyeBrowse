@@ -6,6 +6,8 @@ import com.code2hack.eyebrowse.projector.protocol.Geometry
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -56,5 +58,33 @@ class DecoderLifetimeTest {
             assertSame(original, caught)
             assertEquals("Failed $stage must release its allocation", 1, codec.releases.get())
         }
+    }
+
+    @Test fun interruptedCloseReleasesCodecAndPreservesInterrupt() {
+        val entered = CountDownLatch(1)
+        val resume = CountDownLatch(1)
+        val output = AtomicReference<Thread>()
+        val codec = MediaCodec().also { MediaCodec.created = it }
+        codec.at = { if (it == "dequeueOutput") {
+            output.set(Thread.currentThread()); entered.countDown(); check(resume.await(5, TimeUnit.SECONDS))
+        } }
+        val decoder = decoder()
+        val interrupted = AtomicBoolean()
+        val failure = AtomicReference<Throwable>()
+        val closer = Thread {
+            Thread.currentThread().interrupt()
+            try { decoder.close() } catch (error: Throwable) { failure.set(error) }
+            finally { interrupted.set(Thread.currentThread().isInterrupted) }
+        }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            closer.start(); closer.join(2000)
+            assertFalse("Interrupted cleanup must finish", closer.isAlive)
+            assertEquals("Interrupted join must not skip native release", 1, codec.releases.get())
+            assertTrue("Cleanup must restore the caller interrupt", interrupted.get())
+            assertNull(failure.get())
+            decoder.close()
+            assertEquals(1, codec.releases.get())
+        } finally { resume.countDown(); decoder.close(); closer.join(2000); output.get()?.join(2000) }
     }
 }

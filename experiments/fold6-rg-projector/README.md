@@ -21,7 +21,8 @@ Build these separately from the production browser:
 ```
 
 The receiver JVM tests use test-only platform doubles to suspend codec
-construction across Stop and inject initialization failures. These exercise
+construction across Stop, inject initialization failures, and verify native
+release/interrupt retention when close interrupts its bounded join. These exercise
 production lifetime code; actual Android decoding remains a device check.
 
 Use the assigned devices and the isolated projector packages. Owner decision167

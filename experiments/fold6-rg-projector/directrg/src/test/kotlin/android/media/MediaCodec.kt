@@ -22,7 +22,7 @@ class MediaCodec {
     fun configure(format: MediaFormat, surface: Surface, crypto: android.media.MediaCrypto?, flags: Int) { at("configure") }
     fun setOnFrameRenderedListener(listener: OnFrameRenderedListener, handler: Handler) { at("listener") }
     fun start() { at("start") }
-    fun dequeueOutputBuffer(info: BufferInfo, timeout: Long): Int { Thread.sleep(1); return -1 }
+    fun dequeueOutputBuffer(info: BufferInfo, timeout: Long): Int { at("dequeueOutput"); Thread.sleep(1); return -1 }
     val outputFormat: MediaFormat get() = MediaFormat()
     fun releaseOutputBuffer(index: Int, render: Boolean) = Unit
     fun dequeueInputBuffer(timeout: Long) = 0

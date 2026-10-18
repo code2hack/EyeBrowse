@@ -1,6 +1,45 @@
 # Direct Fold6 video and control — PAV-02 / issue 67
 
-## Decoder review correction — current short lifecycle checks
+## Interrupted decoder cleanup correction — current receiver
+
+Independent review2 resolved R67-1/R67-2 and found R67-3: error cleanup can run
+on an executor worker interrupted by its own `shutdownNow`. The decoder's join
+then throws before native release. `SurfaceDecoder.close` now releases the codec
+in `finally` around the unchanged bounded join and restores the caller interrupt
+after cleanup. Decoder publication, initialization and protocol remain unchanged.
+
+A focused JVM regression holds the output thread live and closes from an already
+interrupted caller. The old source releases zero codecs; the corrected source
+releases exactly once, retains the interrupt and permits repeated close safely.
+All four decoder lifetime tests pass. RG build/lint pass with zero errors and the
+existing `OldTargetApi` warning. This is an automated interruption reproduction,
+not a live hardware fault-injection claim.
+
+The current same-ID RG3 APK is 2,559,958 bytes, SHA-256
+`fb0d2036af77ba2d4cb1bfecc403659613041113837d8f40c829135ac979e35b`.
+Installation returned Success and independent full installed bytes match.
+On the existing Owner173 USB debug route, local Stop passed after3,009ms of
+measured streaming (75 additional rendered frames, state STOPPED). Reconnect
+passed with both sessions STREAMING and5,015ms/122 additional rendered frames
+after reconnect. The actual owned fixture was inspected on RG; zero touches.
+Both use direct TLS1.3 RG10.199.167.154 → Phone10.199.167.157:44367.
+HostR5 and Probe4 are unchanged.
+
+All three stock sessions stopped with their children gone. Necessary teardown
+found no owned bridge/stock process, remaining test display or44367 listener;
+own apps were stopped. One normal final screen-off/check per device reported
+Fold6 Dozing and RG Asleep. Manager debug transport/both leases remain retained.
+Own cancellation stacks and slow frame-read warnings remain in private logs;
+no underlying timing or old reconnect cause is inferred.
+
+The new exact source/APK capsule is
+`bc5b91f6aea2f8595f3ab32970736b47070892573ae983f3de7f0456fff3f4ff`.
+Prior USB173 normal lifecycle and capsule159310-second/app-effect/security/
+Settings evidence retain their earlier source bindings. They were not repeated
+for this bounded cleanup correction. Renewed independent review and Manager
+acceptance remain pending; no integration, release or full AV claim follows.
+
+## Previous decoder review correction — USB173 checks
 
 Independent review of `6740018` found two decoder lifetime leaks. The corrected
 receiver constructs each decoder locally and publishes it under the same small
@@ -16,7 +55,7 @@ start, including a failing release. Both original leaks were reproduced before
 the fix. The final RG build and lint pass with zero errors and the existing
 `OldTargetApi` warning. These doubles are not packaged in the application.
 
-The current RG3 APK is 2,559,234 bytes, SHA-256
+The RG3 APK for those USB173 checks is 2,559,234 bytes, SHA-256
 `c18e228eb8acd85a6cd4c5dc800c25341f1294d0d570bcde3ab57a3863d356ab`.
 Ordinary same-ID installation and an independent full installed-byte read pass.
 Both devices use the Owner173 u4090 USB route for debugging. Media/control still
@@ -33,7 +72,7 @@ HostR5 and Probe4 remain unchanged.
 Owned teardown found no bridge/stock process, tested VD42–53 or listener44367.
 Own apps were stopped. One normal final screen-off/check per device reported
 Fold6 Dozing and RG Asleep. These are sampled observations, not continuous state.
-The corrected candidate is ready for renewed independent review.
+Those normal checks remain bound to the USB173 source/APK capsule.
 
 Earlier negatives remain: the original120s update and35s read timed out with
 unavailable response buffers. A new USB read established the old installed APK,
@@ -95,7 +134,7 @@ Host5 installed successfully; the163 read qualified its full signed APK,
 user0/UID10445 and version. The direct167 source/APK capsule is
 `3e7afead0d64d4913c1423be933e7906463c2a2d018ecefe7d5939989d2d77f1`.
 Its compiled sources and installed packages were unchanged during that run.
-The corrected current source/APK/short-lifecycle capsule is
+The previous corrected USB173 source/APK/short-lifecycle capsule is
 `dc8dcde6d8b5af0d2146679946d88a4f9b3d86a8c73729a7ff79cd8d72d31fc1`.
 Earlier isolated packages and unknown historical install outcomes remain retained.
 Owner167 permits updates to owned isolated packages for real code changes;
