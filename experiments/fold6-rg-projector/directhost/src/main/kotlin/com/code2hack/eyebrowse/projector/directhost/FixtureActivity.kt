@@ -27,7 +27,7 @@ class FixtureActivity : Activity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        active = true; record()
+        record()
         setContentView(object : View(this) {
             private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 28f }
             override fun onDraw(canvas: Canvas) {
@@ -48,5 +48,6 @@ class FixtureActivity : Activity() {
             override fun performClick(): Boolean { super.performClick(); return true }
         })
     }
+    override fun onStart() { super.onStart(); active = true; record() }
     override fun onStop() { active = false; record(); super.onStop() }
 }

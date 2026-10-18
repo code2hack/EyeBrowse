@@ -7,7 +7,7 @@ android {
     namespace = "com.code2hack.eyebrowse.projector.directhost"
     compileSdk = 35
     defaultConfig {
-        applicationId = "com.code2hack.eyebrowse.projector.directhost.r4"
+        applicationId = "com.code2hack.eyebrowse.projector.directhost.r5"
         minSdk = 32
         targetSdk = 35
         versionCode = 1

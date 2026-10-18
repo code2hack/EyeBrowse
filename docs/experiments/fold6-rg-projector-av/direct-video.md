@@ -50,8 +50,9 @@ audio, lock and sensory limitations. This checkpoint does not complete AV
 projection, optical readability, head input, Phone IME, acoustics or automatic
 startup. Production browser code and protected articles remain unchanged.
 
-The current build targets `com.code2hack.eyebrowse.projector.directhost.r4`;
-its original installation transaction remains UNKNOWN. A distinct read-only
+The current host-only build targets `com.code2hack.eyebrowse.projector.directhost.r5`.
+It has not been installed or qualified as unused on the Phone. Installed R4
+and its evidence remain retained; R4's original installation transaction remains UNKNOWN. A distinct read-only
 query qualified its current whole installed APK, package, UID, version and user0. The previous
 `.directhost.r3` artifact had a matching installed-byte cut and remains retained,
 as do the original `.directhost` and r2's unknown old transaction. RG main
@@ -61,6 +62,25 @@ install; its previous test package `.directrg.r3.probe3` remains retained. New t
 complete installed APK equality. Earlier test
 and RG experiment packages remain retained. Every installation targets an unused
 ID; no existing app was updated, cleared or uninstalled.
+
+Host5 moves the fixture's `active=true` transition from `onCreate` to `onStart`,
+so the same stopped instance restores its status when started again. `onStop`
+still records inactive status. Tap ACTION_UP and draw counters are unchanged.
+The affected host build and four unit tests passed; lint reports zero errors
+and the existing target-SDK warning. Compiled lifecycle bytecode confirms the
+status transitions. Actual Android restart and rendering validation remain
+unexecuted; this fix does not explain earlier black frames, null focus or the
+generated touch with no app effect.
+
+The later158 diagnostic retained a complete owned-inactive context and exactly
+one display0 focus field whose value was explicitly null, with zero user0 token
+matches. The unchanged selector returned73 after six complete source frames.
+Owned teardown and two secure locked/showing/Dozing/OFF samples qualified;
+Phone wake, sleep, Go, PixelCopy and touch stayed zero. This new sample does
+not recover021's unretained predicate or establish a cause. A separate159
+restricted wake-scalar consumer is host-prepared with real use disabled;
+complete129 and all authentication holds remain unchanged. No new physical
+case or product acceptance follows from that preparation.
 
 The installed Phone application is sandboxed. Its Stop screen does not acquire
 capture/input privileges. An explicitly authorized shell-UID2000 `app_process`
