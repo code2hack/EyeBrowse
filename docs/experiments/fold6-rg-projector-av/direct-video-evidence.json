@@ -2,7 +2,7 @@
   "schema": 1,
   "issue": 67,
   "alias": "PAV-02",
-  "status": "INCOMPLETE_COMPONENT_CHECKPOINT_NATIVE120_STDERR_UNCLASSIFIED_ENDSTATE_UNKNOWN",
+  "status": "INCOMPLETE_OWNED_MOVING_VIDEO_COMPONENT_PRE_GO_FAILURE_PHONE_CAPABILITY_AND_ENDSTATE_UNKNOWN",
   "baseline": "38cb5f7ec8d320ef9833a36840ccec3febdbc885",
   "donor": "03de921e2400147842ce6c56101b58d514dde77c",
   "target": "spike/fold6-rg-projector-av",
@@ -302,7 +302,7 @@
     "measuredMovingFPSAndLatency": "SMOKE003_FPS_OBSERVED_LEGACY_LATENCY_INVALID_RG3_METRIC_UNMEASURED",
     "audio": "DISABLED_INTERMEDIATE",
     "opticalHeadIMEAcousticAcceptance": "NOT_CLAIMED",
-    "blocker": "Consumed five-minute002 auth hold; one120 read rejected before native parsing on nonempty stderr, actual stderr/native predicates and latest end-state unknown; separate host-only diagnostic correction unactivated",
+    "blocker": "Product004 stopped before Go at exact socket-data rejection; later Phone teardown timed out and pinned Manager SSH PID was locally absent. Phone media/VD/native end-state UNKNOWN. No further device actions; exact bindings reported for Manager disposition. Authentication holds unchanged; no repeated backups.",
     "componentNegativesRetained": [
       "Initial RG decor/insets NullPointerException",
       "Initial API32 PKCS12 context IOException",
@@ -471,6 +471,37 @@
       "originalConsumed002BytesAndFullNodeMetadataUnchangedAt039": true,
       "actualCaptureRetry": false,
       "actual037CauseEstablished": false
+    },
+    "credentialFreeOwnedFixture": {
+      "product003": {
+        "virtualDisplayId": 21,
+        "encoder": "c2.qti.avc.encoder",
+        "decoder": "c2.qti.avc.decoder",
+        "publicPixelsActuallyObserved": "OWNED_MOTION_VISIBLE_TAPS_0",
+        "closedSessionProtocol": "TLSv1.3",
+        "directNativeSocketEndpoints": "PHONE_LAN_TO_RG_LAN",
+        "transmittedFrames": 2379,
+        "sessionElapsedMs": 114688,
+        "touches": 0,
+        "scheduledGoOrFiveMinuteStarted": false,
+        "ordinaryPhoneWake224Calls": 0
+      },
+      "product004": {
+        "virtualDisplayId": 22,
+        "encoder": "c2.qti.avc.encoder",
+        "decoder": "c2.qti.avc.decoder",
+        "publicPixelsActuallyObserved": "OWNED_MOTION_VISIBLE_TAPS_0",
+        "capturedStderr": "EMPTY",
+        "completeQueriesEachHaveUnclassifiedSourceOrFormatLine": true,
+        "endpointPredicatesQualified": false,
+        "actualRawValuesOrCause": "UNKNOWN_NOT_RETAINED",
+        "scheduledGoOrTouchOrFiveMinuteOrHostStop": false,
+        "selectedCommandReturncode": 0,
+        "sourceQueryReturncodes": [
+          0,
+          0
+        ]
+      }
     }
   },
   "teardown": {
@@ -545,6 +576,26 @@
       "nativeReadonlyRemoteClientSettlementAfterTimeout": "NOT_INDEPENDENTLY_ESTABLISHED",
       "sourceAndGuardUnchanged": true,
       "resourceReturnClaim": false
+    },
+    "credentialFreeProduct003": {
+      "state": "OWNED_MEDIA_AND_VD_ABSENT_TWO_LOCKED_SECURE_SHOWING_DOZING_CUTS",
+      "ordinarySleep223Calls": 1,
+      "logicalDisplay0AtThoseCuts": "DOZE",
+      "continuousStateClaim": false
+    },
+    "credentialFreeProduct004": {
+      "ownedRGStop": "COMPLETED",
+      "ownedBridgeStop": "TIMEOUT_UNKNOWN_NO_TERM_INTENT",
+      "ownedStockChildStop": "TIMEOUT_UNKNOWN_NO_TERM_INTENT",
+      "ownedFixtureStop": "INTENT_RETAINED_TIMEOUT_OUTCOME_UNKNOWN",
+      "ownedBridgeListenerDisplaySettlement": "UNKNOWN",
+      "finalNativeCuts": "UNAVAILABLE_BEFORE_CAPTURE",
+      "sleep223Calls": 0,
+      "currentNativeEndState": "UNKNOWN",
+      "localManagerPhoneTunnelPID": "ABSENT_AT_ONE_LOCAL_CUT_CAUSE_UNKNOWN",
+      "localWorkerRGDebugTunnelTuple": "MATCHED_KNOWN_PID_START_UID_CWD_AT_ONE_LOCAL_CUT",
+      "sharedServicesReset": false,
+      "deviceActionsStoppedPendingCapabilityDisposition": true
     }
   },
   "privateEvidenceHashes": [
@@ -1267,6 +1318,106 @@
       "record": "complete-native120-prepared-package.json",
       "bytes": 1719,
       "sha256": "54ca6e6f56297d8769c64257c968ff85909a878c880ff4269ccc067788e9c183"
+    },
+    {
+      "record": "cf130-product003-material-result.json",
+      "bytes": 8227,
+      "sha256": "67a047b53f05c0fc748157d24626c355a6b15185ee496092308f0b441848f103"
+    },
+    {
+      "record": "cf130-product003-post-session-read.json",
+      "bytes": 490,
+      "sha256": "0bea4abd14f81a9995f763e2ef55389e548bc8ff9a1d0b659398e1684ab3335f"
+    },
+    {
+      "record": "cf130-product003-host-proof.json",
+      "bytes": 1251,
+      "sha256": "d8c7c4173b094f2f7b120cfe1c2e13f427d23cc347c2b7b78edde029ec3187f2"
+    },
+    {
+      "record": "cf130-product003-setup.json",
+      "bytes": 2914,
+      "sha256": "df014d24084fa5d1d0dc515a335cfdb62e523f6990d705d16f5e6ebc35d029d4"
+    },
+    {
+      "record": "cf130-product003-pixels-before.json",
+      "bytes": 2042,
+      "sha256": "852edffc506e5383be6478d4aed18c3fe812e620ae6b5073287b66bc27e817e4"
+    },
+    {
+      "record": "cf130-product003-summary.json",
+      "bytes": 11011,
+      "sha256": "2886b765b4e22a01aa3d7652c787e0b94bd64db64a9872226e0b264b5763b9e6"
+    },
+    {
+      "record": "cf130-product003-finish.json",
+      "bytes": 10102,
+      "sha256": "35224673a34c50a30aadb68805f0f9614ad53e5d69d3e7837615fbf01a200d70"
+    },
+    {
+      "record": "media-path136-host-proof.json",
+      "bytes": 3010,
+      "sha256": "e3b1244315068509f7eed4e59171fe320744293efcee15e33639c521f3ba965d"
+    },
+    {
+      "record": "cf130-product004-material-result.json",
+      "bytes": 11136,
+      "sha256": "67525ca686af5ccfd3239626506b45ad5367dee85efc564025e58723f67343cd"
+    },
+    {
+      "record": "cf130-product004-host-proof.json",
+      "bytes": 2006,
+      "sha256": "35b3c5d0f766f1bc4f0a718bcfaf1a55e462e6716f005579ef40d5f0cca3f224"
+    },
+    {
+      "record": "cf130-product004-setup.json",
+      "bytes": 2912,
+      "sha256": "ec271d3c4935164ac88c168fa0f1292afc6677382160706a8a41e238d25d907e"
+    },
+    {
+      "record": "cf130-product004-pixels-before.json",
+      "bytes": 2039,
+      "sha256": "7d84fdb11da87eedc8d66c32305d1eb795d976c2dc41c10939fbf8be074da9c6"
+    },
+    {
+      "record": "cf130-product004-path-before-go-fold6.json",
+      "bytes": 993,
+      "sha256": "1f91eaa795d5669783e01201c9f666c2a7fc9efe4662cdae72b9a0f3f3da2e9b"
+    },
+    {
+      "record": "cf130-product004-path-before-go.json",
+      "bytes": 1838,
+      "sha256": "e09488f81b622256bb5f7888623b5a94093a13494671eac925f0fabcefa5485d"
+    },
+    {
+      "record": "cf130-product004-summary.json",
+      "bytes": 1158,
+      "sha256": "ceab23fa0421eab3b96bb98dfb0b9486674a276f333b1f62fb6c83695fcaf162"
+    },
+    {
+      "record": "cf130-product004-finish.json",
+      "bytes": 809,
+      "sha256": "2b636c02bf1c1f78c506e1c84272a0180e3981954f5f6fdaba70332c1eeba438"
+    },
+    {
+      "record": "cf130-product004-local-custody-reconciliation.json",
+      "bytes": 442,
+      "sha256": "0ac20eb73b2142d1b58da58a1ea33e5054316017e40a52e7b0771981a6d6cd59"
+    },
+    {
+      "record": "native-endpoint136-host-proof.json",
+      "bytes": 3234,
+      "sha256": "aa06bb5a62272e8bbe49ff91437439855ac2997d161b61bd316291e17e528f67"
+    },
+    {
+      "record": "cf130-product005-host-proof.json",
+      "bytes": 2253,
+      "sha256": "1c81d65a145bfd7eaa16e2dac112cf92d58bb013d315fb33c4442a65b3c58f68"
+    },
+    {
+      "record": "cf130-product005-prepared-material.json",
+      "bytes": 4053,
+      "sha256": "96aebbf2e3999177946906880c5652f3f0a9b3c05ce99474b0bf214cf2438e10"
     }
   ],
   "privacy": "Only fixed-schema outcomes, counts and opaque hashes. Original paths, browser/account payloads and TLS private material remain outside Git.",
@@ -1403,7 +1554,37 @@
       "currentDeviceResult": "UNMEASURED",
       "oldMetricRetainedAsInvalid": true
     },
-    "installedPhoneHostR3APKSHA256": "4b3fc80cbf202a1bf7246e199612850aa0b52c05fbe404b78848188547702cc9"
+    "installedPhoneHostR3APKSHA256": "4b3fc80cbf202a1bf7246e199612850aa0b52c05fbe404b78848188547702cc9",
+    "credentialFreePilotMetrics": {
+      "record": "cf130-product003-pixels-before.json",
+      "rendered": 402,
+      "changingPackets": 403,
+      "elapsedMs": 28265,
+      "packetReadToCallbackP95Ms": 10.729323,
+      "networkRoundTripP95Ms": 104.24151,
+      "scope": "RG packet-read to callback receipt and echoed RTT use one RG monotonic clock. Setup sample only, no stable five-minute moving FPS, cross-device input-to-visible or optical claim."
+    },
+    "socketObserver136": {
+      "publicSocketErrorCases": 38,
+      "orchestrationBindingCases": 9,
+      "conditionalOldNetidLayoutRedProved": true,
+      "actualProduct003Or004RawCause": "UNKNOWN",
+      "actual004SourceErrorsRemainRejected": true
+    },
+    "nativeEndpointValidator136": {
+      "state": "PURE_HOST_PREPARATION_ONLY_DEVICE_NOT_RUN",
+      "publicCases": 36,
+      "sourceSHA256": "2059cff343153d225040b9df27d928c3a51f284f0a08cabc145da5a917dbf2a7",
+      "basis": "Existing source-bound platform SSLSocket accessors and exact owned closed-session SCID; no SS stderr/source-error whitelist or source/native/auth predicate change",
+      "newProductAPKs": false,
+      "noDeviceExecutionWhileCapabilityUnresolved": true,
+      "orchestrationCases": 6,
+      "runnerCoreFunctionsChanged": [
+        "path_proof",
+        "measure final closed-session corroboration"
+      ],
+      "ordinaryIterationPreparedForAfterCapabilityAnd004Settlement": true
+    }
   },
   "smokeHelperRecords": [
     {
@@ -1693,9 +1874,9 @@
     "setupWaitStartsBeforeEndLockAndControlSettlement": true,
     "measurementClock": "RG SystemClock.elapsedRealtime",
     "measurementSeconds": 310,
-    "scheduledTapSeconds": 155,
+    "scheduledTapSeconds": 0,
     "firstDistinctRunID": "five-minute002",
     "actualMeasurementExecuted": false,
-    "actualOrchestrationState": "FIVE_MINUTE002_FAILED_BEFORE_KEYPAD_XML_CREDENTIAL_OR_PRODUCT_WORK"
+    "actualOrchestrationState": "Credential-free003/004 owned video to RG; both stopped before Go. Actual004 Phone teardown/current native end-state UNKNOWN; future test waits for concrete transport/owned settlement disposition."
   }
 }

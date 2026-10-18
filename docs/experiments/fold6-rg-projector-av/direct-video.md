@@ -1,34 +1,32 @@
 # Direct Fold6 video and control — PAV-02 / issue 67
 
-Component checkpoint, **not CANDIDATE_READY**. Smoke003 delivered 80 genuine
-seconds of authenticated direct Fold6 video to the real RG hardware decoder.
-The captured public vendor screen is Samsung DeX onboarding; its Start button
-was not pressed. Harmless touch, the five-minute interval, on-device unauthorized
-peer refusal and the complete lifecycle cases remain unexecuted.
+Component checkpoint, **not CANDIDATE_READY**. Credential-free product003 and
+004 rendered the experiment's moving fixture on RG. Both devices' exact owned
+component, user, UID, window, display and geometry checks passed. The actual RG
+images showed the public title and `Visible taps: 0`; no tap was released.
+Product003's matching closed-session record reports TLS1.3, direct Phone/RG LAN
+socket endpoints, 2,379 transmitted frames over a 114,688ms session and zero
+touches. This is owned-fixture evidence; third-party application acceptance,
+the genuine five-minute interval, harmless touch, Host Stop and the remaining
+security/lifecycle criteria are still pending.
 
-A subsequent stream exposed stock scrcpy's self-unlink behavior: its cleanup
-process deletes the JAR from which it was started. The corrected Phone host
-keeps a pinned master and gives every authenticated session a new verified
-copy. Three focused regression tests, the Phone build and lint pass. This new
-Phone r3 package is installed and its full APK hash matches the frozen build.
-The earlier r2 install remains **unknown**; a later complete query found r2
-absent without establishing its old installer transaction outcome. A fresh
-unused r3 ID avoided replaying or replacing it. The first five-minute attempt
-then failed at the guarded control helper's initial stock-JAR hash command,
-before credential read, control setup or product work. Its journal is consumed
-and remains terminal. Manager117 qualified an exact admission resolution for
-that unchanged noncredential record. The distinct next attempt stopped at the
-native SystemUI ownership check before credential read or product work. It is
-also consumed, with secure end-state and control teardown verified.
-The later credential-free118 diagnostic could not verify its final native
-state; current continuation also holds that end-state uncertainty.
-The read-only119 selector observation then returned one token-matched focus
-window, but exact SystemUI ownership did not qualify. No complete status or
-replacement caller was prepared; credential and product continuation remain held.
-The120 observer correction separates complete read data from authentication
-eligibility in host cases. Its one actual capture returned nonempty stderr and
-was rejected before native diagnostics were parsed. A separate response-diagnostic
-correction is prepared only; the current native end-state remains unknown.
+Product003 stopped before Go at an insufficiently reported socket observation.
+Its owned teardown and two locked/secure/showing/Dozing cuts passed after one
+ordinary sleep. Product004 retained the socket rejection precisely: both Phone
+queries returned0 with captured-empty stderr, but each contained an unclassified
+source/format line and its selected endpoint predicates rejected. Actual raw
+values and causes remain unknown. Neither case started the scheduled touch or
+measurement interval.
+
+Product004's RG stop completed, then Phone teardown checks timed out and both
+final native reads failed before capture. A separate local observation found
+the previously bound Manager-owned Phone SSH process absent; its exit cause is
+unassigned. Phone bridge/child/listener/display settlement and current native
+end-state are **UNKNOWN**. The Worker-owned RG tunnel process still matched its
+binding at that local cut. Further device/route/product actions stopped, with
+the exact owned bindings reported to the Manager. All consumed records remain
+unchanged; authentication remains held. Independent source and host work can
+continue while that concrete capability is unavailable.
 
 ## Scope, packages and privileges
 
@@ -95,10 +93,9 @@ display_ime_policy=local vd_destroy_content=true clipboard_autosync=false
 power_on=false cleanup=true
 ```
 
-Debug logs in the private experimental namespace allow the next actual run to
-record the selected encoder. Smoke003's encoder name was not captured and is
-not inferred from the requested H.264 codec. The measured RG decoder was
-`c2.qti.avc.decoder`, with 480×640 output, full crop and rotation0.
+Owned product003/004 recorded `c2.qti.avc.encoder` on VD21/22 and
+`c2.qti.avc.decoder` on RG, with480×640 output, full drawable fit and rotation0.
+The older smoke003 encoder name was not captured and remains unknown.
 
 ## Framing and bounds
 
@@ -175,16 +172,20 @@ decision. Original application lifecycle/data changes remain outside scope.
 The RG counter measures received packets and actual Surface callbacks. Smoke003
 reported an impossible roughly1.337e9ms render delay, so that metric is invalid.
 RG3 measures packet-read to callback **receipt** with `System.nanoTime()` at both
-ends, named `packetReadToCallbackP95Ms`. It has not yet been measured on-device.
-Echo RTT uses one RG clock. Neither value is optical latency or cross-device
-input-to-visible latency.
+ends, named `packetReadToCallbackP95Ms`. Product003's setup sample reports
+10.729323ms and a same-RG-clock echo RTT p95 of104.24151ms, with402 rendered and
+403 changing packets. These are one pilot sample, not a stable frame-rate
+interval, an optical latency measurement or cross-device input-to-visible time.
 
-The prepared on-RG driver allows up to180 seconds for guarded setup/end-lock/control settlement,
-then measures310 genuine seconds, schedules one focused synthetic tap at155s
-and requests authenticated Host Stop on the same stream. The first orchestration
-attempt stopped before product setup, so this measurement has not run. A
-scheduled tap can establish controlled-path app effect only; it cannot establish
-physical head/IME or optical acceptance.
+The current credential-free orchestration launches the shell bridge and its own
+virtual-display fixture without a Phone display0 Activity, unlock or screen
+caller. The on-RG driver waits at most180 seconds for Go, then measures310
+genuine seconds, schedules one focused synthetic tap at interval start and
+requests authenticated Host Stop. In product003/004, Go was never released.
+No experimental desktop control forward was created. Debug SSH/ADB remains
+separate from the direct media/control connection. A scheduled tap can establish
+controlled-path app effect only; it cannot establish physical head/IME or
+optical acceptance.
 
 ## Executed evidence and remaining criteria
 
@@ -210,13 +211,25 @@ untested-on-device host fix.
 | Criterion | Actual result at this checkpoint |
 | --- | --- |
 | Isolated build/dependencies/install | Build/lint PASS; Phone r3 and RG3 installed with matching APK bytes; old r2 transaction UNKNOWN |
-| Third-party VD content to real RG Surface | Public vendor onboarding rendered in smoke003; normal Settings page and current encoder identity incomplete |
+| Third-party VD content to real RG Surface | Owned moving fixture rendered in product003/004 with exact encoder/decoder/VD bindings; ordinary third-party app still pending |
 | Harmless touch with observed app effect | Unexecuted |
 | At least300 genuine seconds without PC media/control relay | Unexecuted |
 | On-device unauthorized peer refusal before media/input | Unexecuted acceptance case; four JVM mTLS cases passed |
 | Reconnect/Host Stop/RG pause/no stale input | Unexecuted for current host; old second-stream failure retained |
-| Moving FPS, codec/crop and latency | Smoke003 frame/crop/decode observations; its latency invalid; current metric unmeasured |
+| Moving FPS, codec/crop and latency | Current encoder/decoder/fit and scoped setup metrics observed; genuine moving interval pending; old smoke003 latency remains invalid |
 | Audio/head/IME/optical/acoustic behavior | Not claimed |
+
+The private socket observer had a source-proven conditional layout defect: a
+valid `tcp ESTAB` row was rejected by a first-field `ESTAB` test. A distinct
+strict observer passed38 public socket/error cases and nine orchestration and
+binding checks before product004. It kept unknown/source-error data negative;
+its actual rejection does not identify product003's old cause. A separate pure
+validator now checks the existing platform `SSLSocket` endpoint metadata and
+exact closed-session SCID, with36 affected public host cases and six prepared
+orchestration cases. That alternative has not run on-device. It does not
+whitelist the rejected socket output, change
+the product APKs or authorize authentication. No new device action follows
+while the Phone transport and owned settlement remain unresolved.
 
 Earlier negatives remain: initial RG decor/insets crash, original PKCS12 loader
 failure, smoke002 final native end-state contradiction, corrupt/failed/partial
