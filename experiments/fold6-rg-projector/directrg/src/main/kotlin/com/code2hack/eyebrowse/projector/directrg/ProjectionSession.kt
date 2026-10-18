@@ -1,6 +1,7 @@
 package com.code2hack.eyebrowse.projector.directrg
 
 import android.util.AtomicFile
+import android.util.Log
 import android.view.Surface
 import com.code2hack.eyebrowse.projector.protocol.*
 import java.io.Closeable
@@ -56,15 +57,21 @@ class ProjectionSession(
             .put("packetReadToCallbackP95Ms", p95(renderDelayMs)).put("networkRoundTripP95Ms", p95(roundTripMs))
             .put("latencyScope", "RG System.nanoTime packet-read to render-callback receipt; network echo RTT; no optical/input end-to-end claim")
             .put("maxEncodedPacketBytes", Wire.MAX_PAYLOAD).put("maxInflightFrames", 8).put("queuedTaps", 0)
+        val writeBegin = System.nanoTime()
         val file = AtomicFile(File(directory.parentFile, "status.json"))
         val out = file.startWrite()
         try { out.write(stats.toString().toByteArray()); file.finishWrite(out) }
         catch (error: Exception) { file.failWrite(out); throw error }
+        finally {
+            val ms = (System.nanoTime() - writeBegin) / 1_000_000
+            if (ms > 250) Log.w("Pav67Projection", "Status write took ${ms}ms")
+        }
     }
 
     private fun state(value: String) { record(value); onState(this, value) }
 
     @Synchronized private fun failure(error: Exception) {
+        Log.e("Pav67Projection", "Projection failed", error)
         val causes = JSONArray()
         var cause: Throwable? = error
         repeat(6) { cause?.let { causes.put(it.javaClass.simpleName); cause = it.cause } }
@@ -103,8 +110,13 @@ class ProjectionSession(
                     if (since != 0L && System.nanoTime() - since > 2_000_000_000L) closeWithState("WRITE_STALLED")
                 }, 250, 250, TimeUnit.MILLISECONDS)
                 while (running.get()) {
-                    val frame = Wire.readFrame(input)
-                    when (frame.channel) {
+                    val readBegin = System.nanoTime()
+                    val frame = try { Wire.readFrame(input) } finally {
+                        val ms = (System.nanoTime() - readBegin) / 1_000_000
+                        if (ms > 1000) Log.w("Pav67Projection", "Frame read took ${ms}ms")
+                    }
+                    val handleBegin = System.nanoTime()
+                    try { when (frame.channel) {
                         Wire.GEOMETRY -> {
                             val data = DataInputStream(frame.payload.inputStream())
                             val size = Geometry(data.readInt(), data.readInt())
@@ -128,6 +140,9 @@ class ProjectionSession(
                         }
                         Wire.END -> break
                         else -> error("Unnegotiated media")
+                    } } finally {
+                        val ms = (System.nanoTime() - handleBegin) / 1_000_000
+                        if (ms > 500) Log.w("Pav67Projection", "Frame handling channel=${frame.channel} took ${ms}ms")
                     }
                 }
                 closeWithState("DISCONNECTED")

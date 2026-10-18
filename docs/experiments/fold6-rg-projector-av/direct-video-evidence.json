@@ -2,7 +2,7 @@
   "schema": 1,
   "issue": 67,
   "alias": "PAV-02",
-  "status": "DECODER_REVIEW1_CORRECTED_HOST_VERIFIED_RG_UPDATE_UNKNOWN_NOT_CANDIDATE_READY",
+  "status": "DECODER_REVIEW_CORRECTED_HOST_AND_CURRENT_USB_LIFECYCLE_VERIFIED_READY_FOR_REVIEW",
   "baseline": "38cb5f7ec8d320ef9833a36840ccec3febdbc885",
   "donor": "03de921e2400147842ce6c56101b58d514dde77c",
   "target": "spike/fold6-rg-projector-av",
@@ -148,6 +148,37 @@
       "lintWarnings": [
         "existing OldTargetApi"
       ]
+    },
+    "affectedDecoderCorrection173": {
+      "JDK": 17,
+      "tasks": [
+        "directrg:testDebugUnitTest",
+        "directrg:assembleDebug",
+        "directrg:lintDebug"
+      ],
+      "result": "PASS",
+      "unitTests": 3,
+      "failures": 0,
+      "errors": 0,
+      "lintErrors": 0,
+      "lintWarnings": [
+        "existing OldTargetApi"
+      ],
+      "currentLog": {
+        "record": "usb173-timing-build-lint.log",
+        "bytes": 5913,
+        "sha256": "7a270a1283c7065661f1981cba3aeca05255653a70694f3f3597182d680b1ae3"
+      },
+      "currentTests": {
+        "record": "usb173-timing-host-tests.xml",
+        "bytes": 820,
+        "sha256": "1ad925290b3693a8b5fbb3e065f4766d073aaf5019a9a89adb123985d780bcbf"
+      },
+      "currentLint": {
+        "record": "usb173-timing-lint.xml",
+        "bytes": 1891,
+        "sha256": "0a87e91fc2b9bdaa03466decd5a7ceb8c7d5fb7116f9d346683200161eac85aa"
+      }
     }
   },
   "APKs": [
@@ -161,10 +192,11 @@
     },
     {
       "package": "com.code2hack.eyebrowse.projector.directrg.r3",
-      "bytes": 2557674,
-      "sha256": "aa961f99e9d1a47b74b7e1a6f59a4fab367d715e007d873d62d61a5e755fa1b4",
+      "bytes": 2559234,
+      "sha256": "c18e228eb8acd85a6cd4c5dc800c25341f1294d0d570bcde3ab57a3863d356ab",
       "signatureVerified": true,
-      "installationState": "UPDATE120S_TIMEOUT_AND_CURRENT_READ35S_TIMEOUT_OUTCOME_UNKNOWN"
+      "installationState": "USB173_CURRENT_INSTALLED_FULL_BYTES_MATCH_F_G_H_I_LIFECYCLE_PASSED",
+      "signerCertificateSHA256": "e372f80243affb0fd2462d4c90f8aede64a9ffb683cebad6c517d73eacc6a963"
     },
     {
       "package": "com.code2hack.eyebrowse.projector.directrg.r3.probe4",
@@ -2041,6 +2073,416 @@
       "record": "review169-target-rg.json",
       "bytes": 507,
       "sha256": "98dcf7eb29677de29b930982b3b66cd784432c63ec7b8eb37906f562ed5b7215"
+    },
+    {
+      "record": "usb173-bridge-start-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173-bridge-start.txt",
+      "bytes": 195,
+      "sha256": "f8479b61ae43b4124b502f208f12fc3d7e7b58fcd815ec663f2591998f2e1636"
+    },
+    {
+      "record": "usb173-current-rg-power.json",
+      "bytes": 142,
+      "sha256": "2a2a5f98f74caab4a8a8e38f9cb47efc53731af1c101e23d761b10658a380d34"
+    },
+    {
+      "record": "usb173-current-targeted-ping.json",
+      "bytes": 653,
+      "sha256": "6721d4021680302cdea10d92cc56d4b5495b54caf24e5f9a7e87f9ce62c16b82"
+    },
+    {
+      "record": "usb173-devices-start.txt",
+      "bytes": 365,
+      "sha256": "9eeaafea58ff3e2f567d63cdf5a9a5358d1c575374681cf2c8ca37b1debf2dba"
+    },
+    {
+      "record": "usb173-end-fold6.json",
+      "bytes": 4880,
+      "sha256": "86e18e7afb31c417e83d8722ff194e4ec7d820274de30f56279d517a647dbaca"
+    },
+    {
+      "record": "usb173-end-rg.json",
+      "bytes": 159,
+      "sha256": "42ff2fd467297a53ad5ee37dbd0d0ec8b8137b0b7a8e143af136e7851d5dc68d"
+    },
+    {
+      "record": "usb173-error-log-build-lint.log",
+      "bytes": 5924,
+      "sha256": "2b0271ba186a2123fd2c659f632b01542dedc70d834cf1b86958158395eb0e0b"
+    },
+    {
+      "record": "usb173-errorlog-build.json",
+      "bytes": 472,
+      "sha256": "e774c1437e67688171a113b52b18229c618fcdb9ac98d53e79337797ac03db9d"
+    },
+    {
+      "record": "usb173-errorlog-host-tests.xml",
+      "bytes": 820,
+      "sha256": "3653484b5d2bf3e6cdf082d7e2fa0b79bb62d973a0f2e0797645617c66f6f5e0"
+    },
+    {
+      "record": "usb173-errorlog-lint.xml",
+      "bytes": 1891,
+      "sha256": "0a87e91fc2b9bdaa03466decd5a7ceb8c7d5fb7116f9d346683200161eac85aa"
+    },
+    {
+      "record": "usb173-errorlog-only.patch",
+      "bytes": 1181,
+      "sha256": "1816b4391ba0321f07c9fdc3857b799fefc87fd1bad285869dbe4945a865ae22"
+    },
+    {
+      "record": "usb173-errorlog-rg-update.json",
+      "bytes": 176,
+      "sha256": "ce626d6cb53139c94322a5c472b3ac96159fef74ed3dcacacd756c92b26c1be6"
+    },
+    {
+      "record": "usb173-final-host-log.txt",
+      "bytes": 5184,
+      "sha256": "a794ca39090b02c57cbdb8d396eb964f686d7dd17daf8f5e31635dd716120aa1"
+    },
+    {
+      "record": "usb173-final-own-process-read.json",
+      "bytes": 186,
+      "sha256": "70fdcc2f18683cd03a3cf106a9e18cb54636eab6015f79540a975ea4b7b7919d"
+    },
+    {
+      "record": "usb173-first-host-log.txt",
+      "bytes": 5189,
+      "sha256": "dcdda02101568c10b821490528580fd7e4cda443797ae9b03298ae48c99d2024"
+    },
+    {
+      "record": "usb173-fold6-identity.json",
+      "bytes": 527,
+      "sha256": "2239e006e20b3e0db615f0352ca555e3cb41f98855746432ac3e889ab162301c"
+    },
+    {
+      "record": "usb173-rg-installed-read.json",
+      "bytes": 413,
+      "sha256": "abb836d6440aceb14cd3bdebba99b8c7929908b58193f2de99dd28de2a5b439b"
+    },
+    {
+      "record": "usb173-rg-update.json",
+      "bytes": 302,
+      "sha256": "b698e07012c820ae3e59759673d2cf6a69796ade6edb31436f7bedd0e94370ad"
+    },
+    {
+      "record": "usb173-source-apk-capsule.json",
+      "bytes": 9844,
+      "sha256": "dc8dcde6d8b5af0d2146679946d88a4f9b3d86a8c73729a7ff79cd8d72d31fc1"
+    },
+    {
+      "record": "usb173-startup.json",
+      "bytes": 194,
+      "sha256": "52af8870e08dd65a1079447655fa9f394d1e6d4caa2418fd80f16cb9e0f5cb45"
+    },
+    {
+      "record": "usb173-timing-build-lint.log",
+      "bytes": 5913,
+      "sha256": "7a270a1283c7065661f1981cba3aeca05255653a70694f3f3597182d680b1ae3"
+    },
+    {
+      "record": "usb173-timing-build.json",
+      "bytes": 362,
+      "sha256": "d9e2402bd0292633e2b3c40fba7c2ea382fdb2a486e6f85068d828ffd1f75626"
+    },
+    {
+      "record": "usb173-timing-host-tests.xml",
+      "bytes": 820,
+      "sha256": "1ad925290b3693a8b5fbb3e065f4766d073aaf5019a9a89adb123985d780bcbf"
+    },
+    {
+      "record": "usb173-timing-lint.xml",
+      "bytes": 1891,
+      "sha256": "0a87e91fc2b9bdaa03466decd5a7ceb8c7d5fb7116f9d346683200161eac85aa"
+    },
+    {
+      "record": "usb173-timing-rg-update.json",
+      "bytes": 84,
+      "sha256": "80803530a152b6c67df1d43f9fef5390a0de389c8a315f2598b58106a40756e4"
+    },
+    {
+      "record": "usb173-verification-summary.json",
+      "bytes": 7105,
+      "sha256": "2b2be2f2c30771e4d2c4a845398e00ecd96d373f62203835e9bd5e0f89e34a12"
+    },
+    {
+      "record": "usb173a-driver-start.json",
+      "bytes": 63,
+      "sha256": "e35e4b91cfdd4b50a88c2345b338232058dbc44aeea3e52de77478407dbaf524"
+    },
+    {
+      "record": "usb173a-fixture-launch.txt",
+      "bytes": 134,
+      "sha256": "296797f3eb44dbeb959aeb0ffed37ca3ce247a04efb3cf6aecd7ae147241a061"
+    },
+    {
+      "record": "usb173a-rg-connected.json",
+      "bytes": 1013,
+      "sha256": "cd8ff0c67f39d79569549066dc0f65c425ca99f914a47c8a290931028c9c36ce"
+    },
+    {
+      "record": "usb173a-stock-start-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173a-stock-start.txt",
+      "bytes": 539,
+      "sha256": "f6c12d982cc513f5e1c801afc1ec51a831aa1c02cf9c59eac8047c0119b1a4f8"
+    },
+    {
+      "record": "usb173a-stop-probe.json",
+      "bytes": 5321,
+      "sha256": "5267c21767d4d7c0849ba1fd52e633500035e6f0f882e454e3aabc733bb59d78"
+    },
+    {
+      "record": "usb173a-stop-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173a-visible.png",
+      "bytes": 39509,
+      "sha256": "dc67f24407784f5a2139b508b5046948e66929618ee8e4be70a8dc4ae558bec6"
+    },
+    {
+      "record": "usb173b-driver-start.json",
+      "bytes": 63,
+      "sha256": "159c3534b44b4602bdebbec5a81e59e5b92db76aeea727d4ae6de836f90f8f7c"
+    },
+    {
+      "record": "usb173b-fixture-launch.txt",
+      "bytes": 134,
+      "sha256": "296797f3eb44dbeb959aeb0ffed37ca3ce247a04efb3cf6aecd7ae147241a061"
+    },
+    {
+      "record": "usb173b-pause-probe.json",
+      "bytes": 5326,
+      "sha256": "15c0140820ada4a269cfb86d59b7daf10dbeabe9abfae19f407e8e1919bb1e53"
+    },
+    {
+      "record": "usb173b-pause-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173b-stock-start.txt",
+      "bytes": 539,
+      "sha256": "76db39e5a76e98acd99d1ff6e3a0c4dbbcdf9acbcae2f1f83656d6914d59b006"
+    },
+    {
+      "record": "usb173c-driver-start.json",
+      "bytes": 63,
+      "sha256": "3893056f374b4bd8d111d4efa05023078500261322e473d0bf2eb21e13308dcb"
+    },
+    {
+      "record": "usb173c-fixture-launch.txt",
+      "bytes": 134,
+      "sha256": "296797f3eb44dbeb959aeb0ffed37ca3ce247a04efb3cf6aecd7ae147241a061"
+    },
+    {
+      "record": "usb173c-host-current.txt",
+      "bytes": 4670,
+      "sha256": "2366a3802e73de0633363285c6278d4504719d4c9706c0d5e628f52b11a4db49"
+    },
+    {
+      "record": "usb173c-later-own-result.txt",
+      "bytes": 7866,
+      "sha256": "c2b59101143adfda5bc599ed2878225e1f4b9e83d42160d3904f1b8d92908eff"
+    },
+    {
+      "record": "usb173c-own-thread-names.txt",
+      "bytes": 360,
+      "sha256": "c8f0b14e694c189feffe777a7a1b1b4abad80017087ae33ccba2d3cc94b5caf1"
+    },
+    {
+      "record": "usb173c-reconnect-final.json",
+      "bytes": 3832,
+      "sha256": "bcf70abbf6c74c9e502fe296fa1aecab4892ea68eb662f2f15403fa99c9a6c76"
+    },
+    {
+      "record": "usb173c-reconnect-probe.json",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173c-reconnect-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173c-rg-own-logcat-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173c-rg-own-logcat.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173c-stock-start.txt",
+      "bytes": 539,
+      "sha256": "8d0dd21ea6622ed6752f7a129e0c5a5ac1ec17412aa0a1612ab38672770a8872"
+    },
+    {
+      "record": "usb173d-driver-start.json",
+      "bytes": 63,
+      "sha256": "15cdc37c9fcbb7baa878d7d89bf7868553c3cbb4c9a2819465f8af75df2f85b6"
+    },
+    {
+      "record": "usb173d-hoststop-probe.json",
+      "bytes": 5269,
+      "sha256": "673d17ea7b0683e966170c268e948cb95a1b2739a5bd6f32f14d74592b72c470"
+    },
+    {
+      "record": "usb173e-bridge-settlement.json",
+      "bytes": 196,
+      "sha256": "dc86223ce022a0780257e6a2fd599b0adbad8a12cd7ba47e4df1d07f7ba73798"
+    },
+    {
+      "record": "usb173e-driver-start.txt",
+      "bytes": 16,
+      "sha256": "4fbd8a060baaf00a44a8d489513385a9e60c6a753b93a4c4f1a3e4c9c097346e"
+    },
+    {
+      "record": "usb173e-fixture-launch.txt",
+      "bytes": 134,
+      "sha256": "296797f3eb44dbeb959aeb0ffed37ca3ce247a04efb3cf6aecd7ae147241a061"
+    },
+    {
+      "record": "usb173e-go.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173e-host-after.txt",
+      "bytes": 3491,
+      "sha256": "58506cf55e84009a8372339b70d058ea42f4fffeb33ba72a1652da0232e7ba4f"
+    },
+    {
+      "record": "usb173e-own-errors.txt",
+      "bytes": 2017,
+      "sha256": "0bdedfacb9133b1e539c67311753b676cb1edc7cd29c221a3485ce4d0ac619e6"
+    },
+    {
+      "record": "usb173e-reconnect-probe.json",
+      "bytes": 3395,
+      "sha256": "1d1cd3003047335a7ca1879710f117b98af8315b4cfd2efe19adf6a90a2eff9b"
+    },
+    {
+      "record": "usb173e-rg-installed-read.json",
+      "bytes": 384,
+      "sha256": "ca05b40d5bac8d052da469d8b7c44dcf17885271fe234d0f03f2dce420462f05"
+    },
+    {
+      "record": "usb173e-startup.json",
+      "bytes": 64,
+      "sha256": "e5a1a79195866fcfd1ce64ff6958d63a167144d50dc03b1b68c36ce0e1e1b759"
+    },
+    {
+      "record": "usb173e-stock-start.txt",
+      "bytes": 539,
+      "sha256": "b87b88b7fce0cbb791356cfbdbb58857e4134bd98cbc8c00c95c610003a1c901"
+    },
+    {
+      "record": "usb173e-visible.png",
+      "bytes": 10473,
+      "sha256": "b50621addfa01a68fce24559c130fd8f9055ad712a3c92d97d28da3240c24087"
+    },
+    {
+      "record": "usb173f-driver-start.txt",
+      "bytes": 16,
+      "sha256": "b99d57cb36c71e45966919ee8b3874ea95e8bcd705d8ee9fb8e3a13bca342b6b"
+    },
+    {
+      "record": "usb173f-fixture-launch.txt",
+      "bytes": 134,
+      "sha256": "296797f3eb44dbeb959aeb0ffed37ca3ce247a04efb3cf6aecd7ae147241a061"
+    },
+    {
+      "record": "usb173f-go.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173f-installed-read.txt",
+      "bytes": 316,
+      "sha256": "266ce1f8d5f3fc4dd7ff41b4ba1b1ae9dce54d038a80d2348ea69d473e654ee1"
+    },
+    {
+      "record": "usb173f-own-timing-errors.txt",
+      "bytes": 2061,
+      "sha256": "5394f234a8ffbc261de033c465fdf1f439b4bbd366f4b61cd418529f6e6839e6"
+    },
+    {
+      "record": "usb173f-reconnect-probe.json",
+      "bytes": 6265,
+      "sha256": "ab5ac4dd640a160ebbf0c2ecba261f8f7777cfbf957f9ea2cfd8a85f0c03b5d7"
+    },
+    {
+      "record": "usb173f-startup.txt",
+      "bytes": 17,
+      "sha256": "16426c0fe1f4c25b2f79bff78b16bce77744f9a93685759d67653152dcee9afc"
+    },
+    {
+      "record": "usb173f-stock-start.txt",
+      "bytes": 539,
+      "sha256": "81f1c12fd8bbf75fc6c418878d0f337a519bed928b4d30438bdc8298cee8f922"
+    },
+    {
+      "record": "usb173f-visible.png",
+      "bytes": 61995,
+      "sha256": "6b4329335a2352f1e4ee066e29d79154fd1c5a82ed10963b68a0350eb76903a1"
+    },
+    {
+      "record": "usb173g_stop-driver.txt",
+      "bytes": 5327,
+      "sha256": "d638ce47d143088ce79f38dc077f06e174fd797e85a7ec93cc14b2392efc3eff"
+    },
+    {
+      "record": "usb173g_stop-probe.json",
+      "bytes": 5271,
+      "sha256": "a7ae35b1d02ca037dd1fa323c19751e016630be0ce567e47524c6408202a50d7"
+    },
+    {
+      "record": "usb173g_stop-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173h_pause-driver.txt",
+      "bytes": 5317,
+      "sha256": "f93922d7cdafd0fda883b2f28369019fc11e9e9ed0da428ac41a4039b18c5dd8"
+    },
+    {
+      "record": "usb173h_pause-probe.json",
+      "bytes": 5261,
+      "sha256": "b2146c374e8d073ab2812fc53756ee4c5d7749ace4441854eb5ef721d844e7a7"
+    },
+    {
+      "record": "usb173h_pause-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173i_hoststop-driver.txt",
+      "bytes": 5323,
+      "sha256": "c2338f59aed773d01a4d1d217ad13b645f9f50b9f1415f0295523cfdc7c87813"
+    },
+    {
+      "record": "usb173i_hoststop-probe.json",
+      "bytes": 5267,
+      "sha256": "ba61da8985abd23a6463876f03f101f36029a5e7808d0ac00b6ae86a9e762a34"
+    },
+    {
+      "record": "usb173i_hoststop-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     }
   ],
   "privacy": "Original browser/account/TLS private material remains outside Git. Actual owned experiment logs/images stay private with hashes; direct167 publishes scoped metrics, explicit limits and outcomes.",
@@ -2272,7 +2714,8 @@
     "currentDirect167": {
       "evidenceField": "owner167DirectResults",
       "scope": "Current installed HostR5/RG3/Probe4 actual direct tests; independent review and acceptance pending"
-    }
+    },
+    "decoderLifetimeReview169": "Both fixes source/JVM verified; current corrected APK short lifecycle checks passed, see usb173CorrectedResults; prior negative trials remain explicit."
   },
   "smokeHelperRecords": [
     {
@@ -2438,8 +2881,8 @@
     },
     {
       "path": "experiments/fold6-rg-projector/directrg/src/main/kotlin/com/code2hack/eyebrowse/projector/directrg/ProjectionSession.kt",
-      "bytes": 9070,
-      "sha256": "f7680cce7c9248ccc34001344ab9f261b066cccb9bc8647f26ffd39760d8909b"
+      "bytes": 9928,
+      "sha256": "e40672340dc9f0cd4c8e008793c08d31f8dc7f49faa26a6cb4cecfc07af2cd57"
     },
     {
       "path": "experiments/fold6-rg-projector/directrg/src/main/kotlin/com/code2hack/eyebrowse/projector/directrg/ReceiverActivity.kt",
@@ -2545,12 +2988,12 @@
     "currentCandidate": false
   },
   "currentSourceCapsule": {
-    "record": "review169-source-apk-capsule.json",
-    "bytes": 9305,
-    "sha256": "41da15f09ae8c9de67a74f7fd6850ce6995c5613e82712026389bcf2b327c3b6",
+    "record": "usb173-source-apk-capsule.json",
+    "bytes": 9844,
+    "sha256": "dc8dcde6d8b5af0d2146679946d88a4f9b3d86a8c73729a7ff79cd8d72d31fc1",
     "sourceFiles": 25,
-    "testSourceFiles": 7,
-    "binding": "Corrected RG3 APK built from R67-1/R67-2 source; current update and installed outcome unknown; HostR5/Probe4 unchanged. Prior310s retains capsule159 binding."
+    "testSourceFiles": 8,
+    "binding": "Current corrected RG3 APK with own error/slow-operation logs, installed full bytes matched; HostR5/Probe4 unchanged. Current short reconnect/Stop/pause/HostStop pass; prior310s remains capsule159."
   },
   "previousRGTestAPK": {
     "package": "com.code2hack.eyebrowse.projector.directrg.r3.test",
@@ -2638,18 +3081,20 @@
   },
   "latestEvidenceBoundary": {
     "reports": [
-      98
+      100,
+      101,
+      102
     ],
-    "execution": "HOST_CORRECTIONS_VERIFIED_DEVICE_UPDATE_AND_READ_UNKNOWN",
-    "productComponentEvidenceReadyForReview": false,
+    "execution": "BOTH_USB173_DEBUG_DIRECT_LAN_MEDIA_CURRENT_RGBA_F_G_H_I_PASSED",
+    "productComponentEvidenceReadyForReview": true,
     "Owner167ExtraTestGatesCancelled": true,
     "Owner106RepeatedBackupsRetired": true,
     "originalAppsOrStoresModified": false,
     "sharedDebugRoutesModified": false,
     "mainOrV004Changed": false,
     "reviewOrAcceptanceClaim": false,
-    "lastDeviceCut": "Correct physical targets at operation start, followed by unavailable RG update/current-installed response; no new media/UI resources or power action. Historical167 end cuts remain historical.",
-    "remainingScope": "Restore actual RG debug capability, reconcile current installed bytes without replaying unknown update, short corrected connect/Stop/pause/reconnect, renewed exact-head review."
+    "lastDeviceCut": "Owned bridge/stock/testedVD42-53/listener44367 absent; own apps stopped; one normal final screen-off/check PhoneDozing/RGAsleep; sampled scope only. Manager173 debug custody/leases retained.",
+    "remainingScope": "Renewed independent exact-head review/Manager acceptance; audio/head/physicaltouchpad/IME/optical/acoustic/reboot claims remain excluded; historical c/e failed trials retained without causal upgrade."
   },
   "historicalCheckpoint075": {
     "status": "INCOMPLETE_VIDEO014_PREGO_TIMEOUT_BOTH_DEBUG_PIDS_ABSENT_OWNED_ENDSTATE_UNKNOWN",
@@ -3221,6 +3666,319 @@
       "liveLifecycleCheck": "NOT_EXECUTED_PENDING_RG_DEBUG_CAPABILITY"
     },
     "historicalResults": "Prior310s/app-effect/security/lifecycle evidence remains valid for its prior source; no corrected-source live PASS inferred.",
-    "candidateReady": false
+    "candidateReady": false,
+    "subsequentLiveEvidence": "usb173CorrectedResults; prior checkpoint findings/UNKNOWN outcomes above remain historical"
+  },
+  "historicalCorrectionCheckpoint099": {
+    "head": "4b43444b19ff8a847158572ab505dd6e3304937f",
+    "tree": "88627c87052efcfdc80a42729333f07cc188eb19",
+    "sourceCapsule": {
+      "record": "review169-source-apk-capsule.json",
+      "bytes": 9305,
+      "sha256": "41da15f09ae8c9de67a74f7fd6850ce6995c5613e82712026389bcf2b327c3b6",
+      "sourceFiles": 25,
+      "testSourceFiles": 7,
+      "binding": "Corrected RG3 APK built from R67-1/R67-2 source; current update and installed outcome unknown; HostR5/Probe4 unchanged. Prior310s retains capsule159 binding."
+    },
+    "APKs": [
+      {
+        "package": "com.code2hack.eyebrowse.projector.directhost.r5",
+        "bytes": 2518061,
+        "sha256": "d87df5bb827855f8a46a39a23ba464aa582c3ba130cbda777d41543512794b2b",
+        "signatureVerified": true,
+        "applicationIdManifestVerified": true,
+        "installationState": "R5_IDENTITY_WHOLE_SIGNED_BYTES_USER0_UID10445_QUALIFIED163_USED_UNCHANGED167"
+      },
+      {
+        "package": "com.code2hack.eyebrowse.projector.directrg.r3",
+        "bytes": 2557674,
+        "sha256": "aa961f99e9d1a47b74b7e1a6f59a4fab367d715e007d873d62d61a5e755fa1b4",
+        "signatureVerified": true,
+        "installationState": "UPDATE120S_TIMEOUT_AND_CURRENT_READ35S_TIMEOUT_OUTCOME_UNKNOWN"
+      },
+      {
+        "package": "com.code2hack.eyebrowse.projector.directrg.r3.probe4",
+        "bytes": 38734,
+        "sha256": "0e46832d5d384d46ee2faff60184a02458ecd71587f9b606cffc1b1bbc4e0151",
+        "signatureVerified": true,
+        "signerCertificateSHA256": "e372f80243affb0fd2462d4c90f8aede64a9ffb683cebad6c517d73eacc6a963",
+        "applicationIdVerifiedBy": "apkanalyzer",
+        "installationState": "PREVIOUSLY_QUALIFIED_INSTALLED_PACKAGE_USED_WITHOUT_UPDATE167"
+      }
+    ],
+    "latestEvidenceBoundary": {
+      "reports": [
+        98
+      ],
+      "execution": "HOST_CORRECTIONS_VERIFIED_DEVICE_UPDATE_AND_READ_UNKNOWN",
+      "productComponentEvidenceReadyForReview": false,
+      "Owner167ExtraTestGatesCancelled": true,
+      "Owner106RepeatedBackupsRetired": true,
+      "originalAppsOrStoresModified": false,
+      "sharedDebugRoutesModified": false,
+      "mainOrV004Changed": false,
+      "reviewOrAcceptanceClaim": false,
+      "lastDeviceCut": "Correct physical targets at operation start, followed by unavailable RG update/current-installed response; no new media/UI resources or power action. Historical167 end cuts remain historical.",
+      "remainingScope": "Restore actual RG debug capability, reconcile current installed bytes without replaying unknown update, short corrected connect/Stop/pause/reconnect, renewed exact-head review."
+    }
+  },
+  "receiverTestSources173": [
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/media/MediaCodec.kt",
+      "bytes": 1642,
+      "sha256": "89f4bd5c9c4bb07f611283e11e201f6b4d1bbda0003b8d752bb2e07118ebb9dd"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/media/MediaFormat.kt",
+      "bytes": 483,
+      "sha256": "571817590ca8cb87d4fa0914ef79aff0bfc6b9b2aefb0cabd69f44d5cb278d89"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/os/Handler.kt",
+      "bytes": 130,
+      "sha256": "d729e840567259f6fa4a99cbb20396ff0daca3354486848c4eec9ca7be6688f8"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/util/AtomicFile.kt",
+      "bytes": 290,
+      "sha256": "f6b92c296e2fef32bc73e80c925da6d082b1a7ab1b43b13e5bd604741d645d86"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/util/Log.kt",
+      "bytes": 165,
+      "sha256": "bff601eaaad0c847926f9c42b14200dff121ee6a85b0fa1ae0e933f00e376b0a"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/view/Surface.kt",
+      "bytes": 36,
+      "sha256": "328209b71807a2630282a46391f9e4a74305957aa8bb7378c303d05d8896bcac"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/com/code2hack/eyebrowse/projector/directrg/DecoderLifetimeTest.kt",
+      "bytes": 2813,
+      "sha256": "21478ef8db7e0052df5d0da196ddfbe663b09183cb012553ed721aecd96c9916"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/org/json/JSONObject.kt",
+      "bytes": 617,
+      "sha256": "2fbc68aada636456f69353a19fc50203e23669cbc463affdf792e87fa6667a8e"
+    }
+  ],
+  "usb173CorrectedResults": {
+    "state": "CORRECTED_CURRENT_RGBA_LIFECYCLE_VERIFIED_READY_FOR_INDEPENDENT_REVIEW",
+    "Owner173": "Both debug targets through Manager SSH/u4090 USB server15037; media/control remain direct mTLS RG10.199.167.154 to Phone10.199.167.157:44367",
+    "noEmulatorSelected": true,
+    "noOldDebugRouteOrSharedReset": true,
+    "cases": [
+      {
+        "record": "usb173a-stop-probe.json",
+        "passed": true,
+        "operation": "local-stop",
+        "measuredStreamingMs": 3015,
+        "firstRendered": 533,
+        "lastRendered": 605,
+        "renderedDelta": 72,
+        "endState": "STOPPED",
+        "connectedState": "STREAMING",
+        "reconnectedState": null,
+        "reconnectedTouches": null,
+        "lastTouches": 0,
+        "APK": "aa961f99"
+      },
+      {
+        "record": "usb173b-pause-probe.json",
+        "passed": true,
+        "operation": "pause",
+        "measuredStreamingMs": 3015,
+        "firstRendered": 291,
+        "lastRendered": 367,
+        "renderedDelta": 76,
+        "endState": "STOPPED",
+        "connectedState": "STREAMING",
+        "reconnectedState": null,
+        "reconnectedTouches": null,
+        "lastTouches": 0,
+        "APK": "aa961f99"
+      },
+      {
+        "record": "usb173c-reconnect-final.json",
+        "passed": false,
+        "operation": "reconnect",
+        "measuredStreamingMs": null,
+        "firstRendered": null,
+        "lastRendered": null,
+        "renderedDelta": null,
+        "endState": null,
+        "connectedState": "STREAMING",
+        "reconnectedState": "STREAMING",
+        "reconnectedTouches": 0,
+        "lastTouches": null,
+        "APK": "aa961f99"
+      },
+      {
+        "record": "usb173d-hoststop-probe.json",
+        "passed": true,
+        "operation": "host-stop",
+        "measuredStreamingMs": 1004,
+        "firstRendered": 1,
+        "lastRendered": 22,
+        "renderedDelta": 21,
+        "endState": "CONNECTION_FAILED",
+        "connectedState": "STREAMING",
+        "reconnectedState": null,
+        "reconnectedTouches": null,
+        "lastTouches": 0,
+        "APK": "aa961f99"
+      },
+      {
+        "record": "usb173e-reconnect-probe.json",
+        "passed": false,
+        "operation": "reconnect",
+        "measuredStreamingMs": null,
+        "firstRendered": null,
+        "lastRendered": null,
+        "renderedDelta": null,
+        "endState": null,
+        "connectedState": "STREAMING",
+        "reconnectedState": "CONNECTION_FAILED",
+        "reconnectedTouches": 0,
+        "lastTouches": null,
+        "APK": "fb233754"
+      },
+      {
+        "record": "usb173f-reconnect-probe.json",
+        "passed": true,
+        "operation": "reconnect",
+        "measuredStreamingMs": 20063,
+        "firstRendered": 221,
+        "lastRendered": 736,
+        "renderedDelta": 515,
+        "endState": null,
+        "connectedState": "STREAMING",
+        "reconnectedState": "STREAMING",
+        "reconnectedTouches": 0,
+        "lastTouches": 0,
+        "APK": "c18e228e"
+      },
+      {
+        "record": "usb173g_stop-probe.json",
+        "passed": true,
+        "operation": "local-stop",
+        "measuredStreamingMs": 2008,
+        "firstRendered": 1,
+        "lastRendered": 49,
+        "renderedDelta": 48,
+        "endState": "STOPPED",
+        "connectedState": "STREAMING",
+        "reconnectedState": null,
+        "reconnectedTouches": null,
+        "lastTouches": 0,
+        "APK": "c18e228e"
+      },
+      {
+        "record": "usb173h_pause-probe.json",
+        "passed": true,
+        "operation": "pause",
+        "measuredStreamingMs": 2006,
+        "firstRendered": 1,
+        "lastRendered": 49,
+        "renderedDelta": 48,
+        "endState": "STOPPED",
+        "connectedState": "STREAMING",
+        "reconnectedState": null,
+        "reconnectedTouches": null,
+        "lastTouches": 0,
+        "APK": "c18e228e"
+      },
+      {
+        "record": "usb173i_hoststop-probe.json",
+        "passed": true,
+        "operation": "host-stop",
+        "measuredStreamingMs": 1004,
+        "firstRendered": 1,
+        "lastRendered": 16,
+        "renderedDelta": 15,
+        "endState": "CONNECTION_FAILED",
+        "connectedState": "STREAMING",
+        "reconnectedState": null,
+        "reconnectedTouches": null,
+        "lastTouches": 0,
+        "APK": "c18e228e"
+      }
+    ],
+    "currentRGBA": {
+      "sha256": "c18e228eb8acd85a6cd4c5dc800c25341f1294d0d570bcde3ab57a3863d356ab",
+      "bytes": 2559234,
+      "ordinarySameIDUpdateAndInstalledFullBytesMatched": true,
+      "fReconnectMs": 20063,
+      "gLocalStopMs": 2008,
+      "hPauseMs": 2006,
+      "iHostStopMs": 1004,
+      "zeroTouches": true
+    },
+    "retainedFailures": {
+      "c": "Both sessions reached STREAMING, then CONNECTION_FAILED/IllegalStateException before measured interval; exact cause unknown. Initial empty report retained; later terminal report separately retained.",
+      "e": "Receiver SocketException Connection reset; matching Host SCID3719df20 stopReason WRITE_DEADLINE. Underlying condition unassigned; no codec/protocol/buffer/deadline change.",
+      "optionalThreadObservation": "No PID/data returned; UNAVAILABLE, not zero-thread proof",
+      "targetedICMP": "5/5 current replies, min51.652/avg99.869/max135.659ms; not prior TCP cause",
+      "old169InstallAndRead": "Original timeouts remain UNKNOWN and unchanged; new USB current reads/update are separate observations"
+    },
+    "diagnostics": {
+      "fullOwnSessionExceptionLog": true,
+      "onlySlowReadHandlingStatusWriteDurations": true,
+      "protocolBuffersDeadlineGeometrySecurityUnchanged": true,
+      "fSlowTimingWarnings": false,
+      "normalStopSocketClosedLogExpected": true,
+      "privacy": "Private RG image may include an OS overlay; no raw image or overlay text is published."
+    },
+    "lifetimeFixFunctionBindingsUnchangedSince4b43444": {
+      "internal fun replaceDecoder": "c033a75349d4ec08780755c705137368bef0dd07d5ffcd8eae864ffa88701a68",
+      "private fun closeWithState": "ea0eda2f3ecc30ee00e4143dd30d94b1772a4f72d402ca4c55cc9a7c0f753d5b"
+    },
+    "SurfaceDecoderBytesUnchangedSince4b43444": {
+      "record": "SurfaceDecoder.kt",
+      "bytes": 4603,
+      "sha256": "52197758bf74007c9dd02106b309118a13f523a2ba2ff358d3b6f904461f2552"
+    },
+    "hostVerification": {
+      "JUnitTests": 3,
+      "failures": 0,
+      "errors": 0,
+      "testXML": {
+        "record": "usb173-timing-host-tests.xml",
+        "bytes": 820,
+        "sha256": "1ad925290b3693a8b5fbb3e065f4766d073aaf5019a9a89adb123985d780bcbf"
+      },
+      "lintErrors": 0,
+      "lintWarnings": [
+        "OldTargetApi"
+      ],
+      "lintXML": {
+        "record": "usb173-timing-lint.xml",
+        "bytes": 1891,
+        "sha256": "0a87e91fc2b9bdaa03466decd5a7ceb8c7d5fb7116f9d346683200161eac85aa"
+      }
+    },
+    "teardown": {
+      "ownedBridgeStockProcesses": [],
+      "testedVD42to53Remaining": [],
+      "listener44367Rows": [],
+      "RGBAOwnAppAfterForceStopPIDCount": 0,
+      "PhoneWakefulness": "Dozing",
+      "RGWakefulness": "Asleep",
+      "ordinaryFinalScreenOffPerDevice": 1,
+      "bothDeviceReservationsRetained": true,
+      "Manager173TunnelUnchanged": true,
+      "oldWorker64ResourceReturnClaimed": false,
+      "noContinuousOrSecurityLockClaim": true
+    },
+    "old310s": "Remains bound only to capsule159/3e7afead; not ceremonially repeated for lifetime corrections",
+    "originalEyeBrowseChromiumAppsStoresBackupsTouched": false,
+    "acceptanceReviewMergeReleaseOrCounterConclusion": false,
+    "summaryPin": {
+      "record": "usb173-verification-summary.json",
+      "bytes": 7105,
+      "sha256": "2b2be2f2c30771e4d2c4a845398e00ecd96d373f62203835e9bd5e0f89e34a12"
+    }
   }
 }

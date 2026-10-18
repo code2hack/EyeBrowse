@@ -1,6 +1,6 @@
 # Direct Fold6 video and control — PAV-02 / issue 67
 
-## Decoder review correction — live check pending
+## Decoder review correction — current short lifecycle checks
 
 Independent review of `6740018` found two decoder lifetime leaks. The corrected
 receiver constructs each decoder locally and publishes it under the same small
@@ -13,17 +13,44 @@ Three focused JVM tests pass against the production classes with test-only
 platform doubles. They reproduce cancellation blocked inside configure, check
 normal replacement/repeated Stop, and inject failures at name/configure/listener/
 start, including a failing release. Both original leaks were reproduced before
-the fix. The corrected RG build and lint pass with zero errors and the existing
+the fix. The final RG build and lint pass with zero errors and the existing
 `OldTargetApi` warning. These doubles are not packaged in the application.
 
-The corrected owned RG3 APK is 2,557,674 bytes, SHA-256
-`aa961f99e9d1a47b74b7e1a6f59a4fab367d715e007d873d62d61a5e755fa1b4`.
-One ordinary update timed out after 120 seconds without response buffers; a
-subsequent read-only installed-APK comparison timed out after 35 seconds too.
-The update and current installed bytes remain unknown. Neither operation was
-replayed. No new bridge, VD, fixture, input or power case was started. The short
-corrected connect/Stop/pause/reconnect check awaits actual RG debug capability;
-this checkpoint is **not CANDIDATE_READY**. HostR5 and Probe4 are unchanged.
+The current RG3 APK is 2,559,234 bytes, SHA-256
+`c18e228eb8acd85a6cd4c5dc800c25341f1294d0d570bcde3ab57a3863d356ab`.
+Ordinary same-ID installation and an independent full installed-byte read pass.
+Both devices use the Owner173 u4090 USB route for debugging. Media/control still
+use direct TLS1.3 RG10.199.167.154 → Phone10.199.167.157:44367.
+HostR5 and Probe4 remain unchanged.
+
+| Current-APK check | Actual result |
+| --- | --- |
+| Reconnect | Both connections streamed; reconnected interval20,063ms/515 additional rendered frames; zero touches |
+| Local Stop | 2,008ms measured stream; STOPPED |
+| RG pause | 2,006ms measured stream; STOPPED |
+| Authenticated HostStop | 1,004ms measured stream; EOF/disconnect and stopped stock child |
+
+Owned teardown found no bridge/stock process, tested VD42–53 or listener44367.
+Own apps were stopped. One normal final screen-off/check per device reported
+Fold6 Dozing and RG Asleep. These are sampled observations, not continuous state.
+The corrected candidate is ready for renewed independent review.
+
+Earlier negatives remain: the original120s update and35s read timed out with
+unavailable response buffers. A new USB read established the old installed APK,
+then authorized same-ID updates established the corrected bytes. Those new
+observations do not rewrite the old unknown transaction. Reconnect trial173c
+reached both streams but failed before measurement with an unclassified
+IllegalStateException. Diagnostic trial173e recorded a receiver connection reset
+and matching host WRITE_DEADLINE. Their underlying causes remain unassigned;
+the later passing run does not retroactively explain them. The first empty173c
+report read and unavailable optional thread observation are retained too.
+
+Useful own-session exception stacks and slow frame-read/handling/status-write
+logs are now retained. They change no protocol, buffer or deadline. The passing
+instrumented trial emitted no slow-operation warning; its normal cancellation
+Socket-closed log is not a failed reconnect. Private images/logs are hash-bound,
+not published as raw payloads. The prior310-second run below keeps its original
+capsule159 binding and was not repeated for these lifetime corrections.
 
 ## Previous completed direct run
 
@@ -35,7 +62,7 @@ RG event at(240,320) advanced the actual Phone fixture counter0→1; inspected R
 images show `Visible taps: 0` then `Visible taps: 1`.
 
 Samsung's actual Display settings page also rendered on its independent VD36.
-Current-build certificate-absent refusal, reconnect with zero stale touches,
+That run's certificate-absent refusal, reconnect with zero stale touches,
 local Stop, RG pause and authenticated HostStop passed. Phone logs show all
 owned sessions stopped and their stock children gone. Final observations find
 no owned bridge/server, tested VD35–41 or Phone listener44367. One normal end
@@ -65,9 +92,11 @@ startup. Production browser code and protected articles remain unchanged.
 The installed test packages are `com.code2hack.eyebrowse.projector.directhost.r5`,
 `com.code2hack.eyebrowse.projector.directrg.r3` and its `.probe4` instrumentation.
 Host5 installed successfully; the163 read qualified its full signed APK,
-user0/UID10445 and version. Their source/APK capsule is
+user0/UID10445 and version. The direct167 source/APK capsule is
 `3e7afead0d64d4913c1423be933e7906463c2a2d018ecefe7d5939989d2d77f1`.
-The compiled sources and installed packages were unchanged during direct167.
+Its compiled sources and installed packages were unchanged during that run.
+The corrected current source/APK/short-lifecycle capsule is
+`dc8dcde6d8b5af0d2146679946d88a4f9b3d86a8c73729a7ff79cd8d72d31fc1`.
 Earlier isolated packages and unknown historical install outcomes remain retained.
 Owner167 permits updates to owned isolated packages for real code changes;
 original EyeBrowse/Chromium applications and data remain outside this experiment.
