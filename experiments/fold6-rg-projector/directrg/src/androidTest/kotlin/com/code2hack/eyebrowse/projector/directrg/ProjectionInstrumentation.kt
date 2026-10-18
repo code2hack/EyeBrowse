@@ -100,7 +100,7 @@ class ProjectionInstrumentation : Instrumentation() {
                 }
                 if (args.getString("waitForGo") == "true") {
                     val go = File(targetContext.filesDir, "probe-$id.go")
-                    val deadline = SystemClock.elapsedRealtime() + 60_000
+                    val deadline = SystemClock.elapsedRealtime() + 180_000
                     while (!go.isFile && SystemClock.elapsedRealtime() < deadline) Thread.sleep(100)
                     require(go.isFile) { "Bounded fixture setup did not complete" }
                     report.put("fixtureSetupBeforeMeasurement", true)

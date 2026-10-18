@@ -2,7 +2,7 @@
   "schema": 1,
   "issue": 67,
   "alias": "PAV-02",
-  "status": "INCOMPLETE_COMPONENT_CHECKPOINT_HOSTR3_INSTALLED_PRECONTROL_CALLER_FAILED",
+  "status": "INCOMPLETE_COMPONENT_CHECKPOINT_FIVE002_NATIVE_SYSTEMUI_GUARD_GATE",
   "baseline": "38cb5f7ec8d320ef9833a36840ccec3febdbc885",
   "donor": "03de921e2400147842ce6c56101b58d514dde77c",
   "target": "spike/fold6-rg-projector-av",
@@ -79,6 +79,14 @@
       "errors": 0,
       "warnings": 1,
       "xmlSHA256": "a12cfb5cce6cce88bf589c70c3610af519680355e2c4d0f88767e735e0d2afad"
+    },
+    "rgProbe2TestBuildAndLint": "PASS",
+    "mainRGAPKByteIdenticalAfterTestOnlyBuild": true,
+    "unitTestsRerunForSetupWaitAndTestApplicationIdOnlyChange": false,
+    "rgProbe2Lint": {
+      "errors": 0,
+      "warnings": 1,
+      "xmlSHA256": "0a87e91fc2b9bdaa03466decd5a7ceb8c7d5fb7116f9d346683200161eac85aa"
     }
   },
   "APKs": [
@@ -97,9 +105,9 @@
       "installed": true
     },
     {
-      "package": "com.code2hack.eyebrowse.projector.directrg.r3.test",
-      "bytes": 30534,
-      "sha256": "fc8c5e874f1e0c72a6ddc3ec29ebe1d987bdcc09c40bdfd69987a9fbaa20367a",
+      "package": "com.code2hack.eyebrowse.projector.directrg.r3.probe2",
+      "bytes": 30542,
+      "sha256": "9d1a4b4a17111e67bd4d2ecb5bfbe175ff3b3c44fc424410b8b698729fa3a97a",
       "signatureVerified": true,
       "installed": true
     }
@@ -252,7 +260,7 @@
     "projectorPackagesInstalled": null,
     "correctedPhoneHostR2Installed": false,
     "currentRG3InstalledAndByteBound": true,
-    "screenHelperInvocations": 4,
+    "screenHelperInvocations": 5,
     "credentialReads": 0,
     "smoke003": {
       "observedStreamingMs": 80043,
@@ -288,13 +296,13 @@
     "thirdPartyVideo": "PUBLIC_VENDOR_UI_RENDERED_NORMAL_SETTINGS_PAGE_INCOMPLETE",
     "rgSurfaceDecode": "SMOKE003_REAL_HARDWARE_SURFACE_DECODE_OBSERVED",
     "harmlessVisibleTapEffect": "UNEXECUTED",
-    "fiveMinuteNoPCGateway": "NOT_EXECUTED_FIRST_ORCHESTRATION_FAILED_BEFORE_PRODUCT_SETUP",
+    "fiveMinuteNoPCGateway": "NOT_EXECUTED_BOTH_DISTINCT_ORCHESTRATIONS_STOPPED_BEFORE_PRODUCT_WORK",
     "onDeviceAuthenticationRefusal": "UNEXECUTED_ACCEPTANCE_CASE",
     "onDeviceLifecycle": "SMOKE003_SECOND_STREAM_FAILED_CURRENT_FIX_UNEXECUTED",
     "measuredMovingFPSAndLatency": "SMOKE003_FPS_OBSERVED_LEGACY_LATENCY_INVALID_RG3_METRIC_UNMEASURED",
     "audio": "DISABLED_INTERMEDIATE",
     "opticalHeadIMEAcousticAcceptance": "NOT_CLAIMED",
-    "blocker": "Consumed noncredential five-minute001 journal after initial OwnedControl stock-master SHA command returned nonzero; future caller admission needs exact Manager disposition",
+    "blocker": "Exact current native SystemUI ownership prerequisite failed in distinct five-minute002; source guard retained, future callers held by the new terminal record pending Manager disposition",
     "componentNegativesRetained": [
       "Initial RG decor/insets NullPointerException",
       "Initial API32 PKCS12 context IOException",
@@ -305,7 +313,8 @@
       "Host r2 streamed install returned1 without Android failure code; package reconciliation rejected before ADB because pinned SSH PID absent",
       "Replacement112 selected registration absent; one host-connect return0 but explicit failed-to-connect text; no retry",
       "Private event112 intent lacked explicit file/directory fsync before connect; gap retained, helper corrected with host-only cases",
-      "First five-minute001 admitted journal failed at initial control master-JAR hash command before credential/control/product work; result buffers unavailable; journal consumed without replay"
+      "First five-minute001 admitted journal failed at initial control master-JAR hash command before credential/control/product work; result buffers unavailable; journal consumed without replay",
+      "Five-minute002 native SystemUI ownership guard rejected before keypad XML/credential/work; current/expected focus-token-state pair not retained; exact cause unproved"
     ],
     "lastKnownInstalledPackageCountBeforeUncertainInstall": 8,
     "hostR2PresenceMeaning": "Complete event114 user0 query absent; old installer transaction still UNKNOWN",
@@ -323,6 +332,25 @@
       "specificFilesystemOrTransportCause": "NOT_PROVEN",
       "hostOnlyExactClassFailureCheckPassed": true,
       "hostOnlyCheckActualDeviceNetworkLoaderInputCalls": 0
+    },
+    "currentRGProbe2InstalledAndByteBound": true,
+    "firstContinuationPrepared": "w67-five-minute002 executed once, failed before credential/keypad XML/product work; consumed, not replayable",
+    "fiveMinute002": {
+      "state": "FAILED_OR_UNKNOWN_NO_RETRY",
+      "credentialReadState": "NOT_ATTEMPTED",
+      "submissionIntent": false,
+      "workRan": false,
+      "workReturncode": "ABSENT",
+      "relockVerified": true,
+      "ownedControlSettled": true,
+      "guardCode": "NATIVE_SYSTEMUI_OWNERSHIP_REQUIRED",
+      "failurePhase": "NATIVE_KEYPAD",
+      "actualKeypadXMLDumpCalls": 0,
+      "noPCMeasurementStarted": false,
+      "productHostOrVDCreated": false,
+      "actualFailureContextPair": "NOT_RETAINED_CAUSE_UNPROVED",
+      "exactGuardDummyCasesPassed": 3,
+      "dummyCasesActualProductionNativeDeviceOrCredentialCalls": 0
     }
   },
   "teardown": {
@@ -352,7 +380,7 @@
     "oldWorker64State": "Unresolved historical tab/hook/resource obligations retained",
     "smoke003BridgeSessionAnd44367Absent": true,
     "smoke003VD18FinalAbsence": "NOT_SEPARATELY_CAPTURED",
-    "lastNativeCut": "Two independent after/settled reads in five-minute001 finalizer: locked/showing/Dozing/display0OFF; historical cut, no continuous-state claim",
+    "lastNativeCut": "Three actual parent finalizer cuts after five-minute002, locked/showing/Dozing/display0OFF, zero extra sleep; historical cut, no continuous-state claim",
     "backupClientsActive": 0,
     "backupClientSignals": 0,
     "fiveMinute001": {
@@ -364,7 +392,27 @@
       "teardownError": null,
       "oldRGObligationsStillUnresolved": true
     },
-    "rgLatestOwnTelemetryMeaning": "Historical smoke003 follow-up telemetry; five-minute001 stopped the own RG package before product work and made no new receiver telemetry claim"
+    "rgLatestOwnTelemetryMeaning": "Historical smoke003 follow-up telemetry; five-minute001 stopped the own RG package before product work and made no new receiver telemetry claim",
+    "lastSecureNativeFold6": {
+      "locked": true,
+      "keyguardShowing": true,
+      "wakefulness": "Dozing",
+      "logicalDisplay0State": "OFF"
+    },
+    "fiveMinute002": {
+      "productBridgeOrVirtualDisplaysStarted": 0,
+      "ownRGStopCommandCompleted": true,
+      "parentAdditionalCredentialFreeSleep223Calls": 0,
+      "threeFinalNativeCutsLockedShowingDozingDisplay0Off": true,
+      "callerRelockVerified": true,
+      "callerOwnedControlSettled": true,
+      "ownControlForwardCreated": 1,
+      "ownControlForwardRemoved": 1,
+      "localControlListenerAbsent": true,
+      "newKeypadXMLOrCredentialRead": 0,
+      "teardownError": null,
+      "resourceReturnOrOriginalAppStateClaim": false
+    }
   },
   "privateEvidenceHashes": [
     {
@@ -841,6 +889,111 @@
       "record": "five-minute001-first-execution-preparation.json",
       "sha256": "a3c9b15ba7ea45df223adf3354ab70be896e66e2db026380b2d6f40592a25df8",
       "bytes": 707
+    },
+    {
+      "record": "screen116-control-jar-stage-intent.json",
+      "bytes": 473,
+      "sha256": "85d359d60c74e0bc736be48fd990d5b9e319a7193409151894da2a940570707e"
+    },
+    {
+      "record": "screen116-control-jar-stage-result.json",
+      "bytes": 1094,
+      "sha256": "c1226fd2a526d41136bfb9d31dc8e27ce0d3d05f29a3b44efd569d8540ce7b99"
+    },
+    {
+      "record": "screen-caller-prepared116-package.json",
+      "bytes": 2601,
+      "sha256": "0a5a5d25ea1c4a84a77d7858b410924b8f67c9a9c18e12ae0194c9ce7b01f35b"
+    },
+    {
+      "record": "screen-caller-prepared116-source.json",
+      "bytes": 683,
+      "sha256": "dd0b45ab407f5a8f7cf4bd57d0f1a204e4e195903f5501647b16dcc3919aef4f"
+    },
+    {
+      "record": "screen-caller-prepared116.diff",
+      "bytes": 8317,
+      "sha256": "c87f1bf30f8b6b25a2e98c8d2211a8475b4dd69828aca3e9c3fbc4823f10391d"
+    },
+    {
+      "record": "screen-caller-prepared116-host-proof.json",
+      "bytes": 6102,
+      "sha256": "47393f40a32a5b9f1138f577dcc13d2524680d2349e6142ee4f909d0b59d904b"
+    },
+    {
+      "record": "rg-probe2-setup-wait-build.log",
+      "bytes": 6538,
+      "sha256": "d03b02ad190e0b67de9a3ca1632993aae3511d9bba3d29d50114bb9f68aaf2c7"
+    },
+    {
+      "record": "hostr3-rg3-probe2-current-source-apk-capsule.json",
+      "bytes": 7169,
+      "sha256": "63864479cd41c35efab4d111b34456d639b96484a6444f96bef60a45d7f6f853"
+    },
+    {
+      "record": "hostr3-rg3-probe2-current-source-files.tar.gz",
+      "bytes": 20474,
+      "sha256": "4af21a9cf544bd2c558204193bfb02cd1b7631258ea1956e80f3998b7c3536b6"
+    },
+    {
+      "record": "rg-probe2-stage-intent.json",
+      "bytes": 366,
+      "sha256": "f9d1f47d08b5e9aabff7909fc51d06f0e563bc1c8d041b5c1c5ef827dad1e631"
+    },
+    {
+      "record": "rg-probe2-install-intent.json",
+      "bytes": 288,
+      "sha256": "24d13b217abb72c57ca2e860a51e788a9b0712c66b7a160a13ad3f1abe8c5519"
+    },
+    {
+      "record": "rg-probe2-install-result.json",
+      "bytes": 63,
+      "sha256": "b4dcdc9861129208a0f0b7bd1fe24c5e9f8797c9e621809ed7fd4a16306c5327"
+    },
+    {
+      "record": "rg-probe2-provision-complete.json",
+      "bytes": 798,
+      "sha256": "5fb8dd4fa54bde562b4141999cc157e2df9b18addb516d067c96b40c110cc31b"
+    },
+    {
+      "record": "five-minute002-preparation-source-bindings.json",
+      "bytes": 1235,
+      "sha256": "e99e7d60b7663d22318a66e819bd70261ded227b75d51ca555914c2b1ddc339a"
+    },
+    {
+      "record": "pre-five-minute005-bindings.json",
+      "bytes": 1734,
+      "sha256": "87ecf63adde3853331bb3fb6eb1f79bd862bf07ccc79cfb42db64ab34bdb2d8d"
+    },
+    {
+      "record": "five-minute002-final-orchestration-bindings.json",
+      "bytes": 2112,
+      "sha256": "129a8aa7bf14ba678a32c5f9e082eac47b34708574a53e0fc4f3ab9dffd2bb60"
+    },
+    {
+      "record": "five-minute002-orchestration-intent.json",
+      "bytes": 249,
+      "sha256": "4321a23b1e2b7857c2b57afc6e22fd6b6f1cf8d5a5959e0d7a0d86b22ff6bb81"
+    },
+    {
+      "record": "five-minute002-owned-rg-stop-intent.json",
+      "bytes": 158,
+      "sha256": "09ae7a9b06c83fbdbec2f8ef78d6929d88221c937148b294f5c57df76697f109"
+    },
+    {
+      "record": "five-minute002-failed-caller-frozen.json",
+      "bytes": 2035,
+      "sha256": "9fa2b72e412c362f237d4fb513dee514616b0393b83ac26890db0fe28a37ae49"
+    },
+    {
+      "record": "five-minute002-summary.json",
+      "bytes": 1730,
+      "sha256": "61ea55353349d9da28eab5550a1aab5e20dfb4a2a7bef020cc390fd136d562d9"
+    },
+    {
+      "record": "five-minute002-native-gate-host-diagnosis.json",
+      "bytes": 2294,
+      "sha256": "e7272980984588c00e23b8c673b86e259e7d050098459c64306acdbd1b2d3742"
     }
   ],
   "privacy": "Only fixed-schema outcomes, counts and opaque hashes. Original paths, browser/account payloads and TLS private material remain outside Git.",
@@ -880,8 +1033,8 @@
     },
     {
       "path": "experiments/fold6-rg-projector/directrg/build.gradle.kts",
-      "bytes": 851,
-      "sha256": "1e9c2f76a0ba5de531532b54f74b1b94af3256daf4181edc9a5866dfa213eba3"
+      "bytes": 853,
+      "sha256": "5126838139830f2e50c23f2a7fedcf4a9c0a2eef328b81a58aa3ccc94812e6d1"
     },
     {
       "path": "experiments/fold6-rg-projector/protocol/build.gradle.kts",
@@ -961,7 +1114,8 @@
       "com.code2hack.eyebrowse.projector.directrg.r2.test": "c5e6a5f300b00df13c4eb68464356132032d2d1b134c91473244fcef07975861",
       "com.code2hack.eyebrowse.projector.directrg.r2.diag1": "053823e5866fbb72c131fc3404f11c18f749fe1ea15569893daca1fe652ac2d8",
       "com.code2hack.eyebrowse.projector.directrg.r3": "073f195eb312b9b26e4fd3801449aeb017f61a1bb51c9d51fa6965b83084c59e",
-      "com.code2hack.eyebrowse.projector.directrg.r3.test": "fc8c5e874f1e0c72a6ddc3ec29ebe1d987bdcc09c40bdfd69987a9fbaa20367a"
+      "com.code2hack.eyebrowse.projector.directrg.r3.test": "fc8c5e874f1e0c72a6ddc3ec29ebe1d987bdcc09c40bdfd69987a9fbaa20367a",
+      "com.code2hack.eyebrowse.projector.directrg.r3.probe2": "9d1a4b4a17111e67bd4d2ecb5bfbe175ff3b3c44fc424410b8b698729fa3a97a"
     },
     "stockServerSelfUnlink": {
       "upstreamSourceQualified": true,
@@ -1033,6 +1187,22 @@
       "ownedControlProcessOrForwardStarted": false,
       "priorOld002ResolutionRemainsExactOnly": true,
       "finalNativeProofSeparateRecord": "five-minute001-summary.json"
+    },
+    {
+      "record": "screen-attempt-w67-five-minute002.json",
+      "sha256": "9fa2b72e412c362f237d4fb513dee514616b0393b83ac26890db0fe28a37ae49",
+      "bytes": 2035,
+      "state": "FAILED_OR_UNKNOWN_NO_RETRY",
+      "credentialReadState": "NOT_ATTEMPTED",
+      "submissionIntent": false,
+      "workRan": false,
+      "relockVerified": true,
+      "ownedControlSettled": true,
+      "failure": {
+        "guardCode": "NATIVE_SYSTEMUI_OWNERSHIP_REQUIRED",
+        "phase": "NATIVE_KEYPAD"
+      },
+      "finalNativeProofSeparateRecord": "five-minute002-summary.json"
     }
   ],
   "supportingIndependentVerification": [
@@ -1040,6 +1210,12 @@
       "record": "manager-worker67-new007-preservation-ready-099/offline-restoration-verification.json",
       "sha256": "630dcd928d3504d14bc8ede67a0b33b907a759ff7334e87cc85b44a6dd2d1c38",
       "scope": "Offline archive/restoration/header/byte/metadata and SQLite verification; supporting preservation, no product acceptance"
+    },
+    {
+      "record": "manager-worker67-precontrol001-jar-resolution-116/qualification117.json",
+      "bytes": 3748,
+      "sha256": "3f9b59231ed3f332419e85db5279b8ab490298b69b413bba601e86e48ec61ae8",
+      "scope": "Exact installed operational consumer and specific prior-record resolutions,10 independent Manager checks plus63 Worker dummy host cases; no product or ticket acceptance"
     }
   ],
   "historicalCheckpointPhysical": {
@@ -1095,8 +1271,8 @@
     },
     {
       "path": "experiments/fold6-rg-projector/directrg/src/androidTest/kotlin/com/code2hack/eyebrowse/projector/directrg/ProjectionInstrumentation.kt",
-      "bytes": 9740,
-      "sha256": "800bc5b7b3d1bd60b331335013d3939522af895476a7b3365ba2991f4b04cfd8"
+      "bytes": 9741,
+      "sha256": "dd2ed7edd36b02ad202abb9dd9e67e547ffb443f5c1982189f0c6b07bc529781"
     },
     {
       "path": "experiments/fold6-rg-projector/directrg/src/main/AndroidManifest.xml",
@@ -1172,8 +1348,9 @@
     "old002RemainsFailedConsumedAndUnchanged": true,
     "allOtherHoldsRetained": true,
     "newCallerAfterSmoke003": "FIVE_MINUTE001_FAILED_CONSUMED_NONCREDENTIAL_BEFORE_WORK",
-    "newFiveMinute001Exempted": false,
-    "futureActualCallerAdmission": "HELD_FOR_EXACT_MANAGER_DISPOSITION"
+    "newFiveMinute001Exempted": true,
+    "futureActualCallerAdmission": "HELD_BY_NEW_CONSUMED_FIVE_MINUTE002_NOT_EXEMPTED_BY_OLD001_OR_SMOKE002",
+    "newFiveMinute002Exempted": false
   },
   "privateRecordDurabilityCorrection": {
     "initial112IntentExplicitFsyncBeforeConnect": false,
@@ -1196,10 +1373,56 @@
     "currentCandidate": false
   },
   "currentSourceCapsule": {
-    "record": "hostr3-rg3-current-source-apk-capsule.json",
-    "sha256": "a5b74bd5f243c221352f7ad7e0207a55be645bc5a83f5bc4f54b78b73d365a27",
-    "bytes": 6911,
+    "record": "hostr3-rg3-probe2-current-source-apk-capsule.json",
+    "bytes": 7169,
+    "sha256": "63864479cd41c35efab4d111b34456d639b96484a6444f96bef60a45d7f6f853",
     "sourceFiles": 24,
-    "binding": "Phone r3 unused applicationId; product/JAR/RG metric/driver logic unchanged since prior02c2 capsule"
+    "binding": "Unchanged Phone r3 and byte-identical RG3 main; unused probe2 test changes setup wait60->180 seconds, measured310-second real-clock interval unchanged"
+  },
+  "previousRGTestAPK": {
+    "package": "com.code2hack.eyebrowse.projector.directrg.r3.test",
+    "bytes": 30534,
+    "sha256": "fc8c5e874f1e0c72a6ddc3ec29ebe1d987bdcc09c40bdfd69987a9fbaa20367a",
+    "signatureVerified": true,
+    "installed": true
+  },
+  "preparedConsumer116": {
+    "state": "PREPARED116_THEN_INDEPENDENTLY_QUALIFIED_AND_ACTIVE117",
+    "candidateRecord": "screen-caller-prepared116.py",
+    "candidateBytes": 20071,
+    "candidateSHA256": "fcad24dd81c0de318de74dad9d8dc1b3f6181a201bbb7886fefd92284435d172",
+    "newResolver": "Exact failed noncredential001/path/hash/full node/private ACTIVE Manager policy and both proofs only",
+    "existingFunctionsAndClassesUnchangedExceptMainScanBranch": true,
+    "hostCasesPassed": 63,
+    "productionLoaderStatusDeviceCallsInHostCases": 0,
+    "actualCallerUseAuthorizedByPreparation": false,
+    "liveCallerUnchangedAtPreparation": true,
+    "qualifiedLiveCallerSHA256": "fcad24dd81c0de318de74dad9d8dc1b3f6181a201bbb7886fefd92284435d172",
+    "independentManagerHostCasesPassed": 10,
+    "actualCallerUseAuthorizedByManager117": true
+  },
+  "dedicatedControlJAR116": {
+    "state": "STAGED_EXCLUSIVE_AND_INDEPENDENT_HASH_VERIFIED",
+    "bytes": 733930,
+    "sha256": "764eb6f79811d5211fe9df341120882ba9994c7a61b897d7bf3fb662e53bc536",
+    "directoryMode": "0700",
+    "fileMode": "0600",
+    "uid": 2000,
+    "gid": 2000,
+    "nlink": 1,
+    "oldMasterReprobes": 0,
+    "callerControlCredentialOrInputCalls": 0,
+    "cleanupFalseUnchanged": true
+  },
+  "preparedMeasurementDriver": {
+    "testPackage": "com.code2hack.eyebrowse.projector.directrg.r3.probe2",
+    "setupWaitMaximumSeconds": 180,
+    "setupWaitStartsBeforeEndLockAndControlSettlement": true,
+    "measurementClock": "RG SystemClock.elapsedRealtime",
+    "measurementSeconds": 310,
+    "scheduledTapSeconds": 155,
+    "firstDistinctRunID": "five-minute002",
+    "actualMeasurementExecuted": false,
+    "actualOrchestrationState": "FIVE_MINUTE002_FAILED_BEFORE_KEYPAD_XML_CREDENTIAL_OR_PRODUCT_WORK"
   }
 }

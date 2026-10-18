@@ -16,8 +16,10 @@ absent without establishing its old installer transaction outcome. A fresh
 unused r3 ID avoided replaying or replacing it. The first five-minute attempt
 then failed at the guarded control helper's initial stock-JAR hash command,
 before credential read, control setup or product work. Its journal is consumed
-and future caller admission is held for an exact Manager disposition. Independent
-source/build work continues.
+and remains terminal. Manager117 qualified an exact admission resolution for
+that unchanged noncredential record. The distinct next attempt stopped at the
+native SystemUI ownership check before credential read or product work. It is
+also consumed, with secure end-state and control teardown verified.
 
 ## Scope, packages and privileges
 
@@ -33,10 +35,10 @@ startup. Production browser code and protected articles remain unchanged.
 The current Phone package is `com.code2hack.eyebrowse.projector.directhost.r3`;
 its installed bytes match the frozen artifact. The original experimental
 `.directhost` remains installed, and r2's old transaction remains UNKNOWN. The
-current RG app and test are `.directrg.r3` and `.directrg.r3.test`,
+current RG app and test are `.directrg.r3` and `.directrg.r3.probe2`,
 with the common prefix `com.code2hack.eyebrowse.projector`. Their installed APK
 bytes match the frozen artifacts. Earlier RG packages `.directrg`, its `.test`,
-`.directrg.r2`, `.r2.test` and `.r2.diag1` remain retained. Every installation used
+`.directrg.r2`, `.r2.test`, `.r2.diag1` and `.r3.test` remain retained. Every installation used
 an unused ID; no existing app was updated, cleared or uninstalled.
 
 The installed Phone application is sandboxed. Its Stop screen does not acquire
@@ -168,7 +170,7 @@ ends, named `packetReadToCallbackP95Ms`. It has not yet been measured on-device.
 Echo RTT uses one RG clock. Neither value is optical latency or cross-device
 input-to-visible latency.
 
-The prepared on-RG driver waits for guarded setup/end-lock/control settlement,
+The prepared on-RG driver allows up to180 seconds for guarded setup/end-lock/control settlement,
 then measures310 genuine seconds, schedules one focused synthetic tap at155s
 and requests authenticated Host Stop on the same stream. The first orchestration
 attempt stopped before product setup, so this measurement has not run. A
@@ -270,5 +272,45 @@ observed an Awake/unlocked Phone. One recorded ordinary sleep223 was followed
 by two independent locked/showing/Dozing/display0OFF reads. No PIN, new caller
 or control setup was used for settlement. The old smoke002 resolution exempts
 only that exact old record; it does not exempt this new consumed journal. Both
-failures remain unchanged. The five-minute/tap/Host Stop criteria remain pending,
-as do independent exact-candidate review and Manager acceptance.
+failures remain unchanged.
+
+Manager116 authorized a separate control-only stock JAR in a new exclusive
+mission namespace. Staging and independent device readback verified its pinned
+SHA,733,930 bytes, shell UID2000, directory0700 and file0600. No old master was
+reprobed or overwritten. That setup's native cut was Awake/unlocked; it made
+no input or credential call. The earlier secure cuts remain historical.
+A separate caller candidate adds only the dedicated path and an exact001
+admission resolver. All existing authentication, one-PIN, journal, privacy,
+end-lock and old002 validator functions remain unchanged. Sixty-three affected
+dummy-only host cases pass, with zero production loader/status/device calls.
+Manager117 independently qualified and activated that exact caller and its
+two specific old-record resolutions. The consumed old IDs remain non-replayable;
+every other failed or unknown record still holds.
+
+The test driver's initial60-second setup wait included native end-lock and
+control settlement, each potentially requiring slow readbacks. Its bounded
+setup wait is now180 seconds; the real-clock310-second measurement still starts
+only after the explicit go signal. The new unused `.r3.probe2` test APK builds,
+passes lint and signature verification, and matches its full installed hash.
+The current RG application APK remains byte-identical and was not replaced.
+The distinct `five-minute002` attempt used those current bindings and the
+qualified117 caller. The control-only stock JAR passed its initial hash guard
+and the owned control forward started. The native keypad prerequisite then
+rejected `NATIVE_SYSTEMUI_OWNERSHIP_REQUIRED`, before keypad XML capture,
+credential read/submission or product work. The precise current/expected
+focus, owner-token or state difference was not retained, so its cause remains
+unproved. Three exact-function dummy cases reproduce that boundary without
+actual native, XML, credential or device calls; they do not identify the actual
+cause or relax the guard.
+
+The caller remains `FAILED_OR_UNKNOWN_NO_RETRY`, with `submissionIntent=false`,
+`workRan=false`, verified relock and verified owned control settlement. Its one
+forward was removed and its local listener is independently absent. No product
+bridge, virtual display or RG measurement driver started. Parent teardown
+stopped only the owned RG app; three native cuts were already locked, showing,
+Dozing and display0OFF, so it sent zero extra sleep inputs. The new consumed
+journal is outside the exact old001 and old smoke002 resolutions. Further
+caller admission awaits an exact Manager disposition; no ID was replayed.
+The five-minute/tap/Host Stop, lifecycle, on-device peer-refusal and current
+timing criteria remain pending, as do independent exact-candidate review and
+Manager acceptance.

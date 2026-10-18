@@ -19,8 +19,11 @@ Build these separately from the production browser:
   :protocol:testDebugUnitTest :directhost:lintDebug :directrg:lintDebug
 ```
 
-Installation requires the assigned device reservation, fresh current private
-data preservation and unused package checks. Do not replace an existing app.
+PAV-02 installation requires the assigned device reservation, current physical
+identity/source guards and an unused package ID. Owner decision106 retired
+repeated old-store backup/equality/restore prerequisites for these isolated
+tests. Keep original applications and their current data untouched; do not
+replace an existing app.
 See [direct-video.md](../../docs/experiments/fold6-rg-projector-av/direct-video.md)
 for the actual protocol, bootstrap, limitations and acceptance evidence.
 
