@@ -14,7 +14,8 @@ The W68-02 device window207 installed the matching input pair and obtained the
 physical results below on852e1de. That trial exposed reversed head-pointer
 directions on both axes. A two-sign correction also failed physically. The
 current correction changes the relative orientation to the current head frame;
-its physical direction check remains outstanding. Historical
+Owner subsequently confirmed both corrected directions on RG8911c4a3… .
+Historical
 app effects, Owner confirmations and IME failures retain their exact source/APK
 bindings. Independent review, remaining navigation evidence and integration
 remain outstanding.
@@ -254,7 +255,7 @@ Correction artifacts are retained separately from the historical pair above:
 | RG3, a602 no-panel/Phone-Back | Never installed | 2,607,565 | `71e0a456004a20bb8ff523f7f41a1404f1944168c0a2b23dc44144bbd5f09975` |
 | RG3,852e1de settings placement196/198 | Installed/tested W68-02; reversed axes retained | 2,607,565 | `45852fbc80cfaf3944c19ac5110abd86de0ba7928723f2e2f1a673b3549cad9f` |
 | RG3, sign-only correction | Installed; Owner reports both axes still reversed | 2,607,565 | `6a26ea8c0c57c5fe6c47803fbbde24376c64c1322d6167b1a34ab464ac12fbe9` |
-| RG3, current-head-frame correction | Installed; physical direction check pending | 2,607,565 | `8911c4a3dcc78cc45a8a3dd1a77711fe2eb0ea50a6045dc8045c17c236eaf43d` |
+| RG3, current-head-frame correction | Installed; Owner confirmed both directions | 2,607,565 | `8911c4a3dcc78cc45a8a3dd1a77711fe2eb0ea50a6045dc8045c17c236eaf43d` |
 | Probe4, direct lifecycle stop | Installed W68-02; unchanged by direction fix | 73,010 | `fd458f817bfa21e14c6792ed7e6615c3993f3fb0de5e6b2ccfac09a26856ba83` |
 
 The numeric-row/local-hit-action change passed the affected **13 receiver
@@ -336,10 +337,28 @@ remain retained separately. The final affected checks passed **16 receiver tests
 receiver/probe assembly and receiver lint in26s, with only the existing
 OldTargetApi warning. Results/source hashes are retained in
 `window207/current-frame-host-checks.json`. Installed RG8911c4a3… matches the
-built artifact; Probe4 bytes are unchanged. The receiver is on the disconnected
-Connect view for the final physical direction observation. No streaming session
-was started for this correction. The current saved pointer gain is4.0× and
+built artifact; Probe4 bytes are unchanged. Owner then confirmed **“Both axes
+correct”** on the disconnected Connect view,
+bound to source26d8e5d/RG8911c4a3… in
+`window207/owner-current-frame-directions-confirmed.json`. This establishes
+physical direction on that build; it is not an optical latency or sustained
+ergonomic measurement. No streaming session was started for that direction
+check. The current saved pointer gain is4.0× and
 scroll240; the earlier2.0× restoration remains scoped to its earlier observation.
+
+A subsequent fresh case reused the same matching v1 pair and owned namespace.
+Bridge21415 started successfully; its current stock log identified VD73 at
+480×640/160, and the native fixture cold-launched there. Live stream counters
+advanced. The software Connect setup had touchesSent1 before Owner interaction;
+that count is not a physical tap result. The current receiver image has the
+native fixture and a bottom Phone system bar. Narrow window observations show
+NavigationBar73 visible at [0,592][480,640], but no confidently identifiable
+Home/app-switch target has been established from the rendered image. A window
+record does not prove a usable control. The Owner was asked at this ready setup
+for one native tap with corrected aiming, any recognizable Phone navigation
+target, and an already-known RG system Home/app-exit action/effect or “no known
+RG exit.” Those remaining physical facts are pending; no alternate binding or
+new menu/gesture is selected.
 
 No independent acceptance, mandatory-audio result, integration or release is
 claimed. Matching PAV-04 integration remains a later coordinated step.
