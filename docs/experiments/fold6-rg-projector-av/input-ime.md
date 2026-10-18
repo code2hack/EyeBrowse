@@ -17,8 +17,12 @@ current correction changes the relative orientation to the current head frame;
 Owner subsequently confirmed both corrected directions on RG8911c4a3… .
 Historical
 app effects, Owner confirmations and IME failures retain their exact source/APK
-bindings. Independent review, remaining navigation evidence and integration
-remain outstanding.
+bindings. Owner subsequently confirmed a native tap and reported launching apps through
+the Phone’s bottom-left control. No known RG system exit was available. The
+latest explicit Owner direction selects **three taps for local Disconnect**,
+retaining two taps for Phone Back and no RG panel; earlier four-tap/double-tap
+exit proposals are superseded. Independent review, changed-gesture physical
+verification and integration remain outstanding.
 
 ## Implementation and provenance
 
@@ -50,13 +54,14 @@ withdraws input until a frame from the replacement decoder is rendered.
 | --- | --- |
 | Aim with head | One RG-local cursor over the video |
 | Ordinary short pad tap | One touch DOWN/UP at the current visible cursor target |
-| Double tap / OEM double | Android Back to the projected Phone app; constituent short taps and duplicate OEM reporting suppressed |
+| Two taps / OEM double | Android Back to the projected Phone app after one bounded continuation interval; constituent short taps and duplicate OEM reporting suppressed |
+| Three quick pad taps | Local Disconnect through the existing lifecycle method, with no constituent touch or Phone Back; changed physical binding pending verification |
 | Pad forward/backward swipe | Native wheel scroll at the current visible target, ±160 nominal pixels |
 | Aim into upper/lower24px strip | Repeating native wheel scroll at the same horizontal aim and visible video centerline |
 | Android Back while streaming | The same Phone Back path; it does not open an RG panel |
 | Android Back while disconnected | Ordinary local Activity exit |
-| Phone Home/app-return | Aim/short-tap the Phone's own projected navigation target if actually rendered and usable; availability/effect unverified. Explicit Home transport retained |
-| Local Disconnect | Leave the receiver through the RG's existing system Home/app-exit if physically available; onPause closes the session. Actual exit invocation unverified |
+| Phone Home/app-return | Owner reports the projected bottom-left app control can launch apps. Exact Home destination and browser-return behavior remain unqualified; explicit Home transport retained |
+| Local Disconnect | Latest Owner instruction selects three quick pad taps; no known RG system exit was reported. Existing onPause disconnect remains |
 | Numeric pointer/scroll settings | Two bounded numeric −/+ rows on the existing disconnected Connect view; local head/short-tap activation shares the Connect button path. Owner confirmed both rows on852e1de and restored2.0×/240 |
 
 No session panel, panel-opening gesture, permanent browser toolbar, recenter,
@@ -67,23 +72,34 @@ and preserve the prior value/show an error when saving fails. A touchscreen long
 does not open a panel. This is not a replacement startup or app-switcher design.
 
 The physical pad mapping reuses donor `ROKID,PSOC-TP-R` keyboard-source Enter,
-OEM291 and D-pad/OEM292/293. Both an OEM double event and two reported short taps
-produce one Back callback within the bounded double-tap interval. A later,
-distinct double tap produces another Back. Android Back also uses that path
-while streaming. The callback cancels pending tap/touch/edge work and calls the
-existing authenticated `navigate(BACK)` sender. Desktop key injection is not
-physical RG evidence. Direct touchscreen tap/drag support remains diagnostic
-software-input evidence when driven synthetically.
+OEM291 and D-pad/OEM292/293. The latest selected binding extends only the existing
+bounded recognizer: one tap is a remote touch, two taps are Phone Back, and three
+are local Disconnect. A tap pair waits one Android `getDoubleTapTimeout()`
+interval after its final UP for a possible third tap; a third DOWN within that
+interval defers completion until its valid short UP. The three-tap callback
+clears the sequence and calls the existing `disconnect()` method once. It sends
+neither a constituent remote tap nor Back. Swipe, cancel, held/repeated/stale key,
+focus loss and pause discard unfinished work. Raw-pair plus OEM-summary,
+OEM-only and raw-single followed by OEM-pair forms are covered in host tests;
+actual hardware reporting remains a required physical check.
 
-Manager disposition196 resolves the narrow source-placement question: numeric
-settings use the existing disconnected view. Window207 still
-must assess the actual Phone-provided Home/app-navigation target and the RG's
-existing physical system exit. No fixed coordinate, launcher, assumed gesture
-or global navigation change is selected. Phone-side Stop, ADB or synthetic pause
-cannot establish physical RG exit. If either platform route is unavailable,
-that exact missing function and the actual available controls return to Manager
-before selecting a material alternate. No new Owner design gate, replacement
-menu/gesture/framework or physical reachability claim is introduced.
+An ordinary Android Back from a non-pad source sends one Phone Back and cannot
+count toward three pad taps. A Back report from the identified native pad may
+represent the same pair as OEM291 and uses that path. The callback cancels
+pending tap/touch/edge work and calls the existing authenticated
+`navigate(BACK)` sender. Desktop key injection is software evidence. Direct
+Touchscreen tap/drag support remains diagnostic when driven synthetically.
+
+Disposition196/198 originally chose existing Phone/RG navigation for assessment.
+In the later VD75 test, the Owner confirmed native tap0→1 and reported using the
+Phone’s bottom-left app control to launch apps, without identifying an exact
+Home destination or proving the earlier browser-return case. The Owner reported
+“no known RG exit other than double-tap.” The latest explicit instruction then
+selected three taps for local Disconnect, superseding intervening double/four-
+tap exit proposals; Manager221 records that count change. No earlier proposed
+exit gesture was installed or committed. A Phone Stop, ADB or synthetic pause
+still does not establish physical RG Disconnect. There is no replacement menu,
+startup/app chooser or general gesture framework.
 
 Scroll speed is 10–1,200 **nominal** px/s, default240, step10. Wheel input uses
 64 nominal pixels per wheel detent. Android applications apply their own native
@@ -256,7 +272,8 @@ Correction artifacts are retained separately from the historical pair above:
 | RG3,852e1de settings placement196/198 | Installed/tested W68-02; reversed axes retained | 2,607,565 | `45852fbc80cfaf3944c19ac5110abd86de0ba7928723f2e2f1a673b3549cad9f` |
 | RG3, sign-only correction | Installed; Owner reports both axes still reversed | 2,607,565 | `6a26ea8c0c57c5fe6c47803fbbde24376c64c1322d6167b1a34ab464ac12fbe9` |
 | RG3, current-head-frame correction | Installed; Owner confirmed both directions | 2,607,565 | `8911c4a3dcc78cc45a8a3dd1a77711fe2eb0ea50a6045dc8045c17c236eaf43d` |
-| Probe4, direct lifecycle stop | Installed W68-02; unchanged by direction fix | 73,010 | `fd458f817bfa21e14c6792ed7e6615c3993f3fb0de5e6b2ccfac09a26856ba83` |
+| RG3, three-tap Disconnect | Installed; physical Disconnect pending | 2,607,565 | `efd47666c3ec0ae250dfdbf47286fed5aff348c804c178fdf8fc256e86daa312` |
+| Probe4, direct lifecycle stop | Installed W68-02; unchanged by direction/gesture changes | 73,010 | `fd458f817bfa21e14c6792ed7e6615c3993f3fb0de5e6b2ccfac09a26856ba83` |
 
 The numeric-row/local-hit-action change passed the affected **13 receiver
 tests**, receiver/probe assembly and receiver lint in28s. A final status-refresh
@@ -357,8 +374,41 @@ Home/app-switch target has been established from the rendered image. A window
 record does not prove a usable control. The Owner was asked at this ready setup
 for one native tap with corrected aiming, any recognizable Phone navigation
 target, and an already-known RG system Home/app-exit action/effect or “no known
-RG exit.” Those remaining physical facts are pending; no alternate binding or
-new menu/gesture is selected.
+RG exit.” Owner subsequently confirmed native tap0→1, and the owned record independently
+read taps1/text empty on VD75. The receiver observed one touch and zero navigation
+commands;224 scroll commands include edge repeats and are not a pad-swipe count.
+The Owner reported the bottom-left app control could launch apps and no known
+RG exit. These scopes remain bound to RG8911c4a3… . The later selected three-tap
+Disconnect binding requires its own changed-source physical check.
 
 No independent acceptance, mandatory-audio result, integration or release is
 claimed. Matching PAV-04 integration remains a later coordinated step.
+
+
+## Latest three-tap Disconnect correction
+
+The explicit latest Owner instruction is “use triple-tap to exit/disconnect.”
+Manager221 supersedes the four-tap count only, retaining the same mission,
+resources and attempt history. The recognizer now defers the two-tap Back
+callback through one configured continuation interval and invokes the existing
+local Disconnect on three taps. No RG panel or panel-opening gesture returns.
+The partial four-tap work was callback plumbing and an expected-red host test;
+it was never installed, committed, or a physical failure. Its exact test output
+and source snapshot remain in `four-tap220/` as superseded design evidence.
+The first three-tap host check passed20 receiver JVM tests, receiver/probe builds
+and lint in19s. A focused follow-up also covers held-third-tap tails and keeps
+ordinary non-pad Android Back separate from counted pad reports. Final affected
+checks passed **22 receiver JVM tests** (input17, decoder5), receiver/probe builds
+and lint in20s, with only the existing OldTargetApi warning. The unchanged
+host/protocol suites were not rerun. Results and source/APK hashes are retained
+in `three-tap221/host-checks.json`. RGefd47666… is installed and its bytes match
+the built artifact; Probe4 is unchanged. There is no physical Disconnect PASS
+at this checkpoint.
+
+Two-tap Back waits one system double-tap timeout, bounded to100–600ms by the
+existing receiver configuration, after the second short UP. A third DOWN inside
+that window defers completion until its short UP; held/canceled input cancels
+the unfinished sequence. Host timing tests use300ms and check both sides of the
+deadline. This is a recognizer timing assertion, not a measured physical
+input-to-visible latency. Three taps invoke local Disconnect immediately after
+the final valid UP, without first sending Phone Back.

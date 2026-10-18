@@ -9,36 +9,44 @@ internal class PadGestureRecognizer(
     private val single: ()->Unit,
     private val back: ()->Unit,
     private val scroll: (Int)->Unit,
+    private val disconnect: ()->Unit,
 ) {
-    enum class Key { TAP, DOUBLE, FORWARD, BACKWARD }
+    enum class Key { TAP, DOUBLE, BACK, FORWARD, BACKWARD }
     enum class Phase { DOWN, UP, CANCEL }
     data class Event(val key: Key, val phase: Phase, val timeMs: Long, val downTimeMs: Long, val repeat: Int=0)
-    private data class Press(val key: Key, val downTimeMs: Long, val second: Boolean)
+    private data class Press(val key: Key, val downTimeMs: Long)
     private var press: Press?=null
     private var pending: Long?=null
+    private var taps=0
+    private var rawPairNeedsOem=false
+    private var lastTapUpMs=0L
+    private var lastDoubleDownMs=-1L
+    private var lastDoubleUpMs=0L
     private var lastEventMs=0L
     private var suppressTapsUntil=0L
-    private var doubleDedupUntil=0L
     val deadline get() = pending
-    val hasWork get() = press!=null || pending!=null
+    val hasWork get() = press!=null || pending!=null || taps!=0
 
     init { require(doubleTapMs in 100..600 && longPressMs in 200..2_000) }
 
     fun accept(event: Event, receiptUptimeMs: Long) {
+        // An identical OEM report is not another physical pair, including after a callback.
+        if (event.key==Key.DOUBLE && event.downTimeMs==lastDoubleDownMs &&
+            event.timeMs<=lastDoubleUpMs && event.repeat==0) return
         if (event.timeMs<=0 || event.timeMs<lastEventMs || event.timeMs>receiptUptimeMs ||
             receiptUptimeMs-event.timeMs>MAX_EVENT_AGE_MS || event.downTimeMs<0 || event.downTimeMs>event.timeMs) {
             cancel();return
         }
         lastEventMs=event.timeMs
         if (event.phase==Phase.CANCEL || event.repeat!=0) { cancel();return }
-        if (event.key==Key.TAP && event.timeMs<suppressTapsUntil) return
+        if ((event.key==Key.TAP || event.key==Key.DOUBLE) && event.timeMs<suppressTapsUntil) return
         if (event.phase==Phase.DOWN) {
             if (press?.let { it.key==event.key && it.downTimeMs==event.downTimeMs }==true) return
             confirm(event.timeMs)
-            val second=event.key==Key.TAP && pending!=null
-            // Swipe/OEM double/second tap supersedes, never flushes an unconfirmed single.
+            // A press within the continuation interval defers the old action until its UP.
+            if (event.key==Key.FORWARD || event.key==Key.BACKWARD || event.key==Key.BACK) { taps=0;rawPairNeedsOem=false }
             pending=null
-            press=Press(event.key,event.downTimeMs,second)
+            press=Press(event.key,event.downTimeMs)
             return
         }
         val old=press ?: return
@@ -46,33 +54,48 @@ internal class PadGestureRecognizer(
         press=null
         if (event.timeMs-old.downTimeMs>=longPressMs) { cancel();return }
         when(event.key) {
-            Key.TAP -> if(old.second) emitDouble(event.timeMs)
-                else pending=event.timeMs+doubleTapMs
-            Key.DOUBLE -> emitDouble(event.timeMs)
+            Key.TAP -> {
+                taps++;lastTapUpMs=event.timeMs
+                rawPairNeedsOem=taps==2
+                if (taps==3) {
+                    clear();suppressTapsUntil=event.timeMs+doubleTapMs
+                    disconnect()
+                } else pending=event.timeMs+doubleTapMs
+            }
+            Key.DOUBLE -> {
+                lastDoubleDownMs=event.downTimeMs;lastDoubleUpMs=event.timeMs
+                if (taps==2 && rawPairNeedsOem) {
+                    // Two raw taps followed by their OEM summary still represent only two taps.
+                    rawPairNeedsOem=false;pending=lastTapUpMs+doubleTapMs
+                } else if (taps<=1) {
+                    // OEM-only reporting, or one raw single followed by the pair's OEM summary.
+                    taps=2;rawPairNeedsOem=false;lastTapUpMs=event.timeMs
+                    pending=event.timeMs+doubleTapMs
+                } else {
+                    // Two distinct OEM pairs are four taps, not the selected three-tap action.
+                    clear();suppressTapsUntil=event.timeMs+doubleTapMs
+                }
+            }
             Key.FORWARD,Key.BACKWARD -> {
-                pending=null;suppressTapsUntil=event.timeMs+doubleTapMs
+                clear();suppressTapsUntil=event.timeMs+doubleTapMs
                 scroll(if(event.key==Key.FORWARD) 160 else -160)
             }
+            Key.BACK -> { clear();suppressTapsUntil=event.timeMs+doubleTapMs;back() }
         }
     }
     fun confirm(nowUptimeMs: Long) {
         val old=pending ?: return
         if(nowUptimeMs<old) return
-        pending=null // Remove before calling out, including when the callback changes the surface.
-        single()
+        val count=taps
+        clear() // Clear before the callback, which may pause or disconnect the Activity.
+        when(count) { 1->single();2->back() }
     }
-    private fun emitDouble(timeMs: Long) {
-        pending=null;suppressTapsUntil=timeMs+doubleTapMs
-        if (timeMs >= doubleDedupUntil) {
-            doubleDedupUntil=timeMs+doubleTapMs
-            back()
-        }
-    }
+    private fun clear() { press=null;pending=null;taps=0;rawPairNeedsOem=false }
     fun cancel() {
         // Do not reinterpret the remaining tail of an invalidated physical sequence as a fresh tap
         // after a pause, focus loss or geometry change.
         if(hasWork) suppressTapsUntil=maxOf(suppressTapsUntil,pending ?: (lastEventMs+doubleTapMs))
-        press=null;pending=null
+        clear()
     }
     companion object { const val MAX_EVENT_AGE_MS=250L }
 }

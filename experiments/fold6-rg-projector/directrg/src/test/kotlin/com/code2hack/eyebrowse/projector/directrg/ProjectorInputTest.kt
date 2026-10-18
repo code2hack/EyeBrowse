@@ -111,7 +111,7 @@ class ProjectorInputTest {
     }
     @Test fun oneShortTapDoubleBackSwipeAndCancel() {
         var taps = 0; var backs = 0; val scrolls = mutableListOf<Int>()
-        val gestures = PadGestureRecognizer(300, 500, { taps++ }, { backs++ }, { scrolls.add(it) })
+        val gestures = PadGestureRecognizer(300, 500, { taps++ }, { backs++ }, { scrolls.add(it) }, {})
         fun press(key: PadGestureRecognizer.Key, start: Long, duration: Long = 30) {
             gestures.accept(PadGestureRecognizer.Event(key, PadGestureRecognizer.Phase.DOWN, start, start), start)
             gestures.accept(PadGestureRecognizer.Event(key, PadGestureRecognizer.Phase.UP, start + duration, start), start + duration)
@@ -130,25 +130,26 @@ class ProjectorInputTest {
     }
     @Test fun vendorDoubleAndTwoTapReportingSendOneBackWithoutLeakingATap() {
         var taps = 0; var backs = 0
-        val gestures = PadGestureRecognizer(300, 500, { taps++ }, { backs++ }, {})
+        lateinit var gestures: PadGestureRecognizer
+        gestures = PadGestureRecognizer(300, 500, { taps++ }, { backs++; gestures.cancel() }, {}, {})
         fun press(key: PadGestureRecognizer.Key, start: Long) {
             gestures.accept(PadGestureRecognizer.Event(key, PadGestureRecognizer.Phase.DOWN, start, start), start)
             gestures.accept(PadGestureRecognizer.Event(key, PadGestureRecognizer.Phase.UP, start + 20, start), start + 20)
         }
         press(PadGestureRecognizer.Key.TAP, 1000)
         press(PadGestureRecognizer.Key.TAP, 1100)
-        gestures.cancel() // Sending Back cancels pending input.
         press(PadGestureRecognizer.Key.DOUBLE, 1140)
         gestures.confirm(1500)
         assertEquals(1, backs); assertEquals(0, taps)
         press(PadGestureRecognizer.Key.DOUBLE, 1800)
+        gestures.confirm(2120)
         assertEquals(2, backs); assertEquals(0, taps)
         press(PadGestureRecognizer.Key.TAP, 2300); gestures.confirm(2700)
         assertEquals(1, taps)
     }
     @Test fun canceledHeldAndRetiredDoubleSequencesDoNotReplayBack() {
         var backs = 0
-        val gestures = PadGestureRecognizer(300, 500, {}, { backs++ }, {})
+        val gestures = PadGestureRecognizer(300, 500, {}, { backs++ }, {}, {})
         fun event(phase: PadGestureRecognizer.Phase, at: Long, down: Long) =
             PadGestureRecognizer.Event(PadGestureRecognizer.Key.DOUBLE, phase, at, down)
         gestures.accept(event(PadGestureRecognizer.Phase.DOWN, 1000, 1000), 1000)
@@ -160,6 +161,90 @@ class ProjectorInputTest {
         gestures.accept(event(PadGestureRecognizer.Phase.UP, 3020, 3000), 3500)
         gestures.confirm(4000)
         assertEquals(0, backs)
+    }
+    @Test fun threeTapsDisconnectOnceWithoutBackOrTouch() {
+        var taps = 0; var backs = 0; var exits = 0
+        val gestures = PadGestureRecognizer(300, 500, { taps++ }, { backs++ }, {}, { exits++ })
+        fun press(key: PadGestureRecognizer.Key, at: Long) {
+            gestures.accept(PadGestureRecognizer.Event(key, PadGestureRecognizer.Phase.DOWN, at, at), at)
+            gestures.accept(PadGestureRecognizer.Event(key, PadGestureRecognizer.Phase.UP, at + 20, at), at + 20)
+        }
+        press(PadGestureRecognizer.Key.TAP, 1000); press(PadGestureRecognizer.Key.TAP, 1100)
+        assertEquals(0, backs); assertEquals(0, taps); assertEquals(0, exits)
+        press(PadGestureRecognizer.Key.TAP, 1200)
+        assertEquals(1, exits); assertEquals(0, backs); assertEquals(0, taps)
+        press(PadGestureRecognizer.Key.DOUBLE, 1240) // Retired OEM tail must not replay Back.
+        gestures.confirm(2000)
+        assertEquals(1, exits); assertEquals(0, backs); assertEquals(0, taps)
+    }
+    @Test fun twoTapsWaitExactlyOneContinuationInterval() {
+        var taps = 0; var backs = 0; var exits = 0
+        val gestures = PadGestureRecognizer(300, 500, { taps++ }, { backs++ }, {}, { exits++ })
+        fun tap(at: Long) {
+            gestures.accept(PadGestureRecognizer.Event(PadGestureRecognizer.Key.TAP, PadGestureRecognizer.Phase.DOWN, at, at), at)
+            gestures.accept(PadGestureRecognizer.Event(PadGestureRecognizer.Key.TAP, PadGestureRecognizer.Phase.UP, at + 20, at), at + 20)
+        }
+        tap(1000); tap(1100)
+        gestures.confirm(1419); assertEquals(0, backs)
+        gestures.confirm(1420); assertEquals(1, backs)
+        gestures.confirm(2000); assertEquals(1, backs)
+        assertEquals(0, taps); assertEquals(0, exits)
+    }
+    @Test fun threeTapOemFormsDeduplicatePairsAndRepeatedEvents() {
+        for (form in listOf("oem", "raw-and-oem", "single-then-oem")) {
+            var taps = 0; var backs = 0; var exits = 0
+            val gestures = PadGestureRecognizer(300, 500, { taps++ }, { backs++ }, {}, { exits++ })
+            fun press(key: PadGestureRecognizer.Key, at: Long) {
+                gestures.accept(PadGestureRecognizer.Event(key, PadGestureRecognizer.Phase.DOWN, at, at), at)
+                gestures.accept(PadGestureRecognizer.Event(key, PadGestureRecognizer.Phase.UP, at + 20, at), at + 20)
+            }
+            when (form) {
+                "oem" -> { press(PadGestureRecognizer.Key.DOUBLE, 1000); press(PadGestureRecognizer.Key.DOUBLE, 1000) }
+                "raw-and-oem" -> { press(PadGestureRecognizer.Key.TAP, 900); press(PadGestureRecognizer.Key.TAP, 1000)
+                    press(PadGestureRecognizer.Key.DOUBLE, 1040) }
+                else -> { press(PadGestureRecognizer.Key.TAP, 900); press(PadGestureRecognizer.Key.DOUBLE, 1000) }
+            }
+            assertEquals(form, 0, exits); assertEquals(form, 0, backs); assertEquals(form, 0, taps)
+            press(PadGestureRecognizer.Key.TAP, 1200); gestures.confirm(2000)
+            assertEquals(form, 1, exits); assertEquals(form, 0, backs); assertEquals(form, 0, taps)
+        }
+    }
+    @Test fun cancelSwipeHoldAndTwoOemPairsDoNotTriggerDisconnect() {
+        var taps = 0; var backs = 0; var exits = 0; var scrolls = 0
+        val gestures = PadGestureRecognizer(300, 500, { taps++ }, { backs++ }, { scrolls++ }, { exits++ })
+        fun press(key: PadGestureRecognizer.Key, at: Long, duration: Long = 20) {
+            gestures.accept(PadGestureRecognizer.Event(key, PadGestureRecognizer.Phase.DOWN, at, at), at)
+            gestures.accept(PadGestureRecognizer.Event(key, PadGestureRecognizer.Phase.UP, at + duration, at), at + duration)
+        }
+        press(PadGestureRecognizer.Key.TAP, 1000); press(PadGestureRecognizer.Key.TAP, 1100)
+        gestures.cancel(); press(PadGestureRecognizer.Key.TAP, 1200); gestures.confirm(1700)
+        press(PadGestureRecognizer.Key.TAP, 2000); press(PadGestureRecognizer.Key.TAP, 2100)
+        press(PadGestureRecognizer.Key.FORWARD, 2200); gestures.confirm(2600)
+        press(PadGestureRecognizer.Key.TAP, 3000); press(PadGestureRecognizer.Key.TAP, 3100)
+        press(PadGestureRecognizer.Key.TAP, 3200, 600)
+        press(PadGestureRecognizer.Key.DOUBLE, 3900); gestures.confirm(4500)
+        press(PadGestureRecognizer.Key.DOUBLE, 5000); press(PadGestureRecognizer.Key.DOUBLE, 5200); gestures.confirm(5600)
+        assertEquals(0, taps); assertEquals(0, backs); assertEquals(0, exits); assertEquals(1, scrolls)
+    }
+    @Test fun ordinaryAndroidBackIsOneBackAndNotPartOfTriple() {
+        var taps = 0; var backs = 0; var exits = 0
+        val gestures = PadGestureRecognizer(300, 500, { taps++ }, { backs++ }, {}, { exits++ })
+        fun press(key: PadGestureRecognizer.Key, at: Long) {
+            gestures.accept(PadGestureRecognizer.Event(key, PadGestureRecognizer.Phase.DOWN, at, at), at)
+            gestures.accept(PadGestureRecognizer.Event(key, PadGestureRecognizer.Phase.UP, at + 20, at), at + 20)
+        }
+        press(PadGestureRecognizer.Key.BACK, 1000); press(PadGestureRecognizer.Key.TAP, 1100)
+        gestures.confirm(1500)
+        assertEquals(1, backs); assertEquals(0, taps); assertEquals(0, exits)
+        press(PadGestureRecognizer.Key.TAP, 2000); press(PadGestureRecognizer.Key.BACK, 2100)
+        gestures.confirm(2500)
+        assertEquals(2, backs); assertEquals(0, taps); assertEquals(0, exits)
+    }
+    @Test fun onlyTheNativePadBackReportCanRepresentATapPair() {
+        assertEquals(PadGestureRecognizer.Key.DOUBLE, nativePadKey("ROKID,PSOC-TP-R", 0x101, 4))
+        assertEquals(PadGestureRecognizer.Key.DOUBLE, nativePadKey("ROKID,PSOC-TP-R", 0x101, 291))
+        assertNull(nativePadKey("Virtual", 0x101, 4))
+        assertNull(nativePadKey("ROKID,PSOC-TP-R", 0, 4))
     }
     @Test fun settingsUseOwnNumericValuesAndRetainValueOnSaveFailure() {
         val saved = mutableMapOf<String, String>(); var writable = true

@@ -84,7 +84,7 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
             ViewConfiguration.getLongPressTimeout().toLong().coerceIn(200, 2000),
             { if (usable()) activatePointer() }, { remoteBack() }, { pixels ->
                 if (usable()) pointer.inputPosition().let { remoteScroll(it.x, it.y, pixels) }
-            },
+            }, { if (usable() && streaming) disconnect() },
         )
         root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> resize() }
         setContentView(root)
@@ -208,8 +208,9 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.keyCode == KeyEvent.KEYCODE_BACK && !streaming) return super.dispatchKeyEvent(event)
-        val key = if (event.keyCode == KeyEvent.KEYCODE_BACK) PadGestureRecognizer.Key.DOUBLE
-            else nativePadKey(event.device?.name, event.source, event.keyCode) ?: return super.dispatchKeyEvent(event)
+        val key = nativePadKey(event.device?.name, event.source, event.keyCode)
+            ?: if (event.keyCode == KeyEvent.KEYCODE_BACK) PadGestureRecognizer.Key.BACK
+            else return super.dispatchKeyEvent(event)
         if (!usable() || event.metaState != 0) { cancelInput(); return true }
         val phase = when {
             event.isCanceled || event.isLongPress -> PadGestureRecognizer.Phase.CANCEL
@@ -229,7 +230,7 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
         .put("acceptedSensorSamples", pointer.acceptedSamples).put("localCursorDraws", pointer.drawCount)
         .put("lastSensorReceiptNs", pointer.lastSampleReceiptNs).put("lastCursorDrawNs", pointer.lastDrawElapsedNs)
         .put("cursorX", pointer.position.x).put("cursorY", pointer.position.y).put("pointerAvailable", pointer.position.available)
-        .put("hardwarePadUps", padUps)
+        .put("hardwarePadUps", padUps).put("tapContinuationMs", gestures.doubleTapMs)
         .put("pointerGain", settings.pointerGain).put("nominalScrollPixelsPerSecond", settings.scrollSpeed)
         .put("streaming", streaming).put("opticalOrErgonomicPass", false)
 
@@ -291,7 +292,7 @@ internal fun nativePadKey(deviceName: String?, source: Int, keyCode: Int): PadGe
     if (deviceName != "ROKID,PSOC-TP-R" || source and InputDevice.SOURCE_KEYBOARD != InputDevice.SOURCE_KEYBOARD) return null
     return when (keyCode) {
         KeyEvent.KEYCODE_ENTER -> PadGestureRecognizer.Key.TAP
-        291 -> PadGestureRecognizer.Key.DOUBLE
+        291, KeyEvent.KEYCODE_BACK -> PadGestureRecognizer.Key.DOUBLE
         KeyEvent.KEYCODE_DPAD_RIGHT, 292 -> PadGestureRecognizer.Key.FORWARD
         KeyEvent.KEYCODE_DPAD_LEFT, 293 -> PadGestureRecognizer.Key.BACKWARD
         else -> null
