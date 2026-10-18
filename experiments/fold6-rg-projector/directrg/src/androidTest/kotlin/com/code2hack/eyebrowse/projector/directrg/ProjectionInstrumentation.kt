@@ -3,9 +3,14 @@ package com.code2hack.eyebrowse.projector.directrg
 import android.app.Activity
 import android.app.Instrumentation
 import android.content.Intent
+import android.graphics.Bitmap
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.MotionEvent
+import android.view.PixelCopy
+import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -14,8 +19,11 @@ import com.code2hack.eyebrowse.projector.protocol.Wire
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.File
+import java.io.FileOutputStream
 import java.security.KeyStore
 import java.security.cert.CertificateFactory
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.TrustManagerFactory
@@ -40,6 +48,58 @@ class ProjectionInstrumentation : Instrumentation() {
         buttons(activity.window.decorView).single { it.text == "Connect" }.performClick()
     }
     private fun status(): JSONObject = JSONObject(File(targetContext.filesDir, "status.json").readText())
+    private fun surfaces(view: View): List<SurfaceView> = when (view) {
+        is SurfaceView -> listOf(view)
+        is ViewGroup -> (0 until view.childCount).flatMap { surfaces(view.getChildAt(it)) }
+        else -> emptyList()
+    }
+
+    /** One own-Surface read for diagnosis. Neither a callback nor copied pixels prove composition or optical output. */
+    private fun readSurface(activity: Activity, id: String, report: JSONObject) {
+        val detail = JSONObject().put("diagnosticOnly", true).put("maximumPixelCopyRequests", 1)
+        report.put("surfaceRead", detail)
+        require(status().getString("state") == "STREAMING" && status().getLong("touchesSent") == 0L)
+        val destination = File(targetContext.filesDir, "probe-$id-surface.png")
+        require(destination.createNewFile()) { "Existing Surface diagnostic" }
+        val bitmap = Bitmap.createBitmap(480, 640, Bitmap.Config.ARGB_8888)
+        val done = CountDownLatch(1)
+        var result = -1
+        val begin = SystemClock.elapsedRealtime()
+        try {
+            runOnMainSync {
+                require(activity is ReceiverActivity && activity.hasWindowFocus() && !activity.isFinishing)
+                val surface = surfaces(activity.window.decorView).single()
+                require(surface.isShown && surface.width == 480 && surface.height == 640 && surface.holder.surface.isValid)
+                detail.put("focusedOwnSurface480x640AtRequest", true)
+                PixelCopy.request(surface, bitmap, { code -> result = code; done.countDown() }, Handler(Looper.getMainLooper()))
+            }
+            val arrived = done.await(5, TimeUnit.SECONDS)
+            detail.put("callbackArrived", arrived).put("requestToWaitReturnMs", SystemClock.elapsedRealtime() - begin)
+            require(arrived) { "Bounded Surface read did not complete" }
+            val category = when (result) {
+                PixelCopy.SUCCESS -> "SUCCESS"
+                PixelCopy.ERROR_UNKNOWN -> "ERROR_UNKNOWN"
+                PixelCopy.ERROR_TIMEOUT -> "ERROR_TIMEOUT"
+                PixelCopy.ERROR_SOURCE_NO_DATA -> "ERROR_SOURCE_NO_DATA"
+                PixelCopy.ERROR_SOURCE_INVALID -> "ERROR_SOURCE_INVALID"
+                PixelCopy.ERROR_DESTINATION_INVALID -> "ERROR_DESTINATION_INVALID"
+                else -> "UNRECOGNIZED_RESULT"
+            }
+            detail.put("result", category)
+            if (result == PixelCopy.SUCCESS) {
+                FileOutputStream(destination).use { output ->
+                    check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
+                    output.fd.sync()
+                }
+                detail.put("PNGBytes", destination.length()).put("copiedWidth", bitmap.width).put("copiedHeight", bitmap.height)
+            }
+            detail.put("touchesSentAfter", status().getLong("touchesSent"))
+            require(status().getLong("touchesSent") == 0L)
+        } finally {
+            // A timed-out copy may still own the bitmap until its callback; do not recycle it underneath the native read.
+            if (done.count == 0L) bitmap.recycle()
+        }
+    }
     private fun waitStreaming() {
         val deadline = SystemClock.elapsedRealtime() + 15_000
         while (SystemClock.elapsedRealtime() < deadline) {
@@ -101,7 +161,7 @@ class ProjectionInstrumentation : Instrumentation() {
             } else if (operation == "unauthenticated") {
                 require(unauthenticated()); report.put("unauthenticatedRefused", true).put("mediaWelcomeReceived", false)
             } else {
-                require(operation in listOf("stream", "pause", "reconnect", "local-stop", "host-stop"))
+                require(operation in listOf("stream", "pause", "reconnect", "local-stop", "host-stop", "surface-diagnostic"))
                 val seconds = args.getString("seconds")?.toInt() ?: 10
                 require(seconds in 1..660)
                 val waitForFixture = args.getString("waitForGo") == "true"
@@ -127,50 +187,55 @@ class ProjectionInstrumentation : Instrumentation() {
                     report.put("fixtureSetupBeforeMeasurement", true)
                     waitStreaming()
                 }
-                report.put("first", status())
-                val start = SystemClock.elapsedRealtime()
-                val samples = JSONArray()
-                val tapAt = args.getString("tapAtSeconds")?.toInt() ?: -1
-                val x = args.getString("tapX")?.toFloat() ?: 240f
-                val y = args.getString("tapY")?.toFloat() ?: 320f
-                require(x in 0f..<480f && y in 0f..<640f)
-                var tapped = false; var nextSample = 0L
-                while (SystemClock.elapsedRealtime() - start < seconds * 1000L) {
-                    val elapsed = SystemClock.elapsedRealtime() - start
-                    if (tapAt >= 0 && !tapped && elapsed >= tapAt * 1000L) {
-                        require(status().getString("state") == "STREAMING")
-                        runOnMainSync { require(activity!!.hasWindowFocus() && !activity!!.isFinishing) }
-                        val now = SystemClock.uptimeMillis()
-                        sendPointerSync(MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0))
-                        sendPointerSync(MotionEvent.obtain(now, now + 30, MotionEvent.ACTION_UP, x, y, 0))
-                        report.put("onRGTapElapsedMs", elapsed); tapped = true
+                if (operation == "surface-diagnostic") {
+                    require(waitForFixture && (args.getString("tapAtSeconds") ?: "-1") == "-1")
+                    readSurface(activity, id, report)
+                } else {
+                    report.put("first", status())
+                    val start = SystemClock.elapsedRealtime()
+                    val samples = JSONArray()
+                    val tapAt = args.getString("tapAtSeconds")?.toInt() ?: -1
+                    val x = args.getString("tapX")?.toFloat() ?: 240f
+                    val y = args.getString("tapY")?.toFloat() ?: 320f
+                    require(x in 0f..<480f && y in 0f..<640f)
+                    var tapped = false; var nextSample = 0L
+                    while (SystemClock.elapsedRealtime() - start < seconds * 1000L) {
+                        val elapsed = SystemClock.elapsedRealtime() - start
+                        if (tapAt >= 0 && !tapped && elapsed >= tapAt * 1000L) {
+                            require(status().getString("state") == "STREAMING")
+                            runOnMainSync { require(activity!!.hasWindowFocus() && !activity!!.isFinishing) }
+                            val now = SystemClock.uptimeMillis()
+                            sendPointerSync(MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0))
+                            sendPointerSync(MotionEvent.obtain(now, now + 30, MotionEvent.ACTION_UP, x, y, 0))
+                            report.put("onRGTapElapsedMs", elapsed); tapped = true
+                        }
+                        if (elapsed >= nextSample) {
+                            val sample = status(); require(sample.getString("state") == "STREAMING")
+                            samples.put(sample); nextSample = elapsed + 10_000
+                        }
+                        Thread.sleep(100)
                     }
-                    if (elapsed >= nextSample) {
-                        val sample = status(); require(sample.getString("state") == "STREAMING")
-                        samples.put(sample); nextSample = elapsed + 10_000
+                    report.put("observedStreamingMs", SystemClock.elapsedRealtime() - start).put("last", status()).put("samples", samples)
+                    if (operation == "pause") {
+                        targetContext.startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        Thread.sleep(1500); require(status().getString("state") == "STOPPED")
+                        report.put("paused", status())
                     }
-                    Thread.sleep(100)
-                }
-                report.put("observedStreamingMs", SystemClock.elapsedRealtime() - start).put("last", status()).put("samples", samples)
-                if (operation == "pause") {
-                    targetContext.startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                    Thread.sleep(1500); require(status().getString("state") == "STOPPED")
-                    report.put("paused", status())
-                }
-                if (operation == "local-stop") {
-                    runOnMainSync { buttons(activity!!.window.decorView).single { it.text == "Stop" }.performClick() }
-                    Thread.sleep(1000); require(status().getString("state") == "STOPPED")
-                    report.put("localStop", status())
-                }
-                if (operation == "host-stop") {
-                    Tls.connect(File(targetContext.filesDir, "session")).use { socket ->
-                        Wire.writeRequest(DataOutputStream(socket.outputStream), Wire.STOP_HOST)
-                        require(socket.inputStream.read() == -1)
+                    if (operation == "local-stop") {
+                        runOnMainSync { buttons(activity!!.window.decorView).single { it.text == "Stop" }.performClick() }
+                        Thread.sleep(1000); require(status().getString("state") == "STOPPED")
+                        report.put("localStop", status())
                     }
-                    val deadline = SystemClock.elapsedRealtime() + 5000
-                    while (status().getString("state") == "STREAMING" && SystemClock.elapsedRealtime() < deadline) Thread.sleep(100)
-                    require(status().getString("state") in listOf("CONNECTION_FAILED", "DISCONNECTED"))
-                    report.put("hostStop", status())
+                    if (operation == "host-stop") {
+                        Tls.connect(File(targetContext.filesDir, "session")).use { socket ->
+                            Wire.writeRequest(DataOutputStream(socket.outputStream), Wire.STOP_HOST)
+                            require(socket.inputStream.read() == -1)
+                        }
+                        val deadline = SystemClock.elapsedRealtime() + 5000
+                        while (status().getString("state") == "STREAMING" && SystemClock.elapsedRealtime() < deadline) Thread.sleep(100)
+                        require(status().getString("state") in listOf("CONNECTION_FAILED", "DISCONNECTED"))
+                        report.put("hostStop", status())
+                    }
                 }
             }
             report.put("passed", true)

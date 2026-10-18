@@ -1,30 +1,35 @@
 # Direct Fold6 video and control — PAV-02 / issue 67
 
-Component checkpoint, **not CANDIDATE_READY**. Host4 now records fixed session
-termination categories, startup stage and Phone monotonic child/first-frame/stop
-milestones. Probe3 separates authenticated geometry bootstrap from rendered
-video qualification so the owned fixture can be launched before the first
-frame. The ordinary rendered/input guards and genuine310-second interval remain.
-Both APKs compile, the affected unit test passes and Phone lint has zero errors.
-The RG main APK remains byte-identical.
+Component checkpoint, **not CANDIDATE_READY**. The current host and RG receiver
+APKs remain byte-identical. New Probe4 instrumentation adds one bounded read of
+its own decoder Surface to diagnose reported callbacks with black composed
+pixels. The test APK builds and lints, installs once into an unused ID, and
+matches its complete installed bytes. No actual PixelCopy request has run.
 
-Host4's first install returned0, but its strict response classifier rejected
-stdout which was then lost. The old transaction remains **UNKNOWN**, consumed
-and unreplayed. Distinct read-only corrections handled an unsupported `whence`
-option and the documented Android16 `appId` metadata label. A new complete
-package/version/user0/UID/full-APK read matches the frozen signed Host4 build.
-Probe3 then installed once into its unused ID with retained explicit Success
-and matching complete installed bytes. Video014 then qualified the owned fixture
-and actual RG image, but timed out before a completed Go/start observation.
-Its owned teardown and current native end state remain **UNKNOWN**. Both debug
-SSH PIDs were absent at a later local host cut; the underlying cause is unassigned.
-Dependent device work stopped without command replay or route recovery.
+Manager147 restored the debug routes. Under the fresh Owner150 event, the existing
+RG LAN route was already registered and independently qualified the physical RG;
+no connect or SSH launch was needed. Later exact observations settled video014's
+owned Phone and RG resources across separate cuts. Its original timeout and
+unknown Go/teardown outcomes remain unchanged. Original Worker64 resource-return
+obligations remain unknown.
 
-The earlier144 read-only reconciliation separately observed a secure user0 Awake/unlocked
-Phone, sent one durably recorded ordinary sleep223, and obtained two complete
-locked/secure/showing/Dozing native cuts. These are sampled observations only.
-Those earlier cuts do not establish the end state after video014. All
-authentication consumers remain held; no PIN, reveal or caller was used.
+Video019 qualified both native foregrounds, lifecycle state, UID, window ownership,
+geometry and direct TLS1.3 endpoints. Its inspected RG image showed a black video
+area and the public Stop button, without the fixture title or tap counter. The
+public-pixel guard rejected it before Go. Surface020 then observed a complete
+inactive owned fixture and null focus; its Phone-wake path was disabled. The
+distinct Surface021 restored the previously qualified conditional ordinary wake,
+but the necessary fresh Phone read returned73 after six complete stages. The
+unchanged display0 focus-token selector is the source-bound failure boundary;
+its exact count/token subpredicate was not retained. No wake, diagnostic Go,
+PixelCopy, touch or measurement followed.
+
+All three cases verified immediate owned teardown and two complete strict secure
+user0 locked/showing/Dozing end cuts, with zero extra sleep. These are sampled
+observations only. All authentication consumers remain held; no PIN, reveal or
+screen caller was used. The actual native read failure stops dependent power and
+visual work pending a correlated operational disposition; source checks and the
+reviewable checkpoint are complete.
 
 Earlier owned-fixture video reached the RG Surface over direct TLS1.3. The one
 automated on-RG touch in product007 produced a transport write but **no observed
@@ -51,8 +56,9 @@ query qualified its current whole installed APK, package, UID, version and user0
 `.directhost.r3` artifact had a matching installed-byte cut and remains retained,
 as do the original `.directhost` and r2's unknown old transaction. RG main
 `.directrg.r3` had a fresh matching installed-byte cut before the uncertain Host4
-install; its new test package `.directrg.r3.probe3` was installed once into an unused ID
-and its complete installed APK matches the frozen build. Earlier test
+install; its previous test package `.directrg.r3.probe3` remains retained. New test package
+`.directrg.r3.probe4` installed once into its unused ID, with explicit Success and
+complete installed APK equality. Earlier test
 and RG experiment packages remain retained. Every installation targets an unused
 ID; no existing app was updated, cleared or uninstalled.
 
@@ -191,11 +197,45 @@ caller. The on-RG driver first qualifies authenticated geometry for fixture boot
 waits at most180 seconds for Go, then separately demands real streaming before
 starting310 genuine seconds. It supports a scheduled software-generated tap or
 a zero-touch video case, followed by authenticated Host Stop. Product007 sent one
-generated event; the new zero-touch video014 has not run.
+generated event. Video014 and later019 stopped before a completed measurement Go.
 No experimental desktop control forward was created. Debug SSH/ADB remains
 separate from the direct media/control connection. A scheduled tap can establish
 controlled-path app effect only; it cannot establish physical head/IME or
 optical acceptance.
+
+## Bounded Surface diagnostic
+
+The existing on-RG instrumentation has a `surface-diagnostic` operation. It waits
+for a distinct external Go after fresh owned-fixture, RG focus, geometry, counter
+and direct-endpoint checks. It accepts no scheduled pointer input. The runner
+selects its single shown, focused480×640 SurfaceView, submits one
+[PixelCopy request](https://developer.android.com/reference/android/view/PixelCopy),
+and waits at most five seconds for the callback. The report retains a fixed API
+result category and same-RG-clock request-to-wait duration. A successful copy is
+saved to a new exclusive PNG; a timeout never triggers another request.
+
+The API reads the Surface's most recently queued buffer. Its result can help
+separate decoder-Surface data from the composed screenshot, but establishes no
+composed visibility, optical output, genuine300-second interval or input effect.
+Normal video/touch pixel eligibility remains unchanged. The private orchestration
+now retains fixture, renderer, geometry and pixel predicates before rejecting a
+normal pixel check. Its diagnostic-only image classification cannot admit touch
+or normal video acceptance.
+
+The new test APK is38,734 bytes, SHA-256
+`0e46832d5d384d46ee2faff60184a02458ecd71587f9b606cffc1b1bbc4e0151`.
+Signature, package, target and runner were independently checked before install.
+RG debug/test assembly and lint completed in14 seconds with zero errors and one
+existing `OldTargetApi` warning. Ten affected installer, thirteen orchestration
+and eight restored-power-branch host cases passed. Those host checks made zero
+Android PixelCopy calls. Earlier unrelated suites were not rerun.
+
+The initial wrapper-path failure, dummy-fixture errors and pre-admission missing
+proof are retained. No failed or uncertain device action was replayed. Four
+public host-only dummy temporary directories were automatically removed by test
+contexts; their exact random names/metadata were not retained. Harness sources,
+proofs and actual outcomes remain. No Owner/device/credential record was affected;
+future host fixtures remain until the version-end cleanup boundary.
 
 ## Executed evidence and remaining criteria
 
@@ -220,8 +260,8 @@ untested-on-device host fix.
 
 | Criterion | Actual result at this checkpoint |
 | --- | --- |
-| Isolated build/dependencies/install | Build/affected checks PASS; current Host4/RG3/Probe3 whole installed bytes match; old Host4 transaction remains UNKNOWN |
-| Third-party VD content to real RG Surface | Owned moving fixture rendered in product003/004 with exact encoder/decoder/VD bindings; ordinary third-party app still pending |
+| Isolated build/dependencies/install | Build/affected checks PASS; current Host4/RG3/Probe4 whole installed bytes match; old Host4 transaction remains UNKNOWN |
+| Third-party VD content to real RG Surface | Earlier product003/004 owned pixels retained; current019 composed image is black despite native eligibility; third-party app still pending |
 | Harmless touch with observed app effect | Product007 generated one on-RG event; actual fixture counter/image stayed0; NOT_PASSED |
 | At least300 genuine seconds without PC media/control relay | Unexecuted |
 | On-device unauthorized peer refusal before media/input | Actual security009 no-client-certificate refusal before media on Host3; Host4 live verification pending |
