@@ -35,7 +35,7 @@ class WireTest {
         assertThrows(Exception::class.java) { Scrcpy.readRecord(input { writeInt(Int.MIN_VALUE or 2); writeInt(480); writeInt(640) }) }
     }
 
-    @Test fun transportPreservesVideoPtsAndReservesAudio() {
+    @Test fun transportPreservesVideoAndAudioPts() {
         val original = Frame(Wire.VIDEO, (1L shl 61) or 100L, byteArrayOf(9, 8, 7))
         val result = Wire.readFrame(input { Wire.writeFrame(this, original) })
         assertEquals(original.channel, result.channel); assertEquals(original.stamp, result.stamp)
@@ -44,6 +44,50 @@ class WireTest {
         val audioMeta = Wire.readFrame(input { Wire.writeFrame(this, Frame(Wire.AUDIO_CODEC, payload = byteArrayOf(0x6f, 0x70, 0x75, 0x73))) })
         assertEquals(7, audioMeta.channel)
         assertThrows(Exception::class.java) { Wire.readWelcome(input { writeInt(Wire.MAGIC); writeInt(999) }) }
+    }
+
+    @Test fun audioIsMandatoryAndPreservesPinnedConfigAndDisabledIds() {
+        Wire.readWelcome(input { Wire.writeWelcome(this) })
+        assertThrows(Exception::class.java) { Wire.readWelcome(input {
+            writeInt(Wire.MAGIC); writeInt(Wire.VERSION); writeUTF(Wire.SCRCPY_VERSION); writeInt(Wire.H264); writeBoolean(false)
+        }) }
+        for (stamp in listOf(Scrcpy.CONFIG, 9_000_123_456L)) {
+            val audio = Wire.readFrame(input { Wire.writeFrame(this, Frame(Wire.AUDIO, stamp, byteArrayOf(1, 2))) })
+            assertEquals(stamp, audio.stamp); assertArrayEquals(byteArrayOf(1, 2), audio.payload)
+        }
+        for (id in listOf(0, 1, Wire.OPUS)) {
+            val meta = Wire.readFrame(input { Wire.writeFrame(this, Frame(Wire.AUDIO_CODEC, payload = bytes { writeInt(id) })) })
+            assertEquals(id, DataInputStream(meta.payload.inputStream()).readInt())
+        }
+    }
+
+    @Test fun versionTwoKeepsRequiredAudioAndNativeInputOnTheSameStream() {
+        assertEquals(2, Wire.VERSION)
+        assertThrows(Exception::class.java) { Wire.readRequest(input {
+            writeInt(Wire.MAGIC); writeInt(1); writeByte(Wire.STREAM)
+        }) }
+        assertThrows(Exception::class.java) { Wire.readWelcome(input {
+            writeInt(Wire.MAGIC); writeInt(1); writeUTF(Wire.SCRCPY_VERSION)
+            writeInt(Wire.H264); writeBoolean(false)
+        }) }
+        val size = Geometry(480, 640)
+        val frames = listOf(
+            Frame(Wire.AUDIO_CODEC, payload = bytes { writeInt(Wire.OPUS) }),
+            Frame(Wire.AUDIO, Scrcpy.CONFIG, byteArrayOf(1, 2)),
+            Frame(Wire.TAP, payload = Tap(25, 40, size).bytes()),
+            Frame(Wire.SCROLL, payload = Scroll(Tap(25, 40, size), 160).bytes()),
+            Frame(Wire.NAVIGATE, payload = Navigate(Navigation.BACK, size).bytes()),
+            Frame(Wire.AUDIO, 9_000_123_456L, byteArrayOf(3, 4)),
+        )
+        val stream = input { Wire.writeWelcome(this); frames.forEach { Wire.writeFrame(this, it) } }
+        Wire.readWelcome(stream)
+        for (expected in frames) {
+            val actual = Wire.readFrame(stream)
+            assertEquals(expected.channel, actual.channel)
+            assertEquals(expected.stamp, actual.stamp)
+            assertArrayEquals(expected.payload, actual.payload)
+        }
+        assertEquals(-1, stream.read())
     }
 
     @Test fun coordinateMappingRejectsLetterboxAndUsesCurrentGeometry() {

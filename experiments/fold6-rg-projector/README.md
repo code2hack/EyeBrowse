@@ -2,13 +2,14 @@
 
 PAV-02 adds three isolated modules:
 
-- `directhost`: a Phone control screen, an owned silent motion fixture, and the
+- `directhost`: a Phone control screen, owned motion and looped flash/beep fixtures, and the
   explicitly shell-bootstrapped Kotlin TLS/Unix-socket bridge.
 - `directrg`: the independent Surface/MediaCodec receiver and bounded on-RG
   instrumentation driver. Its only application dependency is `protocol`.
 - `protocol`: pinned scrcpy 5.0.1 parsing, coordinate mapping, a small framed
-  transport and platform mutual TLS. Audio framing is reserved; playback is not
-  implemented in PAV-02.
+  transport and platform mutual TLS. PAV-04 uses mandatory Opus audio in wire version 2, platform
+  MediaCodec/AudioTrack playback, and the RG audio clock for video scheduling.
+  Version 1 and version 2 peers fail negotiation rather than silently lose audio.
 
 Build these separately from the production browser:
 
@@ -116,3 +117,13 @@ Actual source/APK/device bindings and case outcomes belong in the
 [Fold6 feasibility report](../../docs/experiments/fold6-rg-projector-av/fold6-feasibility.md)
 and mission-private evidence. The fixture alone satisfies no downstream
 capability prerequisite.
+
+## PAV-04 audio
+
+See [audio-sync.md](../../docs/experiments/fold6-rg-projector-av/audio-sync.md)
+for current implementation, actual test outcomes and observation limits.
+`directhost.AvFixtureActivity` loops the unchanged synthetic 12-second
+PAV66 flash/beep clip at one quarter digital volume. The distinct owned
+`hostprobe.ToneActivity` emits a quiet 440 Hz tone, optionally requesting audio
+focus, to distinguish whole-device mixing from target-only capture. Both
+release media when stopped; neither records audio or requests microphone access.

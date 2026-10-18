@@ -23,7 +23,9 @@ latest explicit Owner direction selects **three taps for local Disconnect**,
 retaining two taps for Phone Back and no RG panel; earlier four-tap/double-tap
 exit proposals are superseded. On the contact-corrected source4697521, the Owner
 confirmed one native tap followed by physical three-tap Disconnect. Independent
-review and integration remain outstanding.
+review remains outstanding. Revision6 merges the accepted audio target into this
+branch for the current-target compatibility checks below; earlier physical
+results keep their original source bindings.
 
 ## Implementation and provenance
 
@@ -110,11 +112,10 @@ scroll factor, so this is not a promise of exact content pixels per second.
 Pad swipes aim at the actual main/nested widget; strips aim at the visible centerline,
 not hidden padding. No JavaScript chooses a scroll target or assigns scrollY.
 
-Input adds control channels8/9 to the existing authenticated protocol without
-changing channels0–7 or audio negotiation. This source is the matching v1
-input-only checkpoint. PAV-04 uses v2 mandatory audio and must be integrated by
-the Manager/later implementer before a combined AV claim; v1/v2 interoperability
-is not assumed. Scroll8 carries five int32 values:
+Input adds control channels8/9 to the authenticated protocol without changing
+channels0–7. The original input checkpoints used matching Wire1 binaries.
+The revision6 compatibility merge now retains accepted PAV-04 Wire2 mandatory
+audio and its true welcome flag; Wire1 peers remain incompatible. Scroll8 carries five int32 values:
 x/y/current video width/current video height/nominal pixels (nonzero, ±1,200
 maximum). Navigate9 carries current width/height/keycode, whitelisted to Back4
 and Home3. The host validates payload lengths, coordinates, dimensions and key
@@ -535,3 +536,38 @@ Manager disposition and later mandatory-audio source integration. Full Phone-IME
 editing, exact Home/browser return, quantified head smoothness and optical
 input latency are not claimed. Deferred file/state cleanup and workspace
 archival remain at the experiment-end boundary.
+
+## Current-target audio/input compatibility230
+
+Manager revision6 grants a new W68-03 reservation and directs ordinary merge
+compatibility with accepted audio target0bce1ea0, preserving the input ancestry.
+The Owner requested unattended completion: no new wearing, listening, calibration
+or approval questions are sent. W02 remains returned; its source-bound physical
+observations are reused as historical evidence, not a new merged-build physical
+PASS. This is not the final PAV-05 lock/AV matrix.
+
+The six shared conflicts retain both native fixtures; Wire2 required audio on
+channels2/7 and input on8/9; upstream video/audio/control socket order; Opus
+focus/playback clock and teardown; and no-panel head/contact/settings controls.
+The stock virtual display remains480×640/160dpi from the input trial, with
+actual current stream geometry still governing input. The audio receiver now
+receives applicationContext. Disconnect closes both audio and the unified input
+executor. Its periodic STREAMING telemetry does not call resize/cancel on each
+unchanged state; actual streaming transitions and geometry changes still cancel
+pending input. The existing test driver retains current-session freshness and
+audio/video progress checks alongside input observation and direct Disconnect.
+
+The merged shared code passed **51 JVM tests** (protocol13, host4, receiver34),
+host/RG/Probe4/second-source APK assembly and host/RG lint in28s (29.077s command
+elapsed). Only the existing OldTargetApi warnings remain. A new protocol
+regression requires Wire2, rejects Wire1 and round-trips interleaved mandatory
+audio metadata/packets, touch, scroll and Back without changing payloads or PTS.
+Results/artifacts are retained in `compatibility230/host-checks.json`.
+The short matched-pair device compatibility check is pending at this source
+checkpoint; no new acoustic/optical or600s result is inferred.
+
+The old physical-ready capsule is retained byte-for-byte. Its top-level
+bridgePid29801 refers to the earlier setup stage; its bridge object and actual
+physical-ready stdout identify PID20797/VD79 for the prompted trial. The separate
+`compatibility230/old-physical-ready-capsule-annotation.json` records that stage
+correction without modifying the original evidence or replaying devices.

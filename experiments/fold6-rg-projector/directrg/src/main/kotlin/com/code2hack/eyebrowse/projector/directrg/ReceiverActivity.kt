@@ -253,23 +253,25 @@ class ReceiverActivity : Activity(), SurfaceHolder.Callback {
         val next = ProjectionSession(File(filesDir, "session"), screen.holder.surface,
             { source, state -> runOnUiThread {
                 if (session === source) {
+                    val wasStreaming = streaming
                     streaming = state == "STREAMING"
                     connectionView.visibility = if (streaming) View.GONE else View.VISIBLE
                     showStatus(when (state) {
                         "STREAMING" -> getString(R.string.connected)
-                        "CONNECTING", "WAITING_FOR_VIDEO" -> getString(R.string.connecting)
-                        else -> getString(R.string.disconnected)
+                        "CONNECTING", "WAITING_FOR_VIDEO", "WAITING_FOR_AUDIO", "WAITING_FOR_AUDIO_CLOCK" -> getString(R.string.connecting)
+                        else -> "Projection stopped: $state"
                     })
                     if (!streaming) cancelInput()
-                    if (state !in listOf("STREAMING", "CONNECTING", "WAITING_FOR_VIDEO")) window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                    resize()
+                    if (state !in listOf("STREAMING", "CONNECTING", "WAITING_FOR_VIDEO", "WAITING_FOR_AUDIO", "WAITING_FOR_AUDIO_CLOCK")) window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    // Audio publishes STREAMING every second; telemetry must not cancel pad continuations.
+                    if (wasStreaming != streaming) resize()
                 }
             } },
             { source, geometry -> runOnUiThread { if (session === source) {
                 currentGeometry = geometry
                 pointer.stop(); if (resumed && hasWindowFocus()) pointer.start()
                 resize()
-            } } })
+            } } }, applicationContext)
         session = next; next.start()
     }
 

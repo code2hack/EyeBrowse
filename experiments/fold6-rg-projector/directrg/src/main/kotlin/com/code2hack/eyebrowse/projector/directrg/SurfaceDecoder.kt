@@ -18,6 +18,9 @@ class SurfaceDecoder(
     name: (String) -> Unit,
     private val format: (String) -> Unit,
     private val failed: (Exception) -> Unit,
+    private val audioTime: (Long) -> Long? = { null },
+    private val sample: (Long, Long) -> Unit = { _, _ -> },
+    private val dropped: () -> Unit = {},
 ) : Closeable {
     private val running = AtomicBoolean(true)
     private val codec = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
@@ -35,7 +38,10 @@ class SurfaceDecoder(
                 val readAt = synchronized(received) { released.remove(pts) }
                 // Use one local clock. The vendor render timestamp was incompatible with
                 // System.nanoTime() on the RG; callback receipt is the measured endpoint.
-                if (running.get() && readAt != null) rendered((System.nanoTime() - readAt) / 1e6)
+                if (running.get() && readAt != null) {
+                    val now = System.nanoTime()
+                    rendered((now - readAt) / 1e6); sample(pts, now)
+                }
             }, Handler(Looper.getMainLooper()))
             codec.start()
             outputThread = Thread({
@@ -58,7 +64,17 @@ class SurfaceDecoder(
                                 received.remove(info.presentationTimeUs)?.let { released[info.presentationTimeUs] = it }
                                 check(released.size <= 16) { "Surface stalled" }
                             }
-                            codec.releaseOutputBuffer(index, true)
+                            val target = audioTime(info.presentationTimeUs)
+                            val now = System.nanoTime()
+                            if (target != null && target < now - 100_000_000L) {
+                                synchronized(received) { released.remove(info.presentationTimeUs) }
+                                codec.releaseOutputBuffer(index, false); dropped()
+                            } else {
+                                check(target == null || target - now <= 250_000_000L) { "Video/audio clock diverged: videoPtsUs=${info.presentationTimeUs}, aheadMs=${(target!! - now) / 1_000_000.0}" }
+                                // Wait only on the output worker; Stop remains bounded and cancels presentation.
+                                while (running.get() && target != null && target - System.nanoTime() > 2_000_000L) Thread.sleep(2)
+                                codec.releaseOutputBuffer(index, running.get())
+                            }
                         }
                     }
                 } catch (error: Exception) { if (running.get()) failed(error) }
@@ -78,7 +94,7 @@ class SurfaceDecoder(
         require(packet.data.size <= buffer.capacity())
         buffer.clear(); buffer.put(packet.data)
         if (!packet.config) synchronized(received) {
-            check(received.size < 8) { "Decoder backlog" }
+            check(received.size < 16) { "Decoder backlog" }
             received[packet.ptsUs] = receivedAt
         }
         codec.queueInputBuffer(index, 0, packet.data.size, packet.ptsUs,

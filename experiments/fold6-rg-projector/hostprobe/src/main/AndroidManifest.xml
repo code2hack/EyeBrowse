@@ -4,6 +4,7 @@
         android:label="PAV66 owned fixture"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
+        <activity android:name=".ToneActivity" android:exported="true" />
         <activity
             android:name=".FixtureActivity"
             android:excludeFromRecents="true"
