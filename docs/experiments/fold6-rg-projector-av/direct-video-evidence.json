@@ -2,7 +2,7 @@
   "schema": 1,
   "issue": 67,
   "alias": "PAV-02",
-  "status": "INCOMPLETE_COMPONENT_CHECKPOINT_FIVE002_NATIVE_SYSTEMUI_GUARD_GATE",
+  "status": "INCOMPLETE_COMPONENT_CHECKPOINT_NATIVE118_OBSERVATION_UNAVAILABLE_ENDSTATE_UNVERIFIED",
   "baseline": "38cb5f7ec8d320ef9833a36840ccec3febdbc885",
   "donor": "03de921e2400147842ce6c56101b58d514dde77c",
   "target": "spike/fold6-rg-projector-av",
@@ -302,7 +302,7 @@
     "measuredMovingFPSAndLatency": "SMOKE003_FPS_OBSERVED_LEGACY_LATENCY_INVALID_RG3_METRIC_UNMEASURED",
     "audio": "DISABLED_INTERMEDIATE",
     "opticalHeadIMEAcousticAcceptance": "NOT_CLAIMED",
-    "blocker": "Exact current native SystemUI ownership prerequisite failed in distinct five-minute002; source guard retained, future callers held by the new terminal record pending Manager disposition",
+    "blocker": "Consumed five-minute002 native ownership prerequisite plus118 native status timeout; exact032 context predicate and latest final native end-state unverified; no auth or product continuation",
     "componentNegativesRetained": [
       "Initial RG decor/insets NullPointerException",
       "Initial API32 PKCS12 context IOException",
@@ -351,6 +351,64 @@
       "actualFailureContextPair": "NOT_RETAINED_CAUSE_UNPROVED",
       "exactGuardDummyCasesPassed": 3,
       "dummyCasesActualProductionNativeDeviceOrCredentialCalls": 0
+    },
+    "nativeContext118": {
+      "scope": "Single credential-free observation, not auth retry",
+      "state": "FAILED_OR_UNKNOWN_NO_REPLAY",
+      "initialSleep223Calls": 1,
+      "wake224Calls": 0,
+      "finalSleep223Calls": 0,
+      "credentialXMLAuthEntryOrProductCalls": 0,
+      "requestedS1S2PairObtained": false,
+      "exact032PredicateCause": "UNKNOWN",
+      "initialStatusTotalCoarseMs": 21200,
+      "initialNativeShellCoarseMs": 20300,
+      "initialParseCoarseMs": 0,
+      "afterInitialSleepAndFinalBeforeNativeShellTimeoutMs": 25000,
+      "observerHostCasesPassed": 13,
+      "comparisonHostCasesPassed": 3,
+      "hostCasesActualProductionIO": 0,
+      "readonlyComponents": [
+        {
+          "component": "trust",
+          "returned": true,
+          "selectedCommandCoarseMs": 2400
+        },
+        {
+          "component": "power",
+          "returned": true,
+          "selectedCommandCoarseMs": 900
+        },
+        {
+          "component": "window-policy",
+          "returned": true,
+          "selectedCommandCoarseMs": 800
+        },
+        {
+          "component": "display-geometry",
+          "returned": true,
+          "selectedCommandCoarseMs": 1000
+        },
+        {
+          "component": "window-displays",
+          "returned": true,
+          "selectedCommandCoarseMs": 4500
+        },
+        {
+          "component": "window-owners",
+          "returned": false,
+          "guardCode": "ADB_OPERATION_UNKNOWN",
+          "selectedCommandCoarseMs": 10000
+        },
+        {
+          "component": "systemui-uid",
+          "returned": true,
+          "selectedCommandCoarseMs": 1400
+        }
+      ],
+      "allComparisonComponentsReturned": false,
+      "comparisonUsedForAuthOrFinalNativeUpgrade": false,
+      "speculativeCorrectionPrepared": false
     }
   },
   "teardown": {
@@ -362,10 +420,10 @@
     "credentialFreeReconciliationSleepCalls": 1,
     "credentialFreeReconciliationLoaderCalls": 0,
     "lastNativeFold6": {
-      "locked": true,
-      "keyguardShowing": true,
-      "wakefulness": "Dozing",
-      "logicalDisplay0State": "OFF"
+      "locked": null,
+      "keyguardShowing": null,
+      "wakefulness": "UNKNOWN",
+      "logicalDisplay0State": "UNKNOWN"
     },
     "oldSmoke002BytesAndNodeMetadataUnchanged": true,
     "rgLatestOwnTelemetry": {
@@ -380,7 +438,7 @@
     "oldWorker64State": "Unresolved historical tab/hook/resource obligations retained",
     "smoke003BridgeSessionAnd44367Absent": true,
     "smoke003VD18FinalAbsence": "NOT_SEPARATELY_CAPTURED",
-    "lastNativeCut": "Three actual parent finalizer cuts after five-minute002, locked/showing/Dozing/display0OFF, zero extra sleep; historical cut, no continuous-state claim",
+    "lastNativeCut": "118 after initial sleep223: qualified native status timed out twice; final end-lock unverified. Prior secure002 cuts remain historical.",
     "backupClientsActive": 0,
     "backupClientSignals": 0,
     "fiveMinute001": {
@@ -412,6 +470,19 @@
       "newKeypadXMLOrCredentialRead": 0,
       "teardownError": null,
       "resourceReturnOrOriginalAppStateClaim": false
+    },
+    "nativeContext118": {
+      "currentFinalNativeEndLockVerified": false,
+      "initialOrdinarySleepSendCompleted": true,
+      "nativeAfterInitialSleep": "UNVERIFIED_TIMEOUT",
+      "wakeAndFinalSleepInputs": 0,
+      "ownControlForwardCreated": 1,
+      "ownControlForwardRemoved": 1,
+      "localControlListenerAbsent": true,
+      "standardControlCloseEvidenceSeparate": true,
+      "nativeReadonlyRemoteClientSettlementAfterTimeout": "NOT_INDEPENDENTLY_ESTABLISHED",
+      "sourceAndGuardUnchanged": true,
+      "resourceReturnClaim": false
     }
   },
   "privateEvidenceHashes": [
@@ -994,6 +1065,46 @@
       "record": "five-minute002-native-gate-host-diagnosis.json",
       "bytes": 2294,
       "sha256": "e7272980984588c00e23b8c673b86e259e7d050098459c64306acdbd1b2d3742"
+    },
+    {
+      "record": "native-context118-diagnostic-intent.json",
+      "bytes": 244,
+      "sha256": "ef42b2ea7c10ce7356ca8760f7e557699a41e506bee3c0e6482757646424ee35"
+    },
+    {
+      "record": "native-context118-initial-sleep-intent.json",
+      "bytes": 146,
+      "sha256": "018149848f5c523cefb142d091941f954609452b0769d3a2ae294ca88cd9fc02"
+    },
+    {
+      "record": "native-context118-diagnostic-result.json",
+      "bytes": 1628,
+      "sha256": "d6d83a834ad1ec0ca00899bc5f21e417c9030e5c2ca1ee6ccdebd1773bbdddf9"
+    },
+    {
+      "record": "native-context118-baseline-boundary-and-control-settlement.json",
+      "bytes": 1133,
+      "sha256": "f05e07ee5327ede315f4ad2682906c9f86e19458c63013c1de29834a1be52937"
+    },
+    {
+      "record": "native-context118-observer-host-proof.json",
+      "bytes": 1514,
+      "sha256": "a2566c856df7e0e10bac2ab4f0acb3daae84492a846250a3850309a36337779f"
+    },
+    {
+      "record": "native-context118-readonly-component-comparison-intent.json",
+      "bytes": 280,
+      "sha256": "2b2b77fd3c3432b7535ce940bc78c789b948ecf72f87b46389147e8186987255"
+    },
+    {
+      "record": "native-context118-readonly-component-comparison-result.json",
+      "bytes": 1291,
+      "sha256": "f659c3e29c0ea8d1d7cafadb9aa16f045119ee0c1fbe99319c2cd7db57c241a3"
+    },
+    {
+      "record": "native-context118-readonly-comparison-host-proof.json",
+      "bytes": 290,
+      "sha256": "c5f55aab2a3dc3739d3a098f3384a8bc0216eed7c840064fe5d31ba079f5a983"
     }
   ],
   "privacy": "Only fixed-schema outcomes, counts and opaque hashes. Original paths, browser/account payloads and TLS private material remain outside Git.",

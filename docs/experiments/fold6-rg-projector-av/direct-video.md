@@ -20,6 +20,8 @@ and remains terminal. Manager117 qualified an exact admission resolution for
 that unchanged noncredential record. The distinct next attempt stopped at the
 native SystemUI ownership check before credential read or product work. It is
 also consumed, with secure end-state and control teardown verified.
+The later credential-free118 diagnostic could not verify its final native
+state; current continuation also holds that end-state uncertainty.
 
 ## Scope, packages and privileges
 
@@ -314,3 +316,21 @@ caller admission awaits an exact Manager disposition; no ID was replayed.
 The five-minute/tap/Host Stop, lifecycle, on-device peer-refusal and current
 timing criteria remain pending, as do independent exact-candidate review and
 Manager acceptance.
+
+Manager118 authorized one credential-free context observation. Its initial
+native read took21.2 seconds, of which20.3 seconds was the shell command and
+parsing reported0 at100ms resolution. Initial state was Awake/unlocked. One ordinary
+initial sleep was sent, but its next native read and the final-before read both
+reached the unchanged25-second ADB bound. No wake, final sleep, XML, credential,
+authentication entry or product operation ran. The requested `s1`/`s2` pair
+was never obtained, so032's failing predicate remains unknown. Owned control
+forward removal/local absence and standard close behavior are separately bound;
+the final native end-state remains **UNVERIFIED**.
+
+The one additional read-only comparison measured six status components at
+0.8–4.5 seconds; the window-ownership dump reached its10-second individual
+comparison bound. No aggregate was parsed after that missing component. This
+isolates a slow read without establishing its execution, transfer or service
+cause. Thirteen observer and three comparison host prechecks passed with zero
+production IO. No speculative status/selector correction was prepared. All
+failed records, original limits and the current guard remain unchanged.
