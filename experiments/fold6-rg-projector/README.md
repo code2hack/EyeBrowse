@@ -19,11 +19,11 @@ Build these separately from the production browser:
   :protocol:testDebugUnitTest :directhost:lintDebug :directrg:lintDebug
 ```
 
-PAV-02 installation requires the assigned device reservation, current physical
-identity/source guards and an unused package ID. Owner decision106 retired
-repeated old-store backup/equality/restore prerequisites for these isolated
-tests. Keep original applications and their current data untouched; do not
-replace an existing app.
+Use the assigned devices and the isolated projector packages. Owner decision167
+removed the extra private test-admission stack; use normal ADB/debug access and
+the actual stream/Surface dimensions. Existing owned projector packages may be
+updated for code changes. Keep original EyeBrowse/Chromium applications and data
+untouched. Owner decision106 retired repeated old-store backups and scans.
 See [direct-video.md](../../docs/experiments/fold6-rg-projector-av/direct-video.md)
 for the actual protocol, bootstrap, limitations and acceptance evidence.
 
@@ -37,9 +37,8 @@ actual Android Views, Phone IME and audio. `onStop()` releases its VideoView.
 The isolated Gradle project uses the repository's existing AGP 8.7.3, Kotlin
 2.2.21, JDK 17 and SDK 35 conventions. It has no browser/core/proxy dependency,
 network/storage/microphone permission, background service or screen/lock control.
-Install only the unused `com.code2hack.eyebrowse.projector.hostprobe` package in
-the reserved Fold6 window, after required preservation. Do not replace another
-package or clear application data.
+The `com.code2hack.eyebrowse.projector.hostprobe` package is isolated from the
+original applications. Keep their data intact; do not clear it for a test.
 
 Two buttons request ordinary apps on the fixture's current display: Chrome opens
 `https://example.com/` in a Custom Tab, and Settings opens its Display page. The

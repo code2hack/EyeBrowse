@@ -2,7 +2,7 @@
   "schema": 1,
   "issue": 67,
   "alias": "PAV-02",
-  "status": "HOST_ONLY_FIXTURE_LIFECYCLE_CORRECTED_R5_NOT_INSTALLED_NATIVE158_NULL_FOCUS_AUTH_HELD",
+  "status": "DIRECT167_VIDEO_CONTROL_310S_THIRDPARTY_SECURITY_LIFECYCLE_EXECUTED_READY_FOR_INDEPENDENT_REVIEW",
   "baseline": "38cb5f7ec8d320ef9833a36840ccec3febdbc885",
   "donor": "03de921e2400147842ce6c56101b58d514dde77c",
   "target": "spike/fold6-rg-projector-av",
@@ -144,14 +144,14 @@
       "sha256": "d87df5bb827855f8a46a39a23ba464aa582c3ba130cbda777d41543512794b2b",
       "signatureVerified": true,
       "applicationIdManifestVerified": true,
-      "installationState": "NOT_INSTALLED_DEVICE_UNUSED_ID_QUALIFICATION_REQUIRED_LATER"
+      "installationState": "R5_IDENTITY_WHOLE_SIGNED_BYTES_USER0_UID10445_QUALIFIED163_USED_UNCHANGED167"
     },
     {
       "package": "com.code2hack.eyebrowse.projector.directrg.r3",
       "bytes": 2516261,
       "sha256": "073f195eb312b9b26e4fd3801449aeb017f61a1bb51c9d51fa6965b83084c59e",
       "signatureVerified": true,
-      "installationState": "WHOLE_INSTALLED_BYTES_MATCH_AT_158_PREFLIGHT_HISTORICAL_CUT_ONLY"
+      "installationState": "PREVIOUSLY_QUALIFIED_INSTALLED_PACKAGE_USED_WITHOUT_UPDATE167"
     },
     {
       "package": "com.code2hack.eyebrowse.projector.directrg.r3.probe4",
@@ -160,7 +160,7 @@
       "signatureVerified": true,
       "signerCertificateSHA256": "e372f80243affb0fd2462d4c90f8aede64a9ffb683cebad6c517d73eacc6a963",
       "applicationIdVerifiedBy": "apkanalyzer",
-      "installationState": "WHOLE_INSTALLED_BYTES_MATCH_AT_158_PREFLIGHT_HISTORICAL_CUT_ONLY"
+      "installationState": "PREVIOUSLY_QUALIFIED_INSTALLED_PACKAGE_USED_WITHOUT_UPDATE167"
     }
   ],
   "compiledSources": [
@@ -1768,9 +1768,189 @@
       "record": "cf150-surface021-native-final-second.json",
       "bytes": 4371,
       "sha256": "48ff16ae192183c9dd9d1c86f9845ebf1e6e0e27ac954448a9fa8b870ff4bac0"
+    },
+    {
+      "record": "direct167-disconnected.png",
+      "bytes": 10451,
+      "sha256": "df31ad1d1c569eb76277c3b8a13209c50a99a375e4555bd4aab62a5cb9512592"
+    },
+    {
+      "record": "direct167-end-fold6.txt",
+      "bytes": 37,
+      "sha256": "eafb7faa2835bcc2c8186e35f905741e5b2cfe70a9ef9dc7b865164315c94b12"
+    },
+    {
+      "record": "direct167-end-rg.txt",
+      "bytes": 22,
+      "sha256": "70b4e0a73f61bad3271e77056783ceb8a85cd025f7f04fc3a736a78c0fb70907"
+    },
+    {
+      "record": "direct167-endstates.json",
+      "bytes": 237,
+      "sha256": "7cc6f85903bf870e50a7d24d756d6b8e1636f5e80685f417b999cb3d3ac5d5c1"
+    },
+    {
+      "record": "direct167-owned-teardown.json",
+      "bytes": 242,
+      "sha256": "82d336f74d3b38587b0066f076d916bd2ed5881a72f07bcecbf66e0d89410a63"
+    },
+    {
+      "record": "direct167-results-summary.json",
+      "bytes": 3522,
+      "sha256": "7a7bb733ce7b6737620f76f4b8c0459977d0526d9ecb9ae96546a9c12b660c90"
+    },
+    {
+      "record": "direct167-rg-own-meminfo.txt",
+      "bytes": 3060,
+      "sha256": "2959b0af7982b840ad0c429cbcf79a7037fa7c6e6d6aac01f8f71194d68135b0"
+    },
+    {
+      "record": "direct167-security-probe.txt",
+      "bytes": 144,
+      "sha256": "a9e39f9ba187d6d7151c7a516d103d98c5837c2385d78eeaf86b6e700e5fd091"
+    },
+    {
+      "record": "direct167-settings-host.txt",
+      "bytes": 1674,
+      "sha256": "4a8e921c9a34449a7cffda08a3440ebadb0da96c74004122dab592aee9aa7f2f"
+    },
+    {
+      "record": "direct167-settings-probe.txt",
+      "bytes": 5931,
+      "sha256": "5c54a38f8ba69bbceac44ce3ce86cfd4cceb742f8479e068b250f5b791cf4773"
+    },
+    {
+      "record": "direct167a-after-tap.png",
+      "bytes": 35272,
+      "sha256": "d400cc9a0dee2c16811fdd3d8db5d0dffc8bcfc615d7fdb75fb1040a46b9280c"
+    },
+    {
+      "record": "direct167a-before.png",
+      "bytes": 36128,
+      "sha256": "3acbc4a70fd1d224a049208b356a08114570c68cf02b6d4584be173725b0b615"
+    },
+    {
+      "record": "direct167a-computer-endpoint-path.json",
+      "bytes": 368,
+      "sha256": "8c84b63e6cd8ec94b73d64950a5c4d1bd8482677f26b41e837b7a2c6a04308c7"
+    },
+    {
+      "record": "direct167a-computer-path.json",
+      "bytes": 215,
+      "sha256": "d87618b3c27c157f2aef6fbc8f8974f0d109948261084a4cf660722051ba099b"
+    },
+    {
+      "record": "direct167a-host-final.txt",
+      "bytes": 1603,
+      "sha256": "53929ab160d21935bf128ff28d5285fb5b5ac520e4a8d53e346a5b88e0b1bb7d"
+    },
+    {
+      "record": "direct167a-phone-fixture-late.txt",
+      "bytes": 89,
+      "sha256": "0a29e052ee001df86e65aa4129cea1971718521bc684246ba01a3629a55bbfee"
+    },
+    {
+      "record": "direct167a-phone-fixture-start.txt",
+      "bytes": 88,
+      "sha256": "700619783982e067a2fac6bc5251c581a44a3a68131616456a952f4d918ea477"
+    },
+    {
+      "record": "direct167a-probe.json",
+      "bytes": 35956,
+      "sha256": "cd71076b64fb9d29d56e6823ad44f6fa9281ae5e02a82f07541e6bb377caeb3d"
+    },
+    {
+      "record": "direct167a-rg-display.txt",
+      "bytes": 144,
+      "sha256": "7e31348da1a70a168841ba300fc195ae9a0657224f9dc6d5175f1270bf514118"
+    },
+    {
+      "record": "direct167a-rg-final.txt",
+      "bytes": 37095,
+      "sha256": "c23048d54b3a67a51e2fd8c7d93f72e6374f58d6518d46b8e3d3364552d7ea01"
+    },
+    {
+      "record": "direct167a-rg-own-maps.txt",
+      "bytes": 48,
+      "sha256": "a7493f9b06966aa5b1b4e029e7f70c36cc3a4d012181d97e98e97080869ff1dc"
+    },
+    {
+      "record": "direct167a-rg-own-process.txt",
+      "bytes": 5,
+      "sha256": "cf0ab4feeeaf3d670c0fa92a880b146acf4e239c3a144c121b2086227856997f"
+    },
+    {
+      "record": "direct167a-rg-start.txt",
+      "bytes": 1017,
+      "sha256": "11a7e2d333b5b555220573b8eb49e436fd903a3a109e1644db913a1f2d3a7c27"
+    },
+    {
+      "record": "direct167a-runtime-inventory.json",
+      "bytes": 190,
+      "sha256": "0bdae89c2351210d8fb4b8e777c438bbb843aeb6f9a3922568ca1f22f29acff2"
+    },
+    {
+      "record": "direct167a-summary.json",
+      "bytes": 603,
+      "sha256": "fc56536d2692c0f8284f95e606599005b8761c3e1c632c64de9aaf8d167c579d"
+    },
+    {
+      "record": "direct167b-security-host.txt",
+      "bytes": 580,
+      "sha256": "bd54eb27cb682b02abb0bf480fc2369f9e542b09027ae91e8100a77b05afeb70"
+    },
+    {
+      "record": "direct167c-settings-before.png",
+      "bytes": 66514,
+      "sha256": "0ac0438e159e8dbc708b087fa6b89c0d752472d60d4979e699c790f61d66e1af"
+    },
+    {
+      "record": "direct167d-fixture-reconnect.txt",
+      "bytes": 87,
+      "sha256": "1e5f34a97d5f73c20235dca9b4241876663d9f798f6b9b44cee14ff6a8d3e2ce"
+    },
+    {
+      "record": "direct167d-reconnect-probe.json",
+      "bytes": 4839,
+      "sha256": "9efdc7da4075dd928b1a557a456ed2c792a276ea6ec317d9b0e407c13198e6eb"
+    },
+    {
+      "record": "direct167d-rg-runtime-processes.txt",
+      "bytes": 64,
+      "sha256": "7af512447a65e821984c5f69a259ff8aece5f2dcfc2219654758cf98626f50db"
+    },
+    {
+      "record": "direct167e-fixture-restart.json",
+      "bytes": 1792,
+      "sha256": "777ee2683c9fe0a4e2fde999a6ecccad2c410cd52caa647851351e8cca5a4525"
+    },
+    {
+      "record": "direct167e-local-stop-probe.json",
+      "bytes": 5337,
+      "sha256": "6357a64575ce740e275048f37106410d44eefa68653a068c1602c879927e92b1"
+    },
+    {
+      "record": "direct167fg-final-probes.txt",
+      "bytes": 10590,
+      "sha256": "c76c095f04ae900b4cd4efc139f4715fa487f8a658193aba80c3d709aac4de9a"
+    },
+    {
+      "record": "direct167life-current-read.json",
+      "bytes": 98,
+      "sha256": "8d58e64bf0de2fe5d0f058fb922beb4e8c8ad195927e476d1746e1f961ed9eba"
+    },
+    {
+      "record": "direct167life-current-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "direct167life-current-stdout.txt",
+      "bytes": 5454,
+      "sha256": "d1d73d0d170f93f85048ba2cae0d62ff12722cfadc6b2d0b6808bdfed223ba17"
     }
   ],
-  "privacy": "Only fixed-schema outcomes, counts and opaque hashes. Original paths, browser/account payloads and TLS private material remain outside Git.",
+  "privacy": "Original browser/account/TLS private material remains outside Git. Actual owned experiment logs/images stay private with hashes; direct167 publishes scoped metrics, explicit limits and outcomes.",
   "historicalFirstAPKs": [
     {
       "path": "experiments/fold6-rg-projector/directhost/build/outputs/apk/debug/directhost-debug.apk",
@@ -1896,12 +2076,12 @@
       "oldMasterActuallyMissing": true,
       "newSessionCopy": "CREATE_NEW and fixed-hash verification before launch",
       "threeHostCasesPassed": true,
-      "currentDeviceResult": "HOSTR3_INSTALLED_HASH_BOUND_PRODUCT_RUN_NOT_REACHED"
+      "currentDeviceResult": "MULTIPLE_REAL_CURRENT_HOSTR5_SESSIONS_RECONNECTED_WITH_MASTER_RETAINED_AND_STOCK_CHILDREN_CLOSED"
     },
     "sameClockLatency": {
       "currentField": "packetReadToCallbackP95Ms",
       "scope": "RG System.nanoTime packet read to callback receipt",
-      "currentDeviceResult": "UNMEASURED",
+      "currentDeviceResult": "ACTUAL_DIRECT167_310066MS_INTERVAL_LAST_ROLLING_CALLBACK_P95_9.045312MS_ECHO_RTT_P95_99.951041MS",
       "oldMetricRetainedAsInvalid": true
     },
     "installedPhoneHostR3APKSHA256": "4b3fc80cbf202a1bf7246e199612850aa0b52c05fbe404b78848188547702cc9",
@@ -1995,6 +2175,10 @@
       "sourceSHA256": "b96ae58cada210d7bb000c6874b6b80df73e814645dd426bc1fd12e8ce4c7ad3",
       "newExclusiveGoIntentAndReturnPredicates": true,
       "old014BoundaryRecovered": false
+    },
+    "currentDirect167": {
+      "evidenceField": "owner167DirectResults",
+      "scope": "Current installed HostR5/RG3/Probe4 actual direct tests; independent review and acceptance pending"
     }
   },
   "smokeHelperRecords": [
@@ -2272,7 +2456,7 @@
     "bytes": 7320,
     "sha256": "3e7afead0d64d4913c1423be933e7906463c2a2d018ecefe7d5939989d2d77f1",
     "sourceFiles": 25,
-    "binding": "Host5 lifecycle fix compiled/signed; RG3/Probe4 unchanged frozen artifacts; Host5 not installed, unused-ID device check still required"
+    "binding": "HostR5/RG3/Probe4 compiled source/APK capsule used for direct167. No compiled-source or installed-package change during the successful runs."
   },
   "previousRGTestAPK": {
     "package": "com.code2hack.eyebrowse.projector.directrg.r3.test",
@@ -2360,21 +2544,19 @@
   },
   "latestEvidenceBoundary": {
     "reports": [
-      86,
-      87,
-      88
+      95,
+      96
     ],
-    "runtimeEffort": "Actual native turn24 gpt-6.1-sol/xhigh/full-access/never",
-    "productReady": false,
-    "authAndCredentialSourcesHeld": true,
-    "optional138Used": false,
-    "owner106RepeatedBackupsRetired": true,
+    "execution": "CURRENT_INSTALLED_HOSTR5_RG3_PROBE4_DIRECT_STOCK_ADB_NO_PRIVATE_TEST_ADMISSION_STACK",
+    "productComponentEvidenceReadyForReview": true,
+    "Owner167ExtraTestGatesCancelled": true,
+    "Owner106RepeatedBackupsRetired": true,
     "originalAppsOrStoresModified": false,
+    "sharedDebugRoutesModified": false,
     "mainOrV004Changed": false,
     "reviewOrAcceptanceClaim": false,
-    "lastDeviceCut": "158: own teardown and two strict secure user0 locked/showing/Dozing/display0OFF samples, zero Phone power/Go/API/touch",
-    "dependentGate": "THIS158 explicit null display0 focus, one focus field and zero original user0 selector matches; unchanged rc73. No retrospective021 cause.159 consumer real use disabled pending exact qualification and later specific disposition.",
-    "latestHostOnlyWork": "159 fixture lifecycle status restored at onStart; new Host5 build not installed, actual restart/render test pending"
+    "lastDeviceCut": "One normal final screen-off/check: PhoneDozing/RGAsleep; owned bridge/stock/VD35-41/listener44367 absent",
+    "remainingScope": "Independent exact-head review/Manager acceptance; audio/head/IME/optical/acoustic/reboot behavior not claimed"
   },
   "historicalCheckpoint075": {
     "status": "INCOMPLETE_VIDEO014_PREGO_TIMEOUT_BOTH_DEBUG_PIDS_ABSENT_OWNED_ENDSTATE_UNKNOWN",
@@ -2697,7 +2879,14 @@
     "newAPK_SHA256": "d87df5bb827855f8a46a39a23ba464aa582c3ba130cbda777d41543512794b2b",
     "newAPK_Bytes": 2518061,
     "newAPKSignatureAndManifestVerified": true,
-    "causalityForPriorNullBlackOrTouch": "NOT_ESTABLISHED"
+    "causalityForPriorNullBlackOrTouch": "NOT_ESTABLISHED",
+    "laterActual167SameTaskReturn": {
+      "qualified": true,
+      "stoppedDraws": 85,
+      "returnedDraws": 90,
+      "AMLaunchState": "HOT",
+      "activeFalseThenTrue": true
+    }
   },
   "hostOnlyWakePreparation159": {
     "state": "PREPARED_HOST_ONLY_REAL_USE_FALSE",
@@ -2710,5 +2899,130 @@
     "finalPolicyBindsExactOperationJournalAndOwnedResource": true,
     "actualDeviceReadSetupPowerInputCalls": 0,
     "newAuthenticationRecordOrExemption": false
-  }
+  },
+  "historicalCheckpoint094LatestEvidenceBoundary": {
+    "reports": [
+      86,
+      87,
+      88
+    ],
+    "runtimeEffort": "Actual native turn24 gpt-6.1-sol/xhigh/full-access/never",
+    "productReady": false,
+    "authAndCredentialSourcesHeld": true,
+    "optional138Used": false,
+    "owner106RepeatedBackupsRetired": true,
+    "originalAppsOrStoresModified": false,
+    "mainOrV004Changed": false,
+    "reviewOrAcceptanceClaim": false,
+    "lastDeviceCut": "158: own teardown and two strict secure user0 locked/showing/Dozing/display0OFF samples, zero Phone power/Go/API/touch",
+    "dependentGate": "THIS158 explicit null display0 focus, one focus field and zero original user0 selector matches; unchanged rc73. No retrospective021 cause.159 consumer real use disabled pending exact qualification and later specific disposition.",
+    "latestHostOnlyWork": "159 fixture lifecycle status restored at onStart; new Host5 build not installed, actual restart/render test pending"
+  },
+  "owner167DirectResults": {
+    "authority": "Owner167 cancels extra private test gates; ordinary direct ADB/setup/wake, no old guard/policy/journal/native prerequisite stack",
+    "packagesUnchangedDuringRun": true,
+    "firstPartySourceChangedDuringRun": false,
+    "physicalDevices": {
+      "Phone": "SM-F956N/API36/user0",
+      "RG": "RG-glasses/API32/user0"
+    },
+    "stream": {
+      "streamingDurationMs": 310066,
+      "renderedDelta": 6301,
+      "changedPacketsDelta": 6301,
+      "meanMeasuredRenderedFps": 20.321479942979884,
+      "sampleCount": 31,
+      "allSamplesStreaming": true,
+      "allSampleIntervalsHaveNewRenderedFrames": true,
+      "allSampleTLSDirectEndpoints": true,
+      "softwareTapAtMs": 5018,
+      "touchesSent": 1,
+      "lastPacketReadToCallbackP95Ms": 9.045312,
+      "lastEchoRttP95Ms": 99.951041,
+      "scope": "RG System.nanoTime packet-read to render-callback receipt; network echo RTT; no optical/input end-to-end claim",
+      "HostStopObserved": "CONNECTION_FAILED",
+      "onRGDriverPassed": true
+    },
+    "appEffect": {
+      "source": "ON_RG_GENERATED_SOFTWARE_EVENT",
+      "coordinate": [
+        240,
+        320
+      ],
+      "geometry": [
+        480,
+        640
+      ],
+      "fixtureCounterBefore": 0,
+      "fixtureCounterAfter": 1,
+      "inspectedRGImageBefore": "Visible taps: 0",
+      "inspectedRGImageAfter": "Visible taps: 1",
+      "OwnerPhysicalTouchpadTest": false
+    },
+    "thirdParty": {
+      "component": "com.android.settings/.Settings$DisplaySettingsActivity",
+      "VD": 36,
+      "actualDisplayPageInspectedOnRG": true,
+      "streamMs": 15071,
+      "HostStopProbePassed": true,
+      "settingsValuesModified": false
+    },
+    "security": {
+      "HostR5ProbePassed": true,
+      "certificateAbsentRefusedBeforeMedia": true,
+      "mediaWelcomeReceived": false,
+      "unauthenticatedRefusedCounterBefore": 0,
+      "unauthenticatedRefusedCounterAfter": 1,
+      "stockChildCreated": false
+    },
+    "lifecycle": {
+      "reconnectPassed": true,
+      "reconnectedTouches": 0,
+      "lastTouches": 0,
+      "reconnectMeasuredMs": 10027,
+      "localStopPassed": true,
+      "localStopState": "STOPPED",
+      "pausePassed": true,
+      "pauseState": "STOPPED",
+      "sameFixtureTaskReturn": {
+        "AMLaunchState": "HOT",
+        "stoppedActive": false,
+        "stoppedDraws": 85,
+        "returnedActive": true,
+        "returnedDraws": 90
+      },
+      "staleEventReplayObserved": false
+    },
+    "runtimeInventory": {
+      "APKBrowserProxyAssetMatches": [],
+      "ownRGProcessWebViews": 0,
+      "ownRGProcessSnapshotUID": 10083,
+      "dependencies": [
+        "protocol"
+      ],
+      "initialMapsReadUnavailable": true
+    },
+    "teardown": {
+      "remainingOwnedProcesses": [],
+      "remainingTestVDs": [],
+      "PhoneListener44367Rows": [],
+      "PhoneFinalWakefulness": "Dozing",
+      "RGFinalWakefulness": "Asleep",
+      "normalFinalScreenOffCountPerDevice": 1,
+      "sharedDebugTunnelsChanged": false,
+      "continuousEndStateClaimed": false,
+      "oldWorker64ReturnClaimed": false
+    },
+    "retainedLimitations": {
+      "audio": "disabled intermediate; framing reserved",
+      "opticalAcousticIMEHeadPhysicalTouchpad": "not tested",
+      "corruptCodecLiveFaultInjection": "not executed",
+      "startupUnknownOption": "send_codec_meta ignored by pinned stock5.0.1, warning retained",
+      "firstPauseResultRead": "TIMEOUT30S; initial buffers not saved/unknown; later retained passing result, no case replay",
+      "PCPortNumberOnlyCheck": "overbroad unrelated host connection; exact media endpoint observation has no PC gateway"
+    },
+    "reviewAcceptanceOrReleaseClaimed": false,
+    "originalEyeBrowseChromiumAppsStoresOrBackupsTouched": false
+  },
+  "historicalRecordsAreNotTestAdmissionRequirements": true
 }
