@@ -78,7 +78,11 @@ class HeadPointerModel(val settings: Settings = Settings()) {
         if (rebase) {
             reference=current;x=.5;y=.5;targetX=.5;targetY=.5;frameTimeNs=nowNs
             yaw=0.0;pitch=0.0;quietYaw=0.0;quietPitch=0.0
-        } else aim(checkNotNull(reference).inverse()*current)
+        } else {
+            // Express the reference ray in the current head frame. The inverse order
+            // keeps using the startup axes and can reverse/swap aiming after roll.
+            aim(current.inverse()*checkNotNull(reference))
+        }
         return true
     }
 

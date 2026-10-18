@@ -10,10 +10,13 @@ The current correction removes the RG-local session panel and its invocation.
 Disposition196/198 adds two bounded numeric rows using the preserved settings
 model on the existing disconnected Connect view. It selects ordinary Phone/RG system navigation as
 the routes to assess next, without claiming that those routes are available.
-It is source-only after the actual device-window handback to the Manager;
-it has not been installed or physically tested. Historical app effects,
-Owner head/tap confirmation and IME failures below retain their old-source
-bindings. Independent review, complete physical acceptance and integration
+The W68-02 device window207 installed the matching input pair and obtained the
+physical results below on852e1de. That trial exposed reversed head-pointer
+directions on both axes. A two-sign correction also failed physically. The
+current correction changes the relative orientation to the current head frame;
+its physical direction check remains outstanding. Historical
+app effects, Owner confirmations and IME failures retain their exact source/APK
+bindings. Independent review, remaining navigation evidence and integration
 remain outstanding.
 
 ## Implementation and provenance
@@ -53,7 +56,7 @@ withdraws input until a frame from the replacement decoder is rendered.
 | Android Back while disconnected | Ordinary local Activity exit |
 | Phone Home/app-return | Aim/short-tap the Phone's own projected navigation target if actually rendered and usable; availability/effect unverified. Explicit Home transport retained |
 | Local Disconnect | Leave the receiver through the RG's existing system Home/app-exit if physically available; onPause closes the session. Actual exit invocation unverified |
-| Numeric pointer/scroll settings | Two bounded numeric −/+ rows on the existing disconnected Connect view; local head/short-tap activation shares the Connect button path. Physical activation unverified |
+| Numeric pointer/scroll settings | Two bounded numeric −/+ rows on the existing disconnected Connect view; local head/short-tap activation shares the Connect button path. Owner confirmed both rows on852e1de and restored2.0×/240 |
 
 No session panel, panel-opening gesture, permanent browser toolbar, recenter,
 mode toggle or local RG keyboard is present. The ordinary pre-existing
@@ -72,7 +75,7 @@ physical RG evidence. Direct touchscreen tap/drag support remains diagnostic
 software-input evidence when driven synthetically.
 
 Manager disposition196 resolves the narrow source-placement question: numeric
-settings use the existing disconnected view. The next assigned device window
+settings use the existing disconnected view. Window207 still
 must assess the actual Phone-provided Home/app-navigation target and the RG's
 existing physical system exit. No fixed coordinate, launcher, assumed gesture
 or global navigation change is selected. Phone-side Stop, ADB or synthetic pause
@@ -177,8 +180,9 @@ The Manager can bind them through `evidence-index.json`:
 | `rg-keyboard160-01.png` | `b6914cfd1c1f5255d98589d179d2b316a7294936d961f089b788608e64077777` |
 | `rg-browser160-01.png` | `0f984b11597e7222b3040256a9bbad9736a13d255d62cf6af330ba96d33a58ee` |
 
-Historical installed pair, freshly re-hashed at actual window handback191. The
-current source-only correction has not replaced these device artifacts:
+Historical installed pair, freshly re-hashed at actual window handback191,
+before the later audio69 and input68 W02 updates. These are retained bindings,
+not the current installed pair:
 
 | APK | Bytes | SHA-256 |
 | --- | --- | --- |
@@ -223,8 +227,8 @@ Independent socket-table port absence was not observed; the prior netlink
 limitation remains a limitation. Process/VD settlement is not promoted to a
 global listener-absence claim. The Manager received actual window handback and
 the exact installed pair in `handback191/handback.json` and
-`handback191/settlement-final.json`. Subsequent work is source-only until another
-physical resource grant. Required evidence/worktree cleanup is deferred to
+`handback191/settlement-final.json`. Work then remained source-only through the
+settings checkpoint196/198; mission207 subsequently granted W68-02. Required evidence/worktree cleanup is deferred to
 experiment end.
 
 ## Current correction verification
@@ -243,14 +247,15 @@ above were not rerun for this receiver-only correction. New double-tap tests
 check one Back for duplicate two-tap/OEM reporting, later independent Back,
 constituent-tap suppression and canceled/held/stale sequence rejection.
 
-Source-only artifacts below are **uninstalled**; they do not replace the
-historical installed pair above. The a602 artifact remains retained separately:
+Correction artifacts are retained separately from the historical pair above:
 
-| APK | Bytes | SHA-256 |
-| --- | --- | --- |
-| RG3, a602 no-panel/Phone-Back | 2,607,565 | `71e0a456004a20bb8ff523f7f41a1404f1944168c0a2b23dc44144bbd5f09975` |
-| RG3, settings placement196/198 | 2,607,565 | `45852fbc80cfaf3944c19ac5110abd86de0ba7928723f2e2f1a673b3549cad9f` |
-| Probe4, direct lifecycle stop | 73,010 | `fd458f817bfa21e14c6792ed7e6615c3993f3fb0de5e6b2ccfac09a26856ba83` |
+| APK | Status | Bytes | SHA-256 |
+| --- | --- | --- | --- |
+| RG3, a602 no-panel/Phone-Back | Never installed | 2,607,565 | `71e0a456004a20bb8ff523f7f41a1404f1944168c0a2b23dc44144bbd5f09975` |
+| RG3,852e1de settings placement196/198 | Installed/tested W68-02; reversed axes retained | 2,607,565 | `45852fbc80cfaf3944c19ac5110abd86de0ba7928723f2e2f1a673b3549cad9f` |
+| RG3, sign-only correction | Installed; Owner reports both axes still reversed | 2,607,565 | `6a26ea8c0c57c5fe6c47803fbbde24376c64c1322d6167b1a34ab464ac12fbe9` |
+| RG3, current-head-frame correction | Installed; physical direction check pending | 2,607,565 | `8911c4a3dcc78cc45a8a3dd1a77711fe2eb0ea50a6045dc8045c17c236eaf43d` |
+| Probe4, direct lifecycle stop | Installed W68-02; unchanged by direction fix | 73,010 | `fd458f817bfa21e14c6792ed7e6615c3993f3fb0de5e6b2ccfac09a26856ba83` |
 
 The numeric-row/local-hit-action change passed the affected **13 receiver
 tests**, receiver/probe assembly and receiver lint in28s. A final status-refresh
@@ -265,12 +270,76 @@ Host/protocol code and tests were not changed or rerun. The settings rows are
 children of the existing connection view and disappear with it while streaming.
 Back recognition/routing and lifecycle disconnect are unchanged from a602.
 
-The source/Android test driver now exercises Disconnect directly as a lifecycle
-mechanism and explicitly does not claim physical control reachability. Fresh
-physical Back/Home/Disconnect/settings qualification requires a later assigned
-device window. The previous head/tap observation
-belongs to source b13c131 and its installed RG APK1b734b82…, not this changed
-candidate.
+The source/Android test driver exercises Disconnect directly as a lifecycle
+mechanism and explicitly does not claim physical RG exit. The earlier head/tap
+observation belongs to source b13c131/RG1b734b82…; the later physical input and
+direction findings below belong to852e1de/RG45852fbc… .
+
+## W68-02 physical input and direction correction
+
+Mission207 granted both devices. Phone debug used TCP192.168.0.193:5555 through
+the Manager's existing15037 ADB server; RG remained on USB. Actual physical
+identities were confirmed once at test start. Matching v1 HostR5, RG3 and Probe4
+installed bytes matched the case artifacts. Media remained direct TLS1.3
+RG10.199.167.154 → Phone10.199.167.157:44367; no computer media gateway.
+
+| Observation on852e1de/RG45852fbc… | Result and limit |
+| --- | --- |
+| Disconnected numeric controls | Owner confirmed both rows worked using head aiming/short pad taps, with values restored. Own preferences read back pointer.tenths20 and scroll240 |
+| Native fixture on VD72,480×640/160dpi | Owner confirmed Native Tap, nested scrolling and main scrolling. Own records show taps0→1, nested first0→2/top−21 and main scroll0→661 |
+| Phone keyboard and Back | Owner confirmed field tap opened the actual Phone keyboard and physical double-tap dismissed it. Receiver recorded one navigation command. No text was requested or entered; this is not a full typing/Shift/symbols/Enter trial |
+| Keyboard layout | Owner reports the popup Phone keyboard occupied the full RG screen. Earlier selected-IME cropping and failed key effects remain, without a fallback or layout workaround claim |
+| Head direction | Owner explicitly reports cursor motion exactly opposite to head motion in both x and y. Successful target activation does not establish correct aiming ergonomics; this bug is retained |
+| Phone Home/app-return | Phone-provided desktop/taskbar actually rendered before the native fixture launch and remained visible below it. An exact Home/app-return target and its physical effect remain unqualified |
+| Session end | SCID5c1e17a6 ended by HOST_LIFETIME; elapsed735,570ms,6,421 encoded frames,3 touches, serverAlive=false. These are host-session counters, not continuous optical/audio measurements or physical RG exit |
+
+The receiver's871 total scroll commands include repeating edge-scroll work;
+they are not a physical pad-swipe count or a per-gesture timing measurement.
+
+The first software Connect tap had not established a new session; its copied
+status file was an old69 audio result and was not counted as fresh evidence.
+Normal wake/Connect subsequently produced the fresh v1 session above. No cause
+is assigned beyond these observations. The old fixed waitForGo/bootstrap
+geometry predicate was not used. After the finite host ended, its11207 process
+was absent and the owned HostR5/RG3 force-stops returned0 before the correction.
+Unassigned r4/shared resources were not touched.
+
+The first correction reversed the two inherited angular signs after display-axis
+remapping. Its synthetic direction regression failed against the original signs
+(one expected failure,8-second build), then **14 receiver tests** (input9,
+decoder5), receiver/probe assemblies and receiver lint passed in23s. Owner
+subsequently reported **both axes still reversed** on installed RG6a26ea8c… .
+Those tests assumed raw-axis signs from an identity reference; their green
+result did not reproduce the worn input path. APK disassembly confirmed the
+sign change was actually present. This failed physical correction remains in
+`window207/owner-direction-fix-still-reversed.json` and is not relabeled a PASS.
+Owner briefly paused work and then explicitly resumed with “go ahead and fix it.”
+
+The source comparison exposed a reference-frame error: `reference.inverse() *
+current` expresses the relative pose in the startup axes. Rolling after startup
+can reverse or exchange the local aiming axes. A synthetic roll regression
+reproduced that behavior. A bounded worn neutral/right measurement also captured
+an Owner-observed rightward head turn/circle-left result: the installed math
+projects −28.78° horizontally, while the corrected transform projects +29.26°.
+The sensor dump rounds components to two decimals; these are diagnostic angles,
+not precise timing, ergonomic or optical measurements. No physical roll history
+is inferred from this reproduction.
+
+The correction uses `current.inverse() * reference`, expressing the reference
+ray in the current head frame, and projects movement opposite that ray. Gain,
+bounds, smoothing, settings, pad gestures and Phone Back routing retain their
+existing mechanisms. Tests now cover the captured worn pose, both axis signs
+and all display rotations, plus ±90°/±180° roll since startup. Before the
+composition change, the captured-pose and roll tests both failed (two expected
+failures,12-second build). The original sign-only, roll and measured-pose failures
+remain retained separately. The final affected checks passed **16 receiver tests** (input11, decoder5),
+receiver/probe assembly and receiver lint in26s, with only the existing
+OldTargetApi warning. Results/source hashes are retained in
+`window207/current-frame-host-checks.json`. Installed RG8911c4a3… matches the
+built artifact; Probe4 bytes are unchanged. The receiver is on the disconnected
+Connect view for the final physical direction observation. No streaming session
+was started for this correction. The current saved pointer gain is4.0× and
+scroll240; the earlier2.0× restoration remains scoped to its earlier observation.
 
 No independent acceptance, mandatory-audio result, integration or release is
 claimed. Matching PAV-04 integration remains a later coordinated step.

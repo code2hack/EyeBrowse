@@ -13,7 +13,9 @@ internal data class HeadOrientation(val x: Double,val y: Double,val z: Double,va
     fun angles(rotation: Int): Pair<Double,Double> {
         val deviceX=-2*(x*z+w*y);val deviceY=2*(w*x-y*z);val forwardZ=2*(x*x+y*y)-1
         val (right,up)=when(rotation) { 1->deviceY to -deviceX;2->-deviceX to -deviceY;3->-deviceY to deviceX;else->deviceX to deviceY }
-        return Math.toDegrees(atan2(right,-forwardZ)) to Math.toDegrees(-atan2(up,hypot(right,forwardZ)))
+        // This is the reference ray in the current head frame: aiming moves
+        // opposite that ray, with display-axis remapping applied first.
+        return Math.toDegrees(-atan2(right,-forwardZ)) to Math.toDegrees(atan2(up,hypot(right,forwardZ)))
     }
     companion object {
         fun from(sample: RotationSample): HeadOrientation? {

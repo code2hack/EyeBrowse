@@ -47,7 +47,7 @@ platform routes and physical settings activation still need device verification.
 supplies an owned native field, main scroll area and nested list using the actual
 Phone IME. See
 [input-ime.md](../../docs/experiments/fold6-rg-projector-av/input-ime.md) for the
-current source-only status, actual old-source findings and remaining limits.
+exact source/APK bindings, physical findings and remaining limits.
 
 ## PAV66 owned fixture
 
