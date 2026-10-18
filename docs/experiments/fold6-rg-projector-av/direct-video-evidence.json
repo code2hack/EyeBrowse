@@ -1,0 +1,4427 @@
+{
+  "schema": 1,
+  "issue": 67,
+  "alias": "PAV-02",
+  "status": "INTERRUPTED_DECODER_CLEANUP_CORRECTED_HOST_AND_CURRENT_SHORT_USB_LIFECYCLE_READY_FOR_REVIEW",
+  "baseline": "38cb5f7ec8d320ef9833a36840ccec3febdbc885",
+  "donor": "03de921e2400147842ce6c56101b58d514dde77c",
+  "target": "spike/fold6-rg-projector-av",
+  "scrcpy": {
+    "version": "5.0.1",
+    "source": "a60891aea193d92e7e5c3942700eca63f9d19a5f",
+    "serverSHA256": "764eb6f79811d5211fe9df341120882ba9994c7a61b897d7bf3fb662e53bc536"
+  },
+  "build": {
+    "jdk": 17,
+    "sdk": 35,
+    "agp": "8.7.3",
+    "kotlin": "2.2.21",
+    "gradle": "8.11.1",
+    "compileAndLint": "PASS",
+    "lintErrors": 0,
+    "lintWarnings": [
+      "OldTargetApi in each new application; assigned targetSdk35 retained"
+    ],
+    "unitTests": [
+      {
+        "suite": "com.code2hack.eyebrowse.projector.protocol.TlsTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSHA256": "fe9670763a5b0b54aee814690f3e1910841433bb832f740f4e9249cd75f5b292"
+      },
+      {
+        "suite": "com.code2hack.eyebrowse.projector.protocol.WireTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSHA256": "f69c3ce7ddec6d98253d5ee01acf0a5ae57e25392f8f451eddb3107477c70d53"
+      },
+      {
+        "suite": "com.code2hack.eyebrowse.projector.directhost.SessionJarTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSHA256": "b91d9a24470cc23123a70de3a12e311465bbb07fdf12e746396335a79c116fe5"
+      }
+    ],
+    "runtimeDependencies": [
+      "project :protocol",
+      "org.jetbrains.kotlin:kotlin-stdlib:2.2.21",
+      "org.jetbrains:annotations:13.0"
+    ],
+    "affectedRGCompileAndLint": "PASS",
+    "unitTestsRerunForDiagnosticOnlyChange": false,
+    "lintReports": [
+      {
+        "module": "directhost",
+        "errors": 0,
+        "warnings": 1,
+        "xmlSHA256": "a12cfb5cce6cce88bf589c70c3610af519680355e2c4d0f88767e735e0d2afad"
+      },
+      {
+        "module": "directrg",
+        "errors": 0,
+        "warnings": 1,
+        "xmlSHA256": "0a87e91fc2b9bdaa03466decd5a7ceb8c7d5fb7116f9d346683200161eac85aa"
+      }
+    ],
+    "protocolSourceUnchanged": true,
+    "affectedPhoneCompileAndLint": "PASS",
+    "hostSessionJarRegressionCases": 3,
+    "sameClockMetricImplementedButDeviceUnmeasured": false,
+    "phoneHostR3UnusedIDBuildAndLint": "PASS",
+    "unitTestsRerunForPhoneApplicationIdOnlyChange": false,
+    "hostR3Lint": {
+      "errors": 0,
+      "warnings": 1,
+      "xmlSHA256": "a12cfb5cce6cce88bf589c70c3610af519680355e2c4d0f88767e735e0d2afad"
+    },
+    "rgProbe2TestBuildAndLint": "PASS",
+    "mainRGAPKByteIdenticalAfterTestOnlyBuild": true,
+    "unitTestsRerunForSetupWaitAndTestApplicationIdOnlyChange": false,
+    "rgProbe2Lint": {
+      "errors": 0,
+      "warnings": 1,
+      "xmlSHA256": "0a87e91fc2b9bdaa03466decd5a7ceb8c7d5fb7116f9d346683200161eac85aa"
+    },
+    "hostR4Probe3AffectedCheck": {
+      "state": "BUILD_SIGNATURE_TARGETED_UNIT_AND_LINT_PASSED_NOT_LIVE_ACCEPTANCE",
+      "buildSeconds": 33,
+      "unit": {
+        "testCases": 1,
+        "failures": 0,
+        "errors": 0,
+        "XMLSHA256": "eea497fe1f2d786d1aca656c4ca0fe56ced2be9c830e7d655d5ef3dfc621d6f3"
+      },
+      "lint": {
+        "counts": {
+          "Error": 0,
+          "Warning": 1,
+          "Fatal": 0
+        },
+        "XMLSHA256": "a12cfb5cce6cce88bf589c70c3610af519680355e2c4d0f88767e735e0d2afad"
+      },
+      "unaffectedSuitesRerun": false,
+      "compiledExactKotlinBootstrapCases": 12
+    },
+    "sameClockMetricEvidenceScope": "Owned-fixture setup pilot samples only; stable genuine interval and optical/input timing not passed",
+    "probe4SurfaceDiagnostic": {
+      "buildSeconds": 14,
+      "RGMainAndAndroidTestDebugAssembly": "PASS",
+      "lintErrors": 0,
+      "lintWarnings": [
+        "OldTargetApi"
+      ],
+      "lintXMLSHA256": "0a87e91fc2b9bdaa03466decd5a7ceb8c7d5fb7116f9d346683200161eac85aa",
+      "mainRGAndPhoneAPKsByteIdentical": true,
+      "unaffectedSuitesRerun": false,
+      "actualAndroidPixelCopyExecuted": false
+    },
+    "lintReportsMeaning": "Earlier entries remain historical; probe4SurfaceDiagnostic identifies the current affected RG build/lint cut",
+    "hostR5LifecycleAffectedChecks": {
+      "compileAssemble": "BUILD_SUCCESSFUL",
+      "unitTests": 4,
+      "unitFailures": 0,
+      "lintErrors": 0,
+      "lintWarnings": [
+        "OldTargetApi"
+      ],
+      "compiledLifecycleBytecodeVerified": true,
+      "actualAndroidRestartTest": "NOT_EXECUTED",
+      "nativeBuildExitCode": null,
+      "buildExitMetadataLimit": "Initial tool session identifier not retained; complete final Gradle log, four unit XML reports, lint, signed manifest and fresh APK independently verified",
+      "hostVerificationSHA256": "19ecc2c09fd3b4d90faecbd82b3959a6b98efd936bff32395bdbaf51b6fff33b"
+    },
+    "affectedDecoderCorrection169": {
+      "JDK": 17,
+      "affectedTasks": [
+        "directrg:testDebugUnitTest",
+        "directrg:assembleDebug",
+        "directrg:lintDebug"
+      ],
+      "result": "PASS",
+      "lintErrors": 0,
+      "lintWarnings": [
+        "existing OldTargetApi"
+      ]
+    },
+    "affectedDecoderCorrection173": {
+      "JDK": 17,
+      "tasks": [
+        "directrg:testDebugUnitTest",
+        "directrg:assembleDebug",
+        "directrg:lintDebug"
+      ],
+      "result": "PASS",
+      "unitTests": 3,
+      "failures": 0,
+      "errors": 0,
+      "lintErrors": 0,
+      "lintWarnings": [
+        "existing OldTargetApi"
+      ],
+      "currentLog": {
+        "record": "usb173-timing-build-lint.log",
+        "bytes": 5913,
+        "sha256": "7a270a1283c7065661f1981cba3aeca05255653a70694f3f3597182d680b1ae3"
+      },
+      "currentTests": {
+        "record": "usb173-timing-host-tests.xml",
+        "bytes": 820,
+        "sha256": "1ad925290b3693a8b5fbb3e065f4766d073aaf5019a9a89adb123985d780bcbf"
+      },
+      "currentLint": {
+        "record": "usb173-timing-lint.xml",
+        "bytes": 1891,
+        "sha256": "0a87e91fc2b9bdaa03466decd5a7ceb8c7d5fb7116f9d346683200161eac85aa"
+      }
+    },
+    "affectedRGInterruptedCleanup176": {
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "lintErrors": 0,
+      "lintWarnings": [
+        "OldTargetApi"
+      ],
+      "proof": {
+        "record": "review176-host-proof.json",
+        "bytes": 2531,
+        "sha256": "1e14dd218742fe4d0e4b3c50ee60ac895157741776be1cd5593dbc0354cb1af2"
+      },
+      "unrelatedSuitesRerun": false
+    }
+  },
+  "APKs": [
+    {
+      "package": "com.code2hack.eyebrowse.projector.directhost.r5",
+      "bytes": 2518061,
+      "sha256": "d87df5bb827855f8a46a39a23ba464aa582c3ba130cbda777d41543512794b2b",
+      "signatureVerified": true,
+      "applicationIdManifestVerified": true,
+      "installationState": "R5_IDENTITY_WHOLE_SIGNED_BYTES_USER0_UID10445_QUALIFIED163_USED_UNCHANGED167"
+    },
+    {
+      "package": "com.code2hack.eyebrowse.projector.directrg.r3",
+      "bytes": 2559958,
+      "sha256": "fb0d2036af77ba2d4cb1bfecc403659613041113837d8f40c829135ac979e35b",
+      "signatureVerified": true,
+      "installationState": "REVIEW176_FULL_INSTALLED_BYTES_MATCH_SHORT_STOP_RECONNECT_PASSED",
+      "signerCertificateSHA256": "e372f80243affb0fd2462d4c90f8aede64a9ffb683cebad6c517d73eacc6a963"
+    },
+    {
+      "package": "com.code2hack.eyebrowse.projector.directrg.r3.probe4",
+      "bytes": 38734,
+      "sha256": "0e46832d5d384d46ee2faff60184a02458ecd71587f9b606cffc1b1bbc4e0151",
+      "signatureVerified": true,
+      "signerCertificateSHA256": "e372f80243affb0fd2462d4c90f8aede64a9ffb683cebad6c517d73eacc6a963",
+      "applicationIdVerifiedBy": "apkanalyzer",
+      "installationState": "PREVIOUSLY_QUALIFIED_INSTALLED_PACKAGE_USED_WITHOUT_UPDATE167"
+    }
+  ],
+  "compiledSources": [
+    {
+      "path": "experiments/fold6-rg-projector/directhost/src/main/AndroidManifest.xml",
+      "sha256": "f9bf3e867598107954702201bb44eaaf33127912b146a8dcef7b6edad8df5ecc",
+      "bytes": 804
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directhost/src/main/kotlin/com/code2hack/eyebrowse/projector/directhost/FixtureActivity.kt",
+      "sha256": "21470c6067702406cc2c410f8efcfbb89805e9976ad307d6fa39eb71b29b1ad7",
+      "bytes": 2414
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directhost/src/main/kotlin/com/code2hack/eyebrowse/projector/directhost/HostActivity.kt",
+      "sha256": "d198ad8bfdcc9777cd2471cde41c39b421df2ab8c8d919b977b057961f2d49f8",
+      "bytes": 1822
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directhost/src/main/kotlin/com/code2hack/eyebrowse/projector/directhost/ShellMain.kt",
+      "sha256": "e049161b6b56c902c3f879c6a9ccb840508fac8578cabe49cdd89ef32d50263d",
+      "bytes": 11760
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directhost/src/main/res/values/strings.xml",
+      "sha256": "e3d62975aea53e8b6c67bf921750179df51800ce00a135380885f85f4ad8f396",
+      "bytes": 294
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directhost/src/main/res/xml/no_backup.xml",
+      "sha256": "4fb44914d317d8badcea48574f45c90ad0dcc65ba15d986fa32afdd9d29919b7",
+      "bytes": 305
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/androidTest/kotlin/com/code2hack/eyebrowse/projector/directrg/ProjectionInstrumentation.kt",
+      "sha256": "96de3c3e70e83429b959d2779cf8d59800d62d37a7b447e64d04a7658e81e3dd",
+      "bytes": 9470
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/main/AndroidManifest.xml",
+      "sha256": "c9958c4b3ed4be80dfa0fbff6dd19b0dda2b14edbdf9a8c0a2b504c4f98c21ab",
+      "bytes": 726
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/main/kotlin/com/code2hack/eyebrowse/projector/directrg/ProjectionSession.kt",
+      "sha256": "71275e336fbf3b5f3d2f2de86a118d5b5dfe425fb92c3e47c4d0a975f3fa6373",
+      "bytes": 8388
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/main/kotlin/com/code2hack/eyebrowse/projector/directrg/ReceiverActivity.kt",
+      "sha256": "298a6c7cc96d8b2cc05ed27d94a0ae5095038d85ca098b3b6e7f2bf60f07c8e8",
+      "bytes": 5656
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/main/kotlin/com/code2hack/eyebrowse/projector/directrg/SurfaceDecoder.kt",
+      "sha256": "f13233b47b45fe5b6657887b1621618097f4165d420f34f6ecf677f1b84bbadd",
+      "bytes": 4098
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/main/res/values/strings.xml",
+      "sha256": "6432976bec7df93d0fec72b14f746bda5ce47f185604e7b72853335ab7ffe1dc",
+      "bytes": 369
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/main/res/xml/no_backup.xml",
+      "sha256": "4fb44914d317d8badcea48574f45c90ad0dcc65ba15d986fa32afdd9d29919b7",
+      "bytes": 305
+    },
+    {
+      "path": "experiments/fold6-rg-projector/protocol/src/main/AndroidManifest.xml",
+      "sha256": "571f2735faf5e857752ee057ac8ef63425576a721616c60b86ee5d4c0a2d682f",
+      "bytes": 13
+    },
+    {
+      "path": "experiments/fold6-rg-projector/protocol/src/main/kotlin/com/code2hack/eyebrowse/projector/protocol/Tls.kt",
+      "sha256": "b440f88c8f52100ec317e2adea7d9335959fec590d957010b5d678dcc903877a",
+      "bytes": 2685
+    },
+    {
+      "path": "experiments/fold6-rg-projector/protocol/src/main/kotlin/com/code2hack/eyebrowse/projector/protocol/Wire.kt",
+      "sha256": "06b8c5ed27a35c0bbeb0c606cb5bb3b3ee09e4bde9a98f24d0ad2c565539e657",
+      "bytes": 6068
+    },
+    {
+      "path": "experiments/fold6-rg-projector/protocol/src/test/kotlin/com/code2hack/eyebrowse/projector/protocol/TlsTest.kt",
+      "sha256": "ee44fc84fda1062089a6988592535ea69d821b6da504ce72b22634ededbf77b3",
+      "bytes": 5618
+    },
+    {
+      "path": "experiments/fold6-rg-projector/protocol/src/test/kotlin/com/code2hack/eyebrowse/projector/protocol/WireTest.kt",
+      "sha256": "df5f8328c5b89cabcdf7bc4aa7d6c5ee811d582fda0851c8f5c450c83dbd673c",
+      "bytes": 3808
+    }
+  ],
+  "preservationCuts": [
+    {
+      "package": "com.code2hack.eyebrowse.phone",
+      "state": "PRESERVED_AND_HOST_RESTORE_VERIFIED",
+      "archiveSHA256": "9f2915cb5a3d7f93d9196d1d0923da4c2aeea5f4ad1f22955b61277514bc15e5",
+      "archiveBytes": 17326574,
+      "regularFiles": 612,
+      "socketMetadataOnly": 0,
+      "stableBeforeAfter": true,
+      "archiveReturncode": 0,
+      "sqliteChecksOK": 4,
+      "cut": "Earlier retained verified capture"
+    },
+    {
+      "package": "com.code2hack.eyebrowse.rg",
+      "state": "PRESERVED_AND_HOST_RESTORE_VERIFIED",
+      "archiveSHA256": "33ad15676bef22f7fce79c458fd7285abb8df6756def2bd7703a0e99bc76b0c7",
+      "archiveBytes": 38898176,
+      "regularFiles": 1129,
+      "socketMetadataOnly": 1,
+      "stableBeforeAfter": true,
+      "archiveReturncode": 1,
+      "sqliteChecksOK": 4,
+      "cut": "Earlier retained verified capture"
+    },
+    {
+      "package": "com.code2hack.eyebrowse.rg.chromium",
+      "state": "PRESERVED_AND_HOST_RESTORE_VERIFIED",
+      "archiveSHA256": "7d2591b650e8f4f1805762b28768714450c6e88441b5536e7896d5257c8701c3",
+      "archiveBytes": 1046209024,
+      "regularFiles": 1542,
+      "socketMetadataOnly": 1,
+      "stableBeforeAfter": true,
+      "archiveReturncode": 1,
+      "sqliteChecksOK": 11,
+      "cut": "Earlier retained verified capture"
+    },
+    {
+      "package": "com.code2hack.eyebrowse.rg.chromium",
+      "state": "PRESERVED_AND_HOST_RESTORE_VERIFIED",
+      "archiveSHA256": "fb3b00e5bff882444afba861c08be8ab170d84c048e99b893aba9d3f09266232",
+      "archiveBytes": 1050407936,
+      "regularFiles": 1542,
+      "socketMetadataOnly": 1,
+      "stableBeforeAfter": true,
+      "archiveReturncode": 1,
+      "sqliteChecksOK": 11,
+      "cut": "New coherent event095 raw007, verified before installs",
+      "deviceArchiveSHA256": "fb3b00e5bff882444afba861c08be8ab170d84c048e99b893aba9d3f09266232",
+      "manifestSHA256": "399a1de5d8709aac0ae10a25172aa470b3f869067a262bb47420ce61ccb7610c"
+    }
+  ],
+  "physical": {
+    "projectorPackagesInstalled": null,
+    "correctedPhoneHostR2Installed": false,
+    "currentRG3InstalledAndByteBound": true,
+    "screenHelperInvocations": 5,
+    "credentialReads": 0,
+    "smoke003": {
+      "observedStreamingMs": 80043,
+      "tls": "TLSv1.3",
+      "protocol": "5.0.1",
+      "receivedPackets": 2109,
+      "changingPackets": 2109,
+      "rendered": 2109,
+      "receivedFps": 25.928295705309814,
+      "renderedFps": 25.928295705309814,
+      "networkRoundTripP95Ms": 189.101562,
+      "legacyRenderDelayMetric": "INVALID_INCOMPATIBLE_TIMESTAMP_VALUE_NOT_ACCEPTED",
+      "legacyReportedReadToRenderP95Ms": 1336987907.051782,
+      "decoder": "c2.qti.avc.decoder",
+      "decoderFormat": "{crop-right=479, max-height=2025, sar-width=1, color-format=2130708361, mime=video/raw, hdr-static-info=java.nio.HeapByteBuffer[pos=0 lim=25 cap=25], priority=0, color-standard=4, feature-secure-playback=0, color-transfer=3, sar-height=1, crop-bottom=639, max-width=3840, crop-left=0, width=480, color-range=2, crop-top=0, rotation-degrees=0, frame-rate=30, height=640}",
+      "encoderName": "NOT_CAPTURED",
+      "virtualDisplayId": 18,
+      "display": {
+        "drawableWidth": 480,
+        "drawableHeight": 640,
+        "rotation": 0,
+        "videoWidth": 480,
+        "videoHeight": 640,
+        "fitLeft": 0,
+        "fitTop": 0,
+        "fitWidth": 480,
+        "fitHeight": 640
+      },
+      "visibleContent": "Public Samsung DeX onboarding; Start not pressed; normal Display settings page not visually established",
+      "hostTransmittedFrames": 2124,
+      "directPeerAddressBinding": "Observed in private source-bound TLS/session records; not inferred from endpoint configuration"
+    },
+    "thirdPartyVideo": "PUBLIC_VENDOR_UI_RENDERED_NORMAL_SETTINGS_PAGE_INCOMPLETE",
+    "rgSurfaceDecode": "SMOKE003_REAL_HARDWARE_SURFACE_DECODE_OBSERVED",
+    "harmlessVisibleTapEffect": "NOT_PASSED_PRODUCT007_GENERATED_EVENT_NO_FIXTURE_COUNTER_OR_IMAGE_EFFECT",
+    "fiveMinuteNoPCGateway": "PENDING_NO_COMPLETED_ACCEPTANCE_INTERVAL",
+    "onDeviceAuthenticationRefusal": "SECURITY009_CERTIFICATE_ABSENT_TLS_REFUSAL_ON_HOST3_HOST4_PENDING",
+    "onDeviceLifecycle": "SMOKE003_SECOND_STREAM_FAILED_CURRENT_FIX_UNEXECUTED",
+    "measuredMovingFPSAndLatency": "SMOKE003_FPS_OBSERVED_LEGACY_LATENCY_INVALID_RG3_METRIC_UNMEASURED",
+    "audio": "DISABLED_INTERMEDIATE",
+    "opticalHeadIMEAcousticAcceptance": "NOT_CLAIMED",
+    "blocker": "Video014 actual fixture pixels/focus/direct producers qualified; pre-Go TimeoutExpired, remote Go/start unknown; owned teardown/native end-state unavailable. Both previously bound debug SSH PIDs absent at later local host cut. Device actions stopped; Manager has exact bindings. No route or command replay.",
+    "componentNegativesRetained": [
+      "Initial RG decor/insets NullPointerException",
+      "Initial API32 PKCS12 context IOException",
+      "Smoke002 final native state contradicted earlier relock observation",
+      "Smoke003 following stream zero frames after stock cleanup unlinked shared server JAR",
+      "Smoke003 legacy render-delay value invalid",
+      "Read-only native status timeout25s, one reconciliation physical-guard unavailable60s",
+      "Host r2 streamed install returned1 without Android failure code; package reconciliation rejected before ADB because pinned SSH PID absent",
+      "Replacement112 selected registration absent; one host-connect return0 but explicit failed-to-connect text; no retry",
+      "Private event112 intent lacked explicit file/directory fsync before connect; gap retained, helper corrected with host-only cases",
+      "First five-minute001 admitted journal failed at initial control master-JAR hash command before credential/control/product work; result buffers unavailable; journal consumed without replay",
+      "Five-minute002 native SystemUI ownership guard rejected before keypad XML/credential/work; current/expected focus-token-state pair not retained; exact cause unproved",
+      "Product007 automated on-RG event/write1 but actual fixture counter/image0; no Owner hardware touchpad test",
+      "Video008 own fixture launch Permission Denial/SecurityException; exact failing subpredicate/cause unretained",
+      "Video012 own process guard rejected before fixture Activity command; no Go/input/measurement",
+      "Host4 install returned0 but strict success classifier rejected; normal stdout lost and UNKNOWN",
+      "Installer072 final native sequence unlocked/locked/unlocked after one sleep; actor/cause unassigned",
+      "Reconcile144 package read returned70 at unsupported whence option before package data",
+      "Video014 pre-Go TimeoutExpired with selected geometry-versus-Go boundary unretained; only-owned teardown/native state unavailable and both debug tunnel PIDs locally absent"
+    ],
+    "lastKnownInstalledPackageCountBeforeUncertainInstall": 8,
+    "hostR2PresenceMeaning": "Complete event114 user0 query absent; old installer transaction still UNKNOWN",
+    "currentPhoneHostR3InstalledAndByteBound": true,
+    "fiveMinute001": {
+      "state": "FAILED_OR_UNKNOWN_NO_RETRY",
+      "credentialReadState": "NOT_ATTEMPTED",
+      "newJournalAdmitted": true,
+      "phase": "ACTOR_QUALIFICATION",
+      "guardCode": "ADB_OPERATION_FAILED",
+      "actualBoundary": "OwnedControl initial stock-JAR SHA command; before SCID/process/forward construction",
+      "productWorkReached": false,
+      "measurementReached": false,
+      "exactDeviceCommandStdoutStderr": "NOT_RETAINED_BY_IMMUTABLE_HELPER",
+      "specificFilesystemOrTransportCause": "NOT_PROVEN",
+      "hostOnlyExactClassFailureCheckPassed": true,
+      "hostOnlyCheckActualDeviceNetworkLoaderInputCalls": 0
+    },
+    "currentRGProbe2InstalledAndByteBound": true,
+    "firstContinuationPrepared": "w67-five-minute002 executed once, failed before credential/keypad XML/product work; consumed, not replayable",
+    "fiveMinute002": {
+      "state": "FAILED_OR_UNKNOWN_NO_RETRY",
+      "credentialReadState": "NOT_ATTEMPTED",
+      "submissionIntent": false,
+      "workRan": false,
+      "workReturncode": "ABSENT",
+      "relockVerified": true,
+      "ownedControlSettled": true,
+      "guardCode": "NATIVE_SYSTEMUI_OWNERSHIP_REQUIRED",
+      "failurePhase": "NATIVE_KEYPAD",
+      "actualKeypadXMLDumpCalls": 0,
+      "noPCMeasurementStarted": false,
+      "productHostOrVDCreated": false,
+      "actualFailureContextPair": "NOT_RETAINED_CAUSE_UNPROVED",
+      "exactGuardDummyCasesPassed": 3,
+      "dummyCasesActualProductionNativeDeviceOrCredentialCalls": 0
+    },
+    "nativeContext118": {
+      "scope": "Single credential-free observation, not auth retry",
+      "state": "FAILED_OR_UNKNOWN_NO_REPLAY",
+      "initialSleep223Calls": 1,
+      "wake224Calls": 0,
+      "finalSleep223Calls": 0,
+      "credentialXMLAuthEntryOrProductCalls": 0,
+      "requestedS1S2PairObtained": false,
+      "exact032PredicateCause": "UNKNOWN",
+      "initialStatusTotalCoarseMs": 21200,
+      "initialNativeShellCoarseMs": 20300,
+      "initialParseCoarseMs": 0,
+      "afterInitialSleepAndFinalBeforeNativeShellTimeoutMs": 25000,
+      "observerHostCasesPassed": 13,
+      "comparisonHostCasesPassed": 3,
+      "hostCasesActualProductionIO": 0,
+      "readonlyComponents": [
+        {
+          "component": "trust",
+          "returned": true,
+          "selectedCommandCoarseMs": 2400
+        },
+        {
+          "component": "power",
+          "returned": true,
+          "selectedCommandCoarseMs": 900
+        },
+        {
+          "component": "window-policy",
+          "returned": true,
+          "selectedCommandCoarseMs": 800
+        },
+        {
+          "component": "display-geometry",
+          "returned": true,
+          "selectedCommandCoarseMs": 1000
+        },
+        {
+          "component": "window-displays",
+          "returned": true,
+          "selectedCommandCoarseMs": 4500
+        },
+        {
+          "component": "window-owners",
+          "returned": false,
+          "guardCode": "ADB_OPERATION_UNKNOWN",
+          "selectedCommandCoarseMs": 10000
+        },
+        {
+          "component": "systemui-uid",
+          "returned": true,
+          "selectedCommandCoarseMs": 1400
+        }
+      ],
+      "allComparisonComponentsReturned": false,
+      "comparisonUsedForAuthOrFinalNativeUpgrade": false,
+      "speculativeCorrectionPrepared": false
+    },
+    "nativeFocused119": {
+      "scope": "Three distinct once-only read purposes under READ_ONLY119; stopped after second purpose ownership rejection",
+      "state": "FAILED_OR_UNKNOWN_NO_REPLAY",
+      "hostCasesPassed": 43,
+      "hostCasesProductionIO": 0,
+      "installedHelp": {
+        "calls": 1,
+        "selectorHelpValidated": true,
+        "commandCoarseMs": 1000
+      },
+      "freshFocusedWindowQualification": {
+        "calls": 1,
+        "returncode": 0,
+        "commandCoarseMs": 6000,
+        "completeExpectedFrames": true,
+        "freshDisplay0User0StrictHexFocusMatchedSingleReturnedWindow": true,
+        "exactSystemUiOwnershipQualified": false,
+        "fixedRejectionCode": "CURRENT_SYSTEMUI_OWNER_NOT_EXACT",
+        "exactOwnershipSubpredicate": "NOT_RETAINED"
+      },
+      "compactCompleteNativeStatusCalls": 0,
+      "newCompleteNativeSampleObtained": false,
+      "latestNativeEndState": "UNKNOWN_RETAINED_FROM118",
+      "priorNativeClientSettlement": "UNKNOWN",
+      "powerInputControlAuthCredentialXMLMediaAppStoreOrRouteCalls": 0,
+      "rawNativePayloadRetainedOrExported": false,
+      "statusOrCallerCandidatePrepared": false,
+      "liveCallerImmutable086AndThreeGuardsUnchanged": true,
+      "originalConsumed002BytesAndFullNodeMetadataUnchanged": true,
+      "actualPurposeRetryOrFallback": false
+    },
+    "nativeReadClassification120": {
+      "scope": "Separate read-data completeness and unchanged authentication eligibility; one new read-only capture",
+      "hostClassificationCasesPassed": 53,
+      "newPreparedResponseCasesPassed": 11,
+      "earlier53CaseProofPreservedAndFunctionsASTBoundWithoutRerun": true,
+      "hostCasesProductionImportsSDKDeviceNetworkCredentialInputCalls": 0,
+      "completeForeignFocusIsReadDataAndAuthIneligible": true,
+      "missingDuplicateOrAmbiguousDataStillFails": true,
+      "actualSelectedCaptureCalls": 1,
+      "actualCaptureSourceSHA256": "4cf747a168aaeb3924472e2e54d38877b192741acb2b0d7e11f2f48cda99ded3",
+      "actualSelectedCommandCoarseMs": 2900,
+      "actualSelectedCommandReturncode": 0,
+      "actualStderrPresent": true,
+      "actualStderrCause": "UNKNOWN_UNRECOVERABLE_RAW_CONTENT",
+      "actualStdoutFramesAndNativePredicatesParsed": false,
+      "actualFixedRejectionCode": "SELECTED_COMMAND_STDERR_NOT_EMPTY",
+      "completeCurrentNativeCutQualified": false,
+      "actualOwnershipSubpredicates": "UNKNOWN_UNRETAINED_AFTER_EARLY_STDERR_REJECTION",
+      "latestNativeEndState": "UNKNOWN",
+      "olderNativeProducerSettlement": "UNKNOWN",
+      "powerControlAuthCredentialInputXMLAppMediaVDStoreOrRouteCalls": 0,
+      "rawPayloadRetainedOrExported": false,
+      "preparedResponseObserverSHA256": "4a573f108f4a05150ac7e4043c56b72242cb4a484432cd8b7189568ffa97b585",
+      "preparedResponseDelta": "Retain fixed safe stderr and framed-native diagnostics before final rejection; all nonempty stderr still rejects qualification",
+      "preparedObserverActualCaptures": 0,
+      "preparedObserverInstalledOrActivated": false,
+      "liveCallerImmutable086AndThreeGuardsUnchanged": true,
+      "originalConsumed002BytesAndFullNodeMetadataUnchangedAt039": true,
+      "actualCaptureRetry": false,
+      "actual037CauseEstablished": false
+    },
+    "credentialFreeOwnedFixture": {
+      "product003": {
+        "virtualDisplayId": 21,
+        "encoder": "c2.qti.avc.encoder",
+        "decoder": "c2.qti.avc.decoder",
+        "publicPixelsActuallyObserved": "OWNED_MOTION_VISIBLE_TAPS_0",
+        "closedSessionProtocol": "TLSv1.3",
+        "directNativeSocketEndpoints": "PHONE_LAN_TO_RG_LAN",
+        "transmittedFrames": 2379,
+        "sessionElapsedMs": 114688,
+        "touches": 0,
+        "scheduledGoOrFiveMinuteStarted": false,
+        "ordinaryPhoneWake224Calls": 0
+      },
+      "product004": {
+        "virtualDisplayId": 22,
+        "encoder": "c2.qti.avc.encoder",
+        "decoder": "c2.qti.avc.decoder",
+        "publicPixelsActuallyObserved": "OWNED_MOTION_VISIBLE_TAPS_0",
+        "capturedStderr": "EMPTY",
+        "completeQueriesEachHaveUnclassifiedSourceOrFormatLine": true,
+        "endpointPredicatesQualified": false,
+        "actualRawValuesOrCause": "UNKNOWN_NOT_RETAINED",
+        "scheduledGoOrTouchOrFiveMinuteOrHostStop": false,
+        "selectedCommandReturncode": 0,
+        "sourceQueryReturncodes": [
+          0,
+          0
+        ]
+      }
+    },
+    "currentPhoneHostR4InstalledAndByteBound": true,
+    "currentRGProbe3InstalledAndByteBound": true,
+    "video014": {
+      "setup": "OWNED_FIXTURE_FOCUS_GEOMETRY_DIRECT_NATIVE_ENDPOINTS_AND_ACTUAL_PUBLIC_IMAGE_QUALIFIED",
+      "VD": 28,
+      "encoder": "c2.qti.avc.encoder",
+      "decoder": "c2.qti.avc.decoder",
+      "actualVisibleTapsBefore": 0,
+      "scheduledTouches": 0,
+      "measurementStart": "UNKNOWN_NO_COMPLETED_GO_RETURN_OR_STARTED_MARKER",
+      "genuine300sOrHostStop": "NOT_PASSED",
+      "PhonePowerCallerOrCredentialCalls": 0,
+      "currentOwnedSettlementAndNativeEndstate": "UNKNOWN"
+    }
+  },
+  "teardown": {
+    "ownedBridgeProcessesStarted": 3,
+    "ownedProjectorVirtualDisplaysCreated": 1,
+    "smoke002BridgeAnd44367Absent": true,
+    "gracefulHostStopClaimed": false,
+    "sharedDebugServicesReset": false,
+    "credentialFreeReconciliationSleepCalls": 1,
+    "credentialFreeReconciliationLoaderCalls": 0,
+    "lastNativeFold6": {
+      "locked": true,
+      "secure": true,
+      "keyguardShowing": true,
+      "wakefulness": "Dozing",
+      "logicalDisplay0State": "OTHER_COMPLETE_STATE",
+      "sampledOnly": true
+    },
+    "oldSmoke002BytesAndNodeMetadataUnchanged": true,
+    "rgLatestOwnTelemetry": {
+      "state": "CONNECTION_FAILED",
+      "packets": 0,
+      "rendered": 0,
+      "touchesSent": 0,
+      "tls": null,
+      "errorType": null
+    },
+    "rgCurrentOwnerResourceReturn": "Old tab/hook/resource obligations unresolved; no overlay or assumed return",
+    "oldWorker64State": "Unresolved historical tab/hook/resource obligations retained",
+    "smoke003BridgeSessionAnd44367Absent": true,
+    "smoke003VD18FinalAbsence": "NOT_SEPARATELY_CAPTURED",
+    "lastNativeCut": "158: post-owned-teardown two complete secure user0 locked/showing/Dozing/display0OFF samples; no continuous-state or old-producer settlement claim",
+    "backupClientsActive": 0,
+    "backupClientSignals": 0,
+    "fiveMinute001": {
+      "newProductBridgeOrVirtualDisplays": 0,
+      "ownedRGPackageStoppedOnFailure": true,
+      "ordinaryCredentialFreeSleep223Calls": 1,
+      "credentialLoaderOrNewCallerOrOwnedControlCallsDuringSettlement": 0,
+      "bothAfterAndSettledNativeLockedShowingDozingDisplay0Off": true,
+      "teardownError": null,
+      "oldRGObligationsStillUnresolved": true
+    },
+    "rgLatestOwnTelemetryMeaning": "Historical smoke003 follow-up telemetry; five-minute001 stopped the own RG package before product work and made no new receiver telemetry claim",
+    "lastSecureNativeFold6": {
+      "locked": true,
+      "keyguardShowing": true,
+      "wakefulness": "Dozing",
+      "logicalDisplay0State": "OFF"
+    },
+    "fiveMinute002": {
+      "productBridgeOrVirtualDisplaysStarted": 0,
+      "ownRGStopCommandCompleted": true,
+      "parentAdditionalCredentialFreeSleep223Calls": 0,
+      "threeFinalNativeCutsLockedShowingDozingDisplay0Off": true,
+      "callerRelockVerified": true,
+      "callerOwnedControlSettled": true,
+      "ownControlForwardCreated": 1,
+      "ownControlForwardRemoved": 1,
+      "localControlListenerAbsent": true,
+      "newKeypadXMLOrCredentialRead": 0,
+      "teardownError": null,
+      "resourceReturnOrOriginalAppStateClaim": false
+    },
+    "nativeContext118": {
+      "currentFinalNativeEndLockVerified": false,
+      "initialOrdinarySleepSendCompleted": true,
+      "nativeAfterInitialSleep": "UNVERIFIED_TIMEOUT",
+      "wakeAndFinalSleepInputs": 0,
+      "ownControlForwardCreated": 1,
+      "ownControlForwardRemoved": 1,
+      "localControlListenerAbsent": true,
+      "standardControlCloseEvidenceSeparate": true,
+      "nativeReadonlyRemoteClientSettlementAfterTimeout": "NOT_INDEPENDENTLY_ESTABLISHED",
+      "sourceAndGuardUnchanged": true,
+      "resourceReturnClaim": false
+    },
+    "credentialFreeProduct003": {
+      "state": "OWNED_MEDIA_AND_VD_ABSENT_TWO_LOCKED_SECURE_SHOWING_DOZING_CUTS",
+      "ordinarySleep223Calls": 1,
+      "logicalDisplay0AtThoseCuts": "DOZE",
+      "continuousStateClaim": false
+    },
+    "credentialFreeProduct004": {
+      "ownedRGStop": "COMPLETED",
+      "ownedBridgeStop": "TIMEOUT_UNKNOWN_NO_TERM_INTENT",
+      "ownedStockChildStop": "TIMEOUT_UNKNOWN_NO_TERM_INTENT",
+      "ownedFixtureStop": "INTENT_RETAINED_TIMEOUT_OUTCOME_UNKNOWN",
+      "ownedBridgeListenerDisplaySettlement": "UNKNOWN",
+      "finalNativeCuts": "UNAVAILABLE_BEFORE_CAPTURE",
+      "sleep223Calls": 0,
+      "currentNativeEndState": "UNKNOWN",
+      "localManagerPhoneTunnelPID": "ABSENT_AT_ONE_LOCAL_CUT_CAUSE_UNKNOWN",
+      "localWorkerRGDebugTunnelTuple": "MATCHED_KNOWN_PID_START_UID_CWD_AT_ONE_LOCAL_CUT",
+      "sharedServicesReset": false,
+      "deviceActionsStoppedPendingCapabilityDisposition": true
+    },
+    "historicalTotalsScope": "Legacy fields describe earlier checkpoint; per-case records are authoritative; no cumulative lifetime count inferred",
+    "reconciliation144": {
+      "packageCurrentInstalledBytes": "UNKNOWN_QUERY_FAILED_BEFORE_PACKAGE_DATA",
+      "before": "COMPLETE_SECURE_USER0_UNLOCKED_AWAKE",
+      "ordinarySleep223Calls": 1,
+      "twoCompleteLockedSecureShowingDozingCuts": true,
+      "credentialCallerOrWakeCalls": 0,
+      "noOwnedMediaSessionStarted": true,
+      "continuousStateClaim": false
+    },
+    "video014": {
+      "state": "TEARDOWN_OR_ENDSTATE_UNVERIFIED",
+      "verifiedTeardownSteps": 0,
+      "RGStop": "TIMEOUT_UNKNOWN_NO_REPLAY",
+      "PhoneBridgeStockFixtureListenerVD": "QUERY_OR_GUARD_FAILURE_UNKNOWN",
+      "finalNativeReads": "GUARD_FAILED_BEFORE_CAPTURE",
+      "sleep223Calls": 0,
+      "laterLocalManager137PID": "ABSENT",
+      "laterLocalWorker132cPID": "ABSENT",
+      "underlyingCause": "UNASSIGNED",
+      "resourceReturnClaim": false
+    },
+    "laterVideo014Settlement": {
+      "Phone": "Separate Worker148 own processes/fixture/VD plus Manager149 both-family port absence",
+      "RG": "Worker150 exact driver/mainRG3/Probe3 already absent before and after; whole signed APKs matched; zero TERM/force-stop",
+      "original014UnknownOutcomesUnchanged": true,
+      "oldWorker64ReturnUnknown": true
+    },
+    "surface021": {
+      "state": "OWN_MEDIA_AND_VD_ABSENT_TWO_LOCKED_SHOWING_ASLEEP_OR_DOZING_CUTS",
+      "PhoneWake224Calls": 0,
+      "PhoneSleep223Calls": 0,
+      "GoSubmissions": 0,
+      "PixelCopyRequests": 0,
+      "generatedTouches": 0,
+      "nativePreWakeReturncode": 73,
+      "nativePreWakeCompleteSourceStages": 6,
+      "nativePreWakeQualified": false,
+      "bothFinalStrictSecureEndCuts": true,
+      "continuousStateClaim": false
+    }
+  },
+  "privateEvidenceHashes": [
+    {
+      "record": "preservation-fold6-phone.json",
+      "sha256": "8284de682d2c83be184ed564eeafc898fcece5d47385debcd9babbaf8a62c6bc",
+      "bytes": 1545
+    },
+    {
+      "record": "preservation-rg-rg-raw003.json",
+      "sha256": "a6676ef46dc7660f657479c5b282107f933c525eb0b1efd078ddbf03b8b2cc60",
+      "bytes": 1670
+    },
+    {
+      "record": "preservation-rg-chromium-current005.json",
+      "sha256": "69da9637de7aa96b502819105b8cc6134ee122a7c74d3a8087fb6a8130eda096",
+      "bytes": 3078
+    },
+    {
+      "record": "chromium004-archive-vs-current-view.json",
+      "sha256": "5bcbb213af717b96a227470ca2a7e945145d208e77255e2a56b532a9b908b1f0",
+      "bytes": 183
+    },
+    {
+      "record": "preinstall-current006-mismatch.json",
+      "sha256": "3c66508c92025d886b5f5480352fd1b572d16abe56e5912559af8fbba8c43096",
+      "bytes": 964
+    },
+    {
+      "record": "current006-to008-classification.json",
+      "sha256": "ddeb9a2eaa864ef01df6410441c58731a82d80f7a43311fe2e6339ddf4486786",
+      "bytes": 937
+    },
+    {
+      "record": "rg-current008-route-status.json",
+      "sha256": "e54f67a81548beb2d3304bd601f54d42f7a41e198a6fe06765a7f481b9a8201f",
+      "bytes": 268
+    },
+    {
+      "record": "rg44235-bootstrap-connect009-intent.json",
+      "sha256": "0f4f48ee153f50dc2b49dfe75a72bab7a804b0361fe416867508612736f02239",
+      "bytes": 414
+    },
+    {
+      "record": "rg44235-bootstrap-connect009-result.json",
+      "sha256": "0de829677a47aef56f68d0182f626f2b975d9f714c49f584fcbc22dc25e94b25",
+      "bytes": 487
+    },
+    {
+      "record": "rg-current010-after-bootstrap-reconciliation.json",
+      "sha256": "e5b82ca7ef1ca54cb43cc68361b762b075af27b27d8ecbc5f9e10759151afa76",
+      "bytes": 425
+    },
+    {
+      "record": "checkpoint-readonly-end-state.json",
+      "sha256": "c4fcea28fe7a5f7c389c0d8ebe6a6a9984bf2c1929b3d449211eb85fbac7fc8e",
+      "bytes": 509
+    },
+    {
+      "record": "device-candidate-build008.log",
+      "sha256": "9b74e2e11a804737dc92ae44a994e4ca2d512ddf732a6c5ab3aa748af869eb37",
+      "bytes": 10777
+    },
+    {
+      "record": "rg-runtime-dependencies.txt",
+      "sha256": "8ef3cd6f24fbf9763a9e0298b84259ff93d61e3d210530fe273a13642584a1bf",
+      "bytes": 1047
+    },
+    {
+      "record": "first-physical-source-apk-capsule.json",
+      "sha256": "a55ca83a6dcc7f306ee78dbb865e3855a30eadddb14b0067d0e6af968461902d",
+      "bytes": 8121
+    },
+    {
+      "record": "first-physical-source-files.tar.gz",
+      "sha256": "31a82988f3a5cc11716dc52a20841bbf0188d8a3360c6830bf41b7c838a76337",
+      "bytes": 165978
+    },
+    {
+      "record": "event095-qualified-primary-route.json",
+      "sha256": "f56b7c86ffdfe9c8d1eb901b28b6ae1009dbee2ddd5d5bbd29b33235fb986f0b",
+      "bytes": 708
+    },
+    {
+      "record": "event095-complete-current-views.json",
+      "sha256": "8258a539d2d7deda3ed02eb3aa3a3e1be3e39fcdc7e2aacbecf6b9671c29121a",
+      "bytes": 1972
+    },
+    {
+      "record": "preservation-rg-chromium-verified007.json",
+      "sha256": "76c6caedeb5a7e7bc98d1cbfaabe379cb6cfec4a474dbb9d1a91be9d74129ef6",
+      "bytes": 3062
+    },
+    {
+      "record": "chromium007-before-after.json",
+      "sha256": "73a0964c16dfcfb26971a6f47adba37a68efae57a7bd4e11100540b56a631b9a",
+      "bytes": 305
+    },
+    {
+      "record": "chromium007-device-archive-hashes.json",
+      "sha256": "722502c4b3d239131545e5f32fb0816bed9e8a6b76e58d9eb8cdc0edb306d161",
+      "bytes": 200
+    },
+    {
+      "record": "chromium010-transfer-complete.json",
+      "sha256": "09d7e655d95490b7a3b151756dc0e65ecb9df7291c21845509fd0b118d39ee9e",
+      "bytes": 657
+    },
+    {
+      "record": "initial-apk-install-bindings.json",
+      "sha256": "8a2eabdf7d0d5f0fddc8752d06bd804213c6b7ecf5528a04677e21755e96edef",
+      "bytes": 1289
+    },
+    {
+      "record": "installed-apk-independent-bindings.json",
+      "sha256": "af1ef1b35fdfdaedad014e8e8d267f62aef4364ec79a063a4fa1628b634ec646",
+      "bytes": 1288
+    },
+    {
+      "record": "rg-r2-source-apk-capsule.json",
+      "sha256": "ae94b8bbaf309f07a341ab1f38be62f24372d867e6b34b63b304652eb368e0b8",
+      "bytes": 5285
+    },
+    {
+      "record": "diag1-install.json",
+      "sha256": "13d481ff9f522aeb46883583e079b585f358f468e2b2980e50aaf63acc8f14cd",
+      "bytes": 326
+    },
+    {
+      "record": "readonly-rg-diag1-installed-binding001.json",
+      "sha256": "71bf1d71e0869d89eb11bba3366fd2365060d8fed56df96a4bfcb174279ae61c",
+      "bytes": 1045
+    },
+    {
+      "record": "smoke001-summary.json",
+      "sha256": "b53385d0466813ec07050d2d1e641c65b6b90ce491925ef126e04ee281860a73",
+      "bytes": 496
+    },
+    {
+      "record": "smoke001-actual-teardown.json",
+      "sha256": "e859ee05cd94ee5b7205a80fd25a8ab429e508d63f5f0aabdd5846ddb76b70b1",
+      "bytes": 301
+    },
+    {
+      "record": "smoke002-summary.json",
+      "sha256": "584a98577ba7545771753eb995e8b24f304195421d1b276102bab917e949db95",
+      "bytes": 618
+    },
+    {
+      "record": "smoke002-actual-teardown.json",
+      "sha256": "b558939e14d10409e2c93fa384810d13f53743f53170643e88eed9162a20a0ba",
+      "bytes": 256
+    },
+    {
+      "record": "screen-attempt-w67-smoke001.json",
+      "sha256": "a9812200a1dd8b1ad57582d3a993de5e9d71e7a2eaabfed894285c2884593077",
+      "bytes": 1256
+    },
+    {
+      "record": "screen-attempt-w67-smoke002.json",
+      "sha256": "562ca05413cc9b231592f1c876955661fc56198f78a4f5850d5b523dd78e7478",
+      "bytes": 1320
+    },
+    {
+      "record": "tls-context001-container-integrity.json",
+      "sha256": "e2a0e0a144b21b0e53439210b9a6bf607e05a27efaabda173841cfbeaee6789e",
+      "bytes": 575
+    },
+    {
+      "record": "receiver-p12-compat001-result.json",
+      "sha256": "fae1207932c8245dbb23f3b74b6c3bf94dac39317378d0fbc2897abea637b87a",
+      "bytes": 639
+    },
+    {
+      "record": "tls-context002-driver.txt",
+      "sha256": "3724f2e2f12269ba4cb3eaca73ee2f1e9fe6c3aac40958f7a088beea62c98a1f",
+      "bytes": 279
+    },
+    {
+      "record": "endstate101-credential-free-intent.json",
+      "sha256": "b990130f6e3bb30e540c198ee0045947448411632c6baf5b41a2a9194d046a57",
+      "bytes": 875
+    },
+    {
+      "record": "endstate101-credential-free-result.json",
+      "sha256": "0f3eb4772092446ca8ba1be340a90a078ad5dd0ff18abc98be1259e2370e5e97",
+      "bytes": 1694
+    },
+    {
+      "record": "rg-r2-crash-correction-build.log",
+      "sha256": "b2f9078732f6008a01d566532ba71d113b6caeef416ed5bf809b62844716f6cc",
+      "bytes": 7534
+    },
+    {
+      "record": "tls-diagnostic-test-build.log",
+      "sha256": "0b674b356953d34c33826aef78a7c4f70eb9f9020dd3928057d0ce614e655c61",
+      "bytes": 5440
+    },
+    {
+      "record": "rg-diag1-current-build.log",
+      "sha256": "f6d8772f17235cf6dd1297f811509551697f2a92670ce4ef2d1e7a89a706b34a",
+      "bytes": 7732
+    },
+    {
+      "record": "diag1-current-source-apk-capsule.json",
+      "sha256": "cb1651a0e0942e7c6cc760bd8433ff9b0c187d94b37179da9424bf13348ee021",
+      "bytes": 7595
+    },
+    {
+      "record": "diag1-current-source-files.tar.gz",
+      "sha256": "fd36c128ce72bec1294889e8e69985f1bbc02f0e67a462b6b1f3f92a035d4e7f",
+      "bytes": 19225
+    },
+    {
+      "record": "backup106-owned-client-settlement.json",
+      "sha256": "00af2ef63f6477ffce4924c576618236dd98e32e18c0173c0d0801fce3f7d8aa",
+      "bytes": 347
+    },
+    {
+      "record": "active106-helper-dependency-retirement.json",
+      "sha256": "5b397d5d83e36bd309977429aba51c73aa2ae1f89b3e92ea2a5493eff348962c",
+      "bytes": 349
+    },
+    {
+      "record": "pre-smoke003-bindings.json",
+      "sha256": "95165a5319c63c0f46e010b9f00318e9be07b22705b35d041167fec83498fd7c",
+      "bytes": 1606
+    },
+    {
+      "record": "smoke003-summary.json",
+      "sha256": "822f1a89924f1abfa6830721a801e139cba7e86fccdec14218022e9e78b049c2",
+      "bytes": 2421
+    },
+    {
+      "record": "smoke003-on-rg-result.json",
+      "sha256": "ebddf0a289860186a365213c6a442c5984e6acf52f9f543736dbfbec5e632624",
+      "bytes": 11965
+    },
+    {
+      "record": "smoke003-frame-observation.json",
+      "sha256": "034ef7a8967054dd089d3e45608dd7dc664ac9d7b52edc24f1c15e7d613e2dd1",
+      "bytes": 457
+    },
+    {
+      "record": "smoke003-owned-settlement-and-diagnostics.json",
+      "sha256": "6c40babff8d9a73fa2fecbe2701ba50b33f128d777d492afafa306aedfaccc34",
+      "bytes": 485
+    },
+    {
+      "record": "screen-attempt-w67-smoke003.json",
+      "sha256": "48a6666d36addfe02bec47787c8170e6984899b7f3f194b75c1298c1f53cd522",
+      "bytes": 1538
+    },
+    {
+      "record": "pre-five-minute001-bindings.json",
+      "sha256": "316cf37c053219180a85eb7b7b8f49cbf7209be3257b29039bee42693e9fd464",
+      "bytes": 1356
+    },
+    {
+      "record": "r3-provision-complete.json",
+      "sha256": "061eb505eb670fc14e6ff6311b65d084aa9eb709de32af8076321758fe57c42b",
+      "bytes": 1030
+    },
+    {
+      "record": "r3-current-source-apk-capsule.json",
+      "sha256": "98c88ec8cd6e5e032346137d2bc98812ec6a6a838ba9b19388a1f5ed4d63d2fc",
+      "bytes": 6743
+    },
+    {
+      "record": "hostr2-rg3-current-source-apk-capsule.json",
+      "sha256": "e2247c70424843126594e81430c5c5d52e2b14a8010929151d5537f287e61c4a",
+      "bytes": 7123
+    },
+    {
+      "record": "hostr2-rg3-encoder-source-apk-capsule.json",
+      "sha256": "02c2a8536c853937ae6537a4a3f1fa9b85e977ea2ba34315f098d637befa2b6a",
+      "bytes": 7274
+    },
+    {
+      "record": "hostr2-rg3-encoder-source-files.tar.gz",
+      "sha256": "1051c35c4181319e7dece965e30a563126e617a46fb6d492c85c56762787be60",
+      "bytes": 20471
+    },
+    {
+      "record": "scrcpy-self-unlink-root-cause.json",
+      "sha256": "f57482cbf22cfeb6588df773eaecce8113fe93ba6f2158a9aa4c94f1edd459c7",
+      "bytes": 1091
+    },
+    {
+      "record": "hostr2-readonly-status-timeout001.json",
+      "sha256": "d5a00811435acaae10c670e2d11278ef8f99a7170d9ac2582cec535e19eba36a",
+      "bytes": 536
+    },
+    {
+      "record": "physical-guard-757f79d0de2e4f859a41078e6b739c5b.json",
+      "sha256": "a375efdbf4d9686969bb2c9a46e45cb12b409e560b7355fcb1d6d469483b4bcd",
+      "bytes": 451
+    },
+    {
+      "record": "phone-capability-gate-after-smoke003.json",
+      "sha256": "87a9c23a32bd5c59636caa72e29ac653780729e1eceb7084f8e98bebaa08fe3e",
+      "bytes": 899
+    },
+    {
+      "record": "rg-r3-current-build.log",
+      "sha256": "ab5009c6f93118a698bb7ca58b98a68e584a0fc9f465bb75c59254872dda57a8",
+      "bytes": 7501
+    },
+    {
+      "record": "host-r2-session-copy-build.log",
+      "sha256": "2d8a5267229710bde47d1748620cf457346aa7d6e0b38eec6f5fea8cb724ef5a",
+      "bytes": 6117
+    },
+    {
+      "record": "host-r2-encoder-observation-build.log",
+      "sha256": "a2551a1bf5a2199e3570a8897a94030623c85b2b6e4632e4056150cee0fbe506",
+      "bytes": 5725
+    },
+    {
+      "record": "checkpoint023-pushed-source-binding.json",
+      "sha256": "28ff1b1a98980658e54d6ed1249589495281523696061e2d8218d5d8a964d13a",
+      "bytes": 1389
+    },
+    {
+      "record": "event109-existing-primary-qualification-intent.json",
+      "sha256": "5ec7d1b449dec2c20a49e2673075d349df6d0ed9540b9096af73c627522d288d",
+      "bytes": 290
+    },
+    {
+      "record": "event109-existing-primary-qualification-result.json",
+      "sha256": "b8bf959d425389f8ebb78d679eab723b1a05b333bca6c8e2297fcc80c3a261a1",
+      "bytes": 348
+    },
+    {
+      "record": "hostr2-install-intent.json",
+      "sha256": "94580430246a229583c3f3adaae8b21238eecf3095f13ab3e472e17d8b527dd3",
+      "bytes": 657
+    },
+    {
+      "record": "hostr2-install-result.json",
+      "sha256": "892ed4df4913304803a1e4b41716a18ae354c460db34b912391527b0cdb55e6a",
+      "bytes": 343
+    },
+    {
+      "record": "hostr2-provision109-failure.json",
+      "sha256": "1a9ede7c14a022df1ab9e3fb094b2f4922c8a44f62ef282fccc0f5250b3ec206",
+      "bytes": 187
+    },
+    {
+      "record": "hostr2-install-reconciliation001-intent.json",
+      "sha256": "0a2247462fbf11a1718795595e5677fcf140928c499502674765c0d26cd7fae9",
+      "bytes": 278
+    },
+    {
+      "record": "hostr2-install-reconciliation001-result.json",
+      "sha256": "919ba0129237e5aed1e4e310783f0f8c1b511c7ae5c840cf13b769f67211b995",
+      "bytes": 315
+    },
+    {
+      "record": "device-operation-outcome-21c1726fd2014b29bc5a7627b2553ee8.json",
+      "sha256": "d68f09dad7cc10a8ea814d8e5b1284e5dfa41ec5cc30cbcab2256d80d8c8d261",
+      "bytes": 916
+    },
+    {
+      "record": "hostr2-install-unknown-tunnel-gate109.json",
+      "sha256": "b751296bafacac1c1874c6f237fb040b22545fdba18bd690163b83eb5ae486f2",
+      "bytes": 905
+    },
+    {
+      "record": "event112-route-package-intent.json",
+      "sha256": "736227864a638a89d23b2ad609d14d9ce5679611ad07883c1b1f8082292ada81",
+      "bytes": 202
+    },
+    {
+      "record": "event112-route-package-result.json",
+      "sha256": "0b180790ae0a7760b1386b1d7d84dbcda77ce887e2d8d55d40b3624944cff2b8",
+      "bytes": 511
+    },
+    {
+      "record": "event112-new-host-connect-intent.json",
+      "sha256": "9279e5dccadba93c82d21b1db2e080f41650efc0a76174a7cb59a3eadfb47ebd",
+      "bytes": 250
+    },
+    {
+      "record": "event112-new-host-connect-result.json",
+      "sha256": "9165831ca79696c44027d864c8af442798ec2209bd7b8d0da1e8c3ecf4663fb7",
+      "bytes": 258
+    },
+    {
+      "record": "five-minute001-runner-pin112.json",
+      "sha256": "ed7e4b59bbe6f707f072e6f650dd09ce5984062227fb925d191c8056f9987991",
+      "bytes": 461
+    },
+    {
+      "record": "record-durability112-host-proof.json",
+      "sha256": "e0c402e066b40f68781ae8044b53f5d40f260b75159e92407d633297f0d222a0",
+      "bytes": 820
+    },
+    {
+      "record": "event114-route-package-intent.json",
+      "sha256": "f16b86c35fcdba96eaf48c79407061a4ba69c97d5ad9a671915f157db4c5566d",
+      "bytes": 202
+    },
+    {
+      "record": "event114-new-host-connect-intent.json",
+      "sha256": "0d447fa2f1b8309edd1e966dbffd33f559e2b26be00c025cd94bfb8a098de4f5",
+      "bytes": 250
+    },
+    {
+      "record": "event114-new-host-connect-result.json",
+      "sha256": "04908ff2acbd12aa06eb0b5e6953ae650bbe2440a79d2d49871d9ac9a3fce21b",
+      "bytes": 258
+    },
+    {
+      "record": "event114-route-package-result.json",
+      "sha256": "40318b901e6c8dff8afa781a8779e49f267af6e606fe30143cbb3532da5ffda0",
+      "bytes": 947
+    },
+    {
+      "record": "hostr3-provision-complete.json",
+      "sha256": "eebdc4ca6a62149ba4c6f2184d476d23ec0cfc810850cc34fb57b085e4d8943a",
+      "bytes": 477
+    },
+    {
+      "record": "host-r3-unused-id-build.log",
+      "sha256": "d224fd5c5068d16c474fc5f8bba9ad3c53b0600cd3c81fb8908990c4815afd9f",
+      "bytes": 5871
+    },
+    {
+      "record": "hostr3-rg3-current-source-apk-capsule.json",
+      "sha256": "a5b74bd5f243c221352f7ad7e0207a55be645bc5a83f5bc4f54b78b73d365a27",
+      "bytes": 6911
+    },
+    {
+      "record": "hostr3-rg3-current-source-files.tar.gz",
+      "sha256": "3254d7160641f2518770f13062bc901b197a0f5ee5419964bea733bda2205d7b",
+      "bytes": 20467
+    },
+    {
+      "record": "pre-five-minute004-bindings.json",
+      "sha256": "426bb63656eb53d2b51f8efe665bbe7ed96851e1a0cb9d6af0c0740fba2ccf20",
+      "bytes": 1608
+    },
+    {
+      "record": "five-minute001-orchestration-intent.json",
+      "sha256": "34cbffec3955ae70a6e1d722604924f5ba72f9f3e6fd0abaf65ce25a537f89ac",
+      "bytes": 249
+    },
+    {
+      "record": "five-minute001-failed-caller-frozen.json",
+      "sha256": "a7b567a4732c17e9cdebf374dd424c426b79ebfe6e8b154fad73ddaba40e356c",
+      "bytes": 1290
+    },
+    {
+      "record": "five-minute001-summary.json",
+      "sha256": "6d2889590329359628d7318e113a75b909b33cb69b0514ec94ceec0003f6e2be",
+      "bytes": 1473
+    },
+    {
+      "record": "five-minute001-precontrol-host-diagnosis.json",
+      "sha256": "fa6a86fe9f76b93b004790714498c43c02f6dc873aac87f1501d35ea5bb3737a",
+      "bytes": 1787
+    },
+    {
+      "record": "five-minute001-owned-rg-stop-intent.json",
+      "sha256": "09ae7a9b06c83fbdbec2f8ef78d6929d88221c937148b294f5c57df76697f109",
+      "bytes": 158
+    },
+    {
+      "record": "five-minute001-credential-free-final-sleep-intent.json",
+      "sha256": "a89e392521b8c7b7a708dd1bb9a755023e4f9f73f49322aa7fc7832b46414544",
+      "bytes": 138
+    },
+    {
+      "record": "five-minute001-first-execution-preparation.json",
+      "sha256": "a3c9b15ba7ea45df223adf3354ab70be896e66e2db026380b2d6f40592a25df8",
+      "bytes": 707
+    },
+    {
+      "record": "screen116-control-jar-stage-intent.json",
+      "bytes": 473,
+      "sha256": "85d359d60c74e0bc736be48fd990d5b9e319a7193409151894da2a940570707e"
+    },
+    {
+      "record": "screen116-control-jar-stage-result.json",
+      "bytes": 1094,
+      "sha256": "c1226fd2a526d41136bfb9d31dc8e27ce0d3d05f29a3b44efd569d8540ce7b99"
+    },
+    {
+      "record": "screen-caller-prepared116-package.json",
+      "bytes": 2601,
+      "sha256": "0a5a5d25ea1c4a84a77d7858b410924b8f67c9a9c18e12ae0194c9ce7b01f35b"
+    },
+    {
+      "record": "screen-caller-prepared116-source.json",
+      "bytes": 683,
+      "sha256": "dd0b45ab407f5a8f7cf4bd57d0f1a204e4e195903f5501647b16dcc3919aef4f"
+    },
+    {
+      "record": "screen-caller-prepared116.diff",
+      "bytes": 8317,
+      "sha256": "c87f1bf30f8b6b25a2e98c8d2211a8475b4dd69828aca3e9c3fbc4823f10391d"
+    },
+    {
+      "record": "screen-caller-prepared116-host-proof.json",
+      "bytes": 6102,
+      "sha256": "47393f40a32a5b9f1138f577dcc13d2524680d2349e6142ee4f909d0b59d904b"
+    },
+    {
+      "record": "rg-probe2-setup-wait-build.log",
+      "bytes": 6538,
+      "sha256": "d03b02ad190e0b67de9a3ca1632993aae3511d9bba3d29d50114bb9f68aaf2c7"
+    },
+    {
+      "record": "hostr3-rg3-probe2-current-source-apk-capsule.json",
+      "bytes": 7169,
+      "sha256": "63864479cd41c35efab4d111b34456d639b96484a6444f96bef60a45d7f6f853"
+    },
+    {
+      "record": "hostr3-rg3-probe2-current-source-files.tar.gz",
+      "bytes": 20474,
+      "sha256": "4af21a9cf544bd2c558204193bfb02cd1b7631258ea1956e80f3998b7c3536b6"
+    },
+    {
+      "record": "rg-probe2-stage-intent.json",
+      "bytes": 366,
+      "sha256": "f9d1f47d08b5e9aabff7909fc51d06f0e563bc1c8d041b5c1c5ef827dad1e631"
+    },
+    {
+      "record": "rg-probe2-install-intent.json",
+      "bytes": 288,
+      "sha256": "24d13b217abb72c57ca2e860a51e788a9b0712c66b7a160a13ad3f1abe8c5519"
+    },
+    {
+      "record": "rg-probe2-install-result.json",
+      "bytes": 63,
+      "sha256": "b4dcdc9861129208a0f0b7bd1fe24c5e9f8797c9e621809ed7fd4a16306c5327"
+    },
+    {
+      "record": "rg-probe2-provision-complete.json",
+      "bytes": 798,
+      "sha256": "5fb8dd4fa54bde562b4141999cc157e2df9b18addb516d067c96b40c110cc31b"
+    },
+    {
+      "record": "five-minute002-preparation-source-bindings.json",
+      "bytes": 1235,
+      "sha256": "e99e7d60b7663d22318a66e819bd70261ded227b75d51ca555914c2b1ddc339a"
+    },
+    {
+      "record": "pre-five-minute005-bindings.json",
+      "bytes": 1734,
+      "sha256": "87ecf63adde3853331bb3fb6eb1f79bd862bf07ccc79cfb42db64ab34bdb2d8d"
+    },
+    {
+      "record": "five-minute002-final-orchestration-bindings.json",
+      "bytes": 2112,
+      "sha256": "129a8aa7bf14ba678a32c5f9e082eac47b34708574a53e0fc4f3ab9dffd2bb60"
+    },
+    {
+      "record": "five-minute002-orchestration-intent.json",
+      "bytes": 249,
+      "sha256": "4321a23b1e2b7857c2b57afc6e22fd6b6f1cf8d5a5959e0d7a0d86b22ff6bb81"
+    },
+    {
+      "record": "five-minute002-owned-rg-stop-intent.json",
+      "bytes": 158,
+      "sha256": "09ae7a9b06c83fbdbec2f8ef78d6929d88221c937148b294f5c57df76697f109"
+    },
+    {
+      "record": "five-minute002-failed-caller-frozen.json",
+      "bytes": 2035,
+      "sha256": "9fa2b72e412c362f237d4fb513dee514616b0393b83ac26890db0fe28a37ae49"
+    },
+    {
+      "record": "five-minute002-summary.json",
+      "bytes": 1730,
+      "sha256": "61ea55353349d9da28eab5550a1aab5e20dfb4a2a7bef020cc390fd136d562d9"
+    },
+    {
+      "record": "five-minute002-native-gate-host-diagnosis.json",
+      "bytes": 2294,
+      "sha256": "e7272980984588c00e23b8c673b86e259e7d050098459c64306acdbd1b2d3742"
+    },
+    {
+      "record": "native-context118-diagnostic-intent.json",
+      "bytes": 244,
+      "sha256": "ef42b2ea7c10ce7356ca8760f7e557699a41e506bee3c0e6482757646424ee35"
+    },
+    {
+      "record": "native-context118-initial-sleep-intent.json",
+      "bytes": 146,
+      "sha256": "018149848f5c523cefb142d091941f954609452b0769d3a2ae294ca88cd9fc02"
+    },
+    {
+      "record": "native-context118-diagnostic-result.json",
+      "bytes": 1628,
+      "sha256": "d6d83a834ad1ec0ca00899bc5f21e417c9030e5c2ca1ee6ccdebd1773bbdddf9"
+    },
+    {
+      "record": "native-context118-baseline-boundary-and-control-settlement.json",
+      "bytes": 1133,
+      "sha256": "f05e07ee5327ede315f4ad2682906c9f86e19458c63013c1de29834a1be52937"
+    },
+    {
+      "record": "native-context118-observer-host-proof.json",
+      "bytes": 1514,
+      "sha256": "a2566c856df7e0e10bac2ab4f0acb3daae84492a846250a3850309a36337779f"
+    },
+    {
+      "record": "native-context118-readonly-component-comparison-intent.json",
+      "bytes": 280,
+      "sha256": "2b2b77fd3c3432b7535ce940bc78c789b948ecf72f87b46389147e8186987255"
+    },
+    {
+      "record": "native-context118-readonly-component-comparison-result.json",
+      "bytes": 1291,
+      "sha256": "f659c3e29c0ea8d1d7cafadb9aa16f045119ee0c1fbe99319c2cd7db57c241a3"
+    },
+    {
+      "record": "native-context118-readonly-comparison-host-proof.json",
+      "bytes": 290,
+      "sha256": "c5f55aab2a3dc3739d3a098f3384a8bc0216eed7c840064fe5d31ba079f5a983"
+    },
+    {
+      "record": "focused-native119-observer.py",
+      "bytes": 12196,
+      "sha256": "17872fa3905438092f6676a78b90c4025b646a9a2f86c843628678693fd0e771"
+    },
+    {
+      "record": "focused-native119-host-checks.py",
+      "bytes": 7871,
+      "sha256": "03abad4024dab024e20d4d2db4acb4a268d4784c5b80515cca61006f2c6dfbd1"
+    },
+    {
+      "record": "focused-native119-host-proof.json",
+      "bytes": 3819,
+      "sha256": "bbb0cc2dcfdff7d8f4389dc8d8286abd6813147e6b49de3b6759dee96396de42"
+    },
+    {
+      "record": "focused-native119-observation-intent.json",
+      "bytes": 311,
+      "sha256": "115f831b4deaf25ed23839766ec8a87e8630faef5383425b7d8c61da2e7f3730"
+    },
+    {
+      "record": "focused-native119-installedHelp-intent.json",
+      "bytes": 143,
+      "sha256": "1dddc3652638bfc0388797ec17580cda5515a48f423f36981e410f41834123e5"
+    },
+    {
+      "record": "focused-native119-freshFocusedWindowQualification-intent.json",
+      "bytes": 161,
+      "sha256": "da872cbfde2dc3c577e73eb61946a05b01972f8c5b4bd7eea71d45bb4b37403a"
+    },
+    {
+      "record": "focused-native119-observation-result.json",
+      "bytes": 1121,
+      "sha256": "d00612f428a9d36294c586ed39671fe0a2ab041f18ece4dc6ed132a6e1388661"
+    },
+    {
+      "record": "focused-native119-safe-boundary-proof.json",
+      "bytes": 3217,
+      "sha256": "d088de0a735b8de2b77ba6b5ce81afa310af058d43862c55253fa3510f75463d"
+    },
+    {
+      "record": "complete-native120-observer.py",
+      "bytes": 15471,
+      "sha256": "4cf747a168aaeb3924472e2e54d38877b192741acb2b0d7e11f2f48cda99ded3"
+    },
+    {
+      "record": "complete-native120-host-checks.py",
+      "bytes": 9993,
+      "sha256": "775a5ebf39b88164d5df4e0b61af4f237e9603832bb6e53ff9063471f01cd89e"
+    },
+    {
+      "record": "complete-native120-host-proof.json",
+      "bytes": 5426,
+      "sha256": "9d2c4105555d41f76181795ad504d3fcbb583c741a25783fcaf29f1b982b1e9c"
+    },
+    {
+      "record": "complete-native120-observer.diff",
+      "bytes": 26679,
+      "sha256": "cc9e659f0670dac52e0f28ebe96cbedda05fec1abd2158c83ce3123f85618a85"
+    },
+    {
+      "record": "complete-native120-capture-intent.json",
+      "bytes": 344,
+      "sha256": "a87473b5848f4ab34404002ff00dc4e627fa205e897c7d4318cccfdccc64689e"
+    },
+    {
+      "record": "complete-native120-capture-result.json",
+      "bytes": 850,
+      "sha256": "a5e7edd193e9849ed337b317549f612cdc78f4cfc9b26576b303fea0924b0833"
+    },
+    {
+      "record": "complete-native120-safe-boundary-proof.json",
+      "bytes": 2199,
+      "sha256": "ed351d02e073c57a93ccffc06337a1f61fa3ce6b962ab779ed6b06156cbb3167"
+    },
+    {
+      "record": "complete-native120-observer-prepared.py",
+      "bytes": 16944,
+      "sha256": "4a573f108f4a05150ac7e4043c56b72242cb4a484432cd8b7189568ffa97b585"
+    },
+    {
+      "record": "complete-native120-prepared-host-checks.py",
+      "bytes": 6307,
+      "sha256": "308ce382d60fcef64624d9a2ad65e5f67b7af6a04066aa5ee05681721ce937b3"
+    },
+    {
+      "record": "complete-native120-prepared-host-proof.json",
+      "bytes": 1697,
+      "sha256": "1ac410016ddbd876706de02e1216f5622005010216fb54dba77f2aceec165658"
+    },
+    {
+      "record": "complete-native120-prepared-observer.diff",
+      "bytes": 4787,
+      "sha256": "baa3119f6df318f4b87ce93e8f7e614123ad8428242b1ff4f3e4ea1970d7463a"
+    },
+    {
+      "record": "complete-native120-prepared-package.json",
+      "bytes": 1719,
+      "sha256": "54ca6e6f56297d8769c64257c968ff85909a878c880ff4269ccc067788e9c183"
+    },
+    {
+      "record": "cf130-product003-material-result.json",
+      "bytes": 8227,
+      "sha256": "67a047b53f05c0fc748157d24626c355a6b15185ee496092308f0b441848f103"
+    },
+    {
+      "record": "cf130-product003-post-session-read.json",
+      "bytes": 490,
+      "sha256": "0bea4abd14f81a9995f763e2ef55389e548bc8ff9a1d0b659398e1684ab3335f"
+    },
+    {
+      "record": "cf130-product003-host-proof.json",
+      "bytes": 1251,
+      "sha256": "d8c7c4173b094f2f7b120cfe1c2e13f427d23cc347c2b7b78edde029ec3187f2"
+    },
+    {
+      "record": "cf130-product003-setup.json",
+      "bytes": 2914,
+      "sha256": "df014d24084fa5d1d0dc515a335cfdb62e523f6990d705d16f5e6ebc35d029d4"
+    },
+    {
+      "record": "cf130-product003-pixels-before.json",
+      "bytes": 2042,
+      "sha256": "852edffc506e5383be6478d4aed18c3fe812e620ae6b5073287b66bc27e817e4"
+    },
+    {
+      "record": "cf130-product003-summary.json",
+      "bytes": 11011,
+      "sha256": "2886b765b4e22a01aa3d7652c787e0b94bd64db64a9872226e0b264b5763b9e6"
+    },
+    {
+      "record": "cf130-product003-finish.json",
+      "bytes": 10102,
+      "sha256": "35224673a34c50a30aadb68805f0f9614ad53e5d69d3e7837615fbf01a200d70"
+    },
+    {
+      "record": "media-path136-host-proof.json",
+      "bytes": 3010,
+      "sha256": "e3b1244315068509f7eed4e59171fe320744293efcee15e33639c521f3ba965d"
+    },
+    {
+      "record": "cf130-product004-material-result.json",
+      "bytes": 11136,
+      "sha256": "67525ca686af5ccfd3239626506b45ad5367dee85efc564025e58723f67343cd"
+    },
+    {
+      "record": "cf130-product004-host-proof.json",
+      "bytes": 2006,
+      "sha256": "35b3c5d0f766f1bc4f0a718bcfaf1a55e462e6716f005579ef40d5f0cca3f224"
+    },
+    {
+      "record": "cf130-product004-setup.json",
+      "bytes": 2912,
+      "sha256": "ec271d3c4935164ac88c168fa0f1292afc6677382160706a8a41e238d25d907e"
+    },
+    {
+      "record": "cf130-product004-pixels-before.json",
+      "bytes": 2039,
+      "sha256": "7d84fdb11da87eedc8d66c32305d1eb795d976c2dc41c10939fbf8be074da9c6"
+    },
+    {
+      "record": "cf130-product004-path-before-go-fold6.json",
+      "bytes": 993,
+      "sha256": "1f91eaa795d5669783e01201c9f666c2a7fc9efe4662cdae72b9a0f3f3da2e9b"
+    },
+    {
+      "record": "cf130-product004-path-before-go.json",
+      "bytes": 1838,
+      "sha256": "e09488f81b622256bb5f7888623b5a94093a13494671eac925f0fabcefa5485d"
+    },
+    {
+      "record": "cf130-product004-summary.json",
+      "bytes": 1158,
+      "sha256": "ceab23fa0421eab3b96bb98dfb0b9486674a276f333b1f62fb6c83695fcaf162"
+    },
+    {
+      "record": "cf130-product004-finish.json",
+      "bytes": 809,
+      "sha256": "2b636c02bf1c1f78c506e1c84272a0180e3981954f5f6fdaba70332c1eeba438"
+    },
+    {
+      "record": "cf130-product004-local-custody-reconciliation.json",
+      "bytes": 442,
+      "sha256": "0ac20eb73b2142d1b58da58a1ea33e5054316017e40a52e7b0771981a6d6cd59"
+    },
+    {
+      "record": "native-endpoint136-host-proof.json",
+      "bytes": 3234,
+      "sha256": "aa06bb5a62272e8bbe49ff91437439855ac2997d161b61bd316291e17e528f67"
+    },
+    {
+      "record": "cf130-product005-host-proof.json",
+      "bytes": 2253,
+      "sha256": "1c81d65a145bfd7eaa16e2dac112cf92d58bb013d315fb33c4442a65b3c58f68"
+    },
+    {
+      "record": "cf130-product005-prepared-material.json",
+      "bytes": 4053,
+      "sha256": "96aebbf2e3999177946906880c5652f3f0a9b3c05ce99474b0bf214cf2438e10"
+    },
+    {
+      "record": "cf130-product007-control-negative-material.json",
+      "bytes": 8363,
+      "sha256": "a5b3fdf6a59c1c812a10d7a6188ce453aa5d33ef30ccd233b61f171a3615175d"
+    },
+    {
+      "record": "cf130-video008-native-launch-gate-material.json",
+      "bytes": 13801,
+      "sha256": "b90082b76b46c94f109383175b3fe5a93421960a5f865841890b87d5c9a0a3ab"
+    },
+    {
+      "record": "cf136-security009-material.json",
+      "bytes": 8903,
+      "sha256": "68df9b9beb97fed1a89943adf6f72fd0034800765a4cea088d11157e286a973b"
+    },
+    {
+      "record": "video008-postmortem010-result.json",
+      "bytes": 1008,
+      "sha256": "24b4ccc3ba79d57e31298abdcd9b72ba2c6b97dc385b2312c0831d96e2b1ddf1"
+    },
+    {
+      "record": "cf136-video012-current-producer-gate-material.json",
+      "bytes": 10831,
+      "sha256": "38eace7a267a5c0e85d276095783bd975155d8885dccde7aa8466b657fa36c3b"
+    },
+    {
+      "record": "rg-history013-fixed-waiting-enum-host-result.json",
+      "bytes": 898,
+      "sha256": "c8716a0ba53c5cf2ca63177dba64691bfac19e3fb4d1c4455c33e25b6f1134de"
+    },
+    {
+      "record": "profile141-xhigh-host-qualification.json",
+      "bytes": 3094,
+      "sha256": "a2c786e22e2e072db713e6df29e0686e59807b87054c267ec9728a598c067831"
+    },
+    {
+      "record": "hostr4-probe3-build-proof.json",
+      "bytes": 3171,
+      "sha256": "14fc51b4b514579bedd607c6e2e006f1c4d7096041e4f79d38397ae799cd62b5"
+    },
+    {
+      "record": "hostr4-rg3-probe3-current-source-apk-capsule.json",
+      "bytes": 7582,
+      "sha256": "4b0508dd4e47e39d2d229c57a05f8ebbf79c65d956789ea792cb56ed740fc282"
+    },
+    {
+      "record": "probe3-bootstrap-phase-host-proof.json",
+      "bytes": 1634,
+      "sha256": "338891c266321ae4c0446e6260194bfb980533d51e7c781d6ac436939c51fc88"
+    },
+    {
+      "record": "cf141-video014-141-host-proof.json",
+      "bytes": 10603,
+      "sha256": "025a69183cb65dee0dd2e03c85145e2445526453bac8c762d5d3fd14cfa0b79e"
+    },
+    {
+      "record": "hostr4-install-endstate-boundary072-material.json",
+      "bytes": 11103,
+      "sha256": "6e8f6294be408423ddab1b85903bcd43dfd560a468a85e31ab92f332f080b947"
+    },
+    {
+      "record": "install-hostr4-probe3-014-result.json",
+      "bytes": 11314,
+      "sha256": "0d6a9ec156bc9606c84129261c0e95824c5dede0e0d0e2910b26fe220333daac"
+    },
+    {
+      "record": "install-reply141-host-proof.json",
+      "bytes": 1350,
+      "sha256": "8e2eae2bab171513f4dc13da25c2d9b80c59007b7e8ec8a21cc12c2485515045"
+    },
+    {
+      "record": "hostr4-reconcile144-material073.json",
+      "bytes": 5898,
+      "sha256": "9233b723076a2b459b0ba006fbbe57b717108151b6e9973005bf73f7f8e5972f"
+    },
+    {
+      "record": "reconcile144-host-proof.json",
+      "bytes": 2543,
+      "sha256": "af37b81f7dd0c72e97c0677a6073dcbcf6a0cd1ac897bc74cae3e3a3d634f383"
+    },
+    {
+      "record": "reconcile144-prepared-host-proof.json",
+      "bytes": 1381,
+      "sha256": "267e5457dece9107ba8bd5b01dc658effec8ea5d234eff65e50d3257a1a5d864"
+    },
+    {
+      "record": "hostr4-reconcile144-001-result.json",
+      "bytes": 1386,
+      "sha256": "713d069b7441fc5c83a79bc1b0bc9f9a08f62f4e85543ed4a8115ce0af083eca"
+    },
+    {
+      "record": "hostr4-reconcile144-001-native-after-sleep-first.json",
+      "bytes": 4371,
+      "sha256": "69c80a570621289a7e7f194199907d3182804ea05f0dc0d5c03ed8dd87eba4e4"
+    },
+    {
+      "record": "hostr4-reconcile144-001-native-after-sleep-second.json",
+      "bytes": 4371,
+      "sha256": "99a1df0f98eb143944dd15db50d0c9b7f251177565d6b175a0a3f532cef46f01"
+    },
+    {
+      "record": "hostr4-probe3-qualified145-material074.json",
+      "bytes": 6101,
+      "sha256": "e225b3bd49d97d19d486e2eeaf7a7c0d6f164cb3249f23bc550d720d7ea59c6a"
+    },
+    {
+      "record": "hostr4-package145-host-proof.json",
+      "bytes": 2106,
+      "sha256": "3921cf5ff183fc5b82ce5d3dc9c5b20a0f779c683e4263ec69e6749fce8a7ce3"
+    },
+    {
+      "record": "hostr4-package145-001-result.json",
+      "bytes": 337,
+      "sha256": "fe98390d423671f6ed2b0596cde6e85620788c2c21cdc37f8ea7e3c550a75b4d"
+    },
+    {
+      "record": "hostr4-package145-002-host-proof.json",
+      "bytes": 3129,
+      "sha256": "cb6568fa14ecbae3e1d6810d5b3aa65e0ac8306875193b90a0808839e43948e5"
+    },
+    {
+      "record": "hostr4-package145-002-result.json",
+      "bytes": 1601,
+      "sha256": "1573ba0039ea6358393c9097c38ee8b944b9d5615d286fa61c7fd18a1ba65d74"
+    },
+    {
+      "record": "install-probe3-145-host-proof.json",
+      "bytes": 1022,
+      "sha256": "af4dd10020a6693630a2e117f5978c6cd66f7d499aff162a343a4b48d4116e6d"
+    },
+    {
+      "record": "install-probe3-145-001-result.json",
+      "bytes": 3081,
+      "sha256": "7942564374beec77660d2802958b621de32ddc83e939d27bb376873a54a62fac"
+    },
+    {
+      "record": "video014-preGo-timeout-endstate-unknown-material075.json",
+      "bytes": 12143,
+      "sha256": "f3be376212984c9d519324359ea0593a3cb8afc6320bcf57d456f6b03fc40d68"
+    },
+    {
+      "record": "video014-stage-retention-prepared-host-proof.json",
+      "bytes": 1146,
+      "sha256": "e7c8c0dfb13bd5a80fcd4dd798be4ed5035a3df8bfa38056bc988d70ae07a571"
+    },
+    {
+      "record": "cf141-video014-setup.json",
+      "bytes": 5847,
+      "sha256": "313d2c83b66f5f51d3c25e6cb23333f4d2ed9736ab62a31896e3088de056b7b5"
+    },
+    {
+      "record": "cf141-video014-pixels-before.json",
+      "bytes": 2040,
+      "sha256": "156e6a3e9a0cc0a97511e7d916f762111ce1ec6f46026a61a130227c2a5eea34"
+    },
+    {
+      "record": "cf141-video014-current-fixture-launch.json",
+      "bytes": 2724,
+      "sha256": "deed880a9ee3333d7921e8d34d74a717fdf56bfa66cec10e5efeddf77231ab19"
+    },
+    {
+      "record": "cf141-video014-path-before-go.json",
+      "bytes": 2260,
+      "sha256": "74b42cdeb4be793ba5995803a064ed62985dbca7a3eb191d250dc54038bc5f3c"
+    },
+    {
+      "record": "cf141-video014-finish.json",
+      "bytes": 947,
+      "sha256": "b501d7ef47b14c22aa63a3f0827bb11d412dcb0a1d98ce1963b1dc590f4e3094"
+    },
+    {
+      "record": "cf141-video014-summary.json",
+      "bytes": 1525,
+      "sha256": "caa7753bb65bc355b5ec0e93f604d78c48b015934c224b0b949ad8a5848b0751"
+    },
+    {
+      "record": "rg150-route-material078.json",
+      "bytes": 2689,
+      "sha256": "9fdf3cb843d27989353498e324a62fcf2bca812e2cfdc97c82dd7fc59350339f"
+    },
+    {
+      "record": "rg014-settlement150-material079.json",
+      "bytes": 5411,
+      "sha256": "2392e9a6fc40feeffe21ee56e05703e9d1acbac53e5f6440eafc3cbcf5541de3"
+    },
+    {
+      "record": "video017-material080.json",
+      "bytes": 19754,
+      "sha256": "c8d0657e20aa809ada51b7b6e05058bf1d48a0a0ed1988e5593c0a10b7cba323"
+    },
+    {
+      "record": "video018-native-inactive-material081.json",
+      "bytes": 18908,
+      "sha256": "869393055740482090b39b7acc21a96a6aeb81f8d50d51fd93922fa1bea98080"
+    },
+    {
+      "record": "video019-black-composed-pixels-material082.json",
+      "bytes": 21438,
+      "sha256": "da35cc918114e03a8df7c8f3de21b96fe8a5fc6a1fd6dca1930da170cb21bcc0"
+    },
+    {
+      "record": "probe4-source-build-install-material083.json",
+      "bytes": 7604,
+      "sha256": "7fc36afaaa56841eb0e4bc11595710dee51e850a88cd3c48055cbede3f71dc4e"
+    },
+    {
+      "record": "surface020-inactive-safe-end-021-continuation-material084.json",
+      "bytes": 17514,
+      "sha256": "dd62ddae1ac5a636891d26dcdfb27d896aa7a157e1cf0385fbabf948c74255a2"
+    },
+    {
+      "record": "cf150-surface021-setup.json",
+      "bytes": 17996,
+      "sha256": "49a7d77038d41d3ded3e19419b5906ffc614801e51475121ca7bf8c78d9045b2"
+    },
+    {
+      "record": "cf150-surface021-finish.json",
+      "bytes": 10031,
+      "sha256": "870b8d518b43065767ef616b5171248bafec2b87f1b7bca65f4be7e33ec71b76"
+    },
+    {
+      "record": "cf150-surface021-native-before-optional-wake135.json",
+      "bytes": 1507,
+      "sha256": "128edbb76a3163bee56c18c0de7e2e3fc71fdc97790a403d8848aa6c72b52e65"
+    },
+    {
+      "record": "cf150-surface021-native-final-first.json",
+      "bytes": 4371,
+      "sha256": "40e399b41b71a82157d295bad9b2f54f8dccc63bae5cca13d5b6e88f0232ab4a"
+    },
+    {
+      "record": "cf150-surface021-native-final-second.json",
+      "bytes": 4371,
+      "sha256": "48ff16ae192183c9dd9d1c86f9845ebf1e6e0e27ac954448a9fa8b870ff4bac0"
+    },
+    {
+      "record": "direct167-disconnected.png",
+      "bytes": 10451,
+      "sha256": "df31ad1d1c569eb76277c3b8a13209c50a99a375e4555bd4aab62a5cb9512592"
+    },
+    {
+      "record": "direct167-end-fold6.txt",
+      "bytes": 37,
+      "sha256": "eafb7faa2835bcc2c8186e35f905741e5b2cfe70a9ef9dc7b865164315c94b12"
+    },
+    {
+      "record": "direct167-end-rg.txt",
+      "bytes": 22,
+      "sha256": "70b4e0a73f61bad3271e77056783ceb8a85cd025f7f04fc3a736a78c0fb70907"
+    },
+    {
+      "record": "direct167-endstates.json",
+      "bytes": 237,
+      "sha256": "7cc6f85903bf870e50a7d24d756d6b8e1636f5e80685f417b999cb3d3ac5d5c1"
+    },
+    {
+      "record": "direct167-owned-teardown.json",
+      "bytes": 242,
+      "sha256": "82d336f74d3b38587b0066f076d916bd2ed5881a72f07bcecbf66e0d89410a63"
+    },
+    {
+      "record": "direct167-results-summary.json",
+      "bytes": 3522,
+      "sha256": "7a7bb733ce7b6737620f76f4b8c0459977d0526d9ecb9ae96546a9c12b660c90"
+    },
+    {
+      "record": "direct167-rg-own-meminfo.txt",
+      "bytes": 3060,
+      "sha256": "2959b0af7982b840ad0c429cbcf79a7037fa7c6e6d6aac01f8f71194d68135b0"
+    },
+    {
+      "record": "direct167-security-probe.txt",
+      "bytes": 144,
+      "sha256": "a9e39f9ba187d6d7151c7a516d103d98c5837c2385d78eeaf86b6e700e5fd091"
+    },
+    {
+      "record": "direct167-settings-host.txt",
+      "bytes": 1674,
+      "sha256": "4a8e921c9a34449a7cffda08a3440ebadb0da96c74004122dab592aee9aa7f2f"
+    },
+    {
+      "record": "direct167-settings-probe.txt",
+      "bytes": 5931,
+      "sha256": "5c54a38f8ba69bbceac44ce3ce86cfd4cceb742f8479e068b250f5b791cf4773"
+    },
+    {
+      "record": "direct167a-after-tap.png",
+      "bytes": 35272,
+      "sha256": "d400cc9a0dee2c16811fdd3d8db5d0dffc8bcfc615d7fdb75fb1040a46b9280c"
+    },
+    {
+      "record": "direct167a-before.png",
+      "bytes": 36128,
+      "sha256": "3acbc4a70fd1d224a049208b356a08114570c68cf02b6d4584be173725b0b615"
+    },
+    {
+      "record": "direct167a-computer-endpoint-path.json",
+      "bytes": 368,
+      "sha256": "8c84b63e6cd8ec94b73d64950a5c4d1bd8482677f26b41e837b7a2c6a04308c7"
+    },
+    {
+      "record": "direct167a-computer-path.json",
+      "bytes": 215,
+      "sha256": "d87618b3c27c157f2aef6fbc8f8974f0d109948261084a4cf660722051ba099b"
+    },
+    {
+      "record": "direct167a-host-final.txt",
+      "bytes": 1603,
+      "sha256": "53929ab160d21935bf128ff28d5285fb5b5ac520e4a8d53e346a5b88e0b1bb7d"
+    },
+    {
+      "record": "direct167a-phone-fixture-late.txt",
+      "bytes": 89,
+      "sha256": "0a29e052ee001df86e65aa4129cea1971718521bc684246ba01a3629a55bbfee"
+    },
+    {
+      "record": "direct167a-phone-fixture-start.txt",
+      "bytes": 88,
+      "sha256": "700619783982e067a2fac6bc5251c581a44a3a68131616456a952f4d918ea477"
+    },
+    {
+      "record": "direct167a-probe.json",
+      "bytes": 35956,
+      "sha256": "cd71076b64fb9d29d56e6823ad44f6fa9281ae5e02a82f07541e6bb377caeb3d"
+    },
+    {
+      "record": "direct167a-rg-display.txt",
+      "bytes": 144,
+      "sha256": "7e31348da1a70a168841ba300fc195ae9a0657224f9dc6d5175f1270bf514118"
+    },
+    {
+      "record": "direct167a-rg-final.txt",
+      "bytes": 37095,
+      "sha256": "c23048d54b3a67a51e2fd8c7d93f72e6374f58d6518d46b8e3d3364552d7ea01"
+    },
+    {
+      "record": "direct167a-rg-own-maps.txt",
+      "bytes": 48,
+      "sha256": "a7493f9b06966aa5b1b4e029e7f70c36cc3a4d012181d97e98e97080869ff1dc"
+    },
+    {
+      "record": "direct167a-rg-own-process.txt",
+      "bytes": 5,
+      "sha256": "cf0ab4feeeaf3d670c0fa92a880b146acf4e239c3a144c121b2086227856997f"
+    },
+    {
+      "record": "direct167a-rg-start.txt",
+      "bytes": 1017,
+      "sha256": "11a7e2d333b5b555220573b8eb49e436fd903a3a109e1644db913a1f2d3a7c27"
+    },
+    {
+      "record": "direct167a-runtime-inventory.json",
+      "bytes": 190,
+      "sha256": "0bdae89c2351210d8fb4b8e777c438bbb843aeb6f9a3922568ca1f22f29acff2"
+    },
+    {
+      "record": "direct167a-summary.json",
+      "bytes": 603,
+      "sha256": "fc56536d2692c0f8284f95e606599005b8761c3e1c632c64de9aaf8d167c579d"
+    },
+    {
+      "record": "direct167b-security-host.txt",
+      "bytes": 580,
+      "sha256": "bd54eb27cb682b02abb0bf480fc2369f9e542b09027ae91e8100a77b05afeb70"
+    },
+    {
+      "record": "direct167c-settings-before.png",
+      "bytes": 66514,
+      "sha256": "0ac0438e159e8dbc708b087fa6b89c0d752472d60d4979e699c790f61d66e1af"
+    },
+    {
+      "record": "direct167d-fixture-reconnect.txt",
+      "bytes": 87,
+      "sha256": "1e5f34a97d5f73c20235dca9b4241876663d9f798f6b9b44cee14ff6a8d3e2ce"
+    },
+    {
+      "record": "direct167d-reconnect-probe.json",
+      "bytes": 4839,
+      "sha256": "9efdc7da4075dd928b1a557a456ed2c792a276ea6ec317d9b0e407c13198e6eb"
+    },
+    {
+      "record": "direct167d-rg-runtime-processes.txt",
+      "bytes": 64,
+      "sha256": "7af512447a65e821984c5f69a259ff8aece5f2dcfc2219654758cf98626f50db"
+    },
+    {
+      "record": "direct167e-fixture-restart.json",
+      "bytes": 1792,
+      "sha256": "777ee2683c9fe0a4e2fde999a6ecccad2c410cd52caa647851351e8cca5a4525"
+    },
+    {
+      "record": "direct167e-local-stop-probe.json",
+      "bytes": 5337,
+      "sha256": "6357a64575ce740e275048f37106410d44eefa68653a068c1602c879927e92b1"
+    },
+    {
+      "record": "direct167fg-final-probes.txt",
+      "bytes": 10590,
+      "sha256": "c76c095f04ae900b4cd4efc139f4715fa487f8a658193aba80c3d709aac4de9a"
+    },
+    {
+      "record": "direct167life-current-read.json",
+      "bytes": 98,
+      "sha256": "8d58e64bf0de2fe5d0f058fb922beb4e8c8ad195927e476d1746e1f961ed9eba"
+    },
+    {
+      "record": "direct167life-current-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "direct167life-current-stdout.txt",
+      "bytes": 5454,
+      "sha256": "d1d73d0d170f93f85048ba2cae0d62ff12722cfadc6b2d0b6808bdfed223ba17"
+    },
+    {
+      "record": "review169-final-build-lint.log",
+      "bytes": 6044,
+      "sha256": "87fc1bdded3a3c75dc649c83d22f0c4b56b5dab9fbd13b726d586bd7602d09f2"
+    },
+    {
+      "record": "review169-first-host-red.xml",
+      "bytes": 13613,
+      "sha256": "290b99523462938c4d357e7c78c51c0240abd425ae5fdfaba707ba790865b458"
+    },
+    {
+      "record": "review169-host-green-build-lint.log",
+      "bytes": 6079,
+      "sha256": "20ec6c1d570ca33b08086ff57c438f61aa6f3b4da42f302ee1737a18ad28ff44"
+    },
+    {
+      "record": "review169-host-green.xml",
+      "bytes": 818,
+      "sha256": "ba0b71ccf3b16abf3f669615e0870accc50c3fd79cf8470f2dcdde669805ad91"
+    },
+    {
+      "record": "review169-host-proof.json",
+      "bytes": 4166,
+      "sha256": "f5caaffffdc9718416fc9a453dd525bb8eacc21c57707af4e8dc5b2b31b46fd2"
+    },
+    {
+      "record": "review169-host-red-corrected-fixture.log",
+      "bytes": 3382,
+      "sha256": "895e73e0d212abae7be44de0003baa9c91da679ab8794bf304cc21828ac8774b"
+    },
+    {
+      "record": "review169-host-red.log",
+      "bytes": 3515,
+      "sha256": "3b7b8d1bd19d44d69a90c8c620579dec9a4cd7c3a2845ef44ca1e42a47c4fcaa"
+    },
+    {
+      "record": "review169-host-red.xml",
+      "bytes": 9996,
+      "sha256": "ca1238af619b81789e7f2f3081c3b1a4b8bc8b85feb2202e6cffd6aa29cce0d9"
+    },
+    {
+      "record": "review169-lint.xml",
+      "bytes": 1891,
+      "sha256": "0a87e91fc2b9bdaa03466decd5a7ceb8c7d5fb7116f9d346683200161eac85aa"
+    },
+    {
+      "record": "review169-red-ProjectionSession.kt",
+      "bytes": 8616,
+      "sha256": "7726b3cac3b79dc74769062b5c1256e5cc136e1fa49b4749386330d57926fe50"
+    },
+    {
+      "record": "review169-red-SurfaceDecoder.kt",
+      "bytes": 4299,
+      "sha256": "1e143c503e141c58aa6c9a8eb5dc46b771822f8e4342042c9cf709bc21d61f01"
+    },
+    {
+      "record": "review169-rg-installed-read.json",
+      "bytes": 102,
+      "sha256": "aa93fb127b819561522504f1e709c04d8e9bbdafc132bbd6a2229fba87ca07f3"
+    },
+    {
+      "record": "review169-rg-update.json",
+      "bytes": 167,
+      "sha256": "88b85cc45efd66108bfb72baeaccd5139ccbddf1273de33f58624310fc3c8fe7"
+    },
+    {
+      "record": "review169-source-apk-capsule.json",
+      "bytes": 9305,
+      "sha256": "41da15f09ae8c9de67a74f7fd6850ce6995c5613e82712026389bcf2b327c3b6"
+    },
+    {
+      "record": "review169-target-fold6.json",
+      "bytes": 508,
+      "sha256": "1834bbb94a224898983e6463adc7bcefcedd77e89183926ff3a2a0bd67b65609"
+    },
+    {
+      "record": "review169-target-rg.json",
+      "bytes": 507,
+      "sha256": "98dcf7eb29677de29b930982b3b66cd784432c63ec7b8eb37906f562ed5b7215"
+    },
+    {
+      "record": "usb173-bridge-start-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173-bridge-start.txt",
+      "bytes": 195,
+      "sha256": "f8479b61ae43b4124b502f208f12fc3d7e7b58fcd815ec663f2591998f2e1636"
+    },
+    {
+      "record": "usb173-current-rg-power.json",
+      "bytes": 142,
+      "sha256": "2a2a5f98f74caab4a8a8e38f9cb47efc53731af1c101e23d761b10658a380d34"
+    },
+    {
+      "record": "usb173-current-targeted-ping.json",
+      "bytes": 653,
+      "sha256": "6721d4021680302cdea10d92cc56d4b5495b54caf24e5f9a7e87f9ce62c16b82"
+    },
+    {
+      "record": "usb173-devices-start.txt",
+      "bytes": 365,
+      "sha256": "9eeaafea58ff3e2f567d63cdf5a9a5358d1c575374681cf2c8ca37b1debf2dba"
+    },
+    {
+      "record": "usb173-end-fold6.json",
+      "bytes": 4880,
+      "sha256": "86e18e7afb31c417e83d8722ff194e4ec7d820274de30f56279d517a647dbaca"
+    },
+    {
+      "record": "usb173-end-rg.json",
+      "bytes": 159,
+      "sha256": "42ff2fd467297a53ad5ee37dbd0d0ec8b8137b0b7a8e143af136e7851d5dc68d"
+    },
+    {
+      "record": "usb173-error-log-build-lint.log",
+      "bytes": 5924,
+      "sha256": "2b0271ba186a2123fd2c659f632b01542dedc70d834cf1b86958158395eb0e0b"
+    },
+    {
+      "record": "usb173-errorlog-build.json",
+      "bytes": 472,
+      "sha256": "e774c1437e67688171a113b52b18229c618fcdb9ac98d53e79337797ac03db9d"
+    },
+    {
+      "record": "usb173-errorlog-host-tests.xml",
+      "bytes": 820,
+      "sha256": "3653484b5d2bf3e6cdf082d7e2fa0b79bb62d973a0f2e0797645617c66f6f5e0"
+    },
+    {
+      "record": "usb173-errorlog-lint.xml",
+      "bytes": 1891,
+      "sha256": "0a87e91fc2b9bdaa03466decd5a7ceb8c7d5fb7116f9d346683200161eac85aa"
+    },
+    {
+      "record": "usb173-errorlog-only.patch",
+      "bytes": 1181,
+      "sha256": "1816b4391ba0321f07c9fdc3857b799fefc87fd1bad285869dbe4945a865ae22"
+    },
+    {
+      "record": "usb173-errorlog-rg-update.json",
+      "bytes": 176,
+      "sha256": "ce626d6cb53139c94322a5c472b3ac96159fef74ed3dcacacd756c92b26c1be6"
+    },
+    {
+      "record": "usb173-final-host-log.txt",
+      "bytes": 5184,
+      "sha256": "a794ca39090b02c57cbdb8d396eb964f686d7dd17daf8f5e31635dd716120aa1"
+    },
+    {
+      "record": "usb173-final-own-process-read.json",
+      "bytes": 186,
+      "sha256": "70fdcc2f18683cd03a3cf106a9e18cb54636eab6015f79540a975ea4b7b7919d"
+    },
+    {
+      "record": "usb173-first-host-log.txt",
+      "bytes": 5189,
+      "sha256": "dcdda02101568c10b821490528580fd7e4cda443797ae9b03298ae48c99d2024"
+    },
+    {
+      "record": "usb173-fold6-identity.json",
+      "bytes": 527,
+      "sha256": "2239e006e20b3e0db615f0352ca555e3cb41f98855746432ac3e889ab162301c"
+    },
+    {
+      "record": "usb173-rg-installed-read.json",
+      "bytes": 413,
+      "sha256": "abb836d6440aceb14cd3bdebba99b8c7929908b58193f2de99dd28de2a5b439b"
+    },
+    {
+      "record": "usb173-rg-update.json",
+      "bytes": 302,
+      "sha256": "b698e07012c820ae3e59759673d2cf6a69796ade6edb31436f7bedd0e94370ad"
+    },
+    {
+      "record": "usb173-source-apk-capsule.json",
+      "bytes": 9844,
+      "sha256": "dc8dcde6d8b5af0d2146679946d88a4f9b3d86a8c73729a7ff79cd8d72d31fc1"
+    },
+    {
+      "record": "usb173-startup.json",
+      "bytes": 194,
+      "sha256": "52af8870e08dd65a1079447655fa9f394d1e6d4caa2418fd80f16cb9e0f5cb45"
+    },
+    {
+      "record": "usb173-timing-build-lint.log",
+      "bytes": 5913,
+      "sha256": "7a270a1283c7065661f1981cba3aeca05255653a70694f3f3597182d680b1ae3"
+    },
+    {
+      "record": "usb173-timing-build.json",
+      "bytes": 362,
+      "sha256": "d9e2402bd0292633e2b3c40fba7c2ea382fdb2a486e6f85068d828ffd1f75626"
+    },
+    {
+      "record": "usb173-timing-host-tests.xml",
+      "bytes": 820,
+      "sha256": "1ad925290b3693a8b5fbb3e065f4766d073aaf5019a9a89adb123985d780bcbf"
+    },
+    {
+      "record": "usb173-timing-lint.xml",
+      "bytes": 1891,
+      "sha256": "0a87e91fc2b9bdaa03466decd5a7ceb8c7d5fb7116f9d346683200161eac85aa"
+    },
+    {
+      "record": "usb173-timing-rg-update.json",
+      "bytes": 84,
+      "sha256": "80803530a152b6c67df1d43f9fef5390a0de389c8a315f2598b58106a40756e4"
+    },
+    {
+      "record": "usb173-verification-summary.json",
+      "bytes": 7105,
+      "sha256": "2b2be2f2c30771e4d2c4a845398e00ecd96d373f62203835e9bd5e0f89e34a12"
+    },
+    {
+      "record": "usb173a-driver-start.json",
+      "bytes": 63,
+      "sha256": "e35e4b91cfdd4b50a88c2345b338232058dbc44aeea3e52de77478407dbaf524"
+    },
+    {
+      "record": "usb173a-fixture-launch.txt",
+      "bytes": 134,
+      "sha256": "296797f3eb44dbeb959aeb0ffed37ca3ce247a04efb3cf6aecd7ae147241a061"
+    },
+    {
+      "record": "usb173a-rg-connected.json",
+      "bytes": 1013,
+      "sha256": "cd8ff0c67f39d79569549066dc0f65c425ca99f914a47c8a290931028c9c36ce"
+    },
+    {
+      "record": "usb173a-stock-start-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173a-stock-start.txt",
+      "bytes": 539,
+      "sha256": "f6c12d982cc513f5e1c801afc1ec51a831aa1c02cf9c59eac8047c0119b1a4f8"
+    },
+    {
+      "record": "usb173a-stop-probe.json",
+      "bytes": 5321,
+      "sha256": "5267c21767d4d7c0849ba1fd52e633500035e6f0f882e454e3aabc733bb59d78"
+    },
+    {
+      "record": "usb173a-stop-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173a-visible.png",
+      "bytes": 39509,
+      "sha256": "dc67f24407784f5a2139b508b5046948e66929618ee8e4be70a8dc4ae558bec6"
+    },
+    {
+      "record": "usb173b-driver-start.json",
+      "bytes": 63,
+      "sha256": "159c3534b44b4602bdebbec5a81e59e5b92db76aeea727d4ae6de836f90f8f7c"
+    },
+    {
+      "record": "usb173b-fixture-launch.txt",
+      "bytes": 134,
+      "sha256": "296797f3eb44dbeb959aeb0ffed37ca3ce247a04efb3cf6aecd7ae147241a061"
+    },
+    {
+      "record": "usb173b-pause-probe.json",
+      "bytes": 5326,
+      "sha256": "15c0140820ada4a269cfb86d59b7daf10dbeabe9abfae19f407e8e1919bb1e53"
+    },
+    {
+      "record": "usb173b-pause-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173b-stock-start.txt",
+      "bytes": 539,
+      "sha256": "76db39e5a76e98acd99d1ff6e3a0c4dbbcdf9acbcae2f1f83656d6914d59b006"
+    },
+    {
+      "record": "usb173c-driver-start.json",
+      "bytes": 63,
+      "sha256": "3893056f374b4bd8d111d4efa05023078500261322e473d0bf2eb21e13308dcb"
+    },
+    {
+      "record": "usb173c-fixture-launch.txt",
+      "bytes": 134,
+      "sha256": "296797f3eb44dbeb959aeb0ffed37ca3ce247a04efb3cf6aecd7ae147241a061"
+    },
+    {
+      "record": "usb173c-host-current.txt",
+      "bytes": 4670,
+      "sha256": "2366a3802e73de0633363285c6278d4504719d4c9706c0d5e628f52b11a4db49"
+    },
+    {
+      "record": "usb173c-later-own-result.txt",
+      "bytes": 7866,
+      "sha256": "c2b59101143adfda5bc599ed2878225e1f4b9e83d42160d3904f1b8d92908eff"
+    },
+    {
+      "record": "usb173c-own-thread-names.txt",
+      "bytes": 360,
+      "sha256": "c8f0b14e694c189feffe777a7a1b1b4abad80017087ae33ccba2d3cc94b5caf1"
+    },
+    {
+      "record": "usb173c-reconnect-final.json",
+      "bytes": 3832,
+      "sha256": "bcf70abbf6c74c9e502fe296fa1aecab4892ea68eb662f2f15403fa99c9a6c76"
+    },
+    {
+      "record": "usb173c-reconnect-probe.json",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173c-reconnect-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173c-rg-own-logcat-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173c-rg-own-logcat.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173c-stock-start.txt",
+      "bytes": 539,
+      "sha256": "8d0dd21ea6622ed6752f7a129e0c5a5ac1ec17412aa0a1612ab38672770a8872"
+    },
+    {
+      "record": "usb173d-driver-start.json",
+      "bytes": 63,
+      "sha256": "15cdc37c9fcbb7baa878d7d89bf7868553c3cbb4c9a2819465f8af75df2f85b6"
+    },
+    {
+      "record": "usb173d-hoststop-probe.json",
+      "bytes": 5269,
+      "sha256": "673d17ea7b0683e966170c268e948cb95a1b2739a5bd6f32f14d74592b72c470"
+    },
+    {
+      "record": "usb173e-bridge-settlement.json",
+      "bytes": 196,
+      "sha256": "dc86223ce022a0780257e6a2fd599b0adbad8a12cd7ba47e4df1d07f7ba73798"
+    },
+    {
+      "record": "usb173e-driver-start.txt",
+      "bytes": 16,
+      "sha256": "4fbd8a060baaf00a44a8d489513385a9e60c6a753b93a4c4f1a3e4c9c097346e"
+    },
+    {
+      "record": "usb173e-fixture-launch.txt",
+      "bytes": 134,
+      "sha256": "296797f3eb44dbeb959aeb0ffed37ca3ce247a04efb3cf6aecd7ae147241a061"
+    },
+    {
+      "record": "usb173e-go.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173e-host-after.txt",
+      "bytes": 3491,
+      "sha256": "58506cf55e84009a8372339b70d058ea42f4fffeb33ba72a1652da0232e7ba4f"
+    },
+    {
+      "record": "usb173e-own-errors.txt",
+      "bytes": 2017,
+      "sha256": "0bdedfacb9133b1e539c67311753b676cb1edc7cd29c221a3485ce4d0ac619e6"
+    },
+    {
+      "record": "usb173e-reconnect-probe.json",
+      "bytes": 3395,
+      "sha256": "1d1cd3003047335a7ca1879710f117b98af8315b4cfd2efe19adf6a90a2eff9b"
+    },
+    {
+      "record": "usb173e-rg-installed-read.json",
+      "bytes": 384,
+      "sha256": "ca05b40d5bac8d052da469d8b7c44dcf17885271fe234d0f03f2dce420462f05"
+    },
+    {
+      "record": "usb173e-startup.json",
+      "bytes": 64,
+      "sha256": "e5a1a79195866fcfd1ce64ff6958d63a167144d50dc03b1b68c36ce0e1e1b759"
+    },
+    {
+      "record": "usb173e-stock-start.txt",
+      "bytes": 539,
+      "sha256": "b87b88b7fce0cbb791356cfbdbb58857e4134bd98cbc8c00c95c610003a1c901"
+    },
+    {
+      "record": "usb173e-visible.png",
+      "bytes": 10473,
+      "sha256": "b50621addfa01a68fce24559c130fd8f9055ad712a3c92d97d28da3240c24087"
+    },
+    {
+      "record": "usb173f-driver-start.txt",
+      "bytes": 16,
+      "sha256": "b99d57cb36c71e45966919ee8b3874ea95e8bcd705d8ee9fb8e3a13bca342b6b"
+    },
+    {
+      "record": "usb173f-fixture-launch.txt",
+      "bytes": 134,
+      "sha256": "296797f3eb44dbeb959aeb0ffed37ca3ce247a04efb3cf6aecd7ae147241a061"
+    },
+    {
+      "record": "usb173f-go.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173f-installed-read.txt",
+      "bytes": 316,
+      "sha256": "266ce1f8d5f3fc4dd7ff41b4ba1b1ae9dce54d038a80d2348ea69d473e654ee1"
+    },
+    {
+      "record": "usb173f-own-timing-errors.txt",
+      "bytes": 2061,
+      "sha256": "5394f234a8ffbc261de033c465fdf1f439b4bbd366f4b61cd418529f6e6839e6"
+    },
+    {
+      "record": "usb173f-reconnect-probe.json",
+      "bytes": 6265,
+      "sha256": "ab5ac4dd640a160ebbf0c2ecba261f8f7777cfbf957f9ea2cfd8a85f0c03b5d7"
+    },
+    {
+      "record": "usb173f-startup.txt",
+      "bytes": 17,
+      "sha256": "16426c0fe1f4c25b2f79bff78b16bce77744f9a93685759d67653152dcee9afc"
+    },
+    {
+      "record": "usb173f-stock-start.txt",
+      "bytes": 539,
+      "sha256": "81f1c12fd8bbf75fc6c418878d0f337a519bed928b4d30438bdc8298cee8f922"
+    },
+    {
+      "record": "usb173f-visible.png",
+      "bytes": 61995,
+      "sha256": "6b4329335a2352f1e4ee066e29d79154fd1c5a82ed10963b68a0350eb76903a1"
+    },
+    {
+      "record": "usb173g_stop-driver.txt",
+      "bytes": 5327,
+      "sha256": "d638ce47d143088ce79f38dc077f06e174fd797e85a7ec93cc14b2392efc3eff"
+    },
+    {
+      "record": "usb173g_stop-probe.json",
+      "bytes": 5271,
+      "sha256": "a7ae35b1d02ca037dd1fa323c19751e016630be0ce567e47524c6408202a50d7"
+    },
+    {
+      "record": "usb173g_stop-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173h_pause-driver.txt",
+      "bytes": 5317,
+      "sha256": "f93922d7cdafd0fda883b2f28369019fc11e9e9ed0da428ac41a4039b18c5dd8"
+    },
+    {
+      "record": "usb173h_pause-probe.json",
+      "bytes": 5261,
+      "sha256": "b2146c374e8d073ab2812fc53756ee4c5d7749ace4441854eb5ef721d844e7a7"
+    },
+    {
+      "record": "usb173h_pause-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "usb173i_hoststop-driver.txt",
+      "bytes": 5323,
+      "sha256": "c2338f59aed773d01a4d1d217ad13b645f9f50b9f1415f0295523cfdc7c87813"
+    },
+    {
+      "record": "usb173i_hoststop-probe.json",
+      "bytes": 5267,
+      "sha256": "ba61da8985abd23a6463876f03f101f36029a5e7808d0ac00b6ae86a9e762a34"
+    },
+    {
+      "record": "usb173i_hoststop-stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "review176-apk-check.json",
+      "bytes": 1190,
+      "sha256": "07eb3b1f01982ca733e09a5f95f42115c890d81ef2b8178ca1d12f5dfb50f16f"
+    },
+    {
+      "record": "review176-apk-signature.txt",
+      "bytes": 955,
+      "sha256": "02d8f4f72ed962b6259477423590005cd8e6229181d24caa61748c232515e47c"
+    },
+    {
+      "record": "review176-bridge-start.json",
+      "bytes": 112,
+      "sha256": "5e9b3761bdce783303c31aae9af4dd605a9e8c0cc7c672f60e4139f2194b36f8"
+    },
+    {
+      "record": "review176-build-lint.log",
+      "bytes": 5913,
+      "sha256": "75c649d5005084241c1f83312336c4db8e366e02b815c503bcfabd47cb70caf4"
+    },
+    {
+      "record": "review176-end-phone.json",
+      "bytes": 217,
+      "sha256": "b15e35762252cf22094f98ba3cd51b06b61c4645ddebcffc562bfaeb6b5273cd"
+    },
+    {
+      "record": "review176-end-rg.json",
+      "bytes": 171,
+      "sha256": "5f907e17f8a1b510bbad8a0e2122b17a995b9587fed28f38274624f7c28861f4"
+    },
+    {
+      "record": "review176-host-green.xml",
+      "bytes": 978,
+      "sha256": "387d10ed9c9e28521daddc8d47280675bba7c5d46320c5049459729f6e963685"
+    },
+    {
+      "record": "review176-host-log.json",
+      "bytes": 3522,
+      "sha256": "34f6b997466b1563b5581e79a467df101d7962496fd5e97bef8d14a60dcebf26"
+    },
+    {
+      "record": "review176-host-proof.json",
+      "bytes": 2531,
+      "sha256": "1e14dd218742fe4d0e4b3c50ee60ac895157741776be1cd5593dbc0354cb1af2"
+    },
+    {
+      "record": "review176-host-red-test.log",
+      "bytes": 3257,
+      "sha256": "2c0bb82d7f0a27d878b9f2be701d2a1384910eeda63ed4de41729d30cd2b4cbf"
+    },
+    {
+      "record": "review176-host-red-test.xml",
+      "bytes": 5077,
+      "sha256": "e8e0b818fd2175ae6abadb862647e4dff71f8f1841ff002976b6b0149ce5ef76"
+    },
+    {
+      "record": "review176-host-red.log",
+      "bytes": 56,
+      "sha256": "28ff1423400075f11d7aaba043f586b2ca6be0cc62f4840e2ed0cdd0787b15ea"
+    },
+    {
+      "record": "review176-host-red.xml",
+      "bytes": 820,
+      "sha256": "1ad925290b3693a8b5fbb3e065f4766d073aaf5019a9a89adb123985d780bcbf"
+    },
+    {
+      "record": "review176-lint.xml",
+      "bytes": 1891,
+      "sha256": "0a87e91fc2b9bdaa03466decd5a7ceb8c7d5fb7116f9d346683200161eac85aa"
+    },
+    {
+      "record": "review176-phone-identity.json",
+      "bytes": 389,
+      "sha256": "e942371b9bd42e767088f0c04bdf1f33d78fc55523b15d815e6577722cf904ae"
+    },
+    {
+      "record": "review176-rg-identity.json",
+      "bytes": 391,
+      "sha256": "8ff344f0e930d867a0b74897d76b60b35aa8d0c6c1804a7d709480801c566b61"
+    },
+    {
+      "record": "review176-rg-installed.json",
+      "bytes": 297,
+      "sha256": "46d89891625f5d89dcb1b2097d9af7839a38f53471ff0626418a0fb1cb9ba60d"
+    },
+    {
+      "record": "review176-rg-own-logcat.json",
+      "bytes": 20644,
+      "sha256": "82d297d46d13ecf39118c82a36b62d04d798f51dfd5f601b88724d70fd314fc8"
+    },
+    {
+      "record": "review176-rg-start.json",
+      "bytes": 112,
+      "sha256": "2aef8e9ae4e93754f24013a5021c71ebc4f40dc55747960163ac0ee725676ff5"
+    },
+    {
+      "record": "review176-rg-update.json",
+      "bytes": 133,
+      "sha256": "e95a31b6e2ddc4667f88dc9931e6a380e4d72a6796bdf5fe1f61458916e71419"
+    },
+    {
+      "record": "review176-source-apk-capsule.json",
+      "bytes": 9918,
+      "sha256": "bc5b91f6aea2f8595f3ab32970736b47070892573ae983f3de7f0456fff3f4ff"
+    },
+    {
+      "record": "review176-source.patch",
+      "bytes": 4950,
+      "sha256": "6e1788cb40f0757122ed4188173d846dc4a38b0bbedcb7703ac8f4cac6c81a96"
+    },
+    {
+      "record": "review176-verification-summary.json",
+      "bytes": 5460,
+      "sha256": "0dfb6bf10e8d724600f5c65d0cb0b9cef0bdc49676b931c95b6d7d79ec3ecf18"
+    },
+    {
+      "record": "review176a-connected.json",
+      "bytes": 1173,
+      "sha256": "bd50bba3d959104e7126c7107941282c84a0e1ae38c2f23658e5a79e7190b1c3"
+    },
+    {
+      "record": "review176a-fixture-launch.json",
+      "bytes": 230,
+      "sha256": "0471f4e2ec0557904c1a610b1315da3684ede8277f6d3daf560184c8ffc432e9"
+    },
+    {
+      "record": "review176a-go.json",
+      "bytes": 95,
+      "sha256": "4db9079788799b559c69697bc404b6fc0da05f6369e39e0cc7a00ea6c339764f"
+    },
+    {
+      "record": "review176a-probe-read.json",
+      "bytes": 5788,
+      "sha256": "a39135423b7f18ed489772d6f8bcb771e12591df03f40d059d86c4ace1b421ee"
+    },
+    {
+      "record": "review176a-stock-start.json",
+      "bytes": 668,
+      "sha256": "213db767fb6b11f0d0e94dac02c7083105796b4014057650261987381459a0f0"
+    },
+    {
+      "record": "review176b-connected.json",
+      "bytes": 1171,
+      "sha256": "672286a0ab01d1f0c25b06ac23beb46886244de3d0153b69be621cbda81f436a"
+    },
+    {
+      "record": "review176b-driver-start.json",
+      "bytes": 112,
+      "sha256": "2099e296c83c98f8d8a1ee9f38debba257671a4901b8e43a5b9200cbcbcda2dd"
+    },
+    {
+      "record": "review176b-fixture-launch.json",
+      "bytes": 230,
+      "sha256": "6e99f73134254f209ea0e26cf3e9a866dc730df1bd1f244d69e1cea82c451055"
+    },
+    {
+      "record": "review176b-go.json",
+      "bytes": 95,
+      "sha256": "98eb3b33f763b479ce7e498e95e1ea386fcb5b099e80bbcbd2ad1401ba5f6e42"
+    },
+    {
+      "record": "review176b-image-result.json",
+      "bytes": 70,
+      "sha256": "3107513da44d14a54c5641d05871dc24c45e8c72861d8347e38936f5f237d317"
+    },
+    {
+      "record": "review176b-probe-read.json",
+      "bytes": 5698,
+      "sha256": "c50a300fcb2cc099563d10ab77be07a9f6d2c766f8960372f396047c9ce385a8"
+    },
+    {
+      "record": "review176b-stock-start.json",
+      "bytes": 668,
+      "sha256": "98dce7beef7560f1a84c9c77b5798ce814185646449466809edcfcb68fb1c81e"
+    },
+    {
+      "record": "review176b-visible.png",
+      "bytes": 21131,
+      "sha256": "b58ee04326ccf9c606523c318e7c9e90aaab3c9a8cbdf650e2b2432db1184809"
+    }
+  ],
+  "privacy": "Original browser/account/TLS private material remains outside Git. Actual owned experiment logs/images stay private with hashes; direct167 publishes scoped metrics, explicit limits and outcomes.",
+  "historicalFirstAPKs": [
+    {
+      "path": "experiments/fold6-rg-projector/directhost/build/outputs/apk/debug/directhost-debug.apk",
+      "sha256": "3f048357d4a1fb084ff85474fc6e7800ad52d237caa2ca7e24b2b798fb371fc6",
+      "bytes": 2541326,
+      "signerReportSHA256": "146a7bbd405568e07fa1c44820d7de7cf4714f14d1cd2be5c6da5be5db076d21",
+      "binding": "Initial source checkpoint; installed original retained, build output path subsequently reused"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/build/outputs/apk/debug/directrg-debug.apk",
+      "sha256": "37873c57ee59098616afb8af4746b5debfffde47772d93a619558a91852407a4",
+      "bytes": 2550070,
+      "signerReportSHA256": "146a7bbd405568e07fa1c44820d7de7cf4714f14d1cd2be5c6da5be5db076d21",
+      "binding": "Initial source checkpoint; installed original retained, build output path subsequently reused"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/build/outputs/apk/androidTest/debug/directrg-debug-androidTest.apk",
+      "sha256": "977ab800f0064849990be31ac372fe038971872f5eeeee294ab05d693aced1f8",
+      "bytes": 48358,
+      "signerReportSHA256": "146a7bbd405568e07fa1c44820d7de7cf4714f14d1cd2be5c6da5be5db076d21",
+      "binding": "Initial source checkpoint; installed original retained, build output path subsequently reused"
+    }
+  ],
+  "buildDefinitions": [
+    {
+      "path": "experiments/fold6-rg-projector/build.gradle.kts",
+      "bytes": 200,
+      "sha256": "d4b00ef167bc58e0f4cc76fcc1fc61c2a8303235bc4069178f2e08c5df82a76c"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directhost/build.gradle.kts",
+      "bytes": 716,
+      "sha256": "88d65ed32f6d19e196b5ef9c4e72e512cbeffbf52cc8e5d84f7760b7921dbad4"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/build.gradle.kts",
+      "bytes": 902,
+      "sha256": "41739e5ea8b99dbcaa70ceed98e52fab09e1b65bb2360d6a4b7d1c4d0baf783e"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/protocol/build.gradle.kts",
+      "bytes": 497,
+      "sha256": "838c868015390224a87f5f532b61e7cb4520cabf948d4ae9fc1756d7d6805a71"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/settings.gradle.kts",
+      "bytes": 344,
+      "sha256": "6dd7ef2cb4b97071c6e7ad15fdee39ae26217a9cea64693f4f362d801ce69bd5"
+    }
+  ],
+  "routeReconciliation": {
+    "old009": "UNKNOWN_TIMEOUT_NO_REPLAY_RETAINED",
+    "event095": "EXISTING_PRIMARY_AUTHENTICATED_KEPT_UNCHANGED",
+    "newConnectCalls": 0,
+    "newBootstrapCalls": 0,
+    "newTcpipCalls": 0,
+    "currentOwnerChanges": "New complete Chromium raw007 retained; original Phone/RG matched prior verified archives",
+    "event109": {
+      "failureSpecificExistingPrimaryQualification": "PASS",
+      "newConnectBootstrapTcpipInputOrCredentialActions": 0,
+      "newUnusedPackageInstallClientExitCode": 1,
+      "AndroidFailureCode": "NOT_RECEIVED",
+      "oneReadOnlyInstallReconciliation": "Rejected before ADB; pinned SSH PID absent",
+      "installationOutcome": "UNKNOWN_NO_REPLAY",
+      "currentCapability": "Exact debug tunnel PID and selected listener absent; Manager custody reconciliation required",
+      "workerTunnelSignalsOrSharedResets": 0
+    },
+    "event112": {
+      "exactReplacementHostBindingAndActorSDKKernelClientServerGuards": "PASS",
+      "initialSelectedRegistration": "ABSENT",
+      "newHostConnectCalls": 1,
+      "clientReturncode": 0,
+      "clientText": "FAILED_TO_CONNECT",
+      "physicalPackageOrCallerWorkReached": false,
+      "additionalRegistrationProbeOrReplay": false,
+      "bootstrapTcpipDisconnectOrSharedResetCalls": 0,
+      "installationOutcome": "UNKNOWN_UNCHANGED",
+      "currentCapability": "EXISTING_PRIMARY_REGISTRATION_NOT_QUALIFIED",
+      "backup106StillActive": true
+    },
+    "event114": {
+      "persistent113BindingQualified": true,
+      "nativeSDKKernelLeaseClientServerGuards": "PASS",
+      "initialSelectedRegistration": "ABSENT",
+      "newHostConnectCalls": 1,
+      "fileAndParentDirectoryFsyncBeforeConnect": true,
+      "selectedRegistrationAfter": "OKAY_DEVICE",
+      "exactPhysicalFold6User0ShellQualified": true,
+      "completeUser0HostR2View": "ABSENT",
+      "oldInstallerTransactionSettled": false,
+      "oldInstallReplayed": false,
+      "nextPackage": "FRESH_UNUSED_HOST_R3",
+      "bootstrapTcpipDisconnectOrSharedResetCalls": 0,
+      "originalStoreTraversalOrMutation": 0,
+      "backup106StillActive": true
+    }
+  },
+  "componentResults": {
+    "rgR2UI": "Reached TLS path without initial decor crash",
+    "tlsContextOriginal": "IOException before authenticated handshake",
+    "tlsContextSameIdentityRepacked": "Loaded platform context; ConnectException with bridge stopped, authenticated TLS not tested",
+    "tlsContainerCompatibility": {
+      "originalMAC": "SHA256",
+      "compatMAC": "SHA1",
+      "iterations": 2048,
+      "keyAndCertificatePBE": "PBE-SHA1-3DES",
+      "sameKeyCertificatePassword": true,
+      "oldContainerRetained": true,
+      "tlsTrustHostnameValidationUnchanged": true
+    },
+    "installedRGPackageSHA256": {
+      "com.code2hack.eyebrowse.projector.directrg": "37873c57ee59098616afb8af4746b5debfffde47772d93a619558a91852407a4",
+      "com.code2hack.eyebrowse.projector.directrg.test": "977ab800f0064849990be31ac372fe038971872f5eeeee294ab05d693aced1f8",
+      "com.code2hack.eyebrowse.projector.directrg.r2": "03e26ce8cfe1376627fea2834864630e570f6effdf23f2dd425c366da44679c0",
+      "com.code2hack.eyebrowse.projector.directrg.r2.test": "c5e6a5f300b00df13c4eb68464356132032d2d1b134c91473244fcef07975861",
+      "com.code2hack.eyebrowse.projector.directrg.r2.diag1": "053823e5866fbb72c131fc3404f11c18f749fe1ea15569893daca1fe652ac2d8",
+      "com.code2hack.eyebrowse.projector.directrg.r3": "073f195eb312b9b26e4fd3801449aeb017f61a1bb51c9d51fa6965b83084c59e",
+      "com.code2hack.eyebrowse.projector.directrg.r3.test": "fc8c5e874f1e0c72a6ddc3ec29ebe1d987bdcc09c40bdfd69987a9fbaa20367a",
+      "com.code2hack.eyebrowse.projector.directrg.r3.probe2": "9d1a4b4a17111e67bd4d2ecb5bfbe175ff3b3c44fc424410b8b698729fa3a97a"
+    },
+    "stockServerSelfUnlink": {
+      "upstreamSourceQualified": true,
+      "oldMasterActuallyMissing": true,
+      "newSessionCopy": "CREATE_NEW and fixed-hash verification before launch",
+      "threeHostCasesPassed": true,
+      "currentDeviceResult": "MULTIPLE_REAL_CURRENT_HOSTR5_SESSIONS_RECONNECTED_WITH_MASTER_RETAINED_AND_STOCK_CHILDREN_CLOSED"
+    },
+    "sameClockLatency": {
+      "currentField": "packetReadToCallbackP95Ms",
+      "scope": "RG System.nanoTime packet read to callback receipt",
+      "currentDeviceResult": "ACTUAL_DIRECT167_310066MS_INTERVAL_LAST_ROLLING_CALLBACK_P95_9.045312MS_ECHO_RTT_P95_99.951041MS",
+      "oldMetricRetainedAsInvalid": true
+    },
+    "installedPhoneHostR3APKSHA256": "4b3fc80cbf202a1bf7246e199612850aa0b52c05fbe404b78848188547702cc9",
+    "credentialFreePilotMetrics": {
+      "record": "cf130-product003-pixels-before.json",
+      "rendered": 402,
+      "changingPackets": 403,
+      "elapsedMs": 28265,
+      "packetReadToCallbackP95Ms": 10.729323,
+      "networkRoundTripP95Ms": 104.24151,
+      "scope": "RG packet-read to callback receipt and echoed RTT use one RG monotonic clock. Setup sample only, no stable five-minute moving FPS, cross-device input-to-visible or optical claim."
+    },
+    "socketObserver136": {
+      "publicSocketErrorCases": 38,
+      "orchestrationBindingCases": 9,
+      "conditionalOldNetidLayoutRedProved": true,
+      "actualProduct003Or004RawCause": "UNKNOWN",
+      "actual004SourceErrorsRemainRejected": true
+    },
+    "nativeEndpointValidator136": {
+      "state": "ACTUAL_PRODUCT007_AUTHENTICATED_DIRECT_ENDPOINTS_OBSERVED_PRIOR_SOCKET_NEGATIVES_RETAINED",
+      "publicCases": 36,
+      "sourceSHA256": "2059cff343153d225040b9df27d928c3a51f284f0a08cabc145da5a917dbf2a7",
+      "basis": "Existing source-bound platform SSLSocket accessors and exact owned closed-session SCID; no SS stderr/source-error whitelist or source/native/auth predicate change",
+      "newProductAPKs": false,
+      "noDeviceExecutionWhileCapabilityUnresolved": true,
+      "orchestrationCases": 6,
+      "runnerCoreFunctionsChanged": [
+        "path_proof",
+        "measure final closed-session corroboration"
+      ],
+      "ordinaryIterationPreparedForAfterCapabilityAnd004Settlement": true
+    },
+    "generatedTouch007": {
+      "source": "AUTOMATED_RG_SOFTWARE_EVENT",
+      "eventsSent": 1,
+      "phoneControlWrites": 1,
+      "fixtureTapCounterAfter": 0,
+      "actualPostImageVisibleTaps": 0,
+      "observedAppEffect": false,
+      "ownerPhysicalTouchpadTest": false,
+      "cause": "UNKNOWN"
+    },
+    "security009": {
+      "sourceBuild": "HOST3_RG3_PROBE2",
+      "actualProbeCount": 1,
+      "noClientCertificateRefusedBeforeMediaWelcome": true,
+      "bridgeRefusalCounterBefore": 0,
+      "bridgeRefusalCounterAfter": 1,
+      "stockChildCountBefore": 0,
+      "stockChildCountAfter": 0,
+      "priorSessionBytesUnchanged": true,
+      "ownedTeardownAndTwoSecureNativeCuts": true,
+      "host4OrWholeSecurityAcceptance": false
+    },
+    "host4DiagnosticsAndProbe3Bootstrap": {
+      "liveValidation": "PENDING",
+      "firstWinningCloseCategory": true,
+      "samePhoneMonotonicMilestones": [
+        "childStartedMs",
+        "firstVideoFrameMs",
+        "stopStartedMs"
+      ],
+      "unobservedMilestone": -1,
+      "startupWriteAndHostDeadlinesUnchanged": true,
+      "bootstrapGeometryOnlyCannotAuthorizeInputOrMeasurement": true,
+      "publicExactKotlinPredicateCasesPassed": 12,
+      "historicalZeroFrameCause": "UNKNOWN"
+    },
+    "hostR4Package145": {
+      "oldInstallerOutcome": "UNKNOWN_NO_REPLAY",
+      "currentIdentityVersionUser0UIDAndWholeSignedAPKMatch": true,
+      "readOnlyEntryCases": 11,
+      "appIdCompatibilityCases": 7,
+      "firstWhenceAndThenMetadataRejectionsRetained": true,
+      "newPowerNativeCallerOrHostInstallCalls": 0
+    },
+    "probe3Install145": {
+      "target": "RG_UNUSED_PROBE3_ONLY",
+      "affectedHostCases": 13,
+      "installs": 1,
+      "explicitSuccess": true,
+      "normalReplyRetainedBytes": 250,
+      "stderr": "CAPTURED_EMPTY",
+      "wholeInstalledAPKMatches": true
+    },
+    "video014StageRetention": {
+      "state": "HOST_ONLY_PREPARED_NOT_EXECUTED",
+      "actualTimeoutSeamsPassed": 5,
+      "onlyChangedCoreFunction": "measure",
+      "sourceSHA256": "b96ae58cada210d7bb000c6874b6b80df73e814645dd426bc1fd12e8ce4c7ad3",
+      "newExclusiveGoIntentAndReturnPredicates": true,
+      "old014BoundaryRecovered": false
+    },
+    "currentDirect167": {
+      "evidenceField": "owner167DirectResults",
+      "scope": "Current installed HostR5/RG3/Probe4 actual direct tests; independent review and acceptance pending"
+    },
+    "decoderLifetimeReview169": "Both fixes source/JVM verified; current corrected APK short lifecycle checks passed, see usb173CorrectedResults; prior negative trials remain explicit."
+  },
+  "smokeHelperRecords": [
+    {
+      "record": "screen-attempt-w67-smoke001.json",
+      "sha256": "a9812200a1dd8b1ad57582d3a993de5e9d71e7a2eaabfed894285c2884593077",
+      "state": "WORK_FINISHED",
+      "workReturncode": 1,
+      "credentialReadState": "NOT_ATTEMPTED",
+      "relockVerified": true,
+      "ownedControlSettled": true,
+      "after": {
+        "locked": true,
+        "keyguardShowing": true,
+        "wakefulness": "Dozing",
+        "logicalDisplay0State": "OFF"
+      }
+    },
+    {
+      "record": "screen-attempt-w67-smoke002.json",
+      "sha256": "562ca05413cc9b231592f1c876955661fc56198f78a4f5850d5b523dd78e7478",
+      "state": "FAILED_OR_UNKNOWN_NO_RETRY",
+      "workReturncode": 1,
+      "credentialReadState": "NOT_ATTEMPTED",
+      "relockVerified": true,
+      "ownedControlSettled": true,
+      "after": {
+        "locked": false,
+        "keyguardShowing": false,
+        "wakefulness": "Awake",
+        "logicalDisplay0State": "ON"
+      }
+    },
+    {
+      "record": "screen-attempt-w67-smoke003.json",
+      "sha256": "48a6666d36addfe02bec47787c8170e6984899b7f3f194b75c1298c1f53cd522",
+      "state": "WORK_FINISHED",
+      "workReturncode": 0,
+      "credentialReadState": "NOT_ATTEMPTED",
+      "relockVerified": true,
+      "ownedControlSettled": true,
+      "after": {
+        "locked": true,
+        "keyguardShowing": true,
+        "wakefulness": "Dozing",
+        "logicalDisplay0State": "OFF"
+      }
+    },
+    {
+      "record": "screen-attempt-w67-five-minute001.json",
+      "sha256": "a7b567a4732c17e9cdebf374dd424c426b79ebfe6e8b154fad73ddaba40e356c",
+      "state": "FAILED_OR_UNKNOWN_NO_RETRY",
+      "credentialReadState": "NOT_ATTEMPTED",
+      "workRan": false,
+      "ownedControlProcessOrForwardStarted": false,
+      "priorOld002ResolutionRemainsExactOnly": true,
+      "finalNativeProofSeparateRecord": "five-minute001-summary.json"
+    },
+    {
+      "record": "screen-attempt-w67-five-minute002.json",
+      "sha256": "9fa2b72e412c362f237d4fb513dee514616b0393b83ac26890db0fe28a37ae49",
+      "bytes": 2035,
+      "state": "FAILED_OR_UNKNOWN_NO_RETRY",
+      "credentialReadState": "NOT_ATTEMPTED",
+      "submissionIntent": false,
+      "workRan": false,
+      "relockVerified": true,
+      "ownedControlSettled": true,
+      "failure": {
+        "guardCode": "NATIVE_SYSTEMUI_OWNERSHIP_REQUIRED",
+        "phase": "NATIVE_KEYPAD"
+      },
+      "finalNativeProofSeparateRecord": "five-minute002-summary.json"
+    }
+  ],
+  "supportingIndependentVerification": [
+    {
+      "record": "manager-worker67-new007-preservation-ready-099/offline-restoration-verification.json",
+      "sha256": "630dcd928d3504d14bc8ede67a0b33b907a759ff7334e87cc85b44a6dd2d1c38",
+      "scope": "Offline archive/restoration/header/byte/metadata and SQLite verification; supporting preservation, no product acceptance"
+    },
+    {
+      "record": "manager-worker67-precontrol001-jar-resolution-116/qualification117.json",
+      "bytes": 3748,
+      "sha256": "3f9b59231ed3f332419e85db5279b8ab490298b69b413bba601e86e48ec61ae8",
+      "scope": "Exact installed operational consumer and specific prior-record resolutions,10 independent Manager checks plus63 Worker dummy host cases; no product or ticket acceptance"
+    }
+  ],
+  "historicalCheckpointPhysical": {
+    "projectorPackagesInstalled": 6,
+    "screenHelperInvocations": 2,
+    "credentialReads": 0,
+    "thirdPartyVideo": "NOT_PASSED_SMOKE_FAILED_BEFORE_MEDIA",
+    "rgSurfaceDecode": "NOT_PASSED_ZERO_RENDERED_FRAMES",
+    "harmlessVisibleTapEffect": "UNEXECUTED",
+    "fiveMinuteNoPCGateway": "UNEXECUTED",
+    "onDeviceAuthenticationRefusal": "UNEXECUTED_ACCEPTANCE_CASE",
+    "onDeviceLifecycle": "UNEXECUTED_ACCEPTANCE_CASES",
+    "measuredMovingFPSAndLatency": "UNEXECUTED",
+    "audio": "DISABLED_INTERMEDIATE",
+    "opticalHeadIMEAcousticAcceptance": "NOT_CLAIMED",
+    "blocker": "Specific prior-record screen-helper hold after consumed smoke002; credential-free end-lock independently verified, future helper admission still held",
+    "componentNegativesRetained": [
+      "Initial RG decor/insets NullPointerException",
+      "Initial API32 PKCS12 context IOException",
+      "Smoke002 final native state contradicted earlier relock observation"
+    ]
+  },
+  "sourceFiles": [
+    {
+      "path": "experiments/fold6-rg-projector/build.gradle.kts",
+      "bytes": 200,
+      "sha256": "d4b00ef167bc58e0f4cc76fcc1fc61c2a8303235bc4069178f2e08c5df82a76c"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directhost/build.gradle.kts",
+      "bytes": 716,
+      "sha256": "88d65ed32f6d19e196b5ef9c4e72e512cbeffbf52cc8e5d84f7760b7921dbad4"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directhost/src/main/AndroidManifest.xml",
+      "bytes": 804,
+      "sha256": "f9bf3e867598107954702201bb44eaaf33127912b146a8dcef7b6edad8df5ecc"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directhost/src/main/kotlin/com/code2hack/eyebrowse/projector/directhost/FixtureActivity.kt",
+      "bytes": 2471,
+      "sha256": "49e88c2f1ff9f904b8e913a3890dc145e9ef3eb736363362c6f97d299b1f9b55"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directhost/src/main/kotlin/com/code2hack/eyebrowse/projector/directhost/HostActivity.kt",
+      "bytes": 1822,
+      "sha256": "d198ad8bfdcc9777cd2471cde41c39b421df2ab8c8d919b977b057961f2d49f8"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directhost/src/main/kotlin/com/code2hack/eyebrowse/projector/directhost/ShellMain.kt",
+      "bytes": 15645,
+      "sha256": "f91c0c55caee53be58602fd4eaec72dff9171c4bae6ff0b184fbae1f573f0dc6"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directhost/src/main/res/values/strings.xml",
+      "bytes": 294,
+      "sha256": "e3d62975aea53e8b6c67bf921750179df51800ce00a135380885f85f4ad8f396"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directhost/src/main/res/xml/no_backup.xml",
+      "bytes": 305,
+      "sha256": "4fb44914d317d8badcea48574f45c90ad0dcc65ba15d986fa32afdd9d29919b7"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/build.gradle.kts",
+      "bytes": 902,
+      "sha256": "41739e5ea8b99dbcaa70ceed98e52fab09e1b65bb2360d6a4b7d1c4d0baf783e"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/androidTest/kotlin/com/code2hack/eyebrowse/projector/directrg/ProjectionInstrumentation.kt",
+      "bytes": 14866,
+      "sha256": "f6c79c051ffe7685e98526cea9283862a92ff7cc348760a3d3524b3f061ea4e3"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/main/AndroidManifest.xml",
+      "bytes": 726,
+      "sha256": "c9958c4b3ed4be80dfa0fbff6dd19b0dda2b14edbdf9a8c0a2b504c4f98c21ab"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/main/kotlin/com/code2hack/eyebrowse/projector/directrg/ProjectionSession.kt",
+      "bytes": 9928,
+      "sha256": "e40672340dc9f0cd4c8e008793c08d31f8dc7f49faa26a6cb4cecfc07af2cd57"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/main/kotlin/com/code2hack/eyebrowse/projector/directrg/ReceiverActivity.kt",
+      "bytes": 5656,
+      "sha256": "298a6c7cc96d8b2cc05ed27d94a0ae5095038d85ca098b3b6e7f2bf60f07c8e8"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/main/kotlin/com/code2hack/eyebrowse/projector/directrg/SurfaceDecoder.kt",
+      "bytes": 4603,
+      "sha256": "52197758bf74007c9dd02106b309118a13f523a2ba2ff358d3b6f904461f2552"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/main/res/values/strings.xml",
+      "bytes": 369,
+      "sha256": "6432976bec7df93d0fec72b14f746bda5ce47f185604e7b72853335ab7ffe1dc"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/main/res/xml/no_backup.xml",
+      "bytes": 305,
+      "sha256": "4fb44914d317d8badcea48574f45c90ad0dcc65ba15d986fa32afdd9d29919b7"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/protocol/build.gradle.kts",
+      "bytes": 497,
+      "sha256": "838c868015390224a87f5f532b61e7cb4520cabf948d4ae9fc1756d7d6805a71"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/protocol/src/main/AndroidManifest.xml",
+      "bytes": 13,
+      "sha256": "571f2735faf5e857752ee057ac8ef63425576a721616c60b86ee5d4c0a2d682f"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/protocol/src/main/kotlin/com/code2hack/eyebrowse/projector/protocol/Tls.kt",
+      "bytes": 2685,
+      "sha256": "b440f88c8f52100ec317e2adea7d9335959fec590d957010b5d678dcc903877a"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/protocol/src/main/kotlin/com/code2hack/eyebrowse/projector/protocol/Wire.kt",
+      "bytes": 6068,
+      "sha256": "06b8c5ed27a35c0bbeb0c606cb5bb3b3ee09e4bde9a98f24d0ad2c565539e657"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/protocol/src/test/kotlin/com/code2hack/eyebrowse/projector/protocol/TlsTest.kt",
+      "bytes": 5618,
+      "sha256": "ee44fc84fda1062089a6988592535ea69d821b6da504ce72b22634ededbf77b3"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/protocol/src/test/kotlin/com/code2hack/eyebrowse/projector/protocol/WireTest.kt",
+      "bytes": 3808,
+      "sha256": "df5f8328c5b89cabcdf7bc4aa7d6c5ee811d582fda0851c8f5c450c83dbd673c"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/settings.gradle.kts",
+      "bytes": 344,
+      "sha256": "6dd7ef2cb4b97071c6e7ad15fdee39ae26217a9cea64693f4f362d801ce69bd5"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directhost/src/test/kotlin/com/code2hack/eyebrowse/projector/directhost/SessionJarTest.kt",
+      "bytes": 1873,
+      "sha256": "8426fc2bbff0e1b74ea2d7128f4626ec2a72b1669f23116d48562af02f2120a7"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directhost/src/test/kotlin/com/code2hack/eyebrowse/projector/directhost/SessionReasonTest.kt",
+      "bytes": 1411,
+      "sha256": "89c7a513f8ecd0afc8abf996a211bbd9f5dab5c92889d0e8ee9fa12c87865aec"
+    }
+  ],
+  "backupGateRetired": {
+    "ownerDecision106": true,
+    "repeatedOldStoreEqualityArchiveRestoreRequired": false,
+    "newerOriginalBytesPrimaryUntouched": true,
+    "latest008": "NOT_READY",
+    "oldCutsHistoricalOnly": true,
+    "noFurtherOriginalStoreTraversal": true
+  },
+  "screenHelperPriorRecordResolution": {
+    "state": "ACTIVE_MANAGER_EXACT_NONCREDENTIAL002_ADMISSION_RESOLUTION",
+    "old002RemainsFailedConsumedAndUnchanged": true,
+    "allOtherHoldsRetained": true,
+    "newCallerAfterSmoke003": "FIVE_MINUTE001_FAILED_CONSUMED_NONCREDENTIAL_BEFORE_WORK",
+    "newFiveMinute001Exempted": true,
+    "futureActualCallerAdmission": "HELD_BY_NEW_CONSUMED_FIVE_MINUTE002_NOT_EXEMPTED_BY_OLD001_OR_SMOKE002",
+    "newFiveMinute002Exempted": false
+  },
+  "privateRecordDurabilityCorrection": {
+    "initial112IntentExplicitFsyncBeforeConnect": false,
+    "priorIntentRetainedWithoutUpgrade": true,
+    "correctedHelper": "file flush/fsync then parent directory fsync before return",
+    "hostCasesPassed": 3,
+    "hostCaseDeviceNetworkCredentialOrLoaderCalls": 0,
+    "qualifiedCallerAndGuardsUnchanged": true
+  },
+  "compiledSourcesMeaning": "Historical initial compiled source cut retained for historicalFirstAPKs; current sourceFiles/buildDefinitions are bound by currentSourceCapsule",
+  "previousPhoneHostR2APK": {
+    "package": "com.code2hack.eyebrowse.projector.directhost.r2",
+    "sha256": "84f656b53167b5cba969d50a8f27d64578fd1fecdd576abed7c60b5f64bc6b1d",
+    "bytes": 2549566,
+    "signatureVerified": true,
+    "installed": null,
+    "installationOutcome": "UNKNOWN_AFTER_CLIENT_EXIT1_GUARDED_RECONCILIATION_UNAVAILABLE",
+    "observedUser0PackagePresenceAtEvent114": false,
+    "oldInstallationTransactionOutcome": "UNKNOWN_UNCHANGED_NO_REPLAY",
+    "currentCandidate": false
+  },
+  "currentSourceCapsule": {
+    "record": "review176-source-apk-capsule.json",
+    "bytes": 9918,
+    "sha256": "bc5b91f6aea2f8595f3ab32970736b47070892573ae983f3de7f0456fff3f4ff",
+    "sourceFiles": 25,
+    "testSourceFiles": 8,
+    "binding": "Current R67-3 finally/interrupt correction; full installed RG3 bytes match; short local Stop/reconnect passed; unchanged HostR5/Probe4. Prior long-run and lifecycle capsules retain original bindings."
+  },
+  "previousRGTestAPK": {
+    "package": "com.code2hack.eyebrowse.projector.directrg.r3.test",
+    "bytes": 30534,
+    "sha256": "fc8c5e874f1e0c72a6ddc3ec29ebe1d987bdcc09c40bdfd69987a9fbaa20367a",
+    "signatureVerified": true,
+    "installed": true
+  },
+  "preparedConsumer116": {
+    "state": "PREPARED116_THEN_INDEPENDENTLY_QUALIFIED_AND_ACTIVE117",
+    "candidateRecord": "screen-caller-prepared116.py",
+    "candidateBytes": 20071,
+    "candidateSHA256": "fcad24dd81c0de318de74dad9d8dc1b3f6181a201bbb7886fefd92284435d172",
+    "newResolver": "Exact failed noncredential001/path/hash/full node/private ACTIVE Manager policy and both proofs only",
+    "existingFunctionsAndClassesUnchangedExceptMainScanBranch": true,
+    "hostCasesPassed": 63,
+    "productionLoaderStatusDeviceCallsInHostCases": 0,
+    "actualCallerUseAuthorizedByPreparation": false,
+    "liveCallerUnchangedAtPreparation": true,
+    "qualifiedLiveCallerSHA256": "fcad24dd81c0de318de74dad9d8dc1b3f6181a201bbb7886fefd92284435d172",
+    "independentManagerHostCasesPassed": 10,
+    "actualCallerUseAuthorizedByManager117": true
+  },
+  "dedicatedControlJAR116": {
+    "state": "STAGED_EXCLUSIVE_AND_INDEPENDENT_HASH_VERIFIED",
+    "bytes": 733930,
+    "sha256": "764eb6f79811d5211fe9df341120882ba9994c7a61b897d7bf3fb662e53bc536",
+    "directoryMode": "0700",
+    "fileMode": "0600",
+    "uid": 2000,
+    "gid": 2000,
+    "nlink": 1,
+    "oldMasterReprobes": 0,
+    "callerControlCredentialOrInputCalls": 0,
+    "cleanupFalseUnchanged": true
+  },
+  "preparedMeasurementDriver": {
+    "testPackage": "com.code2hack.eyebrowse.projector.directrg.r3.probe3",
+    "setupWaitMaximumSeconds": 180,
+    "bootstrap": "Authenticated direct geometry before fixture; actual streaming still required after Go",
+    "measurementClock": "RG SystemClock.elapsedRealtime",
+    "measurementSeconds": 310,
+    "preparedDistinctVideoRun": "cf141-video014",
+    "scheduledTouchesForThatCase": 0,
+    "actualMeasurementExecuted": null,
+    "probe3InstallAttempted": true,
+    "oldCasesAndUnknownInstallsReplayed": false,
+    "probe3InstalledBytesMatch": true,
+    "actualOrchestrationState": "VIDEO014_PREGO_TIMEOUT_REMOTE_GO_START_UNKNOWN_OWNED_ENDSTATE_UNKNOWN"
+  },
+  "historicalCheckpoint061": {
+    "commit": "cc94aa49c8cfd7f6198b941e218adbd5f363223e",
+    "evidenceIndexPath": "docs/experiments/fold6-rg-projector-av/direct-video-evidence.json",
+    "APKs": [
+      {
+        "package": "com.code2hack.eyebrowse.projector.directhost.r3",
+        "bytes": 2512681,
+        "sha256": "4b3fc80cbf202a1bf7246e199612850aa0b52c05fbe404b78848188547702cc9",
+        "signatureVerified": true,
+        "installed": true
+      },
+      {
+        "package": "com.code2hack.eyebrowse.projector.directrg.r3",
+        "bytes": 2516261,
+        "sha256": "073f195eb312b9b26e4fd3801449aeb017f61a1bb51c9d51fa6965b83084c59e",
+        "signatureVerified": true,
+        "installed": true
+      },
+      {
+        "package": "com.code2hack.eyebrowse.projector.directrg.r3.probe2",
+        "bytes": 30542,
+        "sha256": "9d1a4b4a17111e67bd4d2ecb5bfbe175ff3b3c44fc424410b8b698729fa3a97a",
+        "signatureVerified": true,
+        "installed": true
+      }
+    ],
+    "sourceCapsule": {
+      "record": "hostr3-rg3-probe2-current-source-apk-capsule.json",
+      "bytes": 7169,
+      "sha256": "63864479cd41c35efab4d111b34456d639b96484a6444f96bef60a45d7f6f853",
+      "sourceFiles": 24,
+      "binding": "Unchanged Phone r3 and byte-identical RG3 main; unused probe2 test changes setup wait60->180 seconds, measured310-second real-clock interval unchanged"
+    },
+    "originalPhysicalAndTeardownRetainedInThatGitObject": true
+  },
+  "latestEvidenceBoundary": {
+    "reports": [
+      100,
+      101,
+      102
+    ],
+    "execution": "BOTH_USB173_DEBUG_DIRECT_LAN_MEDIA_CURRENT_RGBA_F_G_H_I_PASSED",
+    "productComponentEvidenceReadyForReview": true,
+    "Owner167ExtraTestGatesCancelled": true,
+    "Owner106RepeatedBackupsRetired": true,
+    "originalAppsOrStoresModified": false,
+    "sharedDebugRoutesModified": false,
+    "mainOrV004Changed": false,
+    "reviewOrAcceptanceClaim": false,
+    "lastDeviceCut": "Owned bridge/stock/testedVD42-53/listener44367 absent; own apps stopped; one normal final screen-off/check PhoneDozing/RGAsleep; sampled scope only. Manager173 debug custody/leases retained.",
+    "remainingScope": "Renewed independent exact-head review/Manager acceptance; audio/head/physicaltouchpad/IME/optical/acoustic/reboot claims remain excluded; historical c/e failed trials retained without causal upgrade."
+  },
+  "historicalCheckpoint075": {
+    "status": "INCOMPLETE_VIDEO014_PREGO_TIMEOUT_BOTH_DEBUG_PIDS_ABSENT_OWNED_ENDSTATE_UNKNOWN",
+    "APKs": [
+      {
+        "package": "com.code2hack.eyebrowse.projector.directhost.r4",
+        "bytes": 2517981,
+        "sha256": "d1cc9b1be3b2670a91a01f6e3b34b9213e9604da34b6574876251ea1ceebd743",
+        "signatureVerified": true,
+        "installationState": "CURRENT_WHOLE_INSTALLED_APK_MATCHES_OLD_TRANSACTION_UNKNOWN"
+      },
+      {
+        "package": "com.code2hack.eyebrowse.projector.directrg.r3",
+        "bytes": 2516261,
+        "sha256": "073f195eb312b9b26e4fd3801449aeb017f61a1bb51c9d51fa6965b83084c59e",
+        "signatureVerified": true,
+        "installationState": "MATCHED_AT_PREINSTALL_CUT"
+      },
+      {
+        "package": "com.code2hack.eyebrowse.projector.directrg.r3.probe3",
+        "bytes": 32182,
+        "sha256": "5c7aed07b3a4c468286abbee5f29c43ff871e04a2a604c102237b728f050cb51",
+        "signatureVerified": true,
+        "installationState": "ONE_FRESH_UNUSED_INSTALL_WHOLE_INSTALLED_BYTES_MATCH"
+      }
+    ],
+    "currentSourceCapsule": {
+      "record": "hostr4-rg3-probe3-current-source-apk-capsule.json",
+      "bytes": 7582,
+      "sha256": "4b0508dd4e47e39d2d229c57a05f8ebbf79c65d956789ea792cb56ed740fc282",
+      "sourceFiles": 25,
+      "binding": "Host4 fixed close-category/milestone diagnostics; Probe3 geometry bootstrap before fixture and unchanged rendered measurement gate; RG main APK byte-identical; live Host4/Probe3 proof pending"
+    },
+    "latestEvidenceBoundary": {
+      "report": 75,
+      "runtimeEffort": "Actual xhigh new provider turn verified against Owner139, SDK and kernel/native metadata",
+      "productReady": false,
+      "authAndCredentialSourcesHeld": true,
+      "optional138Used": false,
+      "owner106RepeatedBackupsRetired": true,
+      "originalAppsOrStoresModified": false,
+      "mainOrV004Changed": false,
+      "reviewOrAcceptanceClaim": false,
+      "lastDeviceCut": "VIDEO014_OWNED_SETTLEMENT_AND_NATIVE_ENDSTATE_UNKNOWN"
+    },
+    "sourceFiles": [
+      {
+        "path": "experiments/fold6-rg-projector/build.gradle.kts",
+        "sha256": "d4b00ef167bc58e0f4cc76fcc1fc61c2a8303235bc4069178f2e08c5df82a76c",
+        "bytes": 200
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directhost/build.gradle.kts",
+        "sha256": "0ca9f28e98cab7799ed0b99463d7f736fb3de96db5d2043f75679108423d6035",
+        "bytes": 716
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directhost/src/main/AndroidManifest.xml",
+        "sha256": "f9bf3e867598107954702201bb44eaaf33127912b146a8dcef7b6edad8df5ecc",
+        "bytes": 804
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directhost/src/main/kotlin/com/code2hack/eyebrowse/projector/directhost/FixtureActivity.kt",
+        "sha256": "21470c6067702406cc2c410f8efcfbb89805e9976ad307d6fa39eb71b29b1ad7",
+        "bytes": 2414
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directhost/src/main/kotlin/com/code2hack/eyebrowse/projector/directhost/HostActivity.kt",
+        "sha256": "d198ad8bfdcc9777cd2471cde41c39b421df2ab8c8d919b977b057961f2d49f8",
+        "bytes": 1822
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directhost/src/main/kotlin/com/code2hack/eyebrowse/projector/directhost/ShellMain.kt",
+        "sha256": "f91c0c55caee53be58602fd4eaec72dff9171c4bae6ff0b184fbae1f573f0dc6",
+        "bytes": 15645
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directhost/src/main/res/values/strings.xml",
+        "sha256": "e3d62975aea53e8b6c67bf921750179df51800ce00a135380885f85f4ad8f396",
+        "bytes": 294
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directhost/src/main/res/xml/no_backup.xml",
+        "sha256": "4fb44914d317d8badcea48574f45c90ad0dcc65ba15d986fa32afdd9d29919b7",
+        "bytes": 305
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/build.gradle.kts",
+        "sha256": "8a9a422497e133c406fe94cfbed8dbd327aac9dcfac556c0bedfb924d5f286f5",
+        "bytes": 853
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/androidTest/kotlin/com/code2hack/eyebrowse/projector/directrg/ProjectionInstrumentation.kt",
+        "sha256": "34c19cd9ae49eeed84620666f09123face97a4ba43fa0fe2e95926952eafe4ae",
+        "bytes": 11044
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/main/AndroidManifest.xml",
+        "sha256": "c9958c4b3ed4be80dfa0fbff6dd19b0dda2b14edbdf9a8c0a2b504c4f98c21ab",
+        "bytes": 726
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/main/kotlin/com/code2hack/eyebrowse/projector/directrg/ProjectionSession.kt",
+        "sha256": "a9f5bb7166f1be8f47d7ff16a76430c87bb8313e88bc638953784da1869c5c0e",
+        "bytes": 8798
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/main/kotlin/com/code2hack/eyebrowse/projector/directrg/ReceiverActivity.kt",
+        "sha256": "298a6c7cc96d8b2cc05ed27d94a0ae5095038d85ca098b3b6e7f2bf60f07c8e8",
+        "bytes": 5656
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/main/kotlin/com/code2hack/eyebrowse/projector/directrg/SurfaceDecoder.kt",
+        "sha256": "1e143c503e141c58aa6c9a8eb5dc46b771822f8e4342042c9cf709bc21d61f01",
+        "bytes": 4299
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/main/res/values/strings.xml",
+        "sha256": "6432976bec7df93d0fec72b14f746bda5ce47f185604e7b72853335ab7ffe1dc",
+        "bytes": 369
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/main/res/xml/no_backup.xml",
+        "sha256": "4fb44914d317d8badcea48574f45c90ad0dcc65ba15d986fa32afdd9d29919b7",
+        "bytes": 305
+      },
+      {
+        "path": "experiments/fold6-rg-projector/protocol/build.gradle.kts",
+        "sha256": "838c868015390224a87f5f532b61e7cb4520cabf948d4ae9fc1756d7d6805a71",
+        "bytes": 497
+      },
+      {
+        "path": "experiments/fold6-rg-projector/protocol/src/main/AndroidManifest.xml",
+        "sha256": "571f2735faf5e857752ee057ac8ef63425576a721616c60b86ee5d4c0a2d682f",
+        "bytes": 13
+      },
+      {
+        "path": "experiments/fold6-rg-projector/protocol/src/main/kotlin/com/code2hack/eyebrowse/projector/protocol/Tls.kt",
+        "sha256": "b440f88c8f52100ec317e2adea7d9335959fec590d957010b5d678dcc903877a",
+        "bytes": 2685
+      },
+      {
+        "path": "experiments/fold6-rg-projector/protocol/src/main/kotlin/com/code2hack/eyebrowse/projector/protocol/Wire.kt",
+        "sha256": "06b8c5ed27a35c0bbeb0c606cb5bb3b3ee09e4bde9a98f24d0ad2c565539e657",
+        "bytes": 6068
+      },
+      {
+        "path": "experiments/fold6-rg-projector/protocol/src/test/kotlin/com/code2hack/eyebrowse/projector/protocol/TlsTest.kt",
+        "sha256": "ee44fc84fda1062089a6988592535ea69d821b6da504ce72b22634ededbf77b3",
+        "bytes": 5618
+      },
+      {
+        "path": "experiments/fold6-rg-projector/protocol/src/test/kotlin/com/code2hack/eyebrowse/projector/protocol/WireTest.kt",
+        "sha256": "df5f8328c5b89cabcdf7bc4aa7d6c5ee811d582fda0851c8f5c450c83dbd673c",
+        "bytes": 3808
+      },
+      {
+        "path": "experiments/fold6-rg-projector/settings.gradle.kts",
+        "sha256": "6dd7ef2cb4b97071c6e7ad15fdee39ae26217a9cea64693f4f362d801ce69bd5",
+        "bytes": 344
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directhost/src/test/kotlin/com/code2hack/eyebrowse/projector/directhost/SessionJarTest.kt",
+        "sha256": "8426fc2bbff0e1b74ea2d7128f4626ec2a72b1669f23116d48562af02f2120a7",
+        "bytes": 1873
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directhost/src/test/kotlin/com/code2hack/eyebrowse/projector/directhost/SessionReasonTest.kt",
+        "sha256": "89c7a513f8ecd0afc8abf996a211bbd9f5dab5c92889d0e8ee9fa12c87865aec",
+        "bytes": 1411
+      }
+    ],
+    "buildDefinitions": [
+      {
+        "path": "experiments/fold6-rg-projector/build.gradle.kts",
+        "sha256": "d4b00ef167bc58e0f4cc76fcc1fc61c2a8303235bc4069178f2e08c5df82a76c",
+        "bytes": 200
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directhost/build.gradle.kts",
+        "sha256": "0ca9f28e98cab7799ed0b99463d7f736fb3de96db5d2043f75679108423d6035",
+        "bytes": 716
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/build.gradle.kts",
+        "sha256": "8a9a422497e133c406fe94cfbed8dbd327aac9dcfac556c0bedfb924d5f286f5",
+        "bytes": 853
+      },
+      {
+        "path": "experiments/fold6-rg-projector/protocol/build.gradle.kts",
+        "sha256": "838c868015390224a87f5f532b61e7cb4520cabf948d4ae9fc1756d7d6805a71",
+        "bytes": 497
+      },
+      {
+        "path": "experiments/fold6-rg-projector/settings.gradle.kts",
+        "sha256": "6dd7ef2cb4b97071c6e7ad15fdee39ae26217a9cea64693f4f362d801ce69bd5",
+        "bytes": 344
+      }
+    ]
+  },
+  "historicalRGTestAPKProbe3": {
+    "package": "com.code2hack.eyebrowse.projector.directrg.r3.probe3",
+    "bytes": 32182,
+    "sha256": "5c7aed07b3a4c468286abbee5f29c43ff871e04a2a604c102237b728f050cb51",
+    "signatureVerified": true,
+    "installationState": "ONE_FRESH_UNUSED_INSTALL_WHOLE_INSTALLED_BYTES_MATCH"
+  },
+  "surfaceDiagnostic": {
+    "newTestAPKOnly": true,
+    "mainAPKsByteIdentical": true,
+    "operation": "surface-diagnostic",
+    "maximumRequests": 1,
+    "callbackWaitSeconds": 5,
+    "exclusiveNewPNG": true,
+    "normalInputOrVideoEligibilityRelaxed": false,
+    "actualAndroidPixelCopyCalls": 0,
+    "actualSurface021NativePrefixRejection": {
+      "returncode": 73,
+      "stderr": "CAPTURED_EMPTY",
+      "completeStages": [
+        "user",
+        "trust",
+        "power",
+        "policy",
+        "geometry",
+        "displays"
+      ],
+      "sourceBoundary": "display0 block/focus/valid-user0-token selector",
+      "exactFailedSubpredicate": "UNKNOWN_NOT_RETAINED"
+    },
+    "video019AgentComposedImage": "BLACK_VIDEO_AREA_WITH_OWN_STOP_BUTTON_NO_FIXTURE_TITLE_OR_TAP_COUNTER",
+    "video019CurrentPrePublicReceiverCut": {
+      "rendered": 748,
+      "changingPackets": 748,
+      "touchesSent": 0,
+      "tls": "TLSv1.3"
+    },
+    "video019APIOrCodecOrPowerCause": "UNKNOWN",
+    "scopedHostChecks": {
+      "installer": 10,
+      "diagnosticOrchestration": 13,
+      "conditionalPower": 8
+    },
+    "hostChecksAreNotAndroidAPIProof": true
+  },
+  "hostFixtureRetentionDeviation": {
+    "generatedPublicHostDummyDirectoriesAutoRemoved": 4,
+    "exactRandomNamesAndNodeMetadata": "NOT_RETAINED_UNKNOWN",
+    "OwnerDeviceCredentialRecordsAffected": false,
+    "harnessSourcesProofsOutcomesRetained": true,
+    "futureFixturesRetainedUntilVersionEnd": true
+  },
+  "historicalCheckpoint085": {
+    "status": "INCOMPLETE_SURFACE021_NATIVE_DISPLAY0_FOCUS_SELECTOR_FAILED_NO_WAKE_GO_OR_API_OWN_TEARDOWN_TWO_SECURE_CUTS",
+    "latestEvidenceBoundary": {
+      "report": 84,
+      "runtimeEffort": "Actual native turn22 gpt-6.1-sol/xhigh/full-access/never verified with current SDK/kernel/Owner139",
+      "productReady": false,
+      "authAndCredentialSourcesHeld": true,
+      "optional138Used": false,
+      "owner106RepeatedBackupsRetired": true,
+      "originalAppsOrStoresModified": false,
+      "mainOrV004Changed": false,
+      "reviewOrAcceptanceClaim": false,
+      "lastDeviceCut": "Surface021 owned teardown and two strict secure user0 locked/showing/Dozing sampled cuts; no wake/Go/PixelCopy",
+      "dependentGate": "Fresh necessary129-path pre-wake sample returned73 after six complete frames at display0 focus-token selector; exact subpredicate unknown; no reuse of later end cuts",
+      "reportMeaning": "Report084 is the last sent continuation; current021 actual device records are additionally bound here before checkpoint handback"
+    },
+    "currentSourceCapsule": {
+      "record": "hostr4-rg3-probe4-current-source-apk-capsule.json",
+      "bytes": 7863,
+      "sha256": "2a39efa4ae62095ecd3b03a4cba3e89c11989767f082bb46e83c7384f6021e09",
+      "sourceFiles": 25,
+      "binding": "Main Host4/RG3 byte-identical; Probe4 bounded own Surface diagnostic only; no actual PixelCopy request or video/input acceptance",
+      "newTestAPKIndependentVerification": {
+        "record": "probe4-apk-verification.json",
+        "bytes": 636,
+        "sha256": "9730abca32c7c5a4689a3af31d72b9b6035f23969c24c4f0d9f8282984ea4c31"
+      }
+    },
+    "APKs": [
+      {
+        "package": "com.code2hack.eyebrowse.projector.directhost.r4",
+        "bytes": 2517981,
+        "sha256": "d1cc9b1be3b2670a91a01f6e3b34b9213e9604da34b6574876251ea1ceebd743",
+        "signatureVerified": true,
+        "installationState": "CURRENT_WHOLE_INSTALLED_BYTES_MATCH_AT_021_PREFLIGHT"
+      },
+      {
+        "package": "com.code2hack.eyebrowse.projector.directrg.r3",
+        "bytes": 2516261,
+        "sha256": "073f195eb312b9b26e4fd3801449aeb017f61a1bb51c9d51fa6965b83084c59e",
+        "signatureVerified": true,
+        "installationState": "CURRENT_WHOLE_INSTALLED_BYTES_MATCH_AT_021_PREFLIGHT"
+      },
+      {
+        "package": "com.code2hack.eyebrowse.projector.directrg.r3.probe4",
+        "bytes": 38734,
+        "sha256": "0e46832d5d384d46ee2faff60184a02458ecd71587f9b606cffc1b1bbc4e0151",
+        "signatureVerified": true,
+        "installationState": "CURRENT_WHOLE_INSTALLED_BYTES_MATCH_AT_021_PREFLIGHT"
+      }
+    ]
+  },
+  "historicalPhoneHostR4APK": {
+    "package": "com.code2hack.eyebrowse.projector.directhost.r4",
+    "bytes": 2517981,
+    "sha256": "d1cc9b1be3b2670a91a01f6e3b34b9213e9604da34b6574876251ea1ceebd743",
+    "signatureVerified": true,
+    "installationState": "CURRENT_WHOLE_INSTALLED_BYTES_MATCH_AT_021_PREFLIGHT"
+  },
+  "hostFixtureLifecycle159": {
+    "sameInstanceRestartStatusCorrection": "active=true moves from onCreate to onStart; onStop remains false",
+    "tapAndDrawCounterSourceUnchanged": true,
+    "sourceDeltaReversalByteExact": true,
+    "actualDeviceLifecycleCalls": 0,
+    "PhoneR4UpdatedOrReplaced": false,
+    "newPhonePackage": "com.code2hack.eyebrowse.projector.directhost.r5",
+    "newPackageDeviceUnusedQualification": "NOT_EXECUTED",
+    "newAPK_SHA256": "d87df5bb827855f8a46a39a23ba464aa582c3ba130cbda777d41543512794b2b",
+    "newAPK_Bytes": 2518061,
+    "newAPKSignatureAndManifestVerified": true,
+    "causalityForPriorNullBlackOrTouch": "NOT_ESTABLISHED",
+    "laterActual167SameTaskReturn": {
+      "qualified": true,
+      "stoppedDraws": 85,
+      "returnedDraws": 90,
+      "AMLaunchState": "HOT",
+      "activeFalseThenTrue": true
+    }
+  },
+  "hostOnlyWakePreparation159": {
+    "state": "PREPARED_HOST_ONLY_REAL_USE_FALSE",
+    "specificManagerQualificationAndLaterActiveDispositionStillRequired": true,
+    "complete129AndAuthRemainIneligibleOnNullFocus": true,
+    "noProductionDeviceBackend": true,
+    "hostAssertionsPassed": 163,
+    "assertionCountIncludesPerFixtureIneligibilityChecks": true,
+    "initialCrossIdPolicyGapRetainedAndCorrectedBeforeHandback": true,
+    "finalPolicyBindsExactOperationJournalAndOwnedResource": true,
+    "actualDeviceReadSetupPowerInputCalls": 0,
+    "newAuthenticationRecordOrExemption": false
+  },
+  "historicalCheckpoint094LatestEvidenceBoundary": {
+    "reports": [
+      86,
+      87,
+      88
+    ],
+    "runtimeEffort": "Actual native turn24 gpt-6.1-sol/xhigh/full-access/never",
+    "productReady": false,
+    "authAndCredentialSourcesHeld": true,
+    "optional138Used": false,
+    "owner106RepeatedBackupsRetired": true,
+    "originalAppsOrStoresModified": false,
+    "mainOrV004Changed": false,
+    "reviewOrAcceptanceClaim": false,
+    "lastDeviceCut": "158: own teardown and two strict secure user0 locked/showing/Dozing/display0OFF samples, zero Phone power/Go/API/touch",
+    "dependentGate": "THIS158 explicit null display0 focus, one focus field and zero original user0 selector matches; unchanged rc73. No retrospective021 cause.159 consumer real use disabled pending exact qualification and later specific disposition.",
+    "latestHostOnlyWork": "159 fixture lifecycle status restored at onStart; new Host5 build not installed, actual restart/render test pending"
+  },
+  "owner167DirectResults": {
+    "authority": "Owner167 cancels extra private test gates; ordinary direct ADB/setup/wake, no old guard/policy/journal/native prerequisite stack",
+    "packagesUnchangedDuringRun": true,
+    "firstPartySourceChangedDuringRun": false,
+    "physicalDevices": {
+      "Phone": "SM-F956N/API36/user0",
+      "RG": "RG-glasses/API32/user0"
+    },
+    "stream": {
+      "streamingDurationMs": 310066,
+      "renderedDelta": 6301,
+      "changedPacketsDelta": 6301,
+      "meanMeasuredRenderedFps": 20.321479942979884,
+      "sampleCount": 31,
+      "allSamplesStreaming": true,
+      "allSampleIntervalsHaveNewRenderedFrames": true,
+      "allSampleTLSDirectEndpoints": true,
+      "softwareTapAtMs": 5018,
+      "touchesSent": 1,
+      "lastPacketReadToCallbackP95Ms": 9.045312,
+      "lastEchoRttP95Ms": 99.951041,
+      "scope": "RG System.nanoTime packet-read to render-callback receipt; network echo RTT; no optical/input end-to-end claim",
+      "HostStopObserved": "CONNECTION_FAILED",
+      "onRGDriverPassed": true
+    },
+    "appEffect": {
+      "source": "ON_RG_GENERATED_SOFTWARE_EVENT",
+      "coordinate": [
+        240,
+        320
+      ],
+      "geometry": [
+        480,
+        640
+      ],
+      "fixtureCounterBefore": 0,
+      "fixtureCounterAfter": 1,
+      "inspectedRGImageBefore": "Visible taps: 0",
+      "inspectedRGImageAfter": "Visible taps: 1",
+      "OwnerPhysicalTouchpadTest": false
+    },
+    "thirdParty": {
+      "component": "com.android.settings/.Settings$DisplaySettingsActivity",
+      "VD": 36,
+      "actualDisplayPageInspectedOnRG": true,
+      "streamMs": 15071,
+      "HostStopProbePassed": true,
+      "settingsValuesModified": false
+    },
+    "security": {
+      "HostR5ProbePassed": true,
+      "certificateAbsentRefusedBeforeMedia": true,
+      "mediaWelcomeReceived": false,
+      "unauthenticatedRefusedCounterBefore": 0,
+      "unauthenticatedRefusedCounterAfter": 1,
+      "stockChildCreated": false
+    },
+    "lifecycle": {
+      "reconnectPassed": true,
+      "reconnectedTouches": 0,
+      "lastTouches": 0,
+      "reconnectMeasuredMs": 10027,
+      "localStopPassed": true,
+      "localStopState": "STOPPED",
+      "pausePassed": true,
+      "pauseState": "STOPPED",
+      "sameFixtureTaskReturn": {
+        "AMLaunchState": "HOT",
+        "stoppedActive": false,
+        "stoppedDraws": 85,
+        "returnedActive": true,
+        "returnedDraws": 90
+      },
+      "staleEventReplayObserved": false
+    },
+    "runtimeInventory": {
+      "APKBrowserProxyAssetMatches": [],
+      "ownRGProcessWebViews": 0,
+      "ownRGProcessSnapshotUID": 10083,
+      "dependencies": [
+        "protocol"
+      ],
+      "initialMapsReadUnavailable": true
+    },
+    "teardown": {
+      "remainingOwnedProcesses": [],
+      "remainingTestVDs": [],
+      "PhoneListener44367Rows": [],
+      "PhoneFinalWakefulness": "Dozing",
+      "RGFinalWakefulness": "Asleep",
+      "normalFinalScreenOffCountPerDevice": 1,
+      "sharedDebugTunnelsChanged": false,
+      "continuousEndStateClaimed": false,
+      "oldWorker64ReturnClaimed": false
+    },
+    "retainedLimitations": {
+      "audio": "disabled intermediate; framing reserved",
+      "opticalAcousticIMEHeadPhysicalTouchpad": "not tested",
+      "corruptCodecLiveFaultInjection": "not executed",
+      "startupUnknownOption": "send_codec_meta ignored by pinned stock5.0.1, warning retained",
+      "firstPauseResultRead": "TIMEOUT30S; initial buffers not saved/unknown; later retained passing result, no case replay",
+      "PCPortNumberOnlyCheck": "overbroad unrelated host connection; exact media endpoint observation has no PC gateway"
+    },
+    "reviewAcceptanceOrReleaseClaimed": false,
+    "originalEyeBrowseChromiumAppsStoresOrBackupsTouched": false,
+    "testedSourceCapsule": "hostr5-rg3-probe4-source-apk-capsule159.json / 3e7afead0d64d4913c1423be933e7906463c2a2d018ecefe7d5939989d2d77f1"
+  },
+  "historicalRecordsAreNotTestAdmissionRequirements": true,
+  "historicalCandidate097": {
+    "head": "6740018d6482403139976d1411ffbe10f34e13da",
+    "tree": "ec78833c5227d072c6c11243006be39510e41e1e",
+    "currentSourceCapsule": {
+      "record": "hostr5-rg3-probe4-source-apk-capsule159.json",
+      "bytes": 7320,
+      "sha256": "3e7afead0d64d4913c1423be933e7906463c2a2d018ecefe7d5939989d2d77f1",
+      "sourceFiles": 25,
+      "binding": "HostR5/RG3/Probe4 compiled source/APK capsule used for direct167. No compiled-source or installed-package change during the successful runs."
+    },
+    "APKs": [
+      {
+        "package": "com.code2hack.eyebrowse.projector.directhost.r5",
+        "bytes": 2518061,
+        "sha256": "d87df5bb827855f8a46a39a23ba464aa582c3ba130cbda777d41543512794b2b",
+        "signatureVerified": true,
+        "applicationIdManifestVerified": true,
+        "installationState": "R5_IDENTITY_WHOLE_SIGNED_BYTES_USER0_UID10445_QUALIFIED163_USED_UNCHANGED167"
+      },
+      {
+        "package": "com.code2hack.eyebrowse.projector.directrg.r3",
+        "bytes": 2516261,
+        "sha256": "073f195eb312b9b26e4fd3801449aeb017f61a1bb51c9d51fa6965b83084c59e",
+        "signatureVerified": true,
+        "installationState": "PREVIOUSLY_QUALIFIED_INSTALLED_PACKAGE_USED_WITHOUT_UPDATE167"
+      },
+      {
+        "package": "com.code2hack.eyebrowse.projector.directrg.r3.probe4",
+        "bytes": 38734,
+        "sha256": "0e46832d5d384d46ee2faff60184a02458ecd71587f9b606cffc1b1bbc4e0151",
+        "signatureVerified": true,
+        "signerCertificateSHA256": "e372f80243affb0fd2462d4c90f8aede64a9ffb683cebad6c517d73eacc6a963",
+        "applicationIdVerifiedBy": "apkanalyzer",
+        "installationState": "PREVIOUSLY_QUALIFIED_INSTALLED_PACKAGE_USED_WITHOUT_UPDATE167"
+      }
+    ],
+    "latestEvidenceBoundary": {
+      "reports": [
+        95,
+        96
+      ],
+      "execution": "CURRENT_INSTALLED_HOSTR5_RG3_PROBE4_DIRECT_STOCK_ADB_NO_PRIVATE_TEST_ADMISSION_STACK",
+      "productComponentEvidenceReadyForReview": true,
+      "Owner167ExtraTestGatesCancelled": true,
+      "Owner106RepeatedBackupsRetired": true,
+      "originalAppsOrStoresModified": false,
+      "sharedDebugRoutesModified": false,
+      "mainOrV004Changed": false,
+      "reviewOrAcceptanceClaim": false,
+      "lastDeviceCut": "One normal final screen-off/check: PhoneDozing/RGAsleep; owned bridge/stock/VD35-41/listener44367 absent",
+      "remainingScope": "Independent exact-head review/Manager acceptance; audio/head/IME/optical/acoustic/reboot behavior not claimed"
+    }
+  },
+  "reviewCorrection169": {
+    "reviewedHead": "6740018d6482403139976d1411ffbe10f34e13da",
+    "review": "https://github.com/code2hack/EyeBrowse/pull/72#pullrequestreview-5563558533",
+    "todo": "I67-T03 attempt2/failure1; Manager owns conclusions",
+    "R67-1": "Construct locally; same lifecycle lock covers running transition, decoder detach/publication. Close detached or rejected local instances outside lock.",
+    "R67-2": "Release allocated MediaCodec on constructor initialization Throwable, preserve original error without requiring outputThread.",
+    "hostTests": {
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "redLeakCases": 2,
+      "normalReplacementBaselinePassed": true,
+      "initBoundaries": [
+        "name callback",
+        "configure",
+        "listener",
+        "start"
+      ],
+      "cleanupFailurePreservesOriginal": true,
+      "testDoublesNotInApplicationAPK": true,
+      "proof": {
+        "record": "review169-host-proof.json",
+        "bytes": 4166,
+        "sha256": "f5caaffffdc9718416fc9a453dd525bb8eacc21c57707af4e8dc5b2b31b46fd2"
+      }
+    },
+    "build": {
+      "JDK": 17,
+      "affectedTasks": [
+        "directrg:testDebugUnitTest",
+        "directrg:assembleDebug",
+        "directrg:lintDebug"
+      ],
+      "result": "PASS",
+      "lintErrors": 0,
+      "lintWarnings": [
+        "existing OldTargetApi"
+      ]
+    },
+    "currentDeviceActions": {
+      "targetsAtStart": "Both assigned physical serial hashes/model/API/user0/shell matched",
+      "ownedRGUpdate": "120030ms timeout, both response buffers unavailable, outcome UNKNOWN",
+      "oneReadOnlyInstalledComparison": "35037ms timeout, both buffers unavailable, current APK UNKNOWN",
+      "replayedInstall": false,
+      "newBridgeVDOrFixtureCreated": false,
+      "newInputOrPower": false,
+      "liveLifecycleCheck": "NOT_EXECUTED_PENDING_RG_DEBUG_CAPABILITY"
+    },
+    "historicalResults": "Prior310s/app-effect/security/lifecycle evidence remains valid for its prior source; no corrected-source live PASS inferred.",
+    "candidateReady": false,
+    "subsequentLiveEvidence": "usb173CorrectedResults; prior checkpoint findings/UNKNOWN outcomes above remain historical"
+  },
+  "historicalCorrectionCheckpoint099": {
+    "head": "4b43444b19ff8a847158572ab505dd6e3304937f",
+    "tree": "88627c87052efcfdc80a42729333f07cc188eb19",
+    "sourceCapsule": {
+      "record": "review169-source-apk-capsule.json",
+      "bytes": 9305,
+      "sha256": "41da15f09ae8c9de67a74f7fd6850ce6995c5613e82712026389bcf2b327c3b6",
+      "sourceFiles": 25,
+      "testSourceFiles": 7,
+      "binding": "Corrected RG3 APK built from R67-1/R67-2 source; current update and installed outcome unknown; HostR5/Probe4 unchanged. Prior310s retains capsule159 binding."
+    },
+    "APKs": [
+      {
+        "package": "com.code2hack.eyebrowse.projector.directhost.r5",
+        "bytes": 2518061,
+        "sha256": "d87df5bb827855f8a46a39a23ba464aa582c3ba130cbda777d41543512794b2b",
+        "signatureVerified": true,
+        "applicationIdManifestVerified": true,
+        "installationState": "R5_IDENTITY_WHOLE_SIGNED_BYTES_USER0_UID10445_QUALIFIED163_USED_UNCHANGED167"
+      },
+      {
+        "package": "com.code2hack.eyebrowse.projector.directrg.r3",
+        "bytes": 2557674,
+        "sha256": "aa961f99e9d1a47b74b7e1a6f59a4fab367d715e007d873d62d61a5e755fa1b4",
+        "signatureVerified": true,
+        "installationState": "UPDATE120S_TIMEOUT_AND_CURRENT_READ35S_TIMEOUT_OUTCOME_UNKNOWN"
+      },
+      {
+        "package": "com.code2hack.eyebrowse.projector.directrg.r3.probe4",
+        "bytes": 38734,
+        "sha256": "0e46832d5d384d46ee2faff60184a02458ecd71587f9b606cffc1b1bbc4e0151",
+        "signatureVerified": true,
+        "signerCertificateSHA256": "e372f80243affb0fd2462d4c90f8aede64a9ffb683cebad6c517d73eacc6a963",
+        "applicationIdVerifiedBy": "apkanalyzer",
+        "installationState": "PREVIOUSLY_QUALIFIED_INSTALLED_PACKAGE_USED_WITHOUT_UPDATE167"
+      }
+    ],
+    "latestEvidenceBoundary": {
+      "reports": [
+        98
+      ],
+      "execution": "HOST_CORRECTIONS_VERIFIED_DEVICE_UPDATE_AND_READ_UNKNOWN",
+      "productComponentEvidenceReadyForReview": false,
+      "Owner167ExtraTestGatesCancelled": true,
+      "Owner106RepeatedBackupsRetired": true,
+      "originalAppsOrStoresModified": false,
+      "sharedDebugRoutesModified": false,
+      "mainOrV004Changed": false,
+      "reviewOrAcceptanceClaim": false,
+      "lastDeviceCut": "Correct physical targets at operation start, followed by unavailable RG update/current-installed response; no new media/UI resources or power action. Historical167 end cuts remain historical.",
+      "remainingScope": "Restore actual RG debug capability, reconcile current installed bytes without replaying unknown update, short corrected connect/Stop/pause/reconnect, renewed exact-head review."
+    }
+  },
+  "receiverTestSources173": [
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/media/MediaCodec.kt",
+      "bytes": 1642,
+      "sha256": "89f4bd5c9c4bb07f611283e11e201f6b4d1bbda0003b8d752bb2e07118ebb9dd"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/media/MediaFormat.kt",
+      "bytes": 483,
+      "sha256": "571817590ca8cb87d4fa0914ef79aff0bfc6b9b2aefb0cabd69f44d5cb278d89"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/os/Handler.kt",
+      "bytes": 130,
+      "sha256": "d729e840567259f6fa4a99cbb20396ff0daca3354486848c4eec9ca7be6688f8"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/util/AtomicFile.kt",
+      "bytes": 290,
+      "sha256": "f6b92c296e2fef32bc73e80c925da6d082b1a7ab1b43b13e5bd604741d645d86"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/util/Log.kt",
+      "bytes": 165,
+      "sha256": "bff601eaaad0c847926f9c42b14200dff121ee6a85b0fa1ae0e933f00e376b0a"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/view/Surface.kt",
+      "bytes": 36,
+      "sha256": "328209b71807a2630282a46391f9e4a74305957aa8bb7378c303d05d8896bcac"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/com/code2hack/eyebrowse/projector/directrg/DecoderLifetimeTest.kt",
+      "bytes": 2813,
+      "sha256": "21478ef8db7e0052df5d0da196ddfbe663b09183cb012553ed721aecd96c9916"
+    },
+    {
+      "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/org/json/JSONObject.kt",
+      "bytes": 617,
+      "sha256": "2fbc68aada636456f69353a19fc50203e23669cbc463affdf792e87fa6667a8e"
+    }
+  ],
+  "usb173CorrectedResults": {
+    "state": "CORRECTED_CURRENT_RGBA_LIFECYCLE_VERIFIED_READY_FOR_INDEPENDENT_REVIEW",
+    "Owner173": "Both debug targets through Manager SSH/u4090 USB server15037; media/control remain direct mTLS RG10.199.167.154 to Phone10.199.167.157:44367",
+    "noEmulatorSelected": true,
+    "noOldDebugRouteOrSharedReset": true,
+    "cases": [
+      {
+        "record": "usb173a-stop-probe.json",
+        "passed": true,
+        "operation": "local-stop",
+        "measuredStreamingMs": 3015,
+        "firstRendered": 533,
+        "lastRendered": 605,
+        "renderedDelta": 72,
+        "endState": "STOPPED",
+        "connectedState": "STREAMING",
+        "reconnectedState": null,
+        "reconnectedTouches": null,
+        "lastTouches": 0,
+        "APK": "aa961f99"
+      },
+      {
+        "record": "usb173b-pause-probe.json",
+        "passed": true,
+        "operation": "pause",
+        "measuredStreamingMs": 3015,
+        "firstRendered": 291,
+        "lastRendered": 367,
+        "renderedDelta": 76,
+        "endState": "STOPPED",
+        "connectedState": "STREAMING",
+        "reconnectedState": null,
+        "reconnectedTouches": null,
+        "lastTouches": 0,
+        "APK": "aa961f99"
+      },
+      {
+        "record": "usb173c-reconnect-final.json",
+        "passed": false,
+        "operation": "reconnect",
+        "measuredStreamingMs": null,
+        "firstRendered": null,
+        "lastRendered": null,
+        "renderedDelta": null,
+        "endState": null,
+        "connectedState": "STREAMING",
+        "reconnectedState": "STREAMING",
+        "reconnectedTouches": 0,
+        "lastTouches": null,
+        "APK": "aa961f99"
+      },
+      {
+        "record": "usb173d-hoststop-probe.json",
+        "passed": true,
+        "operation": "host-stop",
+        "measuredStreamingMs": 1004,
+        "firstRendered": 1,
+        "lastRendered": 22,
+        "renderedDelta": 21,
+        "endState": "CONNECTION_FAILED",
+        "connectedState": "STREAMING",
+        "reconnectedState": null,
+        "reconnectedTouches": null,
+        "lastTouches": 0,
+        "APK": "aa961f99"
+      },
+      {
+        "record": "usb173e-reconnect-probe.json",
+        "passed": false,
+        "operation": "reconnect",
+        "measuredStreamingMs": null,
+        "firstRendered": null,
+        "lastRendered": null,
+        "renderedDelta": null,
+        "endState": null,
+        "connectedState": "STREAMING",
+        "reconnectedState": "CONNECTION_FAILED",
+        "reconnectedTouches": 0,
+        "lastTouches": null,
+        "APK": "fb233754"
+      },
+      {
+        "record": "usb173f-reconnect-probe.json",
+        "passed": true,
+        "operation": "reconnect",
+        "measuredStreamingMs": 20063,
+        "firstRendered": 221,
+        "lastRendered": 736,
+        "renderedDelta": 515,
+        "endState": null,
+        "connectedState": "STREAMING",
+        "reconnectedState": "STREAMING",
+        "reconnectedTouches": 0,
+        "lastTouches": 0,
+        "APK": "c18e228e"
+      },
+      {
+        "record": "usb173g_stop-probe.json",
+        "passed": true,
+        "operation": "local-stop",
+        "measuredStreamingMs": 2008,
+        "firstRendered": 1,
+        "lastRendered": 49,
+        "renderedDelta": 48,
+        "endState": "STOPPED",
+        "connectedState": "STREAMING",
+        "reconnectedState": null,
+        "reconnectedTouches": null,
+        "lastTouches": 0,
+        "APK": "c18e228e"
+      },
+      {
+        "record": "usb173h_pause-probe.json",
+        "passed": true,
+        "operation": "pause",
+        "measuredStreamingMs": 2006,
+        "firstRendered": 1,
+        "lastRendered": 49,
+        "renderedDelta": 48,
+        "endState": "STOPPED",
+        "connectedState": "STREAMING",
+        "reconnectedState": null,
+        "reconnectedTouches": null,
+        "lastTouches": 0,
+        "APK": "c18e228e"
+      },
+      {
+        "record": "usb173i_hoststop-probe.json",
+        "passed": true,
+        "operation": "host-stop",
+        "measuredStreamingMs": 1004,
+        "firstRendered": 1,
+        "lastRendered": 16,
+        "renderedDelta": 15,
+        "endState": "CONNECTION_FAILED",
+        "connectedState": "STREAMING",
+        "reconnectedState": null,
+        "reconnectedTouches": null,
+        "lastTouches": 0,
+        "APK": "c18e228e"
+      }
+    ],
+    "currentRGBA": {
+      "sha256": "c18e228eb8acd85a6cd4c5dc800c25341f1294d0d570bcde3ab57a3863d356ab",
+      "bytes": 2559234,
+      "ordinarySameIDUpdateAndInstalledFullBytesMatched": true,
+      "fReconnectMs": 20063,
+      "gLocalStopMs": 2008,
+      "hPauseMs": 2006,
+      "iHostStopMs": 1004,
+      "zeroTouches": true
+    },
+    "retainedFailures": {
+      "c": "Both sessions reached STREAMING, then CONNECTION_FAILED/IllegalStateException before measured interval; exact cause unknown. Initial empty report retained; later terminal report separately retained.",
+      "e": "Receiver SocketException Connection reset; matching Host SCID3719df20 stopReason WRITE_DEADLINE. Underlying condition unassigned; no codec/protocol/buffer/deadline change.",
+      "optionalThreadObservation": "No PID/data returned; UNAVAILABLE, not zero-thread proof",
+      "targetedICMP": "5/5 current replies, min51.652/avg99.869/max135.659ms; not prior TCP cause",
+      "old169InstallAndRead": "Original timeouts remain UNKNOWN and unchanged; new USB current reads/update are separate observations"
+    },
+    "diagnostics": {
+      "fullOwnSessionExceptionLog": true,
+      "onlySlowReadHandlingStatusWriteDurations": true,
+      "protocolBuffersDeadlineGeometrySecurityUnchanged": true,
+      "fSlowTimingWarnings": false,
+      "normalStopSocketClosedLogExpected": true,
+      "privacy": "Private RG image may include an OS overlay; no raw image or overlay text is published."
+    },
+    "lifetimeFixFunctionBindingsUnchangedSince4b43444": {
+      "internal fun replaceDecoder": "c033a75349d4ec08780755c705137368bef0dd07d5ffcd8eae864ffa88701a68",
+      "private fun closeWithState": "ea0eda2f3ecc30ee00e4143dd30d94b1772a4f72d402ca4c55cc9a7c0f753d5b"
+    },
+    "SurfaceDecoderBytesUnchangedSince4b43444": {
+      "record": "SurfaceDecoder.kt",
+      "bytes": 4603,
+      "sha256": "52197758bf74007c9dd02106b309118a13f523a2ba2ff358d3b6f904461f2552"
+    },
+    "hostVerification": {
+      "JUnitTests": 3,
+      "failures": 0,
+      "errors": 0,
+      "testXML": {
+        "record": "usb173-timing-host-tests.xml",
+        "bytes": 820,
+        "sha256": "1ad925290b3693a8b5fbb3e065f4766d073aaf5019a9a89adb123985d780bcbf"
+      },
+      "lintErrors": 0,
+      "lintWarnings": [
+        "OldTargetApi"
+      ],
+      "lintXML": {
+        "record": "usb173-timing-lint.xml",
+        "bytes": 1891,
+        "sha256": "0a87e91fc2b9bdaa03466decd5a7ceb8c7d5fb7116f9d346683200161eac85aa"
+      }
+    },
+    "teardown": {
+      "ownedBridgeStockProcesses": [],
+      "testedVD42to53Remaining": [],
+      "listener44367Rows": [],
+      "RGBAOwnAppAfterForceStopPIDCount": 0,
+      "PhoneWakefulness": "Dozing",
+      "RGWakefulness": "Asleep",
+      "ordinaryFinalScreenOffPerDevice": 1,
+      "bothDeviceReservationsRetained": true,
+      "Manager173TunnelUnchanged": true,
+      "oldWorker64ResourceReturnClaimed": false,
+      "noContinuousOrSecurityLockClaim": true
+    },
+    "old310s": "Remains bound only to capsule159/3e7afead; not ceremonially repeated for lifetime corrections",
+    "originalEyeBrowseChromiumAppsStoresBackupsTouched": false,
+    "acceptanceReviewMergeReleaseOrCounterConclusion": false,
+    "summaryPin": {
+      "record": "usb173-verification-summary.json",
+      "bytes": 7105,
+      "sha256": "2b2be2f2c30771e4d2c4a845398e00ecd96d373f62203835e9bd5e0f89e34a12"
+    }
+  },
+  "historicalSourceCapsuleUSB173": {
+    "record": "usb173-source-apk-capsule.json",
+    "bytes": 9844,
+    "sha256": "dc8dcde6d8b5af0d2146679946d88a4f9b3d86a8c73729a7ff79cd8d72d31fc1",
+    "sourceFiles": 25,
+    "testSourceFiles": 8,
+    "binding": "Current corrected RG3 APK with own error/slow-operation logs, installed full bytes matched; HostR5/Probe4 unchanged. Current short reconnect/Stop/pause/HostStop pass; prior310s remains capsule159."
+  },
+  "historicalRGAPKUSB173": {
+    "package": "com.code2hack.eyebrowse.projector.directrg.r3",
+    "bytes": 2559234,
+    "sha256": "c18e228eb8acd85a6cd4c5dc800c25341f1294d0d570bcde3ab57a3863d356ab",
+    "signatureVerified": true,
+    "installationState": "USB173_CURRENT_INSTALLED_FULL_BYTES_MATCH_F_G_H_I_LIFECYCLE_PASSED",
+    "signerCertificateSHA256": "e372f80243affb0fd2462d4c90f8aede64a9ffb683cebad6c517d73eacc6a963"
+  },
+  "reviewCorrection176": {
+    "reviewedHead": "693ee1981fd8e1ed00380c75e45648684f58a9ae",
+    "review": "https://github.com/code2hack/EyeBrowse/pull/72#pullrequestreview-5563892317",
+    "finding": "R67-3",
+    "priorFindings": "R67-1/R67-2 independently RESOLVED in review2",
+    "todoHistory": "I67-T03 correction attempt3/failure2 per Manager176; no Worker conclusion",
+    "summary": {
+      "state": "R67_3_CORRECTED_HOST_REGRESSION_AND_SHORT_CURRENT_DEVICE_LIFECYCLE_VERIFIED_READY_FOR_REVIEW",
+      "reviewedBase": "693ee1981fd8e1ed00380c75e45648684f58a9ae",
+      "finding": "R67-3",
+      "todoHistory": "I67-T03 correction attempt3/failure2 per Manager176; no Worker conclusion",
+      "productionDelta": "Only SurfaceDecoder.close; finally releases native codec after bounded join, restores caught interrupt after cleanup; initialization/publication remain unchanged",
+      "hostProof": {
+        "record": "review176-host-proof.json",
+        "bytes": 2531,
+        "sha256": "1e14dd218742fe4d0e4b3c50ee60ac895157741776be1cd5593dbc0354cb1af2"
+      },
+      "build": {
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "lintErrors": 0,
+        "lintWarnings": [
+          "OldTargetApi"
+        ],
+        "JDK": 17,
+        "Gradle": "8.11.1",
+        "AGP": "8.7.3",
+        "Kotlin": "2.2.21"
+      },
+      "APK": {
+        "record": "rg3-interrupted-close.apk",
+        "bytes": 2559958,
+        "sha256": "fb0d2036af77ba2d4cb1bfecc403659613041113837d8f40c829135ac979e35b"
+      },
+      "sameIDUpdate": {
+        "returncode": 0,
+        "explicitSuccess": true,
+        "fullInstalledHashAndSizeMatch": true,
+        "proof": {
+          "record": "review176-rg-installed.json",
+          "bytes": 297,
+          "sha256": "46d89891625f5d89dcb1b2097d9af7839a38f53471ff0626418a0fb1cb9ba60d"
+        }
+      },
+      "route": "Owner173 selected USB devices via existing Manager server15037; no emulator or old route",
+      "cases": [
+        {
+          "record": "review176a-probe-read.json",
+          "passed": true,
+          "operation": "local-stop",
+          "observedStreamingMs": 3009,
+          "connectedState": "STREAMING",
+          "reconnectedState": null,
+          "firstRendered": 156,
+          "lastRendered": 231,
+          "renderedDelta": 75,
+          "touchesSent": 0,
+          "localStopState": "STOPPED",
+          "TLS": "TLSv1.3",
+          "peerAddress": "10.199.167.157",
+          "localAddress": "10.199.167.154",
+          "decoder": "c2.qti.avc.decoder",
+          "geometry": [
+            480,
+            640
+          ]
+        },
+        {
+          "record": "review176b-probe-read.json",
+          "passed": true,
+          "operation": "reconnect",
+          "observedStreamingMs": 5015,
+          "connectedState": "STREAMING",
+          "reconnectedState": "STREAMING",
+          "firstRendered": 168,
+          "lastRendered": 290,
+          "renderedDelta": 122,
+          "touchesSent": 0,
+          "localStopState": null,
+          "TLS": "TLSv1.3",
+          "peerAddress": "10.199.167.157",
+          "localAddress": "10.199.167.154",
+          "decoder": "c2.qti.avc.decoder",
+          "geometry": [
+            480,
+            640
+          ]
+        }
+      ],
+      "image": {
+        "record": "review176b-visible.png",
+        "inspected": true,
+        "observed": "Public owned motion fixture/Visible taps0/Stop button; no unrelated overlay in this image",
+        "opticalClaim": false
+      },
+      "hostSessionStopped": [
+        {
+          "state": "SESSION_STOPPED",
+          "frames": 255,
+          "touches": 0,
+          "elapsedMs": 26366,
+          "serverAlive": false,
+          "stopReason": "CONTROL_EOF",
+          "startupStage": "VIDEO_STREAM",
+          "stopStartedMs": 26042,
+          "childStartedMs": 8,
+          "firstVideoFrameMs": 1380,
+          "tls": "TLSv1.3",
+          "localAddress": "10.199.167.157",
+          "localPort": 44367,
+          "peerAddress": "10.199.167.154",
+          "peerPort": 33310,
+          "scid": "1701ef74"
+        },
+        {
+          "state": "SESSION_STOPPED",
+          "frames": 10,
+          "touches": 0,
+          "elapsedMs": 2161,
+          "serverAlive": false,
+          "stopReason": "CONTROL_EOF",
+          "startupStage": "VIDEO_STREAM",
+          "stopStartedMs": 1954,
+          "childStartedMs": 23,
+          "firstVideoFrameMs": 1733,
+          "tls": "TLSv1.3",
+          "localAddress": "10.199.167.157",
+          "localPort": 44367,
+          "peerAddress": "10.199.167.154",
+          "peerPort": 47976,
+          "scid": "1d724cdb"
+        },
+        {
+          "state": "SESSION_STOPPED",
+          "frames": 304,
+          "touches": 0,
+          "elapsedMs": 35823,
+          "serverAlive": false,
+          "stopReason": "CONTROL_EOF",
+          "startupStage": "VIDEO_STREAM",
+          "stopStartedMs": 35620,
+          "childStartedMs": 11,
+          "firstVideoFrameMs": 665,
+          "tls": "TLSv1.3",
+          "localAddress": "10.199.167.157",
+          "localPort": 44367,
+          "peerAddress": "10.199.167.154",
+          "peerPort": 47982,
+          "scid": "2010b920"
+        }
+      ],
+      "ownLogScope": "Owned RG UID10083 logger includes historical records; current9244/9670 cancellation SocketClosed and slow frame-read warnings retained; no retroactive old cause assigned",
+      "teardown": {
+        "bridge7913": "One ordinary TERM after all3 stock sessions closed; exact current command matched",
+        "stockSessionsAlive": false,
+        "ownedBridgeStockPSRows": 0,
+        "testedVD54_55_56Remaining": [],
+        "physicalDisplayIDsAfter": [
+          0
+        ],
+        "listener44367Rows": 0,
+        "ownAppsForceStopped": true,
+        "normalFinal223PerDevice": 1,
+        "PhoneWakefulness": "Dozing",
+        "RGWakefulness": "Asleep",
+        "RGOwnAppPIDCount": 0,
+        "Manager173DebugCustodyAndBothLeasesRetained": true,
+        "noContinuousStateOrOldWorker64ReturnClaim": true
+      },
+      "limits": [
+        "Interrupted-close release is proven by focused JVM regression, not live hardware fault injection.",
+        "Current short checks do not repeat prior310s/app-effect/security/Settings; their earlier source bindings remain.",
+        "Old173c/e failures and all unknown historical outcomes unchanged.",
+        "No PIN/held caller/original apps or stores/backups touched.",
+        "Independent review/Manager acceptance/merge/release remain pending."
+      ]
+    },
+    "summaryPin": {
+      "record": "review176-verification-summary.json",
+      "bytes": 5460,
+      "sha256": "0dfb6bf10e8d724600f5c65d0cb0b9cef0bdc49676b931c95b6d7d79ec3ecf18"
+    },
+    "sourceCapsule": {
+      "record": "review176-source-apk-capsule.json",
+      "bytes": 9918,
+      "sha256": "bc5b91f6aea2f8595f3ab32970736b47070892573ae983f3de7f0456fff3f4ff"
+    },
+    "testSources": [
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/media/MediaCodec.kt",
+        "bytes": 1663,
+        "sha256": "234c3528ebdc54b76253b5e4836cfd445cfebe9900807c480604a27700c1a332"
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/media/MediaFormat.kt",
+        "bytes": 483,
+        "sha256": "571817590ca8cb87d4fa0914ef79aff0bfc6b9b2aefb0cabd69f44d5cb278d89"
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/os/Handler.kt",
+        "bytes": 130,
+        "sha256": "d729e840567259f6fa4a99cbb20396ff0daca3354486848c4eec9ca7be6688f8"
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/util/AtomicFile.kt",
+        "bytes": 290,
+        "sha256": "f6b92c296e2fef32bc73e80c925da6d082b1a7ab1b43b13e5bd604741d645d86"
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/util/Log.kt",
+        "bytes": 165,
+        "sha256": "bff601eaaad0c847926f9c42b14200dff121ee6a85b0fa1ae0e933f00e376b0a"
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/android/view/Surface.kt",
+        "bytes": 36,
+        "sha256": "328209b71807a2630282a46391f9e4a74305957aa8bb7378c303d05d8896bcac"
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/com/code2hack/eyebrowse/projector/directrg/DecoderLifetimeTest.kt",
+        "bytes": 4326,
+        "sha256": "6246e20e79617981cde0573dacefe03d407f13983a37ee44e3abb15c8059640a"
+      },
+      {
+        "path": "experiments/fold6-rg-projector/directrg/src/test/kotlin/org/json/JSONObject.kt",
+        "bytes": 617,
+        "sha256": "2fbc68aada636456f69353a19fc50203e23669cbc463affdf792e87fa6667a8e"
+      }
+    ],
+    "limits": "Prior310s retains capsule159; current interrupted cleanup is JVM-reproduced, not live fault injection; exact-head independent review/acceptance pending"
+  }
+}

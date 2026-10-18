@@ -6,4 +6,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "Fold6ProjectorExperiment"
-include(":hostprobe")
+include(":hostprobe", ":protocol", ":directhost", ":directrg")
