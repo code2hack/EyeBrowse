@@ -1,5 +1,32 @@
 # Direct Fold6 video and control — PAV-02 / issue 67
 
+## Decoder review correction — live check pending
+
+Independent review of `6740018` found two decoder lifetime leaks. The corrected
+receiver constructs each decoder locally and publishes it under the same small
+lifecycle lock that Stop uses to detach it. If Stop wins, the local decoder is
+closed instead. Detached codecs are closed outside the lock. Initialization
+failure now releases the allocated MediaCodec and rethrows the original error,
+including failures before the output thread exists.
+
+Three focused JVM tests pass against the production classes with test-only
+platform doubles. They reproduce cancellation blocked inside configure, check
+normal replacement/repeated Stop, and inject failures at name/configure/listener/
+start, including a failing release. Both original leaks were reproduced before
+the fix. The corrected RG build and lint pass with zero errors and the existing
+`OldTargetApi` warning. These doubles are not packaged in the application.
+
+The corrected owned RG3 APK is 2,557,674 bytes, SHA-256
+`aa961f99e9d1a47b74b7e1a6f59a4fab367d715e007d873d62d61a5e755fa1b4`.
+One ordinary update timed out after 120 seconds without response buffers; a
+subsequent read-only installed-APK comparison timed out after 35 seconds too.
+The update and current installed bytes remain unknown. Neither operation was
+replayed. No new bridge, VD, fixture, input or power case was started. The short
+corrected connect/Stop/pause/reconnect check awaits actual RG debug capability;
+this checkpoint is **not CANDIDATE_READY**. HostR5 and Probe4 are unchanged.
+
+## Previous completed direct run
+
 The direct HostR5/RG3/Probe4 run under Owner decision167 demonstrates the
 video/control result for independent review. An on-RG driver measured **310,066ms**
 of uninterrupted streaming, with6,301 additional changing/rendered frames

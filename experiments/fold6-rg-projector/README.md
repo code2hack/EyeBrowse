@@ -16,8 +16,13 @@ Build these separately from the production browser:
 ./gradlew -p experiments/fold6-rg-projector --no-daemon --max-workers=2 \
   -Dorg.gradle.jvmargs=-Xmx2g :directhost:assembleDebug \
   :directrg:assembleDebug :directrg:assembleDebugAndroidTest \
-  :protocol:testDebugUnitTest :directhost:lintDebug :directrg:lintDebug
+  :protocol:testDebugUnitTest :directrg:testDebugUnitTest \
+  :directhost:lintDebug :directrg:lintDebug
 ```
+
+The receiver JVM tests use test-only platform doubles to suspend codec
+construction across Stop and inject initialization failures. These exercise
+production lifetime code; actual Android decoding remains a device check.
 
 Use the assigned devices and the isolated projector packages. Owner decision167
 removed the extra private test-admission stack; use normal ADB/debug access and

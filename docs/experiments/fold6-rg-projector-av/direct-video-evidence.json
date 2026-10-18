@@ -2,7 +2,7 @@
   "schema": 1,
   "issue": 67,
   "alias": "PAV-02",
-  "status": "DIRECT167_VIDEO_CONTROL_310S_THIRDPARTY_SECURITY_LIFECYCLE_EXECUTED_READY_FOR_INDEPENDENT_REVIEW",
+  "status": "DECODER_REVIEW1_CORRECTED_HOST_VERIFIED_RG_UPDATE_UNKNOWN_NOT_CANDIDATE_READY",
   "baseline": "38cb5f7ec8d320ef9833a36840ccec3febdbc885",
   "donor": "03de921e2400147842ce6c56101b58d514dde77c",
   "target": "spike/fold6-rg-projector-av",
@@ -135,6 +135,19 @@
       "nativeBuildExitCode": null,
       "buildExitMetadataLimit": "Initial tool session identifier not retained; complete final Gradle log, four unit XML reports, lint, signed manifest and fresh APK independently verified",
       "hostVerificationSHA256": "19ecc2c09fd3b4d90faecbd82b3959a6b98efd936bff32395bdbaf51b6fff33b"
+    },
+    "affectedDecoderCorrection169": {
+      "JDK": 17,
+      "affectedTasks": [
+        "directrg:testDebugUnitTest",
+        "directrg:assembleDebug",
+        "directrg:lintDebug"
+      ],
+      "result": "PASS",
+      "lintErrors": 0,
+      "lintWarnings": [
+        "existing OldTargetApi"
+      ]
     }
   },
   "APKs": [
@@ -148,10 +161,10 @@
     },
     {
       "package": "com.code2hack.eyebrowse.projector.directrg.r3",
-      "bytes": 2516261,
-      "sha256": "073f195eb312b9b26e4fd3801449aeb017f61a1bb51c9d51fa6965b83084c59e",
+      "bytes": 2557674,
+      "sha256": "aa961f99e9d1a47b74b7e1a6f59a4fab367d715e007d873d62d61a5e755fa1b4",
       "signatureVerified": true,
-      "installationState": "PREVIOUSLY_QUALIFIED_INSTALLED_PACKAGE_USED_WITHOUT_UPDATE167"
+      "installationState": "UPDATE120S_TIMEOUT_AND_CURRENT_READ35S_TIMEOUT_OUTCOME_UNKNOWN"
     },
     {
       "package": "com.code2hack.eyebrowse.projector.directrg.r3.probe4",
@@ -1948,6 +1961,86 @@
       "record": "direct167life-current-stdout.txt",
       "bytes": 5454,
       "sha256": "d1d73d0d170f93f85048ba2cae0d62ff12722cfadc6b2d0b6808bdfed223ba17"
+    },
+    {
+      "record": "review169-final-build-lint.log",
+      "bytes": 6044,
+      "sha256": "87fc1bdded3a3c75dc649c83d22f0c4b56b5dab9fbd13b726d586bd7602d09f2"
+    },
+    {
+      "record": "review169-first-host-red.xml",
+      "bytes": 13613,
+      "sha256": "290b99523462938c4d357e7c78c51c0240abd425ae5fdfaba707ba790865b458"
+    },
+    {
+      "record": "review169-host-green-build-lint.log",
+      "bytes": 6079,
+      "sha256": "20ec6c1d570ca33b08086ff57c438f61aa6f3b4da42f302ee1737a18ad28ff44"
+    },
+    {
+      "record": "review169-host-green.xml",
+      "bytes": 818,
+      "sha256": "ba0b71ccf3b16abf3f669615e0870accc50c3fd79cf8470f2dcdde669805ad91"
+    },
+    {
+      "record": "review169-host-proof.json",
+      "bytes": 4166,
+      "sha256": "f5caaffffdc9718416fc9a453dd525bb8eacc21c57707af4e8dc5b2b31b46fd2"
+    },
+    {
+      "record": "review169-host-red-corrected-fixture.log",
+      "bytes": 3382,
+      "sha256": "895e73e0d212abae7be44de0003baa9c91da679ab8794bf304cc21828ac8774b"
+    },
+    {
+      "record": "review169-host-red.log",
+      "bytes": 3515,
+      "sha256": "3b7b8d1bd19d44d69a90c8c620579dec9a4cd7c3a2845ef44ca1e42a47c4fcaa"
+    },
+    {
+      "record": "review169-host-red.xml",
+      "bytes": 9996,
+      "sha256": "ca1238af619b81789e7f2f3081c3b1a4b8bc8b85feb2202e6cffd6aa29cce0d9"
+    },
+    {
+      "record": "review169-lint.xml",
+      "bytes": 1891,
+      "sha256": "0a87e91fc2b9bdaa03466decd5a7ceb8c7d5fb7116f9d346683200161eac85aa"
+    },
+    {
+      "record": "review169-red-ProjectionSession.kt",
+      "bytes": 8616,
+      "sha256": "7726b3cac3b79dc74769062b5c1256e5cc136e1fa49b4749386330d57926fe50"
+    },
+    {
+      "record": "review169-red-SurfaceDecoder.kt",
+      "bytes": 4299,
+      "sha256": "1e143c503e141c58aa6c9a8eb5dc46b771822f8e4342042c9cf709bc21d61f01"
+    },
+    {
+      "record": "review169-rg-installed-read.json",
+      "bytes": 102,
+      "sha256": "aa93fb127b819561522504f1e709c04d8e9bbdafc132bbd6a2229fba87ca07f3"
+    },
+    {
+      "record": "review169-rg-update.json",
+      "bytes": 167,
+      "sha256": "88b85cc45efd66108bfb72baeaccd5139ccbddf1273de33f58624310fc3c8fe7"
+    },
+    {
+      "record": "review169-source-apk-capsule.json",
+      "bytes": 9305,
+      "sha256": "41da15f09ae8c9de67a74f7fd6850ce6995c5613e82712026389bcf2b327c3b6"
+    },
+    {
+      "record": "review169-target-fold6.json",
+      "bytes": 508,
+      "sha256": "1834bbb94a224898983e6463adc7bcefcedd77e89183926ff3a2a0bd67b65609"
+    },
+    {
+      "record": "review169-target-rg.json",
+      "bytes": 507,
+      "sha256": "98dcf7eb29677de29b930982b3b66cd784432c63ec7b8eb37906f562ed5b7215"
     }
   ],
   "privacy": "Original browser/account/TLS private material remains outside Git. Actual owned experiment logs/images stay private with hashes; direct167 publishes scoped metrics, explicit limits and outcomes.",
@@ -1987,8 +2080,8 @@
     },
     {
       "path": "experiments/fold6-rg-projector/directrg/build.gradle.kts",
-      "bytes": 853,
-      "sha256": "8c595ce191e43f2a0409bd4613ac51531be5e3bdc11764dc400d89e0c5392385"
+      "bytes": 902,
+      "sha256": "41739e5ea8b99dbcaa70ceed98e52fab09e1b65bb2360d6a4b7d1c4d0baf783e"
     },
     {
       "path": "experiments/fold6-rg-projector/protocol/build.gradle.kts",
@@ -2330,8 +2423,8 @@
     },
     {
       "path": "experiments/fold6-rg-projector/directrg/build.gradle.kts",
-      "bytes": 853,
-      "sha256": "8c595ce191e43f2a0409bd4613ac51531be5e3bdc11764dc400d89e0c5392385"
+      "bytes": 902,
+      "sha256": "41739e5ea8b99dbcaa70ceed98e52fab09e1b65bb2360d6a4b7d1c4d0baf783e"
     },
     {
       "path": "experiments/fold6-rg-projector/directrg/src/androidTest/kotlin/com/code2hack/eyebrowse/projector/directrg/ProjectionInstrumentation.kt",
@@ -2345,8 +2438,8 @@
     },
     {
       "path": "experiments/fold6-rg-projector/directrg/src/main/kotlin/com/code2hack/eyebrowse/projector/directrg/ProjectionSession.kt",
-      "bytes": 8798,
-      "sha256": "a9f5bb7166f1be8f47d7ff16a76430c87bb8313e88bc638953784da1869c5c0e"
+      "bytes": 9070,
+      "sha256": "f7680cce7c9248ccc34001344ab9f261b066cccb9bc8647f26ffd39760d8909b"
     },
     {
       "path": "experiments/fold6-rg-projector/directrg/src/main/kotlin/com/code2hack/eyebrowse/projector/directrg/ReceiverActivity.kt",
@@ -2355,8 +2448,8 @@
     },
     {
       "path": "experiments/fold6-rg-projector/directrg/src/main/kotlin/com/code2hack/eyebrowse/projector/directrg/SurfaceDecoder.kt",
-      "bytes": 4299,
-      "sha256": "1e143c503e141c58aa6c9a8eb5dc46b771822f8e4342042c9cf709bc21d61f01"
+      "bytes": 4603,
+      "sha256": "52197758bf74007c9dd02106b309118a13f523a2ba2ff358d3b6f904461f2552"
     },
     {
       "path": "experiments/fold6-rg-projector/directrg/src/main/res/values/strings.xml",
@@ -2452,11 +2545,12 @@
     "currentCandidate": false
   },
   "currentSourceCapsule": {
-    "record": "hostr5-rg3-probe4-source-apk-capsule159.json",
-    "bytes": 7320,
-    "sha256": "3e7afead0d64d4913c1423be933e7906463c2a2d018ecefe7d5939989d2d77f1",
+    "record": "review169-source-apk-capsule.json",
+    "bytes": 9305,
+    "sha256": "41da15f09ae8c9de67a74f7fd6850ce6995c5613e82712026389bcf2b327c3b6",
     "sourceFiles": 25,
-    "binding": "HostR5/RG3/Probe4 compiled source/APK capsule used for direct167. No compiled-source or installed-package change during the successful runs."
+    "testSourceFiles": 7,
+    "binding": "Corrected RG3 APK built from R67-1/R67-2 source; current update and installed outcome unknown; HostR5/Probe4 unchanged. Prior310s retains capsule159 binding."
   },
   "previousRGTestAPK": {
     "package": "com.code2hack.eyebrowse.projector.directrg.r3.test",
@@ -2544,19 +2638,18 @@
   },
   "latestEvidenceBoundary": {
     "reports": [
-      95,
-      96
+      98
     ],
-    "execution": "CURRENT_INSTALLED_HOSTR5_RG3_PROBE4_DIRECT_STOCK_ADB_NO_PRIVATE_TEST_ADMISSION_STACK",
-    "productComponentEvidenceReadyForReview": true,
+    "execution": "HOST_CORRECTIONS_VERIFIED_DEVICE_UPDATE_AND_READ_UNKNOWN",
+    "productComponentEvidenceReadyForReview": false,
     "Owner167ExtraTestGatesCancelled": true,
     "Owner106RepeatedBackupsRetired": true,
     "originalAppsOrStoresModified": false,
     "sharedDebugRoutesModified": false,
     "mainOrV004Changed": false,
     "reviewOrAcceptanceClaim": false,
-    "lastDeviceCut": "One normal final screen-off/check: PhoneDozing/RGAsleep; owned bridge/stock/VD35-41/listener44367 absent",
-    "remainingScope": "Independent exact-head review/Manager acceptance; audio/head/IME/optical/acoustic/reboot behavior not claimed"
+    "lastDeviceCut": "Correct physical targets at operation start, followed by unavailable RG update/current-installed response; no new media/UI resources or power action. Historical167 end cuts remain historical.",
+    "remainingScope": "Restore actual RG debug capability, reconcile current installed bytes without replaying unknown update, short corrected connect/Stop/pause/reconnect, renewed exact-head review."
   },
   "historicalCheckpoint075": {
     "status": "INCOMPLETE_VIDEO014_PREGO_TIMEOUT_BOTH_DEBUG_PIDS_ABSENT_OWNED_ENDSTATE_UNKNOWN",
@@ -3022,7 +3115,112 @@
       "PCPortNumberOnlyCheck": "overbroad unrelated host connection; exact media endpoint observation has no PC gateway"
     },
     "reviewAcceptanceOrReleaseClaimed": false,
-    "originalEyeBrowseChromiumAppsStoresOrBackupsTouched": false
+    "originalEyeBrowseChromiumAppsStoresOrBackupsTouched": false,
+    "testedSourceCapsule": "hostr5-rg3-probe4-source-apk-capsule159.json / 3e7afead0d64d4913c1423be933e7906463c2a2d018ecefe7d5939989d2d77f1"
   },
-  "historicalRecordsAreNotTestAdmissionRequirements": true
+  "historicalRecordsAreNotTestAdmissionRequirements": true,
+  "historicalCandidate097": {
+    "head": "6740018d6482403139976d1411ffbe10f34e13da",
+    "tree": "ec78833c5227d072c6c11243006be39510e41e1e",
+    "currentSourceCapsule": {
+      "record": "hostr5-rg3-probe4-source-apk-capsule159.json",
+      "bytes": 7320,
+      "sha256": "3e7afead0d64d4913c1423be933e7906463c2a2d018ecefe7d5939989d2d77f1",
+      "sourceFiles": 25,
+      "binding": "HostR5/RG3/Probe4 compiled source/APK capsule used for direct167. No compiled-source or installed-package change during the successful runs."
+    },
+    "APKs": [
+      {
+        "package": "com.code2hack.eyebrowse.projector.directhost.r5",
+        "bytes": 2518061,
+        "sha256": "d87df5bb827855f8a46a39a23ba464aa582c3ba130cbda777d41543512794b2b",
+        "signatureVerified": true,
+        "applicationIdManifestVerified": true,
+        "installationState": "R5_IDENTITY_WHOLE_SIGNED_BYTES_USER0_UID10445_QUALIFIED163_USED_UNCHANGED167"
+      },
+      {
+        "package": "com.code2hack.eyebrowse.projector.directrg.r3",
+        "bytes": 2516261,
+        "sha256": "073f195eb312b9b26e4fd3801449aeb017f61a1bb51c9d51fa6965b83084c59e",
+        "signatureVerified": true,
+        "installationState": "PREVIOUSLY_QUALIFIED_INSTALLED_PACKAGE_USED_WITHOUT_UPDATE167"
+      },
+      {
+        "package": "com.code2hack.eyebrowse.projector.directrg.r3.probe4",
+        "bytes": 38734,
+        "sha256": "0e46832d5d384d46ee2faff60184a02458ecd71587f9b606cffc1b1bbc4e0151",
+        "signatureVerified": true,
+        "signerCertificateSHA256": "e372f80243affb0fd2462d4c90f8aede64a9ffb683cebad6c517d73eacc6a963",
+        "applicationIdVerifiedBy": "apkanalyzer",
+        "installationState": "PREVIOUSLY_QUALIFIED_INSTALLED_PACKAGE_USED_WITHOUT_UPDATE167"
+      }
+    ],
+    "latestEvidenceBoundary": {
+      "reports": [
+        95,
+        96
+      ],
+      "execution": "CURRENT_INSTALLED_HOSTR5_RG3_PROBE4_DIRECT_STOCK_ADB_NO_PRIVATE_TEST_ADMISSION_STACK",
+      "productComponentEvidenceReadyForReview": true,
+      "Owner167ExtraTestGatesCancelled": true,
+      "Owner106RepeatedBackupsRetired": true,
+      "originalAppsOrStoresModified": false,
+      "sharedDebugRoutesModified": false,
+      "mainOrV004Changed": false,
+      "reviewOrAcceptanceClaim": false,
+      "lastDeviceCut": "One normal final screen-off/check: PhoneDozing/RGAsleep; owned bridge/stock/VD35-41/listener44367 absent",
+      "remainingScope": "Independent exact-head review/Manager acceptance; audio/head/IME/optical/acoustic/reboot behavior not claimed"
+    }
+  },
+  "reviewCorrection169": {
+    "reviewedHead": "6740018d6482403139976d1411ffbe10f34e13da",
+    "review": "https://github.com/code2hack/EyeBrowse/pull/72#pullrequestreview-5563558533",
+    "todo": "I67-T03 attempt2/failure1; Manager owns conclusions",
+    "R67-1": "Construct locally; same lifecycle lock covers running transition, decoder detach/publication. Close detached or rejected local instances outside lock.",
+    "R67-2": "Release allocated MediaCodec on constructor initialization Throwable, preserve original error without requiring outputThread.",
+    "hostTests": {
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "redLeakCases": 2,
+      "normalReplacementBaselinePassed": true,
+      "initBoundaries": [
+        "name callback",
+        "configure",
+        "listener",
+        "start"
+      ],
+      "cleanupFailurePreservesOriginal": true,
+      "testDoublesNotInApplicationAPK": true,
+      "proof": {
+        "record": "review169-host-proof.json",
+        "bytes": 4166,
+        "sha256": "f5caaffffdc9718416fc9a453dd525bb8eacc21c57707af4e8dc5b2b31b46fd2"
+      }
+    },
+    "build": {
+      "JDK": 17,
+      "affectedTasks": [
+        "directrg:testDebugUnitTest",
+        "directrg:assembleDebug",
+        "directrg:lintDebug"
+      ],
+      "result": "PASS",
+      "lintErrors": 0,
+      "lintWarnings": [
+        "existing OldTargetApi"
+      ]
+    },
+    "currentDeviceActions": {
+      "targetsAtStart": "Both assigned physical serial hashes/model/API/user0/shell matched",
+      "ownedRGUpdate": "120030ms timeout, both response buffers unavailable, outcome UNKNOWN",
+      "oneReadOnlyInstalledComparison": "35037ms timeout, both buffers unavailable, current APK UNKNOWN",
+      "replayedInstall": false,
+      "newBridgeVDOrFixtureCreated": false,
+      "newInputOrPower": false,
+      "liveLifecycleCheck": "NOT_EXECUTED_PENDING_RG_DEBUG_CAPABILITY"
+    },
+    "historicalResults": "Prior310s/app-effect/security/lifecycle evidence remains valid for its prior source; no corrected-source live PASS inferred.",
+    "candidateReady": false
+  }
 }

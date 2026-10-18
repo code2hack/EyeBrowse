@@ -28,6 +28,7 @@ class ProjectionSession(
     private val timer = Executors.newScheduledThreadPool(2)
     private val taps = ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, SynchronousQueue())
     private val outputLock = Any()
+    private val lifecycleLock = Any()
     private val writing = AtomicLong()
     @Volatile private var socket: SSLSocket? = null
     @Volatile private var output: DataOutputStream? = null
@@ -107,18 +108,7 @@ class ProjectionSession(
                         Wire.GEOMETRY -> {
                             val data = DataInputStream(frame.payload.inputStream())
                             val size = Geometry(data.readInt(), data.readInt())
-                            readyForTouch = false; decoder?.close()
-                            geometry = size
-                            onGeometry(this, size)
-                            synchronized(this) { stats.put("width", size.width).put("height", size.height) }
-                            decoder = SurfaceDecoder(surface, size, { delay ->
-                                synchronized(this) {
-                                    rendered++; renderDelayMs.addLast(delay)
-                                    if (renderDelayMs.size > 256) renderDelayMs.removeFirst()
-                                }
-                                if (!readyForTouch && running.get()) { readyForTouch = true; state("STREAMING") }
-                            }, { name -> synchronized(this) { stats.put("decoder", name) } },
-                                { format -> synchronized(this) { stats.put("decoderFormat", format) } }, { error -> failure(error); closeWithState("DECODE_FAILED") })
+                            replaceDecoder(size)
                         }
                         Wire.VIDEO -> {
                             require(frame.stamp >= 0)
@@ -145,6 +135,29 @@ class ProjectionSession(
         }, "pav67-receiver").start()
     }
 
+    internal fun replaceDecoder(size: Geometry) {
+        val old = synchronized(lifecycleLock) {
+            readyForTouch = false
+            decoder.also { decoder = null }
+        }
+        old?.close()
+        geometry = size
+        onGeometry(this, size)
+        synchronized(this) { stats.put("width", size.width).put("height", size.height) }
+        val next = SurfaceDecoder(surface, size, { delay ->
+            synchronized(this) {
+                rendered++; renderDelayMs.addLast(delay)
+                if (renderDelayMs.size > 256) renderDelayMs.removeFirst()
+            }
+            if (!readyForTouch && running.get()) { readyForTouch = true; state("STREAMING") }
+        }, { name -> synchronized(this) { stats.put("decoder", name) } },
+            { format -> synchronized(this) { stats.put("decoderFormat", format) } }, { error -> failure(error); closeWithState("DECODE_FAILED") })
+        val installed = synchronized(lifecycleLock) {
+            if (running.get()) { decoder = next; true } else false
+        }
+        if (!installed) next.close()
+    }
+
     fun tap(tap: Tap): Boolean {
         if (!running.get() || !readyForTouch || tap.geometry != geometry) return false
         return try {
@@ -161,10 +174,13 @@ class ProjectionSession(
     }
 
     private fun closeWithState(value: String) {
-        if (!running.compareAndSet(true, false)) return
-        readyForTouch = false
+        val old = synchronized(lifecycleLock) {
+            if (!running.compareAndSet(true, false)) return
+            readyForTouch = false
+            decoder.also { decoder = null }
+        }
         runCatching { socket?.close() }; timer.shutdownNow(); taps.shutdownNow()
-        runCatching { decoder?.close() }; decoder = null
+        runCatching { old?.close() }
         state(value)
     }
     override fun close() = closeWithState("STOPPED")
