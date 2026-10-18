@@ -10,13 +10,14 @@ A subsequent stream exposed stock scrcpy's self-unlink behavior: its cleanup
 process deletes the JAR from which it was started. The corrected Phone host
 keeps a pinned master and gives every authenticated session a new verified
 copy. Three focused regression tests, the Phone build and lint pass. This new
-Phone package installation is **unknown**: a failed streamed install returned
-no Android failure code, and its one read-only reconciliation stopped before
-ADB because the old debug tunnel PID was absent. A qualified replacement
-subsequently matched its host process/listener, but the one authorized selected
-registration failed. No install/connect was replayed or new credential caller
-admitted. Phone work is held at that concrete transport capability boundary;
-source/build work has continued independently.
+Phone r3 package is installed and its full APK hash matches the frozen build.
+The earlier r2 install remains **unknown**; a later complete query found r2
+absent without establishing its old installer transaction outcome. A fresh
+unused r3 ID avoided replaying or replacing it. The first five-minute attempt
+then failed at the guarded control helper's initial stock-JAR hash command,
+before credential read, control setup or product work. Its journal is consumed
+and future caller admission is held for an exact Manager disposition. Independent
+source/build work continues.
 
 ## Scope, packages and privileges
 
@@ -29,9 +30,10 @@ audio, lock and sensory limitations. This checkpoint does not complete AV
 projection, optical readability, head input, Phone IME, acoustics or automatic
 startup. Production browser code and protected articles remain unchanged.
 
-The compiled Phone package is `com.code2hack.eyebrowse.projector.directhost.r2`;
-its installation is unqualified at this cut. The original experimental `.directhost` remains
-installed. The current RG app and test are `.directrg.r3` and `.directrg.r3.test`,
+The current Phone package is `com.code2hack.eyebrowse.projector.directhost.r3`;
+its installed bytes match the frozen artifact. The original experimental
+`.directhost` remains installed, and r2's old transaction remains UNKNOWN. The
+current RG app and test are `.directrg.r3` and `.directrg.r3.test`,
 with the common prefix `com.code2hack.eyebrowse.projector`. Their installed APK
 bytes match the frozen artifacts. Earlier RG packages `.directrg`, its `.test`,
 `.directrg.r2`, `.r2.test` and `.r2.diag1` remain retained. Every installation used
@@ -64,7 +66,7 @@ No raw scrcpy or new unauthenticated ADB/control listener is exposed.
 
 Stock [CleanUp.unlinkSelf](https://github.com/Genymobile/scrcpy/blob/a60891aea193d92e7e5c3942700eca63f9d19a5f/server/src/main/java/com/genymobile/scrcpy/CleanUp.java)
 deletes `Server.SERVER_PATH`, the first Java classpath entry. The initial bridge
-incorrectly reused that file. Host r2 creates a distinct session JAR with
+incorrectly reused that file. The corrected host creates a distinct session JAR with
 `CREATE_NEW`, hashes the copied bytes against the fixed server hash and launches
 only after equality. Upstream cleanup consumes that copy; the master remains
 available for the next explicit connection. Existing session paths are never
@@ -168,7 +170,8 @@ input-to-visible latency.
 
 The prepared on-RG driver waits for guarded setup/end-lock/control settlement,
 then measures310 genuine seconds, schedules one focused synthetic tap at155s
-and requests authenticated Host Stop on the same stream. It has not run. A
+and requests authenticated Host Stop on the same stream. The first orchestration
+attempt stopped before product setup, so this measurement has not run. A
 scheduled tap can establish controlled-path app effect only; it cannot establish
 physical head/IME or optical acceptance.
 
@@ -195,7 +198,7 @@ untested-on-device host fix.
 
 | Criterion | Actual result at this checkpoint |
 | --- | --- |
-| Isolated build/dependencies/install | Build/lint PASS; RG3 installed; corrected Phone r2 install UNKNOWN |
+| Isolated build/dependencies/install | Build/lint PASS; Phone r3 and RG3 installed with matching APK bytes; old r2 transaction UNKNOWN |
 | Third-party VD content to real RG Surface | Public vendor onboarding rendered in smoke003; normal Settings page and current encoder identity incomplete |
 | Harmless touch with observed app effect | Unexecuted |
 | At least300 genuine seconds without PC media/control relay | Unexecuted |
@@ -223,10 +226,9 @@ One unused Phone r2 install returned1, with no Android failure code or Success.
 The one read-only package reconciliation was rejected by the guard before ADB:
 the previously pinned debug SSH PID was absent. Independent host observation
 also found its selected listener absent. The installation outcome remains
-unknown; its failure cause and tunnel exit cause are unassigned. No install,
-connect, tunnel, input or credential action was replayed. Current route/binding
-reconciliation belongs to the Manager under existing custody. The last secure
-cut is historical, not a continuously verified state. No shared service was
+unknown; its failure cause and tunnel exit cause are unassigned. No consumed
+install or connect was replayed. Route/binding lifecycle remains under Manager
+custody. Secure cuts are historical, not continuously verified state. No shared service was
 reset or signaled by this Worker. Both-device reservation and old Worker64 tab/hook/resource-return
 obligations remain; there is no old-state overlay or assumed resource return.
 
@@ -242,5 +244,31 @@ lacked explicit fsync. This durability gap is retained without retroactive PASS.
 The corrected private helper syncs the file and parent directory before return;
 three host-only cases verify ordering, existing-record preservation and abort
 on sync failure. No production device, network or credential calls ran in those
-cases. All failed112 records remain intact. Independent exact-candidate review
-and Manager acceptance remain pending.
+cases. All failed112 records remain intact.
+
+A new persistent SSH binding and event114 authorized one distinct, durably
+recorded selected-host registration. It succeeded, followed by exact Fold6,
+user0 and shell qualification. The complete r2 query returned no package path,
+but did not settle the old installer transaction. The fresh unused Phone r3
+APK was staged device-local, independently hashed, installed once and read back
+with the same full installed APK hash. All three current installed APKs, private
+configuration, staged product server and direct interfaces then matched their
+source-bound preflight. No original application/store traversal occurred.
+
+The distinct `w67-five-minute001` journal was admitted. Its first control-helper
+command, a SHA256 check of that helper's expected stock master JAR, returned
+nonzero before SCID, control process or forward construction. The product's
+verified master was in a different mission namespace. The immutable helper did
+not retain that command's result buffers, so this failure alone does not prove
+a missing file or a transport cause. An injected host-only check of the exact
+class confirmed the failure boundary with zero actual device or credential IO.
+The actual caller reported `FAILED_OR_UNKNOWN_NO_RETRY`, credential consumption
+`NOT_ATTEMPTED`, and no product work. No bridge or virtual display was started.
+
+The parent stopped only its own RG package, retained the failed journal and
+observed an Awake/unlocked Phone. One recorded ordinary sleep223 was followed
+by two independent locked/showing/Dozing/display0OFF reads. No PIN, new caller
+or control setup was used for settlement. The old smoke002 resolution exempts
+only that exact old record; it does not exempt this new consumed journal. Both
+failures remain unchanged. The five-minute/tap/Host Stop criteria remain pending,
+as do independent exact-candidate review and Manager acceptance.

@@ -2,7 +2,7 @@
   "schema": 1,
   "issue": 67,
   "alias": "PAV-02",
-  "status": "INCOMPLETE_COMPONENT_CHECKPOINT_REPLACEMENT_PRIMARY_REGISTRATION_FAILED",
+  "status": "INCOMPLETE_COMPONENT_CHECKPOINT_HOSTR3_INSTALLED_PRECONTROL_CALLER_FAILED",
   "baseline": "38cb5f7ec8d320ef9833a36840ccec3febdbc885",
   "donor": "03de921e2400147842ce6c56101b58d514dde77c",
   "target": "spike/fold6-rg-projector-av",
@@ -72,28 +72,34 @@
     "protocolSourceUnchanged": true,
     "affectedPhoneCompileAndLint": "PASS",
     "hostSessionJarRegressionCases": 3,
-    "sameClockMetricImplementedButDeviceUnmeasured": true
+    "sameClockMetricImplementedButDeviceUnmeasured": true,
+    "phoneHostR3UnusedIDBuildAndLint": "PASS",
+    "unitTestsRerunForPhoneApplicationIdOnlyChange": false,
+    "hostR3Lint": {
+      "errors": 0,
+      "warnings": 1,
+      "xmlSHA256": "a12cfb5cce6cce88bf589c70c3610af519680355e2c4d0f88767e735e0d2afad"
+    }
   },
   "APKs": [
     {
-      "package": "com.code2hack.eyebrowse.projector.directhost.r2",
-      "sha256": "84f656b53167b5cba969d50a8f27d64578fd1fecdd576abed7c60b5f64bc6b1d",
-      "bytes": 2549566,
+      "package": "com.code2hack.eyebrowse.projector.directhost.r3",
+      "bytes": 2512681,
+      "sha256": "4b3fc80cbf202a1bf7246e199612850aa0b52c05fbe404b78848188547702cc9",
       "signatureVerified": true,
-      "installed": null,
-      "installationOutcome": "UNKNOWN_AFTER_CLIENT_EXIT1_GUARDED_RECONCILIATION_UNAVAILABLE"
+      "installed": true
     },
     {
       "package": "com.code2hack.eyebrowse.projector.directrg.r3",
-      "sha256": "073f195eb312b9b26e4fd3801449aeb017f61a1bb51c9d51fa6965b83084c59e",
       "bytes": 2516261,
+      "sha256": "073f195eb312b9b26e4fd3801449aeb017f61a1bb51c9d51fa6965b83084c59e",
       "signatureVerified": true,
       "installed": true
     },
     {
       "package": "com.code2hack.eyebrowse.projector.directrg.r3.test",
-      "sha256": "fc8c5e874f1e0c72a6ddc3ec29ebe1d987bdcc09c40bdfd69987a9fbaa20367a",
       "bytes": 30534,
+      "sha256": "fc8c5e874f1e0c72a6ddc3ec29ebe1d987bdcc09c40bdfd69987a9fbaa20367a",
       "signatureVerified": true,
       "installed": true
     }
@@ -244,9 +250,9 @@
   ],
   "physical": {
     "projectorPackagesInstalled": null,
-    "correctedPhoneHostR2Installed": null,
+    "correctedPhoneHostR2Installed": false,
     "currentRG3InstalledAndByteBound": true,
-    "screenHelperInvocations": 3,
+    "screenHelperInvocations": 4,
     "credentialReads": 0,
     "smoke003": {
       "observedStreamingMs": 80043,
@@ -282,13 +288,13 @@
     "thirdPartyVideo": "PUBLIC_VENDOR_UI_RENDERED_NORMAL_SETTINGS_PAGE_INCOMPLETE",
     "rgSurfaceDecode": "SMOKE003_REAL_HARDWARE_SURFACE_DECODE_OBSERVED",
     "harmlessVisibleTapEffect": "UNEXECUTED",
-    "fiveMinuteNoPCGateway": "UNEXECUTED",
+    "fiveMinuteNoPCGateway": "NOT_EXECUTED_FIRST_ORCHESTRATION_FAILED_BEFORE_PRODUCT_SETUP",
     "onDeviceAuthenticationRefusal": "UNEXECUTED_ACCEPTANCE_CASE",
     "onDeviceLifecycle": "SMOKE003_SECOND_STREAM_FAILED_CURRENT_FIX_UNEXECUTED",
     "measuredMovingFPSAndLatency": "SMOKE003_FPS_OBSERVED_LEGACY_LATENCY_INVALID_RG3_METRIC_UNMEASURED",
     "audio": "DISABLED_INTERMEDIATE",
     "opticalHeadIMEAcousticAcceptance": "NOT_CLAIMED",
-    "blocker": "Replacement tunnel host binding qualified; one authorized selected host-connect returned failure text, physical/package reconciliation not reached; install UNKNOWN",
+    "blocker": "Consumed noncredential five-minute001 journal after initial OwnedControl stock-master SHA command returned nonzero; future caller admission needs exact Manager disposition",
     "componentNegativesRetained": [
       "Initial RG decor/insets NullPointerException",
       "Initial API32 PKCS12 context IOException",
@@ -298,9 +304,26 @@
       "Read-only native status timeout25s, one reconciliation physical-guard unavailable60s",
       "Host r2 streamed install returned1 without Android failure code; package reconciliation rejected before ADB because pinned SSH PID absent",
       "Replacement112 selected registration absent; one host-connect return0 but explicit failed-to-connect text; no retry",
-      "Private event112 intent lacked explicit file/directory fsync before connect; gap retained, helper corrected with host-only cases"
+      "Private event112 intent lacked explicit file/directory fsync before connect; gap retained, helper corrected with host-only cases",
+      "First five-minute001 admitted journal failed at initial control master-JAR hash command before credential/control/product work; result buffers unavailable; journal consumed without replay"
     ],
-    "lastKnownInstalledPackageCountBeforeUncertainInstall": 8
+    "lastKnownInstalledPackageCountBeforeUncertainInstall": 8,
+    "hostR2PresenceMeaning": "Complete event114 user0 query absent; old installer transaction still UNKNOWN",
+    "currentPhoneHostR3InstalledAndByteBound": true,
+    "fiveMinute001": {
+      "state": "FAILED_OR_UNKNOWN_NO_RETRY",
+      "credentialReadState": "NOT_ATTEMPTED",
+      "newJournalAdmitted": true,
+      "phase": "ACTOR_QUALIFICATION",
+      "guardCode": "ADB_OPERATION_FAILED",
+      "actualBoundary": "OwnedControl initial stock-JAR SHA command; before SCID/process/forward construction",
+      "productWorkReached": false,
+      "measurementReached": false,
+      "exactDeviceCommandStdoutStderr": "NOT_RETAINED_BY_IMMUTABLE_HELPER",
+      "specificFilesystemOrTransportCause": "NOT_PROVEN",
+      "hostOnlyExactClassFailureCheckPassed": true,
+      "hostOnlyCheckActualDeviceNetworkLoaderInputCalls": 0
+    }
   },
   "teardown": {
     "ownedBridgeProcessesStarted": 3,
@@ -329,9 +352,19 @@
     "oldWorker64State": "Unresolved historical tab/hook/resource obligations retained",
     "smoke003BridgeSessionAnd44367Absent": true,
     "smoke003VD18FinalAbsence": "NOT_SEPARATELY_CAPTURED",
-    "lastNativeCut": "Fresh locked/showing/Dozing/display0OFF read before host r2 install; not continuously current",
+    "lastNativeCut": "Two independent after/settled reads in five-minute001 finalizer: locked/showing/Dozing/display0OFF; historical cut, no continuous-state claim",
     "backupClientsActive": 0,
-    "backupClientSignals": 0
+    "backupClientSignals": 0,
+    "fiveMinute001": {
+      "newProductBridgeOrVirtualDisplays": 0,
+      "ownedRGPackageStoppedOnFailure": true,
+      "ordinaryCredentialFreeSleep223Calls": 1,
+      "credentialLoaderOrNewCallerOrOwnedControlCallsDuringSettlement": 0,
+      "bothAfterAndSettledNativeLockedShowingDozingDisplay0Off": true,
+      "teardownError": null,
+      "oldRGObligationsStillUnresolved": true
+    },
+    "rgLatestOwnTelemetryMeaning": "Historical smoke003 follow-up telemetry; five-minute001 stopped the own RG package before product work and made no new receiver telemetry claim"
   },
   "privateEvidenceHashes": [
     {
@@ -728,6 +761,86 @@
       "record": "record-durability112-host-proof.json",
       "sha256": "e0c402e066b40f68781ae8044b53f5d40f260b75159e92407d633297f0d222a0",
       "bytes": 820
+    },
+    {
+      "record": "event114-route-package-intent.json",
+      "sha256": "f16b86c35fcdba96eaf48c79407061a4ba69c97d5ad9a671915f157db4c5566d",
+      "bytes": 202
+    },
+    {
+      "record": "event114-new-host-connect-intent.json",
+      "sha256": "0d447fa2f1b8309edd1e966dbffd33f559e2b26be00c025cd94bfb8a098de4f5",
+      "bytes": 250
+    },
+    {
+      "record": "event114-new-host-connect-result.json",
+      "sha256": "04908ff2acbd12aa06eb0b5e6953ae650bbe2440a79d2d49871d9ac9a3fce21b",
+      "bytes": 258
+    },
+    {
+      "record": "event114-route-package-result.json",
+      "sha256": "40318b901e6c8dff8afa781a8779e49f267af6e606fe30143cbb3532da5ffda0",
+      "bytes": 947
+    },
+    {
+      "record": "hostr3-provision-complete.json",
+      "sha256": "eebdc4ca6a62149ba4c6f2184d476d23ec0cfc810850cc34fb57b085e4d8943a",
+      "bytes": 477
+    },
+    {
+      "record": "host-r3-unused-id-build.log",
+      "sha256": "d224fd5c5068d16c474fc5f8bba9ad3c53b0600cd3c81fb8908990c4815afd9f",
+      "bytes": 5871
+    },
+    {
+      "record": "hostr3-rg3-current-source-apk-capsule.json",
+      "sha256": "a5b74bd5f243c221352f7ad7e0207a55be645bc5a83f5bc4f54b78b73d365a27",
+      "bytes": 6911
+    },
+    {
+      "record": "hostr3-rg3-current-source-files.tar.gz",
+      "sha256": "3254d7160641f2518770f13062bc901b197a0f5ee5419964bea733bda2205d7b",
+      "bytes": 20467
+    },
+    {
+      "record": "pre-five-minute004-bindings.json",
+      "sha256": "426bb63656eb53d2b51f8efe665bbe7ed96851e1a0cb9d6af0c0740fba2ccf20",
+      "bytes": 1608
+    },
+    {
+      "record": "five-minute001-orchestration-intent.json",
+      "sha256": "34cbffec3955ae70a6e1d722604924f5ba72f9f3e6fd0abaf65ce25a537f89ac",
+      "bytes": 249
+    },
+    {
+      "record": "five-minute001-failed-caller-frozen.json",
+      "sha256": "a7b567a4732c17e9cdebf374dd424c426b79ebfe6e8b154fad73ddaba40e356c",
+      "bytes": 1290
+    },
+    {
+      "record": "five-minute001-summary.json",
+      "sha256": "6d2889590329359628d7318e113a75b909b33cb69b0514ec94ceec0003f6e2be",
+      "bytes": 1473
+    },
+    {
+      "record": "five-minute001-precontrol-host-diagnosis.json",
+      "sha256": "fa6a86fe9f76b93b004790714498c43c02f6dc873aac87f1501d35ea5bb3737a",
+      "bytes": 1787
+    },
+    {
+      "record": "five-minute001-owned-rg-stop-intent.json",
+      "sha256": "09ae7a9b06c83fbdbec2f8ef78d6929d88221c937148b294f5c57df76697f109",
+      "bytes": 158
+    },
+    {
+      "record": "five-minute001-credential-free-final-sleep-intent.json",
+      "sha256": "a89e392521b8c7b7a708dd1bb9a755023e4f9f73f49322aa7fc7832b46414544",
+      "bytes": 138
+    },
+    {
+      "record": "five-minute001-first-execution-preparation.json",
+      "sha256": "a3c9b15ba7ea45df223adf3354ab70be896e66e2db026380b2d6f40592a25df8",
+      "bytes": 707
     }
   ],
   "privacy": "Only fixed-schema outcomes, counts and opaque hashes. Original paths, browser/account payloads and TLS private material remain outside Git.",
@@ -763,7 +876,7 @@
     {
       "path": "experiments/fold6-rg-projector/directhost/build.gradle.kts",
       "bytes": 716,
-      "sha256": "9897a02529d97ff1394249f82ad1368c184b4bc5b8e47d6af7cc72ec99c34535"
+      "sha256": "bcfeffcee93123ec9f7d1e427cdc62453969cbb7957448cd2a26f832e3d7f342"
     },
     {
       "path": "experiments/fold6-rg-projector/directrg/build.gradle.kts",
@@ -810,6 +923,22 @@
       "installationOutcome": "UNKNOWN_UNCHANGED",
       "currentCapability": "EXISTING_PRIMARY_REGISTRATION_NOT_QUALIFIED",
       "backup106StillActive": true
+    },
+    "event114": {
+      "persistent113BindingQualified": true,
+      "nativeSDKKernelLeaseClientServerGuards": "PASS",
+      "initialSelectedRegistration": "ABSENT",
+      "newHostConnectCalls": 1,
+      "fileAndParentDirectoryFsyncBeforeConnect": true,
+      "selectedRegistrationAfter": "OKAY_DEVICE",
+      "exactPhysicalFold6User0ShellQualified": true,
+      "completeUser0HostR2View": "ABSENT",
+      "oldInstallerTransactionSettled": false,
+      "oldInstallReplayed": false,
+      "nextPackage": "FRESH_UNUSED_HOST_R3",
+      "bootstrapTcpipDisconnectOrSharedResetCalls": 0,
+      "originalStoreTraversalOrMutation": 0,
+      "backup106StillActive": true
     }
   },
   "componentResults": {
@@ -839,14 +968,15 @@
       "oldMasterActuallyMissing": true,
       "newSessionCopy": "CREATE_NEW and fixed-hash verification before launch",
       "threeHostCasesPassed": true,
-      "currentDeviceResult": "UNEXECUTED_HOST_R2_UNINSTALLED"
+      "currentDeviceResult": "HOSTR3_INSTALLED_HASH_BOUND_PRODUCT_RUN_NOT_REACHED"
     },
     "sameClockLatency": {
       "currentField": "packetReadToCallbackP95Ms",
       "scope": "RG System.nanoTime packet read to callback receipt",
       "currentDeviceResult": "UNMEASURED",
       "oldMetricRetainedAsInvalid": true
-    }
+    },
+    "installedPhoneHostR3APKSHA256": "4b3fc80cbf202a1bf7246e199612850aa0b52c05fbe404b78848188547702cc9"
   },
   "smokeHelperRecords": [
     {
@@ -893,6 +1023,16 @@
         "wakefulness": "Dozing",
         "logicalDisplay0State": "OFF"
       }
+    },
+    {
+      "record": "screen-attempt-w67-five-minute001.json",
+      "sha256": "a7b567a4732c17e9cdebf374dd424c426b79ebfe6e8b154fad73ddaba40e356c",
+      "state": "FAILED_OR_UNKNOWN_NO_RETRY",
+      "credentialReadState": "NOT_ATTEMPTED",
+      "workRan": false,
+      "ownedControlProcessOrForwardStarted": false,
+      "priorOld002ResolutionRemainsExactOnly": true,
+      "finalNativeProofSeparateRecord": "five-minute001-summary.json"
     }
   ],
   "supportingIndependentVerification": [
@@ -1031,7 +1171,9 @@
     "state": "ACTIVE_MANAGER_EXACT_NONCREDENTIAL002_ADMISSION_RESOLUTION",
     "old002RemainsFailedConsumedAndUnchanged": true,
     "allOtherHoldsRetained": true,
-    "newCallerAfterSmoke003": "NOT_EXECUTED"
+    "newCallerAfterSmoke003": "FIVE_MINUTE001_FAILED_CONSUMED_NONCREDENTIAL_BEFORE_WORK",
+    "newFiveMinute001Exempted": false,
+    "futureActualCallerAdmission": "HELD_FOR_EXACT_MANAGER_DISPOSITION"
   },
   "privateRecordDurabilityCorrection": {
     "initial112IntentExplicitFsyncBeforeConnect": false,
@@ -1040,5 +1182,24 @@
     "hostCasesPassed": 3,
     "hostCaseDeviceNetworkCredentialOrLoaderCalls": 0,
     "qualifiedCallerAndGuardsUnchanged": true
+  },
+  "compiledSourcesMeaning": "Historical initial compiled source cut retained for historicalFirstAPKs; current sourceFiles/buildDefinitions are bound by currentSourceCapsule",
+  "previousPhoneHostR2APK": {
+    "package": "com.code2hack.eyebrowse.projector.directhost.r2",
+    "sha256": "84f656b53167b5cba969d50a8f27d64578fd1fecdd576abed7c60b5f64bc6b1d",
+    "bytes": 2549566,
+    "signatureVerified": true,
+    "installed": null,
+    "installationOutcome": "UNKNOWN_AFTER_CLIENT_EXIT1_GUARDED_RECONCILIATION_UNAVAILABLE",
+    "observedUser0PackagePresenceAtEvent114": false,
+    "oldInstallationTransactionOutcome": "UNKNOWN_UNCHANGED_NO_REPLAY",
+    "currentCandidate": false
+  },
+  "currentSourceCapsule": {
+    "record": "hostr3-rg3-current-source-apk-capsule.json",
+    "sha256": "a5b74bd5f243c221352f7ad7e0207a55be645bc5a83f5bc4f54b78b73d365a27",
+    "bytes": 6911,
+    "sourceFiles": 24,
+    "binding": "Phone r3 unused applicationId; product/JAR/RG metric/driver logic unchanged since prior02c2 capsule"
   }
 }
