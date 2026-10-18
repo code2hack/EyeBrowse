@@ -120,15 +120,7 @@ internal class AudioDecoder(
                         clock.append(firstFrame, info.presentationTimeUs)
                         val deadline = System.nanoTime() + 250_000_000L
                         while (buffer.hasRemaining() && running.get()) {
-                            val allowance = synchronized(trackLock) {
-                                if (!running.get()) 0 else {
-                                    val queued = writtenFrames.get() - playedFrames(audio, timestamp, System.nanoTime())
-                                    // Keep 100ms of PCM ahead: observed sparse UI PTS can lead the
-                                    // latest decoded audio by another 132ms of the 250ms video budget.
-                                    (4_800L - queued).coerceIn(0, 4_800).toInt() * 4
-                                }
-                            }
-                            val n = if (allowance == 0) 0 else audio.write(buffer, minOf(buffer.remaining(), allowance), AudioTrack.WRITE_NON_BLOCKING)
+                            val n = audio.write(buffer, buffer.remaining(), AudioTrack.WRITE_NON_BLOCKING)
                             check(n >= 0 && n % 4 == 0) { "AudioTrack write failed" }
                             writtenFrames.addAndGet(n / 4L)
                             check(System.nanoTime() < deadline) { "AudioTrack stalled" }
@@ -139,7 +131,10 @@ internal class AudioDecoder(
                         synchronized(trackLock) {
                             if (running.get()) {
                                 val now = System.nanoTime()
-                                val head = playedFrames(audio, timestamp, now)
+                                timestampValid = audio.getTimestamp(timestamp) && clock.update(timestamp.framePosition, timestamp.nanoTime, now)
+                                if (timestampValid) lastClock.set(now)
+                                val head = if (timestampValid) minOf(writtenFrames.get(), timestamp.framePosition + (now - timestamp.nanoTime) * 48_000 / 1_000_000_000)
+                                    else audio.playbackHeadPosition.toLong() and 0xffffffffL
                                 val queued = (writtenFrames.get() - head).coerceAtLeast(0)
                                 peakQueuedFrames = maxOf(peakQueuedFrames, queued)
                                 check(queued <= 14_400) { "Audio playback backlog" }
@@ -151,14 +146,6 @@ internal class AudioDecoder(
                 }
             }
         } catch (error: Exception) { if (running.get()) failed(error) }
-    }
-
-    /** Called under trackLock so teardown cannot flush the track during clock/queue observation. */
-    private fun playedFrames(audio: AudioTrack, timestamp: AudioTimestamp, now: Long): Long {
-        timestampValid = audio.getTimestamp(timestamp) && clock.update(timestamp.framePosition, timestamp.nanoTime, now)
-        if (timestampValid) lastClock.set(now)
-        return if (timestampValid) minOf(writtenFrames.get(), timestamp.framePosition + (now - timestamp.nanoTime) * 48_000 / 1_000_000_000)
-            else audio.playbackHeadPosition.toLong() and 0xffffffffL
     }
 
     fun clockStalled() = System.nanoTime() - lastClock.get() > 5_000_000_000L

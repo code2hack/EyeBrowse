@@ -22,6 +22,47 @@ class DecoderLifetimeTest {
     private fun session() = ProjectionSession(temporary.root.resolve("session"), Surface(), { _, _ -> }, { _, _ -> })
     private fun decoder() = SurfaceDecoder(Surface(), size, {}, {}, {}, {})
 
+    @Test fun nativeUiFrameWithObserved335msLeadWaitsForTheAudioClock() {
+        val codec = MediaCodec().also { MediaCodec.created = it }
+        val delivered = CountDownLatch(1)
+        val once = AtomicBoolean()
+        val failure = AtomicReference<Exception>()
+        codec.output = { info ->
+            if (once.compareAndSet(false, true)) { info.presentationTimeUs = 1_000_000; 0 } else -1
+        }
+        codec.releasedOutput = { if (it) delivered.countDown() }
+        val decoder = SurfaceDecoder(Surface(), size, {}, {}, {}, { failure.set(it) },
+            { System.nanoTime() + 335_000_000L })
+        try {
+            val rendered = delivered.await(1, TimeUnit.SECONDS)
+            assertNull("A native UI update must fit the bounded future-frame wait", failure.get())
+            assertTrue(rendered)
+        } finally { decoder.close() }
+    }
+
+    @Test fun excessiveFutureFrameStillFailsAndStopCancelsAnAdmittedWait() {
+        for (aheadMs in listOf(335L, 600L)) {
+            val codec = MediaCodec().also { MediaCodec.created = it }
+            val entered = CountDownLatch(1)
+            val failed = CountDownLatch(1)
+            val once = AtomicBoolean()
+            val rendered = AtomicBoolean()
+            codec.output = { info ->
+                if (once.compareAndSet(false, true)) { info.presentationTimeUs = 1_000_000; 0 } else -1
+            }
+            codec.releasedOutput = { if (it) rendered.set(true) }
+            val decoder = SurfaceDecoder(Surface(), size, {}, {}, {}, { failed.countDown() },
+                { entered.countDown(); System.nanoTime() + aheadMs * 1_000_000 })
+            try {
+                assertTrue(entered.await(1, TimeUnit.SECONDS))
+                if (aheadMs > 500) assertTrue(failed.await(1, TimeUnit.SECONDS))
+                decoder.close()
+                assertFalse("Stop must not present a waiting frame", rendered.get())
+                assertEquals(1, codec.releases.get())
+            } finally { decoder.close() }
+        }
+    }
+
     @Test fun everyInputKindIsRejectedBeforeRenderedVideoAndAfterStop() {
         val session = session()
         val target = Tap(240, 320, size)

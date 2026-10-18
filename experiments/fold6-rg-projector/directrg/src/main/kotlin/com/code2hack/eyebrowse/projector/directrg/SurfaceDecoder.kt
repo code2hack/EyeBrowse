@@ -70,7 +70,10 @@ class SurfaceDecoder(
                                 synchronized(received) { released.remove(info.presentationTimeUs) }
                                 codec.releaseOutputBuffer(index, false); dropped()
                             } else {
-                                check(target == null || target - now <= 250_000_000L) { "Video/audio clock diverged: videoPtsUs=${info.presentationTimeUs}, aheadMs=${(target!! - now) / 1_000_000.0}" }
+                                // Sparse UI updates can lead the current audio position by334ms.
+                                // Half a second fits the existing clock freshness and16-frame cap;
+                                // this is a bounded wait, not permission to present out of sync.
+                                check(target == null || target - now <= 500_000_000L) { "Video/audio clock diverged: videoPtsUs=${info.presentationTimeUs}, aheadMs=${(target!! - now) / 1_000_000.0}" }
                                 // Wait only on the output worker; Stop remains bounded and cancels presentation.
                                 while (running.get() && target != null && target - System.nanoTime() > 2_000_000L) Thread.sleep(2)
                                 codec.releaseOutputBuffer(index, running.get())

@@ -595,7 +595,7 @@ later field/Back steps were not established. Audio peak queue was247.125ms,
 with one reported underrun. These actual failures remain in
 `compatibility230/av-input001..004/`; they are not new physical-pad failures.
 
-This exposed an inconsistency between the accepted300ms audio backlog ceiling
+This suggested an inconsistency between the accepted300ms audio backlog ceiling
 and250ms video lookahead when sparse UI frames arrive promptly. The first
 correction cf137ac paced the existing nonblocking AudioTrack write loop against
 the RG playback head with a200ms write-ahead allowance. It retained its250ms write deadline, native track
@@ -615,5 +615,29 @@ idle failure had131.617ms of that source lead. Those observed gaps consume
 additional lookahead beyond queued PCM. The write-ahead allowance is therefore
 now100ms (4,800 frames at48kHz, matching the tested native track allocation),
 leaving150ms within the unchanged250ms video bound for this observed lead.
-No other timing/failure/queue limits changed. The full200ms failure remains in
+No other timing/failure/queue limits changed in that intermediate candidate. The full200ms failure remains in
 `compatibility230/av-input005/`; it is not represented as a successful repair.
+
+The100ms candidate b65f744/VD85 was also a failure: peak queue100ms,436 underruns,
+echo RTT4,108ms and CONNECTION_OR_REQUIRED_AUDIO_FAILED at19,412ms, with12,081ms
+driver measurement and no native input. Those results are retained in
+`compatibility230/av-input006/`. Lowering accepted audio buffering was a
+regression; no further queue-cap tuning is retained. **AudioDecoder is restored
+byte-for-byte from accepted target0bce1ea0.** Both failed pacing commits stay in
+the ancestry and their artifacts remain retained.
+
+The current correction instead changes only the existing video worker's maximum
+future-frame wait from250 to500ms, accommodating the measured334ms sparse UI
+lead with the original audio path. The existing500ms clock freshness,16-frame
+inflight cap and30fps source cap remain. Those source bounds are context, not
+a measured hardware-capacity guarantee. It adds no queue, changes no
+late-frame100ms drop/audio backlog/write/focus/watchdog behavior, and does not
+relax the100ms AV-offset assessment target. Stop still cancels the same2ms wait
+loop. The first9s regression run and12s follow-up exposed a JVM double ABI
+error (a private BufferInfo field) and are invalid as lookahead regression
+evidence. Their raw failures remain retained. After matching Android's public
+field with @JvmField, a335ms-ahead frame meaningfully failed the old250ms check
+(one expected failure,10s). The corrected tests also require excessive600ms lead
+to fail and Stop to discard a waiting frame. Manager235 confirms this bounded
+implementation choice is within revision6, with the original assessment
+targets unchanged. New checks and actual compatibility remain pending here.
