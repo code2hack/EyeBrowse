@@ -1,9 +1,9 @@
 # PAV-04 required direct audio and video timing
 
-Worker: Worker-#69  
-Issue: [#69](https://github.com/code2hack/EyeBrowse/issues/69)  
-Assigned base: `077124ed21ee97f51a8c2fe15e5b165e7100f045`  
-Target: `spike/fold6-rg-projector-av`  
+Worker: Worker-#69
+Issue: [#69](https://github.com/code2hack/EyeBrowse/issues/69)
+Assigned base: `077124ed21ee97f51a8c2fe15e5b165e7100f045`
+Target: `spike/fold6-rg-projector-av`
 Status: host implementation ready for a further device window; physical audio acceptance pending.
 Mission revision 2 is source-only while #68 owns both devices.
 
