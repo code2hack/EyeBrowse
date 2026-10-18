@@ -165,6 +165,8 @@ class ProjectionInstrumentation : Instrumentation() {
         val audioManager = targetContext.getSystemService(AudioManager::class.java)
         var priorVolume: Int? = null
         var testFocus: AudioFocusRequest? = null
+        var measurementStarted: Long? = null
+        var measurementEnded: Long? = null
         try {
             val id = args.getString("runId") ?: error("Run identity required")
             require(id.matches(Regex("[A-Za-z0-9_-]{1,48}")))
@@ -218,7 +220,9 @@ class ProjectionInstrumentation : Instrumentation() {
                 } else {
                     report.put("first", status())
                     val start = SystemClock.elapsedRealtime()
+                    measurementStarted = start
                     val samples = JSONArray()
+                    report.put("samples", samples)
                     val tapAt = args.getString("tapAtSeconds")?.toInt() ?: -1
                     val x = args.getString("tapX")?.toFloat() ?: 240f
                     val y = args.getString("tapY")?.toFloat() ?: 320f
@@ -243,8 +247,13 @@ class ProjectionInstrumentation : Instrumentation() {
                         }
                         Thread.sleep(100)
                     }
+                    measurementEnded = SystemClock.elapsedRealtime()
                     val last = status()
-                    require(last.getLong("elapsedMs") - report.getJSONObject("first").getLong("elapsedMs") >= seconds * 1000L - 2500)
+                    val first = report.getJSONObject("first")
+                    require(last.getLong("elapsedMs") - first.getLong("elapsedMs") >= seconds * 1000L - 2500)
+                    require(last.getLong("rendered") > first.getLong("rendered")) { "No actual video progress" }
+                    require(last.getJSONObject("audio").getLong("decodedBuffers") > first.getJSONObject("audio").getLong("decodedBuffers")) { "No actual audio progress" }
+                    require(last.getJSONObject("audio").getLong("lastSourcePtsUs") > first.getJSONObject("audio").getLong("lastSourcePtsUs")) { "No source audio PTS progress" }
                     report.put("observedStreamingMs", SystemClock.elapsedRealtime() - start).put("last", last).put("samples", samples)
                     if (operation == "audio-volume") {
                         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
@@ -294,6 +303,7 @@ class ProjectionInstrumentation : Instrumentation() {
             report.put("causeClasses", causes)
         }
         finally {
+            measurementStarted?.let { report.put("actualMeasurementMs", (measurementEnded ?: SystemClock.elapsedRealtime()) - it) }
             activity?.let { runOnMainSync { it.finish() } }
             testFocus?.let { audioManager.abandonAudioFocusRequest(it) }
             priorVolume?.let {
