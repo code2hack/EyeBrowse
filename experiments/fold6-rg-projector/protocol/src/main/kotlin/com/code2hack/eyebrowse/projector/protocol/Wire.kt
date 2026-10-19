@@ -94,14 +94,16 @@ object Wire {
     const val NAVIGATE = 9
     const val STREAM = 1
     const val STOP_HOST = 2
+    const val PANEL_OFF = 3 // Fixed authenticated host requests, never raw scrcpy frames.
+    const val PANEL_ON = 4
 
     fun writeRequest(output: DataOutputStream, operation: Int) {
-        require(operation == STREAM || operation == STOP_HOST)
+        require(operation in STREAM..PANEL_ON)
         output.writeInt(MAGIC); output.writeInt(VERSION); output.writeByte(operation); output.flush()
     }
     fun readRequest(input: DataInputStream): Int {
         require(input.readInt() == MAGIC && input.readInt() == VERSION)
-        return input.readUnsignedByte().also { require(it == STREAM || it == STOP_HOST) }
+        return input.readUnsignedByte().also { require(it in STREAM..PANEL_ON) }
     }
     fun writeWelcome(output: DataOutputStream) {
         output.writeInt(MAGIC); output.writeInt(VERSION); output.writeUTF(SCRCPY_VERSION)
@@ -149,6 +151,7 @@ sealed interface ScrcpyRecord {
 object Scrcpy {
     const val CONFIG = 1L shl 62
     const val KEY_FRAME = 1L shl 61
+    fun displayPower(on: Boolean): ByteArray = byteArrayOf(10, if (on) 1 else 0)
     fun readRecord(input: DataInputStream): ScrcpyRecord {
         val stamp = input.readLong(); val last = input.readInt()
         if (stamp < 0) {

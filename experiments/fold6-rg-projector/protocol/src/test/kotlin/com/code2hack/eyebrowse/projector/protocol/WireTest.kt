@@ -8,6 +8,20 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WireTest {
+    @Test fun panelPowerUsesFixedHostRequestsAndStockLocalBooleanMessages() {
+        assertArrayEquals(byteArrayOf(10, 0), Scrcpy.displayPower(false))
+        assertArrayEquals(byteArrayOf(10, 1), Scrcpy.displayPower(true))
+        for (operation in listOf(Wire.PANEL_OFF, Wire.PANEL_ON)) {
+            val request = input { Wire.writeRequest(this, operation) }
+            assertEquals(operation, Wire.readRequest(request))
+            assertEquals(-1, request.read())
+        }
+        // Raw scrcpy bytes cannot be submitted as a host request or media/control frame.
+        assertThrows(Exception::class.java) { Wire.readRequest(DataInputStream(Scrcpy.displayPower(false).inputStream())) }
+        assertThrows(Exception::class.java) { Wire.writeRequest(DataOutputStream(ByteArrayOutputStream()), 10) }
+        assertThrows(Exception::class.java) { Wire.writeFrame(DataOutputStream(ByteArrayOutputStream()), Frame(10)) }
+    }
+
     private fun input(block: DataOutputStream.() -> Unit): DataInputStream {
         val bytes = ByteArrayOutputStream()
         DataOutputStream(bytes).use(block)
