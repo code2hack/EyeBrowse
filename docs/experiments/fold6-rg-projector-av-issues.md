@@ -1,59 +1,62 @@
 # Fold6 → RG projector AV — canonical issue index
 
 **Planner:** SPEC Design  
-**Request-ID:** SPEC-PROJECTOR-AV-SPIKE-20261017-01  
-**Status:** Owner-authorized experimental branch and five issues published; no runtime capability, test, agent startup or production migration is claimed.  
-**Branch / PR target:** `spike/fold6-rg-projector-av`  
-**Pinned source:** `v0.0.4@03de921e2400147842ce6c56101b58d514dde77c`  
-**Authoritative experimental plan:** [PAV-1](fold6-rg-projector-av.md), first published at `189ed3a7a41f4ade167139837ce0d2a98f540486`.
+**Current Request-ID:** SPEC-PAV-PANEL-POWER-20261019-01  
+**Branch / all implementation PR targets:** `spike/fold6-rg-projector-av`  
+**Current follow-up baseline:** `ecb5b59ca152360ecaa6014ab1f815b58b62c6cd` (accepted #76 / PR #77)  
+**Original donor:** `v0.0.4@03de921e2400147842ce6c56101b58d514dde77c`  
+**Current publication:** Owner-authorized panel-power investigation #78 is ready for assignment; no new device result, fix or production migration is claimed.
 
-## 1. Published work
+## 1. Current actionable follow-up
 
-| Alias | Issue | Required predecessor | Initial state |
+| Alias | Canonical issue | Prerequisites | Dispatch status |
 | --- | --- | --- | --- |
-| PAV-01 | [#66 — stock Fold6 virtual-display, Phone IME, audio and shell feasibility](https://github.com/code2hack/EyeBrowse/issues/66) | none | `ready-for-agent`; Manager preflight/device reservation still required |
-| PAV-02 | [#67 — direct Fold6 host and RG video/control client](https://github.com/code2hack/EyeBrowse/issues/67) | #66 viable virtual-display/server path | dependency-blocked |
-| PAV-03 | [#68 — RG head/touchpad input and real projected Phone keyboard](https://github.com/code2hack/EyeBrowse/issues/68) | #67 | dependency-blocked |
-| PAV-04 | [#69 — required audio to RG and A/V synchronization](https://github.com/code2hack/EyeBrowse/issues/69) | #67; #66 audio observations | dependency-blocked |
-| PAV-05 | [#70 — integrated operating/lock/isolation matrix and recommendation](https://github.com/code2hack/EyeBrowse/issues/70) | #68 + #69 evidence; transitive #66/#67 | dependency-blocked |
+| PAV-PWR-01 | [#78 — Physical panels off with projection active and keyguard locked](https://github.com/code2hack/EyeBrowse/issues/78) | #70 investigative findings and #76 current host; both completed | `ready-for-agent`; ordinary Manager assignment and current device reservation required |
 
-Order: **#66 → #67 → (#68 and #69) → #70**. Audio and input can develop concurrently after the direct transport works, subject to the current Owner concurrency limit and exclusive device access. Do not race on shared protocol/client lifecycle files; Manager coordinates source ownership. Host-only work may continue while another mission owns a device, but no unreserved device mutation is allowed.
+Read [PAV-PWR-1: panel-power follow-up](fold6-rg-projector-av/panel-power-followup.md), first published at `229f61edb4bc5d8df9e9c57fa3b9f589706cfda9`. It is the narrowly authorized next experiment, not a request to repeat or reopen the original five issues.
 
-A negative prerequisite is not a usable capability and cannot silently unblock implementation. A supported negative can complete its investigation after independent review; #70 may then synthesize the evidence and no-go/limited recommendation without fabricating missing positive results. Lack of permissions/devices or missing optical/acoustic evidence is unavailable, not proof of impossibility.
+The target is **physical Fold6 panels off, existing keyguard locked, virtual app/video/audio/input still active**. Test scrcpy's stock physical-panel-power control separately from ordinary Android sleep. Preserve `keep_active=true`, `power_on=false` and the **removed overall host lifetime cap** delivered by #76; the old fifteen-minute cutoff must not return. Measurement windows do not limit runtime or Worker duration.
 
-## 2. Non-negotiable experiment boundaries
+The allowed implementation is a minimal fixed stock OFF/ON operation in the existing authenticated host/control path. Stock type10 carries Boolean OFF/ON (`0A 00` / `0A 01`) on the local scrcpy control socket; this is not a raw message to the EyeBrowse TLS endpoint. Keep the pinned unmodified server and current media/client behavior. No new permanent RG panel, gesture, arbitrary power API, server fork or capture framework is required.
 
-- **No Spark/u4090 gateway in operation:** desktop build/initial authorized ADB bootstrap/stock diagnostic viewing is allowed, but the demonstrated video, audio and control path is Fold6 ↔ RG directly. Existing developer control connections need not be destroyed to prove absence of a media relay.
-- **Audio is mandatory:** real captured Phone audio must traverse the network and play on RG in time with video. No silent video-only success, Bluetooth-audio shortcut or separately loaded RG media. Start with RG output playback/Phone-suppressed `output` mode; report duplication and whole-device mixing separately. This is not a final user preference decision about dual playback.
-- **Phone keyboard first:** actually project the Phone's system IME on the virtual display and operate it with RG pointer/taps. No local RG keyboard in the initial client. A minimal donor-keyboard fallback may be evaluated only as a labeled alternative if the Phone-IME result is limited; it is not proof of native Phone-IME success.
-- **No browser baggage in the prototype APKs:** no RG WebView/Chromium, Mihomo or subscription jobs/assets, address/tab/star toolbar. Reuse input primitives; provide only on-demand projector navigation/disconnect and black connection/error UI. The projected app's own controls remain part of its pixels.
-- **Separate packages/build:** isolate under `experiments/fold6-rg-projector/`; first-party Kotlin and pinned third-party scrcpy. Distinct install IDs, no production browser updates/uninstall/data clearing. The v0.0.4 proxy/toolbar/keyboard are not deleted from that ongoing browser.
-- **Screen-off is not secure-lock proof:** distinguish device power, keyguard, virtual Activity and continuation versus startup. No root, security/DRM/FLAG_SECURE bypass, microphone/call capture or global settings repair. Upstream shell operation needs an actual current grant, not a name in a diagram.
+A useful result needs independent physical-panel evidence, actual keyguard state, changing target video, meaningful owned audio and a harmless native input effect. Logical DisplayInfo may remain ON after compositor-level blanking; neither that fact nor an OFF log alone decides the result. Silent audio timestamps or a STREAMING label are not usable AV. Retain all sensory-measurement limits honestly.
 
-The existing browser SPEC is not silently repurposed into a projector contract. This Owner-authorized AGENTS §10 experiment follows PAV-1 only for its separate packages. Protected articles and existing product scope/DAG remain unchanged. No new ticket-plan or Worker approach-approval stage.
+If the stock route fails, only read-only requested/effective display-group and power diagnosis is included. Framework/display-flag changes, wake locks, global timeout/Doze settings, keyguard changes or secure-content bypass are not authorized by this follow-up. Route a concrete new mechanism rather than guessing or claiming universal impossibility.
 
-## 3. Ownership of results
+## 2. Original investigation and subsequent accepted change
 
-| Required finding | Primary issue | Final synthesis |
+The original [PAV-1 charter](fold6-rg-projector-av.md) was published under `SPEC-PROJECTOR-AV-SPIKE-20261017-01`. The [original index at 2346784](https://github.com/code2hack/EyeBrowse/blob/23467848448a1c8251a68a553deea3d2426cbd4e/docs/experiments/fold6-rg-projector-av-issues.md) preserves the original ready/blocked states and first-dispatch instructions. Those are historical, not instructions to start #66 again.
+
+| Original alias | Issue | Original dependency / accountable finding |
 | --- | --- | --- |
-| Supported scrcpy version/shell bootstrap/virtual display | #66 | #70 |
-| Ordinary apps independent of physical Phone display | #66, then real RG #67 | #70 |
-| Direct authenticated encrypted video/control without desktop relay | #67 | #70 |
-| Local head cursor/native app tap/scroll and minimal session controls | #68 | #70 |
-| Real Phone system IME projected and activated from RG | #68 using #66 findings | #70 |
-| Required captured audio decoded/played on RG | #69 | #70 |
-| Media timing, buffer behavior and measured A/V drift | #69 | #70 |
-| Whole-device versus target-app capture; Phone mute/duplication | #66 preliminary, #69 actual direct path | #70 |
-| Screen-on/other app/screen-off/keyguard and reconnection | each relevant slice | #70 |
-| No browser/proxy dependencies; data-safe install and resource cleanup | every code/device slice | #70 |
-| Recommendation on keyboard/toolbar removal and next architecture | no implicit production change | #70 |
+| PAV-01 | [#66](https://github.com/code2hack/EyeBrowse/issues/66) | Root; actual Fold6 scrcpy/shell/virtual display/Phone IME/audio feasibility |
+| PAV-02 | [#67](https://github.com/code2hack/EyeBrowse/issues/67) | #66 viable server path; direct authenticated Fold6 host → RG video/basic control |
+| PAV-03 | [#68](https://github.com/code2hack/EyeBrowse/issues/68) | #67; local RG head/pad controls and projected Phone-IME qualification |
+| PAV-04 | [#69](https://github.com/code2hack/EyeBrowse/issues/69) | #67 plus #66 audio evidence; required IP audio and AV clock behavior |
+| PAV-05 | [#70](https://github.com/code2hack/EyeBrowse/issues/70) | #68 + #69 evidence; integrated performance/power/lock/isolation findings and recommendation |
+| Lifetime follow-up | [#76](https://github.com/code2hack/EyeBrowse/issues/76), [PR #77](https://github.com/code2hack/EyeBrowse/pull/77) | #70 completed investigation; remove host lifetime cap, enable keep-active and retain Owner manual-use preview |
 
-Initial numerical trial goals are in PAV-1: portrait 480×640 (240 dpi first), H.264/30 fps/2 Mbps starting video; Opus or qualified AAC for audio; ten-minute controlled AV run; measured interaction and A/V offset goals. They are assessment baselines, not claims of demonstrated performance or a requirement to repeatedly run until passing. Actual stream/latency/output routes and confidence limits must be reported.
+Original DAG: **#66 → #67 → (#68 + #69) → #70**. Current extension: **#70 → #76 → #78**, with #70 evidence also directly informing #78. No old result, failure budget, acceptance or source binding is reset.
 
-## 4. Manager start message
+[Accepted integrated findings](fold6-rg-projector-av/results.md) retain locked-but-Awake AV, normal-sleep/startup failures, failed keep-active-only sleep comparison, IME limitations and physical/acoustic measurement boundaries. The report's statements about the then-current timed host are historical after #76; neither its no-go conclusion nor earlier failed screen-off cases becomes a success because the host now lasts longer. #78 will publish a separately attributed result.
 
-Owner asked to publish this elemental experiment so local agents can work. Refresh the branch, PAV-1 and #66–#70, plus current main governance/DEV. Register/reuse participants through the current local registry; nothing in this publication starts one. Assign **#66 first** under ordinary mission authority, with actual Fold6 identity/shell/unlock grants and exclusive resource windows. Do not borrow the active v0.0.4 RG reservation or assume historical S20+ permission applies to Fold6. Reuse valid existing concurrency/quiet-notification answers; do not manufacture new prompts or alarms.
+## 3. Retained experiment boundaries
 
-All implementer PRs target `spike/fold6-rg-projector-av`, never main or v0.0.4. Keep target-app/IME/audio state unchanged except authorized test operations and restore it on return. Hold only the exact owned virtual displays/processes/tunnels; do not reset shared networking. Credentials and raw private content stay out of source/issues/artifacts.
+- **Direct Fold6 ↔ RG runtime.** Development/authorized ADB bootstrap and optional stock desktop comparator may use a computer; the qualifying media/control path may not depend on a PC gateway.
+- **Real audio remains required.** Owned Phone source audio traverses the network to RG; no video-only success, Bluetooth substitute or separately fetched RG media. Report software, audible and synchronization evidence at their actual scope.
+- **Thin client remains thin.** No RG WebView/Chromium, Mihomo/subscriptions, browser toolbar or custom editor/identity framework. Preserve current no-local-menu, two-tap remote Back and three-tap local Disconnect behavior. #78 adds no permanent user-interface control and does not repair Phone-IME compatibility.
+- **Isolated packages and data.** Preserve production browser packages, data and archived v0.0.4 work. Separate experimental source and exact donor provenance remain; no production rollback, main merge or release is authorized.
+- **Locked is not asleep.** Only the named stock panel-power and keep-active behavior, plus ordinary already-authorized wake/recovery, are included. No PIN/password, keyguard dismissal, root, DRM/FLAG_SECURE/audio-opt-out bypass, microphone/call capture or global policy changes.
+- **Current host lifetime and preview.** #76's no-overall-timeout behavior and explicit Stop/Disconnect/failure handling remain. The Owner's installed/current live preview is under Manager custody: do not silently stop, overwrite, uninstall or revert it merely because a test or report ends.
 
-Independent Reviewer assesses source-bound evidence and distinguishes demonstration, measured limitation, qualified negative and untested conditions. Manager records startup/receipt, dependency results, cleanup and conclusion; GitHub publication is not peer-message delivery. An accepted experiment does not authorize the future browser refactor, proxy deletion in v0.0.4, or a production merge/release.
+PAV-PWR-1 is an explicit experimental supplement, not a protected-article edit. Current main AGENTS/DEV govern execution; no separate Planner ticket plan, Worker approach approval, new broad design review or repeated answered Owner prompt is required.
+
+## 4. Manager startup handoff for #78
+
+Refresh current branch, the linked follow-up and #78; inspect current main governance/DEV and the installed/retained #76 session before touching devices. Assign a mission-specific branch/worktree from the current spike with **PR base `spike/fold6-rg-projector-av`**. Reuse applicable current concurrency/quiet-notification grants and coordinate exclusive actual Fold6/RG access and one source writer. No automatic new agent, direct peer message or device action is performed by this publication.
+
+Declare the test-owned session/resource handoff so the Owner's preview is not interrupted without coordination. Capture only harmless owned content and preserve private trust material. Do not reset shared ADB/SSH/Tailscale or revive canceled browser work. Stock cleanup may restore panel power; verify and return to the Manager's actual requested device state, rather than assuming exit restored darkness or lock. Independent approved source/analysis work need not wait for unavailable optical/acoustic access.
+
+Expected result: `docs/experiments/fold6-rg-projector-av/panel-power-results.md`, with exact baseline/candidate/server/device bindings, stock panel-handler evidence, physical/logical/virtual/keyguard observations, live AV/input, restoration and separately labeled unobserved conditions. A qualified negative completes an investigation, not a working-feature promise. Missing access is unknown, not universal impossibility. Receive independent exact-candidate review and normal Manager closure.
+
+**Publication status:** follow-up plan and issue are available; readiness is not local-agent receipt/startup or test acceptance. Old #66–#70 results, #76's accepted source change and current Owner preview remain preserved. Main/v0.0.4 and protected articles are untouched.
