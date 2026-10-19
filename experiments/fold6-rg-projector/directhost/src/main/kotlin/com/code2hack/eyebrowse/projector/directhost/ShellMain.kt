@@ -21,6 +21,7 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -31,7 +32,7 @@ import javax.net.ssl.SSLSocket
 import org.json.JSONObject
 
 internal enum class SessionStopReason {
-    OWNER_CLOSE, SESSION_ERROR, HOST_STOP, HOST_LIFETIME, STARTUP_DEADLINE, WRITE_DEADLINE,
+    OWNER_CLOSE, SESSION_ERROR, HOST_STOP, STARTUP_DEADLINE, WRITE_DEADLINE,
     CONTROL_END, CONTROL_EOF, CONTROL_TIMEOUT, CONTROL_IO, CONTROL_ERROR,
     AUDIO_END, AUDIO_ERROR, AUDIO_STALLED, VIDEO_END, VIDEO_EOF, VIDEO_TIMEOUT, VIDEO_IO, VIDEO_ERROR,
 }
@@ -74,18 +75,23 @@ object ShellMain {
     }
 }
 
-private class Bridge(private val directory: File, private val jar: File) : Closeable {
+internal class Bridge(
+    private val directory: File,
+    private val jar: File,
+    private val timer: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(),
+    private val listener: SSLServerSocket = Tls.context(directory).serverSocketFactory.createServerSocket() as SSLServerSocket,
+    private val reportStatus: ((String) -> Unit)? = null,
+) : Closeable {
     private val running = AtomicBoolean(true)
     private val active = AtomicReference<Session?>()
-    private val timer = Executors.newSingleThreadScheduledExecutor()
     private val workers = ThreadPoolExecutor(2, 2, 0, TimeUnit.SECONDS, ArrayBlockingQueue(2))
     private val settings = Tls.settings(directory)
-    private val listener = Tls.context(directory).serverSocketFactory.createServerSocket() as SSLServerSocket
     private val refused = AtomicLong()
     private val unauthenticatedRefused = AtomicLong()
     private var boundPort = 0
 
     @Synchronized private fun status(state: String) {
+        reportStatus?.let { it(state); return }
         val data = JSONObject().put("state", state).put("model", Build.MODEL)
             .put("pid", Process.myPid()).put("shellUid", Process.myUid()).put("refused", refused.get())
             .put("unauthenticatedRefused", unauthenticatedRefused.get())
@@ -108,8 +114,7 @@ private class Bridge(private val directory: File, private val jar: File) : Close
         listener.bind(InetSocketAddress(address, port), 2)
         boundPort = listener.localPort
         listener.soTimeout = 1000
-        // This explicit bootstrap is finite. Nothing installs a boot service or keeps the Phone awake.
-        timer.schedule({ close(SessionStopReason.HOST_LIFETIME) }, 15, TimeUnit.MINUTES)
+        // Session deadlines remain active; elapsed host lifetime alone does not stop this bootstrap.
         status("HOST_READY")
         while (running.get()) {
             val socket = try { listener.accept() as SSLSocket }
@@ -209,7 +214,7 @@ private class Session(
             "scid=%08x".format(scid), "log_level=debug", "tunnel_forward=false", "send_dummy_byte=false",
             "send_device_meta=false", "send_codec_meta=true", "send_frame_meta=true", "video=true", "audio=true", "audio_source=output", "audio_codec=opus", "audio_bit_rate=128000",
             "control=true", "video_codec=h264", "video_bit_rate=2000000", "max_fps=30", "new_display=480x640/160",
-            "display_ime_policy=local", "vd_destroy_content=true", "clipboard_autosync=false", "power_on=false", "cleanup=true")
+            "display_ime_policy=local", "vd_destroy_content=true", "clipboard_autosync=false", "power_on=false", "keep_active=true", "cleanup=true")
         // Stock cleanup unlinks its own CLASSPATH JAR. Keep the pinned master for
         // reconnects and let each stock session consume its own verified copy.
         val sessionJar = File(directory, "scrcpy-%08x.jar".format(scid))

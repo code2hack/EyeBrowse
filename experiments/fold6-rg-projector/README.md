@@ -17,7 +17,7 @@ Build these separately from the production browser:
 ./gradlew -p experiments/fold6-rg-projector --no-daemon --max-workers=2 \
   -Dorg.gradle.jvmargs=-Xmx2g :directhost:assembleDebug \
   :directrg:assembleDebug :directrg:assembleDebugAndroidTest \
-  :protocol:testDebugUnitTest :directrg:testDebugUnitTest \
+  :directhost:testDebugUnitTest :protocol:testDebugUnitTest :directrg:testDebugUnitTest \
   :directhost:lintDebug :directrg:lintDebug
 ```
 
@@ -33,6 +33,23 @@ updated for code changes. Keep original EyeBrowse/Chromium applications and data
 untouched. Owner decision106 retired repeated old-store backups and scans.
 See [direct-video.md](../../docs/experiments/fold6-rg-projector-av/direct-video.md)
 for the actual protocol, bootstrap, limitations and acceptance evidence.
+
+## Owner manual session lifetime (#76)
+
+The explicitly bootstrapped host has no overall elapsed-time cutoff. Existing
+host Stop, receiver Disconnect/pause, and genuine failures still release their
+owned resources. The shared scheduler retains the 8-second session startup,
+2-second stalled-write, and 5-second stalled-audio safeguards.
+
+Stock scrcpy receives `keep_active=true` for the current projected display and
+`power_on=false`. The keep-active setting follows activities on that display;
+it does not establish screen-off or secure-lock continuity. Prior investigation
+failures and the Owner's manual black-screen result remain unchanged.
+
+`HostLifetimeTest` advances a virtual scheduler past the former 15-minute
+boundary while running the actual host accept loop, then checks explicit close
+and scheduler cleanup. This is an elapsed-boundary regression, not a battery,
+unlimited-uptime, optical, or acoustic qualification.
 
 ## PAV-03 input
 
