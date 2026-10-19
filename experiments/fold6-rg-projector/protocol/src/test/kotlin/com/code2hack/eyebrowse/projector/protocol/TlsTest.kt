@@ -44,7 +44,7 @@ class TlsTest {
         }
     }
 
-    private fun exchange(client: (Int) -> Unit): Int {
+    private fun exchange(operation: Int = Wire.STREAM, client: (Int) -> Unit): Int {
         val listener = Tls.context(File(root, "host")).serverSocketFactory.createServerSocket(0, 2, InetAddress.getLoopbackAddress()) as SSLServerSocket
         listener.needClientAuth = true; listener.soTimeout = 5000
         val accepted = AtomicInteger()
@@ -53,8 +53,10 @@ class TlsTest {
             try {
                 (listener.accept() as SSLSocket).use { socket ->
                     socket.soTimeout = 3000; socket.startHandshake()
-                    if (Wire.readRequest(DataInputStream(socket.inputStream)) == Wire.STREAM) {
-                        accepted.incrementAndGet(); Wire.writeWelcome(DataOutputStream(socket.outputStream))
+                    if (Wire.readRequest(DataInputStream(socket.inputStream)) == operation) {
+                        accepted.incrementAndGet()
+                        if (operation == Wire.STREAM) Wire.writeWelcome(DataOutputStream(socket.outputStream))
+                        else { socket.outputStream.write(1); socket.outputStream.flush() }
                     }
                 }
             } catch (_: Exception) { /* Rejected peers must never reach media/control admission. */ }
@@ -75,6 +77,25 @@ class TlsTest {
                 Wire.readWelcome(DataInputStream(socket.inputStream))
             }
         })
+    }
+
+    @Test fun fixedPanelRequestsRequireTheSameTrustedClientIdentity() {
+        for (operation in listOf(Wire.PANEL_OFF, Wire.PANEL_ON)) {
+            assertEquals(1, exchange(operation) { port ->
+                Tls.connect(endpoint("receiver", port)).use { socket ->
+                    Wire.writeRequest(DataOutputStream(socket.outputStream), operation)
+                    assertEquals(1, socket.inputStream.read())
+                }
+            })
+            assertEquals(0, exchange(operation) { port ->
+                assertThrows(Exception::class.java) {
+                    Tls.connect(endpoint("rogue", port)).use { socket ->
+                        Wire.writeRequest(DataOutputStream(socket.outputStream), operation)
+                        check(socket.inputStream.read() == 1)
+                    }
+                }
+            })
+        }
     }
 
     @Test fun untrustedClientGetsNoWelcome() {

@@ -12,6 +12,7 @@ import java.io.DataOutputStream
 import java.io.EOFException
 import java.io.File
 import java.io.IOException
+import java.io.OutputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.SocketTimeoutException
@@ -75,6 +76,29 @@ object ShellMain {
     }
 }
 
+/** Explicit experiment command using the already trusted peer identity, without a new listener/UI. */
+object PanelPowerMain {
+    @JvmStatic fun main(args: Array<String>) {
+        require(Process.myUid() == 2000 && args.size == 2 && args[1] in listOf("off", "on"))
+        val operation = if (args[1] == "on") Wire.PANEL_ON else Wire.PANEL_OFF
+        Tls.connect(File(args[0])).use { socket ->
+            Wire.writeRequest(DataOutputStream(socket.outputStream), operation)
+            require(socket.inputStream.read() == 1 && socket.inputStream.read() == -1) { "Panel submission unconfirmed" }
+        }
+        println("STOCK_PANEL_${args[1].uppercase()}_SUBMITTED")
+    }
+}
+
+/** One local stream: a panel command must not split a touch down/up or navigation message. */
+internal class ScrcpyControl(private val output: OutputStream) : Closeable {
+    private val closed = AtomicBoolean()
+    @Synchronized fun write(message: ByteArray) {
+        check(!closed.get())
+        output.write(message); output.flush()
+    }
+    override fun close() { if (closed.compareAndSet(false, true)) output.close() }
+}
+
 internal class Bridge(
     private val directory: File,
     private val jar: File,
@@ -135,8 +159,13 @@ internal class Bridge(
             socket.startHandshake() // No scrcpy process, display, media or input exists before mTLS.
             authenticated = true
             val input = DataInputStream(socket.inputStream)
-            when (Wire.readRequest(input)) {
+            when (val operation = Wire.readRequest(input)) {
                 Wire.STOP_HOST -> { status("HOST_STOPPING"); close(SessionStopReason.HOST_STOP) }
+                Wire.PANEL_OFF, Wire.PANEL_ON -> {
+                    checkNotNull(active.get()).setDisplayPower(operation == Wire.PANEL_ON)
+                    // Acknowledge only the local write; stock handler and hardware need separate evidence.
+                    socket.outputStream.write(1); socket.outputStream.flush()
+                }
                 Wire.STREAM -> {
                     session = Session(socket, input, directory, jar, timer)
                     if (!active.compareAndSet(null, session)) return
@@ -183,6 +212,7 @@ private class Session(
     private val audioPackets = AtomicLong()
     private val lastAudio = AtomicLong(System.nanoTime())
     private var control: LocalSocket? = null
+    @Volatile private var controlWriter: ScrcpyControl? = null
     private var server: java.lang.Process? = null
     private var inputThread: Thread? = null
     private var watchdog: java.util.concurrent.ScheduledFuture<*>? = null
@@ -233,6 +263,8 @@ private class Session(
         audio = localListener!!.accept().also { if (!running.get()) { it.close(); error("Session stopped") } }
         startupStage.set(StartupStage.ACCEPT_CONTROL)
         control = localListener!!.accept().also { if (!running.get()) { it.close(); error("Session stopped") } }
+        controlWriter = ScrcpyControl(control!!.outputStream)
+        if (!running.get()) { controlWriter!!.close(); error("Session stopped") }
         localListener!!.close(); localListener = null; startup.cancel(false)
         lastAudio.set(System.nanoTime())
         watchdog = timer.scheduleWithFixedDelay({
@@ -270,17 +302,17 @@ private class Session(
                         Wire.TAP -> {
                             val tap = Tap.from(frame.payload)
                             require(tap.geometry == geometry.get())
-                            control!!.outputStream.write(Scrcpy.tap(tap)); touches.incrementAndGet()
+                            controlWriter!!.write(Scrcpy.tap(tap)); touches.incrementAndGet()
                         }
                         Wire.SCROLL -> {
                             val scroll = Scroll.from(frame.payload)
                             require(scroll.target.geometry == geometry.get())
-                            control!!.outputStream.write(Scrcpy.scroll(scroll))
+                            controlWriter!!.write(Scrcpy.scroll(scroll))
                         }
                         Wire.NAVIGATE -> {
                             val navigate = Navigate.from(frame.payload)
                             require(navigate.geometry == geometry.get())
-                            control!!.outputStream.write(Scrcpy.navigate(navigate))
+                            controlWriter!!.write(Scrcpy.navigate(navigate))
                         }
                         Wire.END -> break
                         else -> error("Unsupported control")
@@ -314,13 +346,20 @@ private class Session(
 
     override fun close() = close(SessionStopReason.OWNER_CLOSE)
 
+    fun setDisplayPower(on: Boolean) {
+        check(running.get())
+        checkNotNull(controlWriter).write(Scrcpy.displayPower(on))
+        println(JSONObject().put("event", "PANEL_POWER_SUBMITTED").put("on", on).put("scid", "%08x".format(scid)))
+    }
+
     fun close(reason: SessionStopReason) {
         if (!running.compareAndSet(true, false)) return
         val stopStartedMs = (System.nanoTime() - begin) / 1_000_000
         val lastStartupStage = startupStage.get()
         watchdog?.cancel(false)
         runCatching { peer.close() }; runCatching { localListener?.close() }
-        runCatching { video?.close() }; runCatching { audio?.close() }; runCatching { control?.close() }
+        runCatching { video?.close() }; runCatching { audio?.close() }
+        runCatching { controlWriter?.close() }; runCatching { control?.close() }
         server?.let { process ->
             runCatching {
                 if (!process.waitFor(2, TimeUnit.SECONDS)) {
